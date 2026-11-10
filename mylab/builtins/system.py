@@ -419,12 +419,15 @@ def _keyboard(interp, args, nargout):
 
 @builtin("format")
 def _format(interp, args, nargout):
-    mode = text(args[0]).lower() if args else "short"
-    if mode in ("long", "longg", "long g"):
-        FORMAT.long = True
-    elif mode in ("short", "shortg", "short g", "compact", "loose"):
-        if mode not in ("compact", "loose"):
-            FORMAT.long = False
+    mode = "".join(text(a).lower() for a in args) if args else "short"
+    mode = mode.replace(" ", "")
+    if mode in ("short", "long", "shortg", "longg", "shorte", "longe"):
+        FORMAT.mode = mode
+    elif mode in ("compact", "loose", "default"):
+        if mode == "default":
+            FORMAT.mode = "short"
+    else:
+        raise MatlabError(f"Unsupported format '{mode}'. Use short, long, short g, long g, short e or long e.")
     return None
 
 
@@ -598,7 +601,7 @@ def _fopen(interp, args, nargout):
         fh = open(name, mode, encoding="utf-8")
     except OSError as e:
         if nargout > 1:
-            return -1.0, char(str(e))
+            return -1.0, char(e.strerror or "Cannot open file")
         return -1.0
     files = interp.state.setdefault("files", {})
     fid = 3

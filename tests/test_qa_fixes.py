@@ -135,3 +135,26 @@ def test_functions_without_end_still_work(m):
     m.run("function a = one()\na = 1;\nfunction b = two()\nb = 2;\n")
     m.run("x = one() + two();")
     assert m.val("x").item() == 3
+
+
+def test_complex_and_format_display(m):
+    assert m.run("a = 1.5 + 2i") == "a = 1.5000 + 2.0000i\n"
+    assert m.run("b = sqrt(-2)") == "b = 0.0000 + 1.4142i\n"
+    assert m.run("c = 3 - 4i") == "c = 3 - 4i\n"
+    out = m.run("r = [2.0946; -1.0473+1.1359i]")
+    assert "2.0946 + 0.0000i" in out and "-1.0473 + 1.1359i" in out
+    m.run("format long")
+    assert m.run("pi*1000") == "ans = 3.141592653589793e+03\n"
+    assert m.run("pi") == "ans = 3.141592653589793\n"
+    m.run("format short g")
+    assert "2.5" in m.run("[1e-5 2.5 1000]") and "0.0000" not in m.run("[1e-5 2.5 1000]")
+    m.run("format short")
+    assert m.run("pi") == "ans = 3.1416\n"
+
+
+def test_small_numeric_cases(m):
+    assert m.num("-int8(-128)").item() == 127
+    assert m.str("class(rand(2, 'single'))") == "single"
+    assert m.str("class([single(1) 2])") == "single"
+    m.run("[fid, msg] = fopen('definitely_missing_file.txt');")
+    assert m.val("fid").item() == -1 and "Errno" not in m.str("msg")

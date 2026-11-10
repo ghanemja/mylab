@@ -22,7 +22,21 @@ TIMES = "×"  # multiplication sign used in size strings, e.g. 2x3
 
 
 class DisplayFormat:
-    long = False
+    """Current output format (set by the ``format`` command)."""
+
+    mode = "short"  # short, long, shortg, longg, shorte, longe
+
+    @property
+    def long(self) -> bool:
+        return self.mode.startswith("long")
+
+    @long.setter
+    def long(self, value: bool) -> None:
+        self.mode = "long" if value else "short"
+
+    @property
+    def style(self) -> str:  # "", "g" or "e"
+        return {"shortg": "g", "longg": "g", "shorte": "e", "longe": "e"}.get(self.mode, "")
 
 
 FORMAT = DisplayFormat()
@@ -30,18 +44,55 @@ FORMAT = DisplayFormat()
 
 # -- scalars --------------------------------------------------------------------
 
-def _fmt_real(x: float, long: bool) -> str:
+def _special(x: float) -> str | None:
     if math.isnan(x):
         return "NaN"
     if math.isinf(x):
         return "Inf" if x > 0 else "-Inf"
+    return None
+
+
+def _fmt_real(x: float, long: bool, style: str = "") -> str:
+    sp = _special(x)
+    if sp is not None:
+        return sp
+    if style == "g":
+        return f"{x:.{15 if long else 5}g}"
+    if style == "e":
+        return f"{x:.{15 if long else 4}e}"
     if x == int(x) and abs(x) < 1e9:
         return str(int(x)) if x != 0 else "0"
-    digits = 15 if long else 4
     ax = abs(x)
-    if 1e-3 < ax < 1e3 or (long and 1e-3 < ax < 1e5):
+    if long:
+        return f"{x:.15f}" if 1e-3 <= ax < 100 else f"{x:.15e}"
+    return f"{x:.4f}" if 1e-3 < ax < 1e3 else f"{x:.4e}"
+
+
+def _complex_parts(values: list[complex], long: bool, style: str = "") -> list[tuple[str, str, str]]:
+    """Format complex numbers consistently: (real text, sign, imaginary magnitude text)."""
+    parts = [(float(np.real(z)), float(np.imag(z))) for z in values]
+    finite = [abs(p) for re, im in parts for p in (re, im) if math.isfinite(p)]
+    all_int = all(p == int(p) for re, im in parts for p in (re, im) if math.isfinite(p))
+    big = max(finite, default=0.0)
+    digits = 15 if long else 4
+
+    def fmt(x: float) -> str:
+        sp = _special(x)
+        if sp is not None:
+            return sp
+        if style == "g":
+            return f"{x:.{15 if long else 5}g}"
+        if style == "e" or (not all_int and (big >= 1e5 or (0 < big < 1e-3))):
+            return f"{x:.{digits}e}"
+        if all_int and big < 1e9:
+            return str(int(x))
         return f"{x:.{digits}f}"
-    return f"{x:.{digits}e}"
+
+    out = []
+    for re, im in parts:
+        sign = "-" if im < 0 or (im == 0 and math.copysign(1, im) < 0) else "+"
+        out.append((fmt(re), sign, fmt(abs(im))))
+    return out
 
 
 def format_scalar(x: Any, long: bool | None = None) -> str:
@@ -49,12 +100,11 @@ def format_scalar(x: Any, long: bool | None = None) -> str:
     if isinstance(x, (bool, np.bool_)):
         return "1" if x else "0"
     if isinstance(x, (complex, np.complexfloating)):
-        re, im = float(np.real(x)), float(np.imag(x))
-        sign = "-" if im < 0 or (im == 0 and math.copysign(1, im) < 0) else "+"
-        return f"{_fmt_real(re, long)} {sign} {_fmt_real(abs(im), long)}i"
+        re, sign, im = _complex_parts([complex(x)], long, FORMAT.style)[0]
+        return f"{re} {sign} {im}i"
     if isinstance(x, (np.integer, int)):
         return str(int(x))
-    return _fmt_real(float(x), long)
+    return _fmt_real(float(x), long, FORMAT.style)
 
 
 def format_scalar_plain(x: Any) -> str:
@@ -74,6 +124,7 @@ def format_scalar_plain(x: Any) -> str:
 def _matrix_lines(a: np.ndarray) -> list[str]:
     """Body lines for a numeric / logical matrix (no name header)."""
     long = FORMAT.long
+    style = FORMAT.style
     if a.dtype == bool:
         return ["".join(f"{int(v):>4d}" for v in row) for row in a]
     if a.dtype.kind in "iu":
@@ -81,11 +132,18 @@ def _matrix_lines(a: np.ndarray) -> list[str]:
         width = max(width, 4)
         return ["".join(f"{int(v):>{width}d}" for v in row) for row in a]
     if a.dtype.kind == "c":
-        cells = [[format_scalar(complex(v), long) for v in row] for row in a]
-        width = max(len(c) for r in cells for c in r) + 3
-        return ["".join(f"{c:>{width}}" for c in row) for row in cells]
+        flat = _complex_parts([complex(v) for v in a.flat], long, style)
+        wr = max(len(p[0]) for p in flat)
+        wi = max(len(p[2]) for p in flat)
+        cells = [f"{re:>{wr}} {sign} {im:<{wi}}i" for re, sign, im in flat]
+        grid = np.array(cells, dtype=object).reshape(a.shape)
+        return ["".join(f"{c:>{wr + wi + 7}}" for c in row) for row in grid]
 
     real = a.astype(float)
+    if style:
+        cells = [[_fmt_real(float(v), long, style) for v in row] for row in real]
+        width = max(len(c) for r in cells for c in r) + 3
+        return ["".join(f"{c:>{width}}" for c in row) for row in cells]
     finite = real[np.isfinite(real)]
     all_int = finite.size == 0 or bool(np.all(finite == np.round(finite)))
     if all_int and (finite.size == 0 or np.max(np.abs(finite)) < 1e9):
@@ -97,18 +155,17 @@ def _matrix_lines(a: np.ndarray) -> list[str]:
     maxabs = float(np.max(np.abs(finite))) if finite.size else 0.0
     header = []
     scale = 1.0
-    if a.size > 1 and maxabs > 0 and (maxabs >= 1e3 or maxabs < 1e-3):
+    if a.size > 1 and maxabs > 0 and (maxabs >= (100 if long else 1e3) or maxabs < 1e-3):
         exp = int(math.floor(math.log10(maxabs)))
         scale = 10.0 ** exp
         header = [f"   1.0e{exp:+03d} *", ""]
-    elif a.size == 1 and maxabs > 0 and (maxabs >= 1e3 or maxabs <= 1e-3):
-        return ["    " + f"{real.flat[0]:.{digits}e}"]
+    elif a.size == 1:
+        return ["    " + _fmt_real(float(real.flat[0]), long)]
 
     def fmt(v: float) -> str:
-        if math.isnan(v):
-            return "NaN"
-        if math.isinf(v):
-            return "Inf" if v > 0 else "-Inf"
+        sp = _special(v)
+        if sp is not None:
+            return sp
         if v == 0:
             return "0"
         return f"{v / scale:.{digits}f}"

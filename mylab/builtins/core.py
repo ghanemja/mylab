@@ -62,14 +62,14 @@ def _rng(interp):
 
 @builtin("rand")
 def _rand(interp, args, nargout):
-    shape, _ = dims_from_args(args, "rand")
-    return _rng(interp).random(shape)
+    shape, cls = dims_from_args(args, "rand")
+    return cast_class(_rng(interp).random(shape), cls)
 
 
 @builtin("randn")
 def _randn(interp, args, nargout):
-    shape, _ = dims_from_args(args, "randn")
-    return _rng(interp).standard_normal(shape)
+    shape, cls = dims_from_args(args, "randn")
+    return cast_class(_rng(interp).standard_normal(shape), cls)
 
 
 @builtin("randi")

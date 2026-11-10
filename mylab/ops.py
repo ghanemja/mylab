@@ -311,6 +311,8 @@ def unary(op: str, v: Any) -> Any:
     if op == "-":
         if a.dtype.kind == "u":
             return np.zeros_like(a)
+        if a.dtype.kind == "i":
+            return saturate_int(-a.astype(float), a.dtype)
         return -a
     return a  # unary plus
 
@@ -352,6 +354,9 @@ def _concat_arrays(items: list[np.ndarray], axis: int) -> np.ndarray:
         if int_items:
             dt = int_items[0].dtype
             nonempty = [saturate_int(i, dt) if i.dtype != dt else i for i in nonempty]
+        elif any(i.dtype in (np.float32, np.complex64) for i in nonempty):
+            # single wins over double when concatenating, as in MATLAB
+            nonempty = [i.astype(np.complex64 if np.iscomplexobj(i) else np.float32) for i in nonempty]
         elif not all(i.dtype == bool for i in nonempty):
             nonempty = [i.astype(float) if i.dtype == bool else i for i in nonempty]
     first = nonempty[0].shape[:axis] + nonempty[0].shape[axis + 1:]
