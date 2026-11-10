@@ -11,7 +11,7 @@ students, researchers and engineers who can't afford a MATLAB license.
   to Python, using free local models (Ollama) or your own API key. No paid
   account is needed.
 - **Covers a lot of the language:** matrices, N-D arrays, cells, structs,
-  strings, tables, `containers.Map`, `classdef` classes and about 650
+  strings, tables, `containers.Map`, `classdef` classes and about 750
   functions, from linear algebra to `fft`, `ode45`, `fminsearch`, `kmeans` and
   plotting.
 
@@ -95,7 +95,7 @@ r.figures              # PNG bytes of any plots
 | Functions | Script-local functions, `.m` files on the path, multiple outputs, `nargin`/`nargout`, `varargin`/`varargout`, anonymous functions with captured variables, `global`, `eval`/`feval` |
 | Data types | double, single, logical, char, int8–uint64 (saturating), complex numbers, N-D arrays, cell arrays, structs and struct arrays, string arrays, function handles, `containers.Map`, `table` |
 | Classes | `classdef` value and handle classes, properties with defaults, `Constant`/`Dependent` properties, `get.`/`set.` methods, constructors, `Static` methods, inheritance with `obj@Parent`, operator overloading, custom `disp` |
-| Library | About 650 functions: math, linear algebra, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, `findpeaks`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, file input/output, `readtable`/`writetable`, plotting (`plot`, `subplot`, `scatter`, `bar`, `histogram`, `surf`, `contour`, …) |
+| Library | About 750 functions: math, linear algebra, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, `findpeaks`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, file input/output, `readtable`/`writetable`, plotting (`plot`, `subplot`, `scatter`, `bar`, `histogram`, `surf`, `contour`, …) |
 
 The full list is in [docs/FUNCTIONS.md](docs/FUNCTIONS.md). Type `help name` in
 mylab for any function. Known differences and gaps (for example Simulink,

@@ -19,11 +19,29 @@ First public release.
 - Command-window display and error messages with line numbers.
 
 ### Library
-- About 650 built-in functions: math, linear algebra, statistics and
+- About 750 built-in functions: math, linear algebra, statistics and
   probability distributions, signal processing, optimization, ODE solvers,
   interpolation, polynomials, strings and regular expressions, cells and
   structs, file input/output, and plotting through Matplotlib.
 - Help text for every function (`help name`).
+
+### Also in 1.0 (pre-release QA)
+- Graphics handles for figures, axes, lines and other plot objects, with
+  dot syntax and `get`/`set`. New plotting functions: `tiledlayout`,
+  `nexttile`, `fplot`, `quiver`, `polarplot`, `yyaxis`, `peaks`, `shading`,
+  colormaps and more.
+- Tables: row names, joins, `groupsummary`, `findgroups`/`splitapply`,
+  grouped `varfun`, brace assignment, `rmmissing`/`fillmissing`.
+- File I/O: `textscan`, `fscanf`, `dir`, `readcell`/`writecell`,
+  `readlines`/`writelines`, `importdata`, delimiter-aware `writematrix`/
+  `readmatrix` that skips header lines.
+- Numerics: `accumarray` with functions, `pchip`/`makima`/`ppval`, ODE events
+  and accurate dense output, `polyfit` with `S` and `mu`, `gradient`,
+  `conv2`, `maxk`/`mink` and more.
+- Language: nested functions, per-function `persistent`, `MException`
+  objects with standard identifiers, `warning('off', id)`, classdef access
+  control, abstract classes and property validation, command syntax for any
+  function, recursion up to 500 calls.
 
 ### Ways to run it
 - `mylab` command-line prompt and script runner.

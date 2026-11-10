@@ -206,6 +206,8 @@ def summary(v: Any, in_cell: bool) -> str:
     if isinstance(v, Struct):
         return f"{size_str(v.shape)} struct" if in_cell else f"[{size_str(v.shape)} struct]"
     if is_char(v):
+        if v.size == 0 and in_cell:
+            return f"{size_str(v.shape)} char"
         if v.shape[0] <= 1:
             return f"'{to_str(v)}'"
         return f"{size_str(v.shape)} char"
@@ -390,10 +392,18 @@ def format_display(name: str, v: Any) -> str:
                 return f"{name} =\n\n     []\n\n"
             return f"{name} =\n\n  {size_str(v.shape)} empty {class_name(v)} array\n\n"
         typ = ""
-        if v.dtype == bool:
-            typ = "  logical\n\n"
-        elif v.dtype.kind in "iu" or v.dtype in (np.float32, np.complex64):
-            typ = f"  {class_name(v)}\n\n"
+        if v.dtype == bool or v.dtype.kind in "iu" or v.dtype in (np.float32, np.complex64):
+            cls = class_name(v)
+            if v.size == 1:
+                typ = f"  {cls}\n\n"
+            elif cls == "logical":
+                typ = f"  {size_str(v.shape)} logical array\n\n"
+            elif v.ndim == 2 and v.shape[0] == 1:
+                typ = f"  {size_str(v.shape)} {cls} row vector\n\n"
+            elif v.ndim == 2 and v.shape[1] == 1:
+                typ = f"  {size_str(v.shape)} {cls} column vector\n\n"
+            else:
+                typ = f"  {size_str(v.shape)} {cls} matrix\n\n"
         if v.size == 1 and not typ:
             return f"{name} = {format_scalar(v.flat[0])}\n"
         lines = _matrix_lines(v)

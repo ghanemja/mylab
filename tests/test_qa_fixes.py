@@ -176,3 +176,12 @@ a1 = counter_a(); a2 = counter_a(); b1 = counter_b(); a3 = counter_a();
 """)
     assert (m.val("a1").item(), m.val("a2").item(), m.val("b1").item(), m.val("a3").item()) == (1, 2, 101, 3)
     assert not m.interp.base.has("k")
+
+
+def test_command_syntax_after_semicolon_and_type_headers(m):
+    from mylab.parser import parse
+    assert len(parse("surf(peaks(10)); shading interp\n").body) == 2
+    assert "3×1 logical array" in m.run("b = [true; true; false]")
+    assert "1×3 int32 row vector" in m.run("k = int32([1 2 3])")
+    assert m.run("t = true") == "t =\n\n  logical\n\n   1\n\n"
+    assert "{0×0 char}" in m.run("c = {''}")

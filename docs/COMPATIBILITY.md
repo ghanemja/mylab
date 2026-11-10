@@ -22,7 +22,7 @@ what mylab printed, and what you expected.
   `warning('off', id)`.
 - `containers.Map` and `table` (with `readtable`/`writetable` for delimited
   text files).
-- About 650 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
+- About 750 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
 
 ## Not supported yet
 
@@ -33,8 +33,10 @@ what mylab printed, and what you expected.
 - **Other data types:** datetime, duration, categorical, timetable,
   `containers.Map` with non-scalar keys, sparse matrices (`sparse(...)` builds
   an ordinary full matrix).
-- **Tables:** row names, `join`/`innerjoin`/`outerjoin`, `groupsummary`,
-  `rowfun`. Table variables must be columns.
+- **Tables:** `rowfun`, `stack`/`unstack`, and timetables. Table variables
+  must be columns. (Row names, joins, `groupsummary`, `findgroups`/
+  `splitapply`, `varfun` with groups, `rmmissing`/`fillmissing` are
+  supported.)
 - **Graphics handles:** `figure`, `gcf`, `gca`, `plot`, `bar`, `histogram`,
   `title`, `legend`, `colorbar` and the other plotting functions return handle
   objects. You can read and change their common properties with dot syntax
@@ -48,8 +50,9 @@ what mylab printed, and what you expected.
     arrays aren't supported;
   - there are no animations, GUIs (`uifigure`, App Designer), callbacks or
     interactive tools.
-- **Input and output:** `textscan`, `fscanf`, binary I/O (`fread`/`fwrite`),
-  Excel files, images (`imread`), audio.
+- **Input and output:** binary I/O (`fread`/`fwrite`), Excel files, images
+  (`imread`), audio. `textscan` and `fscanf` handle common formats only (no
+  fixed-width fields).
 - **Toolboxes:** only the parts listed in FUNCTIONS.md (signal processing,
   statistics, optimization). Simulink, Symbolic Math, Control System, Image
   Processing and others are out of scope for now.

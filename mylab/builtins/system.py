@@ -650,24 +650,6 @@ def _feof(interp, args, nargout):
     return bool_scalar(at_end)
 
 
-@builtin("writematrix", "dlmwrite", "csvwrite")
-def _writematrix(interp, args, nargout):
-    # writematrix(A, file) / csvwrite(file, A) / dlmwrite(file, A)
-    if is_text(args[0]):
-        fname, a = text(args[0]), args[1]
-    else:
-        a, fname = args[0], text(args[1])
-    np.savetxt(fname, num(a), delimiter=",", fmt="%.15g")
-    return None
-
-
-@builtin("readmatrix", "csvread", "dlmread")
-def _readmatrix(interp, args, nargout):
-    fname = text(args[0])
-    data = np.genfromtxt(fname, delimiter=",", dtype=float)
-    return np.atleast_2d(data)
-
-
 @builtin("save")
 def _save(interp, args, nargout):
     fname = text(args[0]) if args else "matlab.mat"
