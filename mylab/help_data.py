@@ -1121,3 +1121,20 @@ for _cls, _range in _INT_RANGES.items():
                   f"away from zero), clipped to the range {_range}, and NaN becomes 0. "
                   f"Example: {_cls}(2.5) is 3.")
 HELP["quadgk"] = HELP["quadl"] = HELP["quad"]
+
+# -- string arrays, objects and containers ------------------------------------------------------
+HELP.update({
+    "strings": (["s = strings(n)", "s = strings(m, n, ...)"],
+                "Creates a string array of the given size filled with empty strings \"\". strings(1, 1) is the "
+                "empty string scalar."),
+    "ismissing": ("tf = ismissing(x)",
+                  "True where an element is missing: <missing> in a string array, NaN in a numeric array, or "
+                  "an empty char vector in a cell array. Returns a logical array the size of x."),
+    "isobject": ("tf = isobject(x)",
+                 "True if x is an object: a containers.Map, a table, or an instance of a classdef class."),
+    "containers.Map": (["m = containers.Map()", "m = containers.Map(keys, values)",
+                        "m = containers.Map('KeyType', kt, 'ValueType', vt)"],
+                       "Creates a map from keys (char vectors or numbers) to values. Read and write entries "
+                       "with m(key) and m(key) = value; use keys(m), values(m), isKey(m, k), remove(m, k) and "
+                       "m.Count. A map is a handle: copying the variable shares the same map."),
+})
