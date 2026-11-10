@@ -75,6 +75,8 @@ class Lexer:
         self.tokens: list[Token] = []
         # Stack of open brackets: '(', '[', '{'
         self.brackets: list[str] = []
+        import re
+        self.in_classdef = bool(re.search(r"^\s*classdef\b", self.text, re.MULTILINE))
 
     # -- helpers ---------------------------------------------------------------
     def peek(self, offset: int = 0) -> str:
@@ -287,6 +289,8 @@ class Lexer:
             return False
         if word in COMMAND_WORDS:
             return first.isalnum() or first in "_-'"
+        if self.in_classdef:  # 'name string' in a properties block is a declaration, not a command
+            return False
         # Any other name: ``shading interp``, ``colormap jet``, ``clearvars -except y``.
         # Only plain words count, so expressions such as ``a -1`` or ``x '...`` are left alone.
         body = rest.split("%", 1)[0].rstrip().rstrip(";,").rstrip()

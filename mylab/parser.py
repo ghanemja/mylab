@@ -157,6 +157,8 @@ class Parser:
                 break
         props: list[A.PropertyDef] = []
         methods: dict[str, A.Function] = {}
+        method_attrs: dict[str, dict] = {}
+        abstract: set[str] = set()
         static: set[str] = set()
         self.skip_newlines()
         while not self.is_kw("end"):
@@ -178,12 +180,18 @@ class Parser:
                     if self.is_kw("function"):
                         fn = self.parse_function()
                         methods[fn.name] = fn
+                        method_attrs[fn.name] = dict(block_attrs)
                         if block_attrs.get("Static"):
                             static.add(fn.name)
                     else:
-                        # A method signature without a body (defined in another file): skip the line.
+                        # A signature without a body: abstract, or defined in another file.
+                        sig = []
                         while self.tok.kind not in ("NL", "EOF"):
-                            self.next()
+                            sig.append(self.next())
+                        names = [t.value for k, t in enumerate(sig) if t.kind == "ID" and
+                                 (k + 1 == len(sig) or (sig[k + 1].kind == "OP" and sig[k + 1].value == "("))]
+                        if names and block_attrs.get("Abstract"):
+                            abstract.add(names[0])
                     self.skip_newlines()
                 self.next()
             elif self._is_id("events", "enumeration"):
@@ -201,12 +209,42 @@ class Parser:
             self.skip_newlines()
         self.next()
         cd = A.ClassDef(name, supers, attrs, props, methods, static)
+        cd.method_attrs = method_attrs
+        cd.abstract_methods = abstract
         cd.line = start.line
         return cd
 
     def parse_property(self, block_attrs: dict) -> A.PropertyDef:
         name = self._ident_name()
-        # Skip size/class validation syntax: name (1,1) double {mustBePositive} = default
+        attrs = dict(block_attrs)
+        # Validation syntax: name (1,1) double {mustBePositive} = default
+        if self.is_op("("):
+            self.next()
+            dims: list = []
+            while not self.is_op(")"):
+                t = self.next()
+                if t.kind == "NUM":
+                    dims.append(int(t.value.real if isinstance(t.value, complex) else t.value))
+                elif t.kind == "OP" and t.value == ":":
+                    dims.append(None)
+            self.next()
+            attrs["_size"] = dims
+        if self.tok.kind == "ID":
+            cls = self.next().value
+            while self.is_op(".") and self.peek().kind == "ID":
+                self.next()
+                cls += "." + self.next().value
+            attrs["_class"] = cls
+        if self.is_op("{"):
+            self.next()
+            validators = []
+            while not self.is_op("}"):
+                if self.is_op(","):
+                    self.next()
+                    continue
+                validators.append(self.parse_expr())
+            self.next()
+            attrs["_validators"] = validators
         depth = 0
         while self.tok.kind not in ("NL", "EOF"):
             if depth == 0 and (self.is_op("=") or self.is_op(";") or self.is_op(",")):
@@ -222,8 +260,7 @@ class Parser:
             default = self.parse_expr()
         if self.is_op(";") or self.is_op(","):
             self.next()
-        prop = A.PropertyDef(name, default, dict(block_attrs))
-        return prop
+        return A.PropertyDef(name, default, attrs)
 
     def parse_block(self, *terminators: str) -> list[A.Node]:
         stmts: list[A.Node] = []

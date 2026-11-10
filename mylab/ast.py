@@ -201,6 +201,8 @@ class ClassDef(Node):
     properties: list[PropertyDef]
     methods: dict[str, Function]
     static_methods: set[str] = field(default_factory=set)
+    method_attrs: dict[str, dict] = field(default_factory=dict)
+    abstract_methods: set[str] = field(default_factory=set)
 
 
 @dataclass

@@ -463,6 +463,9 @@ def values_equal(a: Any, b: Any) -> bool:
         return all(values_equal(x[f], y[f]) for x, y in zip(a.data.flat, b.data.flat) for f in a.fields)
     if isinstance(a, FunctionHandle) or isinstance(b, FunctionHandle):
         return a is b
+    if hasattr(a, "isa_class") or hasattr(b, "isa_class"):
+        from .builtins.objfuncs import objects_equal
+        return objects_equal(a, b)
     if isinstance(a, np.ndarray) and isinstance(b, np.ndarray):
         if a.shape != b.shape:
             return False

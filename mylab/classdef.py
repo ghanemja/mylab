@@ -52,17 +52,25 @@ class ClassInfo:
         self.prop_defs: dict[str, tuple[A.PropertyDef, ClassInfo]] = {}
         self.methods: dict[str, tuple[A.Function, ClassInfo]] = {}
         self.static: set[str] = set()
+        self.method_attrs: dict[str, dict] = {}
+        abstract: set[str] = set()
         for parent in self.parents:
             self.prop_defs.update(parent.prop_defs)
             for mname, entry in parent.methods.items():
                 if mname != parent.name:  # constructors are not inherited
                     self.methods[mname] = entry
             self.static |= parent.static
+            self.method_attrs.update(parent.method_attrs)
+            abstract |= parent.abstract_methods
         for p in cd.properties:
             self.prop_defs[p.name] = (p, self)
         for mname, fn in cd.methods.items():
             self.methods[mname] = (fn, self)
         self.static |= set(cd.static_methods)
+        self.method_attrs.update(cd.method_attrs)
+        self.abstract_methods = (abstract | set(cd.abstract_methods)) - {
+            m for m, (_, owner) in self.methods.items() if owner is self}
+        self.is_abstract = bool(cd.attrs.get("Abstract")) or bool(self.abstract_methods)
         self._defaults: dict[str, Any] | None = None
         self._constants: dict[str, Any] = {}
 
@@ -105,6 +113,10 @@ class ClassInfo:
 
     # -- construction ---------------------------------------------------------------------------
     def construct(self, interp, args: list, nargout: int) -> list:
+        if self.is_abstract:
+            missing = ", ".join(sorted(self.abstract_methods))
+            detail = f" (abstract methods: {missing})" if missing else ""
+            raise MatlabError(f"Cannot instantiate the abstract class '{self.name}'{detail}.")
         obj = UserObject(self)
         obj.props = dict(self.defaults(interp))
         return [self.run_constructor(interp, obj, args)]
@@ -123,7 +135,8 @@ class ClassInfo:
             if parent.name not in called and parent.cd.methods.get(parent.name) is not None:
                 obj = parent.run_constructor(interp, obj, [])
         out_name = ctor.outputs[0] if ctor.outputs else "obj"
-        res = interp.call_user_function(ctor, args, 1, self.functions, self.path, preset={out_name: obj})
+        res = interp.call_user_function(ctor, args, 1, self.functions, self.path, preset={out_name: obj},
+                                        owner=self)
         if not res or not isinstance(res[0], UserObject):
             raise MatlabError(f"The constructor of '{self.name}' must return the object.")
         return res[0]
@@ -131,7 +144,24 @@ class ClassInfo:
     # -- calls ----------------------------------------------------------------------------------
     def call(self, interp, name: str, args: list, nargout: int) -> list:
         fn, owner = self.methods[name]
-        return interp.call_user_function(fn, args, nargout, owner.functions, owner.path)
+        return interp.call_user_function(fn, args, nargout, owner.functions, owner.path, owner=owner)
+
+    # -- access control --------------------------------------------------------------------
+    @staticmethod
+    def _caller(interp) -> "ClassInfo | None":
+        return getattr(interp.frame, "owner_class", None)
+
+    def allowed(self, interp, level: Any, owner: "ClassInfo") -> bool:
+        """Whether the running code may use a member with access ``level`` defined in ``owner``."""
+        level = str(level).lower() if level is not None else "public"
+        if level == "public" or level == "true":
+            return True
+        caller = self._caller(interp)
+        if caller is None:
+            return False
+        if level in ("private", "immutable"):
+            return caller is owner or caller.name == owner.name
+        return owner.name in caller.ancestors()  # protected
 
     def static_access(self, interp, member: str, args: list, nargout: int) -> list:
         if member in self.methods and member in self.static:
@@ -189,14 +219,69 @@ class UserObject(MObject):
 
     # -- members ---------------------------------------------------------------------------
     def has_method(self, name: str) -> bool:
-        return name in self.cls.methods and name != self.cls.name and "." not in name
+        # delete(obj) goes through the built-in, which runs the class's delete and invalidates the handle.
+        return name in self.cls.methods and name != self.cls.name and "." not in name and name != "delete"
 
     def call_method(self, interp, name: str, args: list, nargout: int) -> list:
+        self._check_valid()
+        access = self.cls.method_attrs.get(name, {}).get("Access")
+        if access is not None and not self.cls.allowed(interp, access, self.cls.methods[name][1]):
+            raise MatlabError(f"Cannot access method '{name}' in class '{self.cls.name}'.")
         if name in self.cls.static and args and args[0] is self:
             args = args[1:]
         return self.cls.call(interp, name, args, nargout)
 
+    def _check_valid(self) -> None:
+        if getattr(self, "_deleted", False):
+            raise MatlabError("Invalid or deleted object.")
+
+    def _check_access(self, interp, name: str, kind: str) -> None:
+        entry = self.cls.prop_defs.get(name)
+        if entry is None:
+            return
+        prop, owner = entry
+        level = prop.attrs.get(kind, prop.attrs.get("Access"))
+        if level is not None and not self.cls.allowed(interp, level, owner):
+            verb = "set" if kind == "SetAccess" else "access"
+            raise MatlabError(f"You cannot {verb} the '{name}' property of {self.cls.name}.")
+
+    def validate(self, interp, name: str, value: Any) -> Any:
+        """Apply a property's class, size and validator functions (as declared in the classdef)."""
+        prop = self.cls.prop_defs[name][0]
+        cls = prop.attrs.get("_class")
+        if cls:
+            value = _convert_class(value, cls, name)
+        size = prop.attrs.get("_size")
+        if size:
+            from .values import shape_of
+            shape = list(shape_of(value))
+            ok = len(size) == len(shape) and all(d is None or d == s for d, s in zip(size, shape))
+            if not ok:
+                want = "x".join(":" if d is None else str(d) for d in size)
+                got = "x".join(str(d) for d in shape)
+                raise MatlabError(f"Error setting property '{name}' of class '{self.cls.name}'. "
+                                  f"Value must be {want} (it is {got}).")
+        for v in prop.attrs.get("_validators", []):
+            from .interpreter import Frame
+            frame = Frame(interp, self.cls.functions, name=f"{self.cls.name}.{name} validator")
+            frame.vars[name] = value
+            try:
+                if isinstance(v, A.Ident) and not frame.has(v.name):
+                    interp.call_named(v.name, [value], 0, frame)
+                else:
+                    interp.frames.append(frame)
+                    try:
+                        interp.eval_multi(v, frame, 0)
+                    finally:
+                        interp.frames.pop()
+            except MatlabError as e:
+                raise MatlabError(f"Error setting property '{name}' of class '{self.cls.name}'. {e.message}",
+                                  e.identifier)
+        return value
+
     def get_field(self, interp, name: str) -> Any:
+        self._check_valid()
+        self._check_access(interp, name, "GetAccess")
         getter = "get." + name
         if getter in self.cls.methods and name not in self._in_accessor:
             self._in_accessor.add(name)
@@ -223,6 +308,9 @@ class UserObject(MObject):
             raise MatlabError(f"Cannot set the Constant property '{name}' of class '{self.cls.name}'.")
         if name not in self.cls.prop_defs:
             raise MatlabError(f"Unrecognized property '{name}' for class '{self.cls.name}'.")
+        self._check_valid()
+        self._check_access(interp, name, "SetAccess")
+        value = self.validate(interp, name, value)
         setter = "set." + name
         if setter in self.cls.methods and name not in self._in_accessor:
             target = self if self.is_handle else self.copy()
@@ -248,7 +336,9 @@ class UserObject(MObject):
     # -- display -------------------------------------------------------------------------------
     def display_lines(self) -> list[str]:
         from .display import summary
-        names = self.cls.instance_props()
+        names = [n for n in self.cls.instance_props()
+                 if str(self.cls.prop_defs[n][0].attrs.get("GetAccess",
+                        self.cls.prop_defs[n][0].attrs.get("Access", "public"))).lower() == "public"]
         if not names:
             return [f"  {self.cls.name} with no properties."]
         from .interpreter import current_interpreter
@@ -296,3 +386,51 @@ def call_unary_operator(interp, op: str, operand: Any) -> Any:
     if isinstance(operand, MObject):
         raise MatlabError(f"Operator '{op}' is not supported for operands of type '{operand.class_name()}'.")
     return NotImplemented
+
+
+def _convert_class(value: Any, cls: str, name: str) -> Any:
+    from .values import (
+        INT_TYPES, Cell, FunctionHandle, MString, StringArray, Struct, char, is_char, saturate_int,
+        string_data, string_result, to_numeric,
+    )
+    numeric_ok = isinstance(value, np.ndarray)
+    if cls in ("double", "single") or cls in INT_TYPES or cls == "logical":
+        if not numeric_ok:
+            raise MatlabError(f"Value of property '{name}' must be convertible to {cls}.")
+        a = to_numeric(value)
+        if cls == "double":
+            return a.astype(complex if a.dtype.kind == "c" else float)
+        if cls == "single":
+            return a.astype(np.float32)
+        if cls == "logical":
+            if a.dtype.kind == "f" and np.isnan(a).any():
+                raise MatlabError("NaN's cannot be converted to logicals.")
+            return a != 0
+        return saturate_int(a, INT_TYPES[cls])
+    if cls == "string":
+        if isinstance(value, (MString, StringArray)):
+            return value
+        try:
+            return string_result(string_data(value))
+        except MatlabError:
+            raise MatlabError(f"Value of property '{name}' must be convertible to string.") from None
+    if cls == "char":
+        if is_char(value):
+            return value
+        if isinstance(value, MString):
+            return char(str(value))
+        raise MatlabError(f"Value of property '{name}' must be text.")
+    checks = {"cell": Cell, "struct": Struct, "function_handle": FunctionHandle}
+    if cls in checks:
+        if not isinstance(value, checks[cls]):
+            raise MatlabError(f"Value of property '{name}' must be a {cls}.")
+        return value
+    from .values import class_name
+    if hasattr(value, "isa_class"):
+        if value.isa_class(cls):
+            return value
+    elif class_name(value) == cls:
+        return value
+    if isinstance(value, np.ndarray) and value.size == 0:
+        return value
+    raise MatlabError(f"Value of property '{name}' must be of class '{cls}'.")

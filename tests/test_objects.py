@@ -109,3 +109,48 @@ end
     assert m.num("acc.balance").item() == 75
     with pytest.raises(MatlabError, match="positive"):
         m.run("acc.deposit(-1)")
+
+
+def test_access_abstract_validation(cm):
+    m = cm
+    with pytest.raises(MatlabError, match="abstract"):
+        m.run("s = Shape();")
+    m.run("c = Circle(2);")
+    assert m.str("c.name") == "circle"
+    with pytest.raises(MatlabError, match="cannot set"):
+        m.run("c.name = 'x';")
+    with pytest.raises(MatlabError, match="cannot access"):
+        m.run("v = c.secret;")
+    assert m.num("c.peek()").item() == 42  # inside a method of the defining class
+    with pytest.raises(MatlabError, match="Cannot access method"):
+        m.run("c.hidden();")
+    with pytest.raises(MatlabError, match="positive"):
+        m.run("c.r = -1;")
+    with pytest.raises(MatlabError, match="must be 1x1"):
+        m.run("c.r = [1 2];")
+    m.run("c.r = int8(3);")
+    assert m.str("class(c.r)") == "double"
+    m.run("c.tag = 'abc';")
+    assert m.str("class(c.tag)") == "string"
+    out = m.run("c.describe();")
+    assert out == "circle with area 28.27\n(radius 3)\n"
+    out = m.run("c")
+    assert "secret" not in out and "r: 3" in out
+
+
+def test_object_utilities(cm):
+    m = cm
+    m.run("c = Circle(1); d = c; e = Circle(1);")
+    assert m.num("isequal(c, d)").item() and not m.num("isequal(c, e)").item()
+    assert m.num("isvalid(c)").item()
+    assert m.num("isprop(c, 'r')").item() and not m.num("isprop(c, 'secret')").item()
+    assert m.num("ismethod(c, 'area')").item() and not m.num("ismethod(c, 'hidden')").item()
+    m.run("p = properties(c); mm = methods(c);")
+    assert "r" in [m.str(f"p{{{k}}}") for k in range(1, int(m.num('numel(p)').item()) + 1)]
+    out = m.run("delete(c)")
+    assert out == "bye\n"
+    assert not m.num("isvalid(d)").item()
+    with pytest.raises(MatlabError, match="deleted"):
+        m.run("d.r")
+    m.run("a = Vec2(1, 2); b = Vec2(1, 2);")
+    assert m.num("isequal(a, b)").item()

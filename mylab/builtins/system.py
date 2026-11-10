@@ -563,6 +563,11 @@ def _mkdir(interp, args, nargout):
 
 @builtin("delete")
 def _delete(interp, args, nargout):
+    from ..objects import MObject
+    if args and isinstance(args[0], MObject):
+        from .objfuncs import delete_object
+        delete_object(interp, args[0])
+        return None
     for a in args:
         if is_text(a) and os.path.isfile(text(a)):
             os.remove(text(a))

@@ -48,6 +48,7 @@ class Frame:
         self.nargout = nargout
         self.file = file
         self.missing_inputs: frozenset[str] = frozenset()
+        self.owner_class: Any = None  # ClassInfo when running a class method
 
     def has(self, name: str) -> bool:
         if name in self.globals:
@@ -1026,7 +1027,7 @@ class Interpreter:
 
     def call_user_function(self, fn: A.Function, args: list[Any], nargout: int,
                            functions: dict[str, A.Function], file: str | None,
-                           preset: dict[str, Any] | None = None) -> list[Any]:
+                           preset: dict[str, Any] | None = None, owner: Any = None) -> list[Any]:
         params = fn.params
         has_varargin = bool(params) and params[-1] == "varargin"
         fixed = params[:-1] if has_varargin else params
@@ -1047,6 +1048,7 @@ class Interpreter:
             frame.vars["varargin"] = Cell.from_list(args[len(fixed):])
         if preset:
             frame.vars.update(preset)
+        frame.owner_class = owner
         self._enter()
         self.frames.append(frame)
         _CURRENT.append(self)
