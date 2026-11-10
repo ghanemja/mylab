@@ -34,6 +34,16 @@ def current_interpreter() -> "Interpreter | None":
     return _CURRENT[-1] if _CURRENT else None
 
 
+class NestedRef:
+    """A nested function bound to the workspace of the call that defines it."""
+
+    __slots__ = ("fn", "frame")
+
+    def __init__(self, fn: A.Function, frame: "Frame"):
+        self.fn = fn
+        self.frame = frame
+
+
 class Frame:
     """A workspace: the base workspace or one function call's local variables."""
 
@@ -70,6 +80,36 @@ class Frame:
             self.interp.global_vars[name] = value
         else:
             self.vars[name] = value
+
+
+class SharedFrame(Frame):
+    """Workspace of a nested function: names shared with the parent live in the parent's frame."""
+
+    def __init__(self, interp: "Interpreter", parent: Frame, shared: set[str], **kwargs: Any):
+        super().__init__(interp, **kwargs)
+        self.parent = parent
+        self.shared = shared
+
+    def has(self, name: str) -> bool:
+        if name in self.shared:
+            return self.parent.has(name)
+        return super().has(name)
+
+    def get(self, name: str) -> Any:
+        if name in self.shared:
+            return self.parent.get(name)
+        return super().get(name)
+
+    def lookup(self, name: str) -> Any | None:
+        if name in self.shared:
+            return self.parent.lookup(name)
+        return super().lookup(name)
+
+    def set(self, name: str, value: Any) -> None:
+        if name in self.shared:
+            self.parent.set(name, value)
+        else:
+            super().set(name, value)
 
 
 class Interpreter:
@@ -934,6 +974,8 @@ class Interpreter:
                 return a.call_method(self, name, list(args), nargout)
         fn = frame.functions.get(name)
         if fn is not None:
+            if isinstance(fn, NestedRef):
+                return self.call_user_function(fn.fn, args, nargout, frame.functions, frame.file, parent=fn.frame)
             return self.call_user_function(fn, args, nargout, frame.functions, frame.file)
         cls = self.classes.get(name)
         if cls is not None:
@@ -984,6 +1026,8 @@ class Interpreter:
         functions = handle.closure.get("__functions__", {})
         if not handle.is_anonymous:
             fn = functions.get(handle.name)
+            if isinstance(fn, NestedRef):
+                return self.call_user_function(fn.fn, args, nargout, functions, None, parent=fn.frame)
             if fn is not None:
                 return self.call_user_function(fn, args, nargout, functions, None)
             tmp = Frame(self, functions)
@@ -1027,7 +1071,8 @@ class Interpreter:
 
     def call_user_function(self, fn: A.Function, args: list[Any], nargout: int,
                            functions: dict[str, A.Function], file: str | None,
-                           preset: dict[str, Any] | None = None, owner: Any = None) -> list[Any]:
+                           preset: dict[str, Any] | None = None, owner: Any = None,
+                           parent: Frame | None = None) -> list[Any]:
         params = fn.params
         has_varargin = bool(params) and params[-1] == "varargin"
         fixed = params[:-1] if has_varargin else params
@@ -1038,7 +1083,15 @@ class Interpreter:
         fixed_out = outputs[:-1] if has_varargout else outputs
         if nargout > len(fixed_out) and not has_varargout:
             raise MatlabError(f"Too many output arguments for function '{fn.name}'.")
-        frame = Frame(self, functions, name=fn.name, nargin=len(args), nargout=nargout, file=file)
+        if parent is not None:
+            shared = _shared_names(fn, parent)
+            frame: Frame = SharedFrame(self, parent, shared, functions=functions, name=fn.name,
+                                       nargin=len(args), nargout=nargout, file=file)
+        else:
+            frame = Frame(self, functions, name=fn.name, nargin=len(args), nargout=nargout, file=file)
+        frame.fn_node = fn
+        if fn.subfunctions:
+            frame.functions = {**functions, **{n: NestedRef(f, frame) for n, f in fn.subfunctions.items()}}
         for i, p in enumerate(fixed):
             if i < len(args) and p != "~":
                 frame.vars[p] = args[i]
@@ -1256,6 +1309,20 @@ def make_exception(e: MatlabError):
                            "name": char(getattr(e, "func", "") or ""),
                            "line": np.array([[float(getattr(e, "line", 0) or 0)]])})
     return MExceptionObject(e.identifier or "", e.message, stack)
+
+
+def _shared_names(fn: A.Function, parent: Frame) -> set[str]:
+    """Variables a nested function shares with its parent: names the parent's code uses."""
+    cached = getattr(fn, "_shared_cache", None)
+    parent_fn = getattr(parent, "fn_node", None)
+    if cached is not None and cached[0] is parent_fn:
+        return cached[1]
+    names: set[str] = set()
+    if parent_fn is not None:
+        names = free_identifiers(parent_fn.body) | set(parent_fn.params) | set(parent_fn.outputs)
+    names -= set(fn.params) | set(fn.outputs)
+    fn._shared_cache = (parent_fn, names)  # type: ignore[attr-defined]
+    return names
 
 
 def free_identifiers(node: A.Node) -> set[str]:

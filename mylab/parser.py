@@ -83,7 +83,24 @@ class Parser:
             self.next()
 
     # -- program -----------------------------------------------------------------
+    def _functions_use_end(self) -> bool:
+        """Whether this file closes functions with 'end' (only then can functions be nested)."""
+        openers = ("if", "for", "parfor", "while", "switch", "try", "function")
+        n_open = n_end = n_fn = 0
+        for t in self.tokens:
+            if t.kind != "KW":
+                continue
+            if t.value == "classdef":
+                return True
+            if t.value in openers:
+                n_open += 1
+                n_fn += t.value == "function"
+            elif t.value == "end" and not getattr(t, "in_index", False):
+                n_end += 1
+        return n_fn > 0 and n_end >= n_open
+
     def parse_program(self) -> A.Program:
+        self.functions_end = self._functions_use_end()
         body: list[A.Node] = []
         functions: dict[str, A.Function] = {}
         self.skip_newlines()
@@ -314,13 +331,20 @@ class Parser:
                 params.append(self._ident_name())
             self.next()
         stmts: list[A.Node] = []
+        nested: dict[str, A.Function] = {}
         self.skip_newlines()
-        while not (self.is_kw("end", "function") or self.tok.kind == "EOF"):
-            stmts.append(self.parse_statement())
+        while not (self.is_kw("end") or self.tok.kind == "EOF"):
+            if self.is_kw("function"):
+                if not getattr(self, "functions_end", False):
+                    break  # the next function in a file that doesn't close functions with 'end'
+                inner = self.parse_function()
+                nested[inner.name] = inner
+            else:
+                stmts.append(self.parse_statement())
             self.skip_newlines()
         if self.is_kw("end"):
             self.next()
-        fn = A.Function(name, params, outputs, stmts)
+        fn = A.Function(name, params, outputs, stmts, nested)
         fn.line = start.line
         return fn
 

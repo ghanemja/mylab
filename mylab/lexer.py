@@ -263,6 +263,8 @@ class Lexer:
         word = self.text[start:self.pos]
         if word in KEYWORDS and not (self.last and self.last.kind == "OP" and self.last.value == "."):
             self.add("KW", word, line, col, space)
+            if word == "end" and self.brackets:
+                self.last.in_index = True  # type: ignore[attr-defined]
             return
         self.add("ID", word, line, col, space)
         if not self.brackets and self._is_command_syntax(word):

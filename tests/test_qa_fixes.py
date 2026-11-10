@@ -103,3 +103,35 @@ def test_object_concatenation_is_a_clean_error(m):
     m.run("mp = containers.Map();")
     with pytest.raises(MatlabError, match="cell array"):
         m.run("x = [mp, mp];")
+
+
+def test_nested_functions_share_variables(m):
+    m.run("""
+function total = tally(values)
+    total = 0;
+    for v = values
+        add(v);
+    end
+    function add(x)
+        total = total + x;
+    end
+end
+function out = counter_demo()
+    count = 0;
+    bump(); bump();
+    out = count;
+    function bump()
+        count = count + 1;
+    end
+end
+r = tally([1 2 3]);
+c = counter_demo();
+""")
+    assert m.val("r").item() == 6
+    assert m.val("c").item() == 2
+
+
+def test_functions_without_end_still_work(m):
+    m.run("function a = one()\na = 1;\nfunction b = two()\nb = 2;\n")
+    m.run("x = one() + two();")
+    assert m.val("x").item() == 3
