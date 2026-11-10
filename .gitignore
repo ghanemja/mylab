@@ -11,3 +11,6 @@ dist/
 !docs/**/*.png
 *.mat
 .DS_Store
+
+# Built by scripts/build_web.py (CI builds it for GitHub Pages)
+web/wheels/
