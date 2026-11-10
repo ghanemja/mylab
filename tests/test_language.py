@@ -299,3 +299,13 @@ def test_end_in_nested_index(m):
     assert m.num("v(end/2)").item() == 50
     assert m.num("v(min(end, 3))").item() == 30
     np.testing.assert_array_equal(m.num("v(end-2:end)"), [[80, 90, 100]])
+
+
+def test_nested_cell_literal(m):
+    m.run("c = {1, {2, 3}};")
+    assert m.num("size(c)").tolist() == [[1, 2]]
+    assert m.str("class(c{2})") == "cell"
+    m.run("d = {c{:}};")
+    assert m.num("numel(d)").item() == 2
+    m.run("e = [c, {4}];")  # square brackets still concatenate cells
+    assert m.num("numel(e)").item() == 3

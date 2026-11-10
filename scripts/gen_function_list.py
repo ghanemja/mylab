@@ -19,6 +19,11 @@ SECTIONS = {
     "system": "Output, errors, workspace, files and timing",
     "numerics": "Polynomials, interpolation, optimization, integration and ODEs",
     "plotting": "Plotting",
+    "table": "Tables",
+    "signal": "Signal processing",
+    "stats": "Statistics and probability",
+    "optim": "Optimization",
+    "extras": "More core functions",
 }
 
 

@@ -537,11 +537,6 @@ def _cast(interp, args, nargout):
     return cast_class(num(args[0]), text(args[1]))
 
 
-@builtin("typecast")
-def _typecast(interp, args, nargout):
-    raise MatlabError("typecast is not supported yet.")
-
-
 @builtin("full", "sparse")
 def _full(interp, args, nargout):
     if len(args) == 1:

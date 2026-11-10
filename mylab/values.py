@@ -166,6 +166,8 @@ class Struct:
 
     def set_field(self, i: int, name: str, value: Any) -> None:
         self.add_field(name)
+        if isinstance(value, (bool, int, float, complex, str, np.generic)) and not isinstance(value, MString):
+            value = to_matlab(value)
         self._elem_f(i)[name] = value
 
     def _elem_f(self, i: int) -> dict:

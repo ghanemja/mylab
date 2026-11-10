@@ -613,7 +613,7 @@ class Interpreter:
             items = []
             for elem in row:
                 for v in self.eval_expanding(elem, frame):
-                    items.append(v if isinstance(v, Cell) else _wrap_cell(v))
+                    items.append(_wrap_cell(v))  # {1, {2, 3}} nests; it does not concatenate
             row_cells.append(ops.concat(items, 1) if items else Cell(np.empty((0, 0), dtype=object)))
         if not row_cells:
             return Cell(np.empty((0, 0), dtype=object))
