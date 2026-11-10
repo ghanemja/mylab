@@ -31,7 +31,8 @@ HELP: dict = {
               f"Logical 0, or a logical array of zeros. {_SIZE_FORMS}"),
     "eye": (["I = eye(n)", "I = eye(m, n)", "I = eye([m n])", "I = eye(..., classname)"],
             "Identity matrix: ones on the main diagonal, zeros elsewhere. A non-square size puts ones "
-            "on the diagonal starting at the top-left. Example: eye(2) is [1 0; 0 1]."),
+            "on the diagonal starting at the top-left. N-D sizes are not supported. "
+            "Example: eye(2) is [1 0; 0 1]."),
     "rand": (["r = rand", "R = rand(n)", "R = rand(m, n)", "R = rand([m n])"],
              f"Uniform random numbers from 0 up to (not including) 1. {_SIZE_FORMS} "
              "Values come from the session's generator, which rng can seed; the stream differs from "
@@ -111,11 +112,13 @@ HELP: dict = {
                "Smallest value an integer class can hold, returned in that class. Defaults to 'int32'. "
                "Example: intmin('int8') is -128."),
     # -- size and shape queries -----------------------------------------------------------
-    "size": (["sz = size(A)", "n = size(A, dim)", "[r, c] = size(A)", "[d1, d2, ..., dn] = size(A)"],
+    "size": (["sz = size(A)", "n = size(A, dim)", "v = size(A, [d1 d2 ...])", "[r, c] = size(A)",
+              "[d1, d2, ..., dn] = size(A)"],
              "Dimensions of A. With one output, a row vector holding the length of every dimension; "
-             "size(A, dim) gives one length, and 1 for a dimension beyond ndims(A). With several outputs, "
-             "the last output absorbs all remaining dimensions (their product), so [r, c] = size(A) puts "
-             "the product of dimensions 2 and up in c. Example: size(ones(2, 5)) is [2 5]."),
+             "size(A, dim) gives one length (1 for a dimension beyond ndims(A)) and a vector of dims gives "
+             "several. With several outputs, the last output absorbs all remaining dimensions (their "
+             "product), so [r, c] = size(A) puts the product of dimensions 2 and up in c. "
+             "Example: size(ones(2, 5, 3)) is [2 5 3]."),
     "numel": ("n = numel(A)", "Total number of elements in A, the product of all its dimensions."),
     "length": ("n = length(A)",
                "Size of the longest dimension of A, or 0 if A is empty. Example: length(ones(3, 7)) is 7."),
@@ -130,7 +133,8 @@ HELP: dict = {
     # -- type queries -----------------------------------------------------------------------
     "class": ("c = class(x)",
               "Name of the type of x as a char vector, for example 'double', 'char', 'logical', 'int8', "
-              "'cell', 'struct', 'string' or 'function_handle'."),
+              "'cell', 'struct', 'string' or 'function_handle'. Objects report their class name, such as "
+              "'table', 'containers.Map' or the name of a classdef class."),
     "isnumeric": ("tf = isnumeric(x)",
                   "True for double, single and integer arrays (real or complex). False for logical, char, "
                   "cell, struct and string values."),
@@ -150,7 +154,8 @@ HELP: dict = {
     "is_function_handle": ("tf = is_function_handle(x)", "True if x is a function handle such as @sin or @(t) t.^2."),
     "isa": ("tf = isa(x, classname)",
             "True if class(x) equals classname. Also accepts the group names 'numeric' (double, single or "
-            "integer), 'float' (double or single) and 'integer' (any integer class)."),
+            "integer), 'float' (double or single) and 'integer' (any integer class). For objects of a "
+            "classdef class it is also true for any superclass, e.g. isa(dog, 'Animal')."),
     "isequal": ("tf = isequal(A, B, ...)",
                 "True if all inputs have the same size and contents. Numeric type is ignored, so "
                 "isequal(1, int8(1)) is true. NaN is never equal to NaN; see isequaln."),
@@ -170,21 +175,23 @@ HELP: dict = {
     "issparse": ("tf = issparse(A)", "Always false: mylab stores every matrix densely."),
     # -- conversions ------------------------------------------------------------------------
     "double": ("y = double(x)",
-               "Converts to double precision. Char input gives character codes; a string scalar is parsed "
-               "as a number (NaN if it is not one). Cells and structs cannot be converted. "
-               "Example: double('A') is 65."),
+               "Converts to double precision. Char input gives character codes; a string or string array is "
+               "parsed as numbers element by element (NaN where the text is not a number or is <missing>). "
+               "Cells and structs cannot be converted. Example: double('A') is 65; double(\"2.5\") is 2.5."),
     "single": ("y = single(x)", "Converts to single precision (32-bit floating point)."),
     "logical": ("tf = logical(x)",
                 "Converts to logical: nonzero becomes true, zero becomes false. NaN input is an error."),
     "char": (["c = char(codes)", "c = char(str)", "c = char(C)", "c = char(a, b, ...)"],
-             "Makes a char array. Numbers are taken as character codes. A cell array or several text inputs "
-             "become rows of a char matrix, padded with spaces to equal length. Example: char(72, 105) is "
-             "a two-row char array; char([72 105]) is 'Hi'."),
+             "Makes a char array. Numbers are taken as character codes. A cell array, a string array or "
+             "several text inputs become rows of a char matrix, padded with spaces to equal length. "
+             "Example: char(72, 105) is a two-row char array; char([72 105]) is 'Hi'."),
     "cast": ("y = cast(x, classname)",
              "Converts x to the named class: 'double', 'single', 'logical' or an integer class."),
     "typecast": ("y = typecast(x, classname)",
-                 "Reinterpreting the bytes of an array as another type is not supported yet; calling it "
-                 "raises an error."),
+                 "Reinterprets the bytes of a real numeric scalar or vector as another numeric type ('double', "
+                 "'single' or an integer class) without changing the bits, using little-endian byte order. "
+                 "The total byte count must divide evenly into the new type. The result is a row, or a "
+                 "column for column input. Example: typecast(single(1), 'uint32') is 1065353216."),
     "full": ("A = full(S)", "Returns its input unchanged, since mylab has no separate sparse storage."),
     "sparse": (["S = sparse(A)", "S = sparse(m, n)", "S = sparse(i, j, v)", "S = sparse(i, j, v, m, n)"],
                "Accepted for compatibility but always produces an ordinary dense matrix. sparse(m, n) is an "
@@ -368,8 +375,8 @@ HELP: dict = {
             "elements. all([]) is true."),
     "cumsum": (["c = cumsum(x)", "c = cumsum(x, dim)", "c = cumsum(..., 'reverse')"],
                "Running total along the first dimension whose size is not 1, or along dim. 'reverse' "
-               "accumulates from the end. NaN flags are accepted but have no effect. "
-               "Example: cumsum([1 2 3]) is [1 3 6]."),
+               "accumulates from the end. Integer inputs keep their class and saturate. NaN flags are "
+               "accepted but have no effect. Example: cumsum([1 2 3]) is [1 3 6]."),
     "cumprod": (["c = cumprod(x)", "c = cumprod(x, dim)", "c = cumprod(..., 'reverse')"],
                 "Running product along the first dimension whose size is not 1, or along dim."),
     "cummax": (["c = cummax(x)", "c = cummax(x, dim)", "c = cummax(..., 'reverse')"],
@@ -415,8 +422,9 @@ HELP: dict = {
     "sort": (["B = sort(A)", "B = sort(A, dim)", "B = sort(..., 'descend')", "[B, idx] = sort(...)"],
              "Sorts in ascending order (or 'descend') along the first dimension whose size is not 1, or "
              "along dim. idx holds the original positions. Equal values keep their order; NaN goes last "
-             "when ascending and first when descending; complex values sort by magnitude. A cell array of "
-             "char vectors is sorted alphabetically. Example: sort([3 1 2]) is [1 2 3]."),
+             "when ascending and first when descending; complex values sort by magnitude. Cell arrays of "
+             "char vectors and string arrays are sorted alphabetically (by character code). "
+             "Example: sort([3 1 2]) is [1 2 3]."),
     "sortrows": (["B = sortrows(A)", "B = sortrows(A, cols)", "B = sortrows(A, 'descend')", "[B, idx] = sortrows(...)"],
                  "Sorts the rows of a matrix, comparing the first column, then the second for ties, and so "
                  "on. cols picks the columns to compare; a negative column number sorts that column in "
@@ -425,7 +433,8 @@ HELP: dict = {
                "The distinct values of x, sorted unless 'stable' is given (first-appearance order). The "
                "result is a row if x is a row, otherwise a column. ia and ic are index columns with "
                "u = x(ia) and x = u(ic); 'last' makes ia point to last occurrences. 'rows' finds distinct "
-               "rows. Also works on cell arrays of char vectors. Example: unique([3 1 3 2]) is [1 2 3]."),
+               "rows. Also works on cell arrays of char vectors and on string arrays. "
+               "Example: unique([3 1 3 2]) is [1 2 3]."),
     "union": (["c = union(a, b)", "c = union(..., 'stable')", "[c, ia, ib] = union(...)"],
               "Values found in a or b, without repeats, sorted unless 'stable' is given. The result is a "
               "row unless a is a column. Also accepts cell arrays of text. In mylab ia and ib list the "
@@ -442,8 +451,8 @@ HELP: dict = {
                "Accepts cell arrays of text. The 'rows' option is ignored."),
     "ismember": (["tf = ismember(a, s)", "[tf, loc] = ismember(a, s)"],
                  "True for each element of a that also occurs in s; loc gives the index of its first match "
-                 "in s, or 0. Works for numbers, and for text against a cell array of text. "
-                 "Example: ismember([1 5], [5 6]) is [false true]."),
+                 "in s, or 0. Works for numbers, and for text (char, string or string array) against a cell "
+                 "array or string array of text. Example: ismember([1 5], [5 6]) is [false true]."),
     # -- rearranging --------------------------------------------------------------------------
     "fliplr": ("B = fliplr(A)", "Reverses the order of the columns (left-right mirror). Works on cell arrays too."),
     "flipud": ("B = flipud(A)", "Reverses the order of the rows (up-down mirror). Works on cell arrays too."),
@@ -544,38 +553,42 @@ HELP: dict = {
                 "Evaluates text as a bracketed expression, so '1 2 3' gives [1 2 3] and '[1;2]' a column. "
                 "On failure returns [] and ok is false. Because the text is executed, prefer str2double "
                 "for untrusted input."),
-    "string": ("str = string(x)",
-               "Converts a char vector or a numeric scalar into a string scalar. Only scalars are "
-               "supported because mylab has no multi-element string arrays yet."),
-    "strlength": ("n = strlength(s)", "Number of characters in a char vector or string scalar."),
+    "string": (["str = string(x)", "str = string()"],
+               "Converts to string. A char row becomes a string scalar; a char matrix gives one string per "
+               "row; a cell array of text gives a string array of the same size; numbers are converted "
+               "element by element to their short text form, with NaN becoming <missing>. string() is the "
+               "empty string \"\". Example: string([1 2]) is [\"1\" \"2\"]."),
+    "strlength": ("n = strlength(s)",
+                  "Number of characters in a char vector or string scalar. For a string array or cell array "
+                  "of text, an array of lengths of the same size (NaN for <missing>)."),
     "newline": ("c = newline", "A char vector holding the line-feed character (code 10)."),
     "blanks": ("s = blanks(n)", "Char vector of n spaces."),
     # -- text: comparison and search ---------------------------------------------------------
     "strcmp": ("tf = strcmp(a, b)",
-               "True if two texts are identical (case-sensitive). Either input may be a cell array, giving "
-               "an element-wise logical array. Non-text inputs give false rather than an error."),
+               "True if two texts are identical (case-sensitive). Either input may be a cell array or string "
+               "array, giving an element-wise logical array. Non-text inputs give false rather than an error."),
     "strcmpi": ("tf = strcmpi(a, b)", "Like strcmp but ignores upper/lower case."),
     "strncmp": ("tf = strncmp(a, b, n)",
                 "True if the first n characters of two texts match (case-sensitive). Texts shorter than n "
                 "never match. Cell arrays compare element by element."),
     "strncmpi": ("tf = strncmpi(a, b, n)", "Like strncmp but ignores upper/lower case."),
-    "upper": ("t = upper(s)", "Converts text to upper case. Works on char arrays, strings and cell arrays of text."),
-    "lower": ("t = lower(s)", "Converts text to lower case. Works on char arrays, strings and cell arrays of text."),
+    "upper": ("t = upper(s)", "Converts text to upper case. Works on char arrays, strings, string arrays and cells."),
+    "lower": ("t = lower(s)", "Converts text to lower case. Works on char arrays, strings, string arrays and cells."),
     "strtrim": ("t = strtrim(s)",
-                "Removes leading and trailing whitespace (and null characters). Works on char, string and "
-                "cell arrays of text."),
+                "Removes leading and trailing whitespace (and null characters). Works on char arrays, "
+                "strings, string arrays and cell arrays of text."),
     "deblank": ("t = deblank(s)", "Removes trailing whitespace and null characters only."),
     "reverse": ("t = reverse(s)", "Reverses the order of the characters. Example: reverse('abc') is 'cba'."),
     "strrep": ("t = strrep(s, old, new)",
-               "Replaces every occurrence of old in s with new. s may be a cell array of text. "
+               "Replaces every occurrence of old in s with new. s may be a cell array or string array. "
                "Example: strrep('a-b-c', '-', '+') is 'a+b+c'."),
     "strfind": ("k = strfind(s, pattern)",
                 "Starting indices of every occurrence of pattern in s, overlapping ones included, as a row "
                 "vector ([] if none). For a cell array, returns a cell of index vectors. "
                 "Example: strfind('abcabc', 'bc') is [2 5]."),
     "contains": (["tf = contains(s, pattern)", "tf = contains(s, pattern, 'IgnoreCase', true)"],
-                 "True if s contains pattern anywhere. pattern may be a cell array, meaning any of them. "
-                 "s may be a cell array, giving a logical array."),
+                 "True if s contains pattern anywhere. pattern may be a cell or string array, meaning any of "
+                 "them. s may be a cell or string array, giving a logical array."),
     "startsWith": (["tf = startsWith(s, pattern)", "tf = startsWith(s, pattern, 'IgnoreCase', true)"],
                    "True if s begins with pattern (or any pattern in a cell array). Works element-wise on a "
                    "cell array s."),
@@ -586,10 +599,12 @@ HELP: dict = {
                  "Splits text into a 1-by-N cell array. By default it splits on whitespace, treating a run "
                  "of whitespace as one break. A delimiter (or a cell array of delimiters, with escapes such "
                  "as '\\t' allowed) splits at each occurrence, so adjacent delimiters give empty pieces. "
+                 "A string scalar input gives a column string array instead. "
                  "Example: strsplit('a,b', ',') is {'a', 'b'}."),
     "strjoin": (["s = strjoin(C)", "s = strjoin(C, delimiter)"],
-                "Joins the texts in a cell array into one char vector, separated by delimiter (a space by "
-                "default). Escapes such as '\\n' in the delimiter are expanded."),
+                "Joins the texts in a cell array or string array into one piece of text, separated by "
+                "delimiter (a space by default). Escapes such as '\\n' in the delimiter are expanded. Returns "
+                "a char vector for cell input and a string for string input."),
     "strcat": ("s = strcat(s1, s2, ...)",
                "Concatenates texts horizontally. Trailing whitespace of char inputs is removed first; "
                "strings keep theirs. If any input is a cell array the result is a cell array, joined "
@@ -618,15 +633,16 @@ HELP: dict = {
                    "t = regexprep(..., 'once')"],
                   "Replaces every match of a regular expression. In the replacement, $1, $2, ... insert "
                   "captured groups and $0 the whole match. 'once' replaces only the first match. s may be a "
-                  "cell array. Example: regexprep('abc', '(b)', '[$1]') is 'a[b]c'."),
+                  "cell array or string array. Example: regexprep('abc', '(b)', '[$1]') is 'a[b]c'."),
     # -- cell arrays --------------------------------------------------------------------------
     "cell": (["C = cell(n)", "C = cell(m, n)", "C = cell([m n])"],
              "Cell array whose cells all hold the empty matrix []. cell(n) is n-by-n."),
     "iscellstr": ("tf = iscellstr(C)",
                   "True if C is a cell array in which every cell holds a char vector (or empty char)."),
     "cellstr": ("C = cellstr(s)",
-                "Converts text to a cell array: each row of a char matrix becomes one cell (trailing blanks "
-                "removed), giving a column. A string becomes a 1-by-1 cell; a cell array is returned as is."),
+                "Converts text to a cell array of char vectors: each row of a char matrix becomes one cell "
+                "(trailing blanks removed), giving a column; a string array gives a cell array of the same "
+                "size (<missing> becomes ''); a cell array is returned as is."),
     "cell2mat": ("A = cell2mat(C)",
                  "Concatenates the contents of a cell array into one array, joining each row of cells side "
                  "by side and then stacking the rows. The pieces must fit together. "
@@ -794,9 +810,9 @@ HELP: dict = {
                  "differ from the architecture strings other implementations use."),
     "getenv": ("v = getenv(name)", "Value of an operating-system environment variable, or '' if it is not set."),
     "help": (["help name", "s = help(name)"],
-             "Shows the calling forms and a short description of a function. For functions in your own .m "
-             "files it shows the comment block at the top of the file. With an output the text is returned "
-             "instead of printed."),
+             "Shows the calling forms and a short description of a function. For functions and classdef "
+             "classes in your own .m files it shows the comment block at the top of the file. With an "
+             "output the text is returned instead of printed."),
     "doc": ("doc name", "Same as help: prints the help text in the command window (no browser is opened)."),
     # -- files and folders -----------------------------------------------------------------------
     "pwd": ("d = pwd", "Current working folder as a char vector."),
@@ -1185,3 +1201,533 @@ HELP.update({
 HELP["summary"] = ("summary(T)",
                    "Prints a short description of each table variable: its size and type, plus the minimum, "
                    "median and maximum of numeric variables.")
+
+# -- text toolbox functions (char, string, string array or cell array input) ----------------------
+_TEXT_IN = ("s may be a char vector, a string, a string array or a cell array of text; string input gives "
+            "string output.")
+HELP.update({
+    "split": (["parts = split(s)", "parts = split(s, delimiter)", "parts = split(..., 'CollapseDelimiters', tf)"],
+              "Splits text at whitespace, or at a delimiter (a cell or string array lists several). Runs of "
+              "delimiters count as one break unless 'CollapseDelimiters' is false. One input text gives a "
+              "column of pieces (a cell of char vectors, or a string array for string input); a cell array "
+              "whose elements all split into the same number of pieces gives a matrix. "
+              "Example: split(\"a,b\", \",\") is [\"a\"; \"b\"]."),
+    "join": (["s = join(C)", "s = join(C, delimiter)", "s = join(C, delimiter, dim)"],
+             "Joins text elements with a delimiter (a space by default). delimiter may also be a list with "
+             "one entry fewer than the items. A vector of text gives one joined result; for a matrix, each "
+             "row is joined (dim = 2, the default) or each column (dim = 1). For cell input the result is "
+             "still a cell array, e.g. join({'a', 'b'}, '-') is {'a-b'}; string input gives strings. A char "
+             "vector or string scalar is returned unchanged."),
+    "compose": (["str = compose(fmt)", "str = compose(fmt, A)", "str = compose(fmt, A1, A2, ...)"],
+                "Formats data into text with sprintf-style conversions, giving one piece of text per row "
+                "rather than one long result. With a single array, each row is fed to the format, using as "
+                "many columns per piece as the format has conversions; with several arrays, matching "
+                "elements are formatted together. Returns a cell array of char vectors, or a string array "
+                "when fmt is a string. Example: compose('%d-%d', [1 2; 3 4]) is {'1-2'; '3-4'}."),
+    "replace": ("t = replace(s, old, new)",
+                "Replaces every occurrence of the literal text old with new (no regular expressions). old may "
+                "list several patterns, with new either one replacement for all or one per pattern; longer "
+                f"patterns win where they overlap. {_TEXT_IN}"),
+    "erase": ("t = erase(s, pattern)",
+              f"Deletes every occurrence of pattern (or of each pattern in a list) from the text. {_TEXT_IN} "
+              "Example: erase('a-b-c', '-') is 'abc'."),
+    "count": (["n = count(s, pattern)", "n = count(s, pattern, 'IgnoreCase', true)"],
+              "Number of non-overlapping occurrences of pattern (or of any pattern in a list) in s. A cell "
+              "array of text gives an array of counts. Example: count('banana', 'an') is 2."),
+    "extractBefore": (["t = extractBefore(s, pattern)", "t = extractBefore(s, pos)"],
+                      "Text before the first occurrence of pattern, or before character position pos. If the "
+                      f"pattern does not occur the result is empty text. {_TEXT_IN}"),
+    "extractAfter": (["t = extractAfter(s, pattern)", "t = extractAfter(s, pos)"],
+                     "Text after the first occurrence of pattern, or after character position pos. If the "
+                     f"pattern does not occur the result is empty text. {_TEXT_IN}"),
+    "extractBetween": (["t = extractBetween(s, startPat, endPat)", "t = extractBetween(s, startPos, endPos)",
+                        "t = extractBetween(..., 'Boundaries', 'inclusive')"],
+                       "Text between start and end markers (excluded unless 'Boundaries' is 'inclusive'), or "
+                       "between two character positions (both included). For a char vector every match is "
+                       "returned as a column cell array; for a cell array each element must contain exactly "
+                       "one match. Example: extractBetween('a[b]c[d]', '[', ']') is {'b'; 'd'}."),
+    "insertAfter": (["t = insertAfter(s, pattern, new)", "t = insertAfter(s, pos, new)"],
+                    "Inserts new after every occurrence of pattern, or after character position pos. "
+                    f"{_TEXT_IN}"),
+    "insertBefore": (["t = insertBefore(s, pattern, new)", "t = insertBefore(s, pos, new)"],
+                     "Inserts new before every occurrence of pattern, or before character position pos. "
+                     f"{_TEXT_IN}"),
+    "pad": (["t = pad(s)", "t = pad(s, n)", "t = pad(s, side)", "t = pad(s, n, side, ch)"],
+            "Pads text with spaces (or the single character ch) to length n. side is 'right' (default), "
+            "'left' or 'both'. Without n, the elements of a cell or string array are padded to the length "
+            "of the longest one. Text already longer than n is left alone. Example: pad('ab', 5, 'left', '*') "
+            "is '***ab'."),
+    "strip": (["t = strip(s)", "t = strip(s, side)", "t = strip(s, side, ch)", "t = strip(s, ch)"],
+              "Removes leading and trailing whitespace, or the single character ch. side is 'both' "
+              f"(default), 'left' or 'right'. {_TEXT_IN}"),
+    "strjust": (["T = strjust(C)", "T = strjust(C, mode)"],
+                "Moves the text in each row of a char matrix to the 'right' (default), 'left' or 'center', "
+                "keeping the width. Only char arrays are accepted; strings and cell arrays are an error."),
+    "sscanf": (["A = sscanf(s, fmt)", "A = sscanf(s, fmt, sz)", "[A, count, errmsg, next] = sscanf(...)"],
+               "Reads values from text according to a format, the reverse of sprintf. Supports %d, %i, %u, "
+               "%o, %x, %f, %e, %g, %s, %c and %[...] with optional field width and * to skip a field; the "
+               "format repeats until the text is used up or does not match. Numbers come back as a column; "
+               "if everything read is text the result is a char row. sz (n, Inf or [m n]) shapes the output, "
+               "filling columns first. count is the number of fields read; next is always one past the end. "
+               "Example: sscanf('3 4 5', '%d') is [3; 4; 5]."),
+})
+
+# -- indexing, array and cell helpers -----------------------------------------------------------
+HELP.update({
+    "sub2ind": ("ind = sub2ind(sz, r, c, ...)",
+                "Converts subscripts into linear indices for an array of size sz (column-major numbering). "
+                "Subscript arrays must have matching sizes; scalars are expanded. With fewer subscripts than "
+                "dimensions the last one spans the remaining dimensions. Out-of-range subscripts are an "
+                "error. Example: sub2ind([3 4], 2, 3) is 8."),
+    "ind2sub": (["[r, c] = ind2sub(sz, ind)", "[d1, d2, ..., dn] = ind2sub(sz, ind)"],
+                "Converts linear indices into subscripts for an array of size sz. With fewer outputs than "
+                "dimensions, the last output counts through the remaining dimensions. "
+                "Example: [r, c] = ind2sub([3 4], 8) gives r = 2, c = 3."),
+    "perms": ("P = perms(v)",
+              "Every ordering of the elements of v, one per row, n! rows in total, starting with the reverse "
+              "of v. Also works on cell arrays. Limited to 11 elements. Example: perms([1 2]) is [2 1; 1 2]."),
+    "bsxfun": ("C = bsxfun(f, A, B)",
+               "Expands singleton dimensions of A and B so their sizes match, then calls the binary function "
+               "f once with the expanded arrays. Plain operators already expand like this, e.g. A - mean(A)."),
+    "idivide": (["C = idivide(a, b)", "C = idivide(a, b, opt)"],
+                "Integer division with a chosen rounding: 'fix' (toward zero, the default), 'floor', 'ceil' or "
+                "'round'. At least one input must be an integer type (two integer inputs must share a class) "
+                "and the result has that class. Example: idivide(int32(7), int32(2)) is 3."),
+    "vecnorm": (["n = vecnorm(A)", "n = vecnorm(A, p)", "n = vecnorm(A, p, dim)"],
+                "p-norm (default 2, the Euclidean length) of each column of A, or of each vector along dim; "
+                "a vector input gives a single norm. p = Inf gives the largest magnitude. "
+                "Example: vecnorm([3 0; 4 1]) is [5 1]."),
+    "nthargout": (["v = nthargout(n, f, x1, ...)", "v = nthargout(n, nout, f, x1, ...)"],
+                  "Calls f with the given inputs and returns only its n-th output. A vector n returns several "
+                  "outputs as a cell array; nout sets how many outputs f is asked for. "
+                  "Example: nthargout(2, @max, [3 9 2]) is 2."),
+    "mat2cell": (["C = mat2cell(A, r)", "C = mat2cell(A, r, c)"],
+                 "Cuts a 2-D array into blocks and returns them in a cell array. r lists the block heights and "
+                 "c the block widths; they must add up to the size of A (c defaults to all columns). "
+                 "Example: mat2cell(magic(4), [2 2], [3 1]) gives a 2-by-2 cell."),
+    "celldisp": (["celldisp(C)", "celldisp(C, name)"],
+                 "Prints the contents of every cell, labelled like C{1} or C{2,3}, descending into nested "
+                 "cell arrays. name replaces the label 'C'."),
+    "isdiag": ("tf = isdiag(A)", "True if every entry of the numeric matrix A off the main diagonal is zero."),
+    "istriu": ("tf = istriu(A)", "True if every entry below the main diagonal of the numeric matrix A is zero."),
+    "istril": ("tf = istril(A)", "True if every entry above the main diagonal of the numeric matrix A is zero."),
+    "issymmetric": (["tf = issymmetric(A)", "tf = issymmetric(A, 'skew')", "tf = issymmetric(A, tol)"],
+                    "True if the square matrix A equals its transpose ('skew': equals minus its transpose). "
+                    "With tol, small differences relative to the size of A are allowed."),
+    "ishermitian": (["tf = ishermitian(A)", "tf = ishermitian(A, 'skew')", "tf = ishermitian(A, tol)"],
+                    "True if the square matrix A equals its conjugate transpose A' ('skew': equals -A'). With "
+                    "tol, small differences relative to the size of A are allowed."),
+    "validateattributes": ("validateattributes(A, classes, attributes, funcname, varname, argindex)",
+                           "Checks an input and throws a descriptive error if it fails. classes is a cell "
+                           "array of allowed class names (or {} for any; 'numeric', 'float' and 'integer' "
+                           "work as groups). attributes is a cell array of tests such as 'scalar', 'vector', "
+                           "'row', 'column', '2d', 'square', 'nonempty', 'real', 'finite', 'nonnan', "
+                           "'integer', 'positive', 'nonnegative', 'nonzero', 'binary', 'even', 'odd', "
+                           "'increasing', 'nondecreasing', or pairs like '>', 0 / 'numel', 3 / "
+                           "'size', [NaN 2] (NaN = any). funcname, varname and argindex are optional and "
+                           "only shape the message."),
+    "validatestring": (["s = validatestring(str, options)", "s = validatestring(str, options, funcname, ...)"],
+                       "Matches str against a list of allowed texts, ignoring case and accepting an "
+                       "unambiguous leading part, and returns the full matching option. No match or an "
+                       "ambiguous match is an error. Example: validatestring('lin', {'linear', 'cubic'}) "
+                       "is 'linear'."),
+})
+
+# -- angles, coordinates and special functions ----------------------------------------------------
+HELP.update({
+    "wrapTo360": ("a = wrapTo360(a)", "Wraps angles in degrees into [0, 360]; positive multiples of 360 map to 360."),
+    "wrapTo180": ("a = wrapTo180(a)", "Wraps angles in degrees into [-180, 180]; values already in range are kept."),
+    "wrapTo2Pi": ("a = wrapTo2Pi(a)",
+                  "Wraps angles in radians into [0, 2*pi]; positive multiples of 2*pi map to 2*pi."),
+    "wrapToPi": ("a = wrapToPi(a)", "Wraps angles in radians into [-pi, pi]; values already in range are kept."),
+    "cart2pol": (["[theta, rho] = cart2pol(x, y)", "[theta, rho, z] = cart2pol(x, y, z)", "P = cart2pol(C)"],
+                 "Converts Cartesian coordinates to polar (or cylindrical): theta is the angle in radians and "
+                 "rho the distance from the origin. A single matrix with 2 or 3 columns may be given and, with "
+                 "one output, a matrix of the same layout is returned."),
+    "pol2cart": (["[x, y] = pol2cart(theta, rho)", "[x, y, z] = pol2cart(theta, rho, z)", "C = pol2cart(P)"],
+                 "Converts polar (or cylindrical) coordinates, angle in radians, to Cartesian."),
+    "cart2sph": (["[az, el, r] = cart2sph(x, y, z)", "S = cart2sph(C)"],
+                 "Converts Cartesian coordinates to spherical: azimuth in the x-y plane, elevation from that "
+                 "plane (both in radians) and radius."),
+    "sph2cart": (["[x, y, z] = sph2cart(az, el, r)", "C = sph2cart(S)"],
+                 "Converts spherical coordinates (azimuth, elevation in radians, radius) to Cartesian."),
+    "besselj": (["J = besselj(nu, z)", "J = besselj(nu, z, 1)"],
+                "Bessel function of the first kind J_nu(z), element by element. The third argument 1 returns "
+                "the exponentially scaled version. Results may be complex for negative z."),
+    "bessely": (["Y = bessely(nu, z)", "Y = bessely(nu, z, 1)"],
+                "Bessel function of the second kind Y_nu(z). Negative z gives complex results; 1 scales."),
+    "besseli": (["I = besseli(nu, z)", "I = besseli(nu, z, 1)"],
+                "Modified Bessel function of the first kind I_nu(z); 1 returns the exponentially scaled form."),
+    "besselk": (["K = besselk(nu, z)", "K = besselk(nu, z, 1)"],
+                "Modified Bessel function of the second kind K_nu(z); 1 returns the exponentially scaled form."),
+    "airy": (["W = airy(z)", "W = airy(k, z)", "W = airy(k, z, 1)"],
+             "Airy functions: k = 0 gives Ai (default), 1 its derivative, 2 Bi, 3 the derivative of Bi. The "
+             "third argument 1 returns the exponentially scaled version."),
+    "ellipke": (["K = ellipke(m)", "[K, E] = ellipke(m)"],
+                "Complete elliptic integrals of the first (K) and second (E) kind for parameter m in [0, 1]. "
+                "A tolerance argument is not supported."),
+    "expint": ("y = expint(x)",
+               "Exponential integral E1(x), the integral of exp(-t)/t from x to Inf. Negative real x gives "
+               "complex results."),
+    "gammainc": (["y = gammainc(x, a)", "y = gammainc(x, a, 'upper')"],
+                 "Regularized incomplete gamma function: the lower tail P(a, x) by default, or the upper tail "
+                 "1 - P with 'upper'. Note that x comes first. a must be non-negative."),
+    "betainc": (["y = betainc(x, a, b)", "y = betainc(x, a, b, 'upper')"],
+                "Regularized incomplete beta function for x in [0, 1], lower tail by default or upper tail "
+                "with 'upper'."),
+    "psi": (["y = psi(x)", "y = psi(k, x)"],
+            "Digamma function, the derivative of gammaln. psi(k, x) gives the k-th derivative of digamma "
+            "(polygamma), for non-negative integer k."),
+})
+
+# -- signal processing ----------------------------------------------------------------------------
+HELP.update({
+    "fft": (["Y = fft(x)", "Y = fft(x, n)", "Y = fft(x, n, dim)"],
+            "Fast Fourier transform (discrete Fourier transform) along the first dimension whose size is not "
+            "1, or along dim; each column of a matrix is transformed. n zero-pads or truncates to n points. "
+            "The result is always complex; abs(Y) is the amplitude spectrum. "
+            "Example: fft([1 0 0 0]) is [1 1 1 1]."),
+    "ifft": (["x = ifft(Y)", "x = ifft(Y, n)", "x = ifft(Y, n, dim)", "x = ifft(..., 'symmetric')"],
+             "Inverse fast Fourier transform. The result is returned as real when its imaginary parts are "
+             "negligible; 'symmetric' always returns the real part."),
+    "fft2": (["Y = fft2(X)", "Y = fft2(X, m, n)", "Y = fft2(X, [m n])"],
+             "Two-dimensional fast Fourier transform of a matrix, optionally padded or cropped to m-by-n."),
+    "ifft2": (["X = ifft2(Y)", "X = ifft2(Y, m, n)", "X = ifft2(..., 'symmetric')"],
+              "Two-dimensional inverse FFT; real output when the imaginary parts are negligible or with "
+              "'symmetric'."),
+    "fftshift": (["Y = fftshift(X)", "Y = fftshift(X, dim)"],
+                 "Swaps the halves of a spectrum so the zero-frequency term sits in the middle, which suits "
+                 "plotting fft output against centred frequencies."),
+    "ifftshift": (["X = ifftshift(Y)", "X = ifftshift(Y, dim)"], "Undoes fftshift (they differ for odd lengths)."),
+    "nextpow2": ("p = nextpow2(n)",
+                 "Smallest integer p with 2^p >= abs(n), element by element; handy for choosing an FFT length. "
+                 "Example: nextpow2(100) is 7."),
+    "filtfilt": ("y = filtfilt(b, a, x)",
+                 "Zero-phase digital filtering: runs the filter forward and then backward, so the output has "
+                 "no phase delay and the filter's effect is squared. Works along a row vector or down columns. "
+                 "The data must be longer than three times the filter order."),
+    "butter": (["[b, a] = butter(n, Wn)", "[b, a] = butter(n, Wn, ftype)", "[z, p, k] = butter(...)",
+                "[b, a] = butter(n, Wn, 's')"],
+               "Butterworth filter design (maximally flat IIR filter) of order n. Wn is the cutoff as a "
+               "fraction of the Nyquist frequency (between 0 and 1); a two-element Wn designs a band-pass "
+               "filter. ftype is 'low', 'high', 'bandpass' or 'stop'. 's' designs an analog filter with Wn in "
+               "rad/s. Example: [b, a] = butter(4, 0.2) is a 4th-order low-pass filter for use with filter."),
+    "cheby1": (["[b, a] = cheby1(n, Rp, Wn)", "[b, a] = cheby1(n, Rp, Wn, ftype)", "[z, p, k] = cheby1(...)"],
+               "Chebyshev Type I filter design: order n, Rp decibels of ripple allowed in the passband, and "
+               "a sharper roll-off than Butterworth. Wn and ftype work as in butter."),
+    "freqz": (["h = freqz(b, a)", "[h, w] = freqz(b, a, n)", "[h, f] = freqz(b, a, n, fs)", "h = freqz(b, a, w)",
+               "[h, w] = freqz(..., 'whole')"],
+              "Frequency response of a digital filter at n points (default 512) from 0 up to the Nyquist "
+              "frequency ('whole' goes around the full circle). w is in radians per sample, or f in Hz when "
+              "the sample rate fs is given. A vector of frequencies may be given instead of n. No plot is "
+              "drawn; plot abs(h) yourself."),
+    "hamming": (["w = hamming(n)", "w = hamming(n, 'periodic')"], "Hamming window of length n as a column vector."),
+    "hann": (["w = hann(n)", "w = hann(n, 'periodic')"],
+             "Hann (raised-cosine) window of length n as a column vector; the end points are zero."),
+    "hanning": (["w = hanning(n)", "w = hanning(n, 'periodic')"],
+                "Hann window variant without the zero end points, as a column vector."),
+    "blackman": (["w = blackman(n)", "w = blackman(n, 'periodic')"], "Blackman window of length n as a column vector."),
+    "rectwin": ("w = rectwin(n)", "Rectangular window: a column of n ones."),
+    "kaiser": (["w = kaiser(n)", "w = kaiser(n, beta)"],
+               "Kaiser window of length n as a column; larger beta (default 0.5) gives lower side lobes."),
+    "xcorr": (["r = xcorr(x)", "r = xcorr(x, y)", "r = xcorr(..., maxlag)", "r = xcorr(..., scaleopt)",
+               "[r, lags] = xcorr(...)"],
+              "Cross-correlation of two vectors (autocorrelation with one input) at every lag from -(N-1) to "
+              "N-1, or only up to maxlag. scaleopt is 'none' (default), 'biased', 'unbiased' or 'coeff' "
+              "(peak 1 at lag 0 for autocorrelation). A shorter vector is zero-padded. Only vectors are "
+              "supported."),
+    "periodogram": (["pxx = periodogram(x)", "pxx = periodogram(x, window)", "pxx = periodogram(x, window, nfft)",
+                     "[pxx, f] = periodogram(x, window, nfft, fs)", "[pxx, f] = periodogram(..., range)"],
+                    "Power spectral density estimate of a signal vector from its squared FFT magnitude. The "
+                    "window defaults to rectangular, nfft to max(256, next power of 2). For real signals the "
+                    "result is one-sided unless range is 'twosided' or 'centered'. f is in rad/sample, or Hz "
+                    "when fs is given. No plot is drawn."),
+    "pwelch": (["pxx = pwelch(x)", "pxx = pwelch(x, window)", "pxx = pwelch(x, window, noverlap)",
+                "pxx = pwelch(x, window, noverlap, nfft)", "[pxx, f] = pwelch(x, window, noverlap, nfft, fs)"],
+               "Welch power spectral density estimate: averages windowed periodograms of overlapping "
+               "segments, giving a smoother spectrum than periodogram. Defaults: Hamming window of about "
+               "length/4.5 samples, 50% overlap, nfft max(256, next power of 2). window may be a length or a "
+               "vector. One-sided for real signals; no plot is drawn."),
+    "findpeaks": (["pks = findpeaks(y)", "[pks, locs] = findpeaks(y)", "[pks, locs] = findpeaks(y, x)",
+                   "[...] = findpeaks(..., Name, Value)"],
+                  "Finds local maxima (peaks) of a vector: points higher than both neighbours, with a flat "
+                  "top reported at its first sample; the end points are never peaks. locs are indices, or "
+                  "positions from x (a scalar x is a sample rate). Options: MinPeakHeight, MinPeakProminence, "
+                  "MinPeakDistance, Threshold, SortStr ('ascend'/'descend') and NPeaks. Widths, prominences "
+                  "and plotting are not supported. Example: findpeaks([1 3 2 5 1]) is [3 5]."),
+    "resample": (["y = resample(x, p, q)", "y = resample(x, p, q, n)", "y = resample(x, p, q, n, beta)"],
+                 "Changes the sample rate by the factor p/q, with an anti-aliasing low-pass FIR filter "
+                 "(Kaiser window; n sets its length, beta its shape). Works along a row vector or down columns."),
+    "decimate": (["y = decimate(x, r)", "y = decimate(x, r, n)", "y = decimate(x, r, 'fir')"],
+                 "Reduces the sample rate by the integer factor r after low-pass filtering: by default an "
+                 "8th-order Chebyshev Type I filter applied forward and backward (zero phase), or a 30-tap "
+                 "FIR filter with 'fir'. n changes the filter order."),
+    "interpft": (["y = interpft(x, n)", "y = interpft(x, n, dim)"],
+                 "Resamples periodic data to n points by zero-padding (or trimming) its Fourier transform."),
+    "sinc": ("y = sinc(x)", "Normalized sinc function sin(pi*x)./(pi*x), with sinc(0) = 1."),
+    "sawtooth": (["y = sawtooth(t)", "y = sawtooth(t, width)"],
+                 "Sawtooth wave with period 2*pi running between -1 and 1. width (0..1, default 1) sets where "
+                 "in the period the peak is; 0.5 gives a triangle wave."),
+    "square": (["y = square(t)", "y = square(t, duty)"],
+               "Square wave with period 2*pi taking the values +1 and -1; duty is the percentage of each "
+               "period spent at +1 (default 50)."),
+    "chirp": (["y = chirp(t, f0, t1, f1)", "y = chirp(t, f0, t1, f1, method)", "y = chirp(t, f0, t1, f1, method, phi)"],
+              "Swept-frequency cosine whose frequency moves from f0 at time 0 to f1 at time t1 (defaults 0, "
+              "1 and 100 Hz). method is 'linear' (default), 'quadratic' or 'logarithmic'; phi is the initial "
+              "phase in degrees."),
+    "medfilt1": (["y = medfilt1(x)", "y = medfilt1(x, n)", "y = medfilt1(x, n, [], dim)", "y = medfilt1(..., padding)",
+                  "y = medfilt1(..., nanflag)"],
+                 "One-dimensional median filter of order n (default 3): each output is the median of a window "
+                 "around the sample, which removes spikes while keeping edges. padding is 'zeropad' (default) "
+                 "or 'truncate'; 'omitnan' ignores NaN."),
+    "sgolayfilt": (["y = sgolayfilt(x, order, framelen)", "y = sgolayfilt(x, order, framelen, [], dim)"],
+                   "Savitzky-Golay smoothing filter: fits a polynomial of the given order to each window of "
+                   "framelen samples (odd, larger than order). Weights are not supported."),
+    "detrend": (["y = detrend(x)", "y = detrend(x, n)", "y = detrend(x, 'constant')", "y = detrend(x, 'linear')"],
+                "Removes the best-fit straight line (default), mean ('constant') or polynomial of degree n from "
+                "a vector or from each column of a matrix. Breakpoints are not supported."),
+    "unwrap": (["q = unwrap(p)", "q = unwrap(p, tol)", "q = unwrap(p, tol, dim)"],
+               "Removes jumps larger than tol (default pi) from phase angles in radians by adding multiples of "
+               "2*pi, giving a continuous phase curve."),
+    "db2mag": ("m = db2mag(d)", "Converts decibels to amplitude ratio: 10.^(d/20)."),
+    "mag2db": ("d = mag2db(m)", "Converts amplitude ratio to decibels: 20*log10(m). Negative values give NaN."),
+    "db2pow": ("p = db2pow(d)", "Converts decibels to power ratio: 10.^(d/10)."),
+    "pow2db": ("d = pow2db(p)", "Converts power ratio to decibels: 10*log10(p). Negative values are an error."),
+    "hilbert": (["z = hilbert(x)", "z = hilbert(x, n)"],
+                "Analytic signal of real data: the real part is x and the imaginary part its Hilbert "
+                "transform, so abs(z) is the instantaneous amplitude. Works along a row vector or down "
+                "columns; any imaginary part of x is ignored."),
+    "envelope": (["up = envelope(x)", "[up, lo] = envelope(x)"],
+                 "Upper and lower envelopes of a signal from the magnitude of its analytic signal, centred on "
+                 "the mean. Only the 'analytic' method is supported; a window length argument is ignored."),
+})
+
+# -- probability distributions --------------------------------------------------------------------
+_UPPER = "Add 'upper' as the last argument to get the upper tail 1 - P."
+HELP.update({
+    "normpdf": (["y = normpdf(x)", "y = normpdf(x, mu, sigma)"],
+                "Normal (Gaussian) probability density at x, with mean mu (default 0) and standard deviation "
+                "sigma (default 1). Inputs expand against scalars. sigma <= 0 gives NaN."),
+    "normcdf": (["p = normcdf(x)", "p = normcdf(x, mu, sigma)", "p = normcdf(..., 'upper')"],
+                "Normal cumulative distribution function: the probability that a value is at most x. Defaults "
+                "mu = 0, sigma = 1. 'upper' gives the accurate upper tail. Example: normcdf(0) is 0.5."),
+    "norminv": (["x = norminv(p)", "x = norminv(p, mu, sigma)"],
+                "Inverse of normcdf (normal quantile). Example: norminv(0.975) is about 1.96."),
+    "normrnd": (["r = normrnd(mu, sigma)", "r = normrnd(mu, sigma, m, n, ...)", "r = normrnd(mu, sigma, [m n])"],
+                "Normally distributed random numbers with the given mean and standard deviation, shaped like "
+                "the parameters or by the size arguments. Uses the generator controlled by rng."),
+    "unifpdf": (["y = unifpdf(x)", "y = unifpdf(x, a, b)"],
+                "Density of the continuous uniform distribution on [a, b] (default [0, 1])."),
+    "unifcdf": (["p = unifcdf(x)", "p = unifcdf(x, a, b)"],
+                f"Cumulative probability of the uniform distribution on [a, b] (default [0, 1]). {_UPPER}"),
+    "unifrnd": (["r = unifrnd(a, b)", "r = unifrnd(a, b, m, n, ...)"], "Uniform random numbers on [a, b]."),
+    "exppdf": (["y = exppdf(x)", "y = exppdf(x, mu)"],
+               "Exponential density with mean mu (default 1); note mu is the mean, not the rate."),
+    "expcdf": (["p = expcdf(x)", "p = expcdf(x, mu)"],
+               f"Exponential cumulative probability with mean mu (default 1). {_UPPER}"),
+    "exprnd": (["r = exprnd(mu)", "r = exprnd(mu, m, n, ...)"], "Exponential random numbers with mean mu."),
+    "binopdf": ("y = binopdf(x, n, p)",
+                "Binomial probability of exactly x successes in n trials with success probability p. "
+                "Example: binopdf(1, 2, 0.5) is 0.5."),
+    "binocdf": ("y = binocdf(x, n, p)", f"Binomial probability of at most x successes in n trials. {_UPPER}"),
+    "binornd": (["r = binornd(n, p)", "r = binornd(n, p, m, k, ...)"],
+                "Binomial random counts for n trials with probability p."),
+    "poisspdf": ("y = poisspdf(x, lambda)", "Poisson probability of exactly x events when the mean count is lambda."),
+    "poisscdf": ("y = poisscdf(x, lambda)", f"Poisson probability of at most x events with mean lambda. {_UPPER}"),
+    "poissrnd": (["r = poissrnd(lambda)", "r = poissrnd(lambda, m, n, ...)"],
+                 "Poisson random counts with mean lambda."),
+    "tpdf": ("y = tpdf(x, nu)", "Student's t density with nu degrees of freedom."),
+    "tcdf": ("p = tcdf(x, nu)", f"Student's t cumulative probability with nu degrees of freedom. {_UPPER}"),
+    "tinv": ("x = tinv(p, nu)",
+             "Inverse of tcdf (t quantile), used for confidence intervals. Example: tinv(0.975, 10) is about 2.228."),
+    "chi2pdf": ("y = chi2pdf(x, nu)", "Chi-square density with nu degrees of freedom."),
+    "chi2cdf": ("p = chi2cdf(x, nu)", f"Chi-square cumulative probability with nu degrees of freedom. {_UPPER}"),
+    "chi2inv": ("x = chi2inv(p, nu)", "Inverse of chi2cdf (chi-square quantile)."),
+    "fpdf": ("y = fpdf(x, nu1, nu2)", "F distribution density with nu1 and nu2 degrees of freedom."),
+    "fcdf": ("p = fcdf(x, nu1, nu2)", f"F distribution cumulative probability. {_UPPER}"),
+    "finv": ("x = finv(p, nu1, nu2)", "Inverse of fcdf (F quantile)."),
+    "gampdf": (["y = gampdf(x, a)", "y = gampdf(x, a, b)"], "Gamma density with shape a and scale b (default 1)."),
+    "gamcdf": (["p = gamcdf(x, a)", "p = gamcdf(x, a, b)"],
+               f"Gamma cumulative probability with shape a and scale b (default 1). {_UPPER}"),
+    "betapdf": ("y = betapdf(x, a, b)", "Beta distribution density on [0, 1] with shape parameters a and b."),
+    "betacdf": ("p = betacdf(x, a, b)", f"Beta distribution cumulative probability. {_UPPER}"),
+    "randsample": (["y = randsample(n, k)", "y = randsample(population, k)", "y = randsample(..., replace)",
+                    "y = randsample(n, k, true, w)"],
+                   "Random sample of k values from 1..n or from the elements of a population vector, without "
+                   "replacement unless replace is true. Weights w make the draw weighted (and with replacement "
+                   "unless replace is given as false). Uses the generator controlled by rng."),
+})
+
+# -- descriptive statistics -----------------------------------------------------------------------
+HELP.update({
+    "prctile": (["q = prctile(x, p)", "q = prctile(x, p, dim)"],
+                "Percentiles of the data for percentages p (0..100), along the first dimension whose size is "
+                "not 1 or along dim; NaN values are ignored. Sorted values are treated as sitting at "
+                "percentages 100*(i-0.5)/n with linear interpolation between them. "
+                "Example: prctile([1 2 3 4], 50) is 2.5."),
+    "quantile": (["q = quantile(x, p)", "q = quantile(x, p, dim)"],
+                 "Quantiles for probabilities p (0..1), computed the same way as prctile."),
+    "iqr": (["r = iqr(x)", "r = iqr(x, dim)"],
+            "Interquartile range: the 75th minus the 25th percentile, a spread measure robust to outliers."),
+    "mad": (["y = mad(x)", "y = mad(x, flag)", "y = mad(x, flag, dim)"],
+            "Mean absolute deviation from the mean (flag 0, default) or median absolute deviation from the "
+            "median (flag 1). NaN values are ignored."),
+    "zscore": (["z = zscore(x)", "z = zscore(x, flag)", "z = zscore(x, flag, dim)", "[z, mu, sigma] = zscore(...)"],
+               "Standardizes data: subtracts the mean and divides by the standard deviation (N-1 normalization, "
+               "or N with flag 1) along the first dimension whose size is not 1. Constant data gives zeros."),
+    "skewness": (["y = skewness(x)", "y = skewness(x, flag)", "y = skewness(x, flag, dim)"],
+                 "Sample skewness, a measure of asymmetry (0 for symmetric data). flag 1 (default) gives the "
+                 "plain moment estimate, flag 0 the bias-corrected one. NaN values are ignored."),
+    "kurtosis": (["k = kurtosis(x)", "k = kurtosis(x, flag)", "k = kurtosis(x, flag, dim)"],
+                 "Sample kurtosis, a measure of how heavy the tails are; a normal distribution gives 3 (this is "
+                 "not the excess kurtosis). flag 0 applies the bias correction. NaN values are ignored."),
+    "cov": (["C = cov(x)", "C = cov(X)", "C = cov(x, y)", "C = cov(..., w)", "C = cov(..., 'omitrows')"],
+            "Covariance. For a vector, the variance; for a matrix whose columns are variables, the covariance "
+            "matrix; for two vectors, their 2-by-2 covariance matrix. w = 1 normalizes by N instead of N-1. "
+            "'omitrows' drops rows containing NaN."),
+    "corrcoef": (["R = corrcoef(X)", "R = corrcoef(x, y)", "[R, P] = corrcoef(...)"],
+                 "Pearson correlation coefficients between the columns of X (or between x and y), with ones on "
+                 "the diagonal. P holds p-values for testing zero correlation. Name-value options are ignored."),
+    "corr": (["rho = corr(X)", "rho = corr(X, Y)", "rho = corr(..., 'Type', 'Spearman')", "[rho, pval] = corr(...)"],
+             "Linear (Pearson, default) or rank (Spearman) correlation between the columns of X, or between "
+             "each column of X and each column of Y. Kendall's tau is not supported."),
+    "nanmean": (["m = nanmean(x)", "m = nanmean(x, dim)"],
+                "Mean that ignores NaN values; same as mean(..., 'omitnan')."),
+    "nansum": (["s = nansum(x)", "s = nansum(x, dim)"], "Sum that ignores NaN values; same as sum(..., 'omitnan')."),
+    "nanstd": (["s = nanstd(x)", "s = nanstd(x, flag)", "s = nanstd(x, flag, dim)"],
+               "Standard deviation that ignores NaN values; flag 1 normalizes by N instead of N-1."),
+    "nanmax": (["m = nanmax(x)", "[m, i] = nanmax(x)", "m = nanmax(x, [], dim)", "m = nanmax(a, b)"],
+               "Maximum that ignores NaN values, like max."),
+    "nanmin": (["m = nanmin(x)", "[m, i] = nanmin(x)", "m = nanmin(x, [], dim)", "m = nanmin(a, b)"],
+               "Minimum that ignores NaN values, like min."),
+    "histc": (["n = histc(x, edges)", "n = histc(x, edges, dim)", "[n, bin] = histc(...)"],
+              "Counts values falling in each interval edges(k) <= x < edges(k+1); the last count is for values "
+              "equal to the last edge. bin gives each value's interval (0 if outside). Older function; "
+              "histcounts is usually more convenient."),
+    "tabulate": (["tabulate(x)", "T = tabulate(x)"],
+                 "Frequency table of the values in x with columns Value, Count and Percent. For positive "
+                 "integers every value from 1 to max(x) is listed; text in a cell array gives a cell result. "
+                 "Without an output the table is printed."),
+    "movmean": (["M = movmean(x, k)", "M = movmean(x, [kb kf])", "M = movmean(..., dim)", "M = movmean(..., 'omitnan')",
+                 "M = movmean(..., 'Endpoints', e)"],
+                "Moving (rolling, sliding-window) average over windows of k samples centred on each point "
+                "(for even k, one more sample before than after), or kb before and kf after. Near the ends "
+                "the window shrinks by default; 'Endpoints' can be 'discard', 'fill' (NaN) or a number. "
+                "SamplePoints are not supported. Example: movmean([1 2 3 4 5], 3) is [1.5 2 3 4 4.5]."),
+    "movsum": (["M = movsum(x, k)", "M = movsum(x, [kb kf])", "M = movsum(..., dim)", "M = movsum(..., 'omitnan')"],
+               "Moving sum over a sliding window; windows and options work as in movmean."),
+    "movmedian": (["M = movmedian(x, k)", "M = movmedian(x, [kb kf])", "M = movmedian(..., dim)"],
+                  "Moving median over a sliding window, useful for removing spikes; options as in movmean."),
+    "movmax": (["M = movmax(x, k)", "M = movmax(x, [kb kf])", "M = movmax(..., dim)"],
+               "Moving maximum over a sliding window; options as in movmean."),
+    "movmin": (["M = movmin(x, k)", "M = movmin(x, [kb kf])", "M = movmin(..., dim)"],
+               "Moving minimum over a sliding window; options as in movmean."),
+    "movstd": (["M = movstd(x, k)", "M = movstd(x, k, w)", "M = movstd(x, k, w, dim)"],
+               "Moving standard deviation over a sliding window; w = 1 normalizes by the window size instead "
+               "of size-1. Other options as in movmean."),
+    "movvar": (["M = movvar(x, k)", "M = movvar(x, k, w)", "M = movvar(x, k, w, dim)"],
+               "Moving variance over a sliding window; options as in movstd."),
+    "smoothdata": (["y = smoothdata(x)", "y = smoothdata(x, method)", "y = smoothdata(x, method, window)",
+                    "y = smoothdata(x, dim, ...)", "y = smoothdata(..., 'Degree', d)"],
+                   "Smooths noisy data along the first dimension whose size is not 1. method is 'movmean' "
+                   "(default), 'movmedian', 'gaussian' or 'sgolay' (Savitzky-Golay with polynomial degree d, "
+                   "default 2); the lowess/loess methods are not supported. Without a window, about a tenth "
+                   "of the data length is used, which may differ from other implementations. NaN values are "
+                   "ignored by default."),
+    "normalize": (["y = normalize(x)", "y = normalize(x, dim)", "y = normalize(..., method)",
+                   "y = normalize(..., method, option)"],
+                  "Rescales data along the first dimension whose size is not 1. method is 'zscore' (default; "
+                  "option 'std' or 'robust'), 'range' (to [0 1] or a given [a b]), 'norm' (divide by the "
+                  "p-norm, default 2), 'center' (subtract the mean, the median or a value) or 'scale' (divide "
+                  "by the std, 'mad', 'first', 'iqr' or a value)."),
+    "rescale": (["y = rescale(x)", "y = rescale(x, l, u)", "y = rescale(..., 'InputMin', a, 'InputMax', b)"],
+                "Linearly maps the smallest element of x to l (default 0) and the largest to u (default 1), "
+                "using all elements. InputMin and InputMax set the source range, clipping values outside it. "
+                "Constant data maps to l."),
+    "pdist": (["d = pdist(X)", "d = pdist(X, metric)", "d = pdist(X, 'minkowski', p)"],
+              "Pairwise distances between the rows of X, returned as a row vector (use squareform to get a "
+              "matrix). metric: 'euclidean' (default), 'squaredeuclidean', 'seuclidean', 'cityblock', "
+              "'chebychev', 'minkowski', 'cosine', 'correlation', 'spearman', 'hamming' or 'jaccard'."),
+    "squareform": (["D = squareform(d)", "d = squareform(D)", "Y = squareform(X, 'tovector')",
+                    "Y = squareform(X, 'tomatrix')"],
+                   "Converts between the vector of pairwise distances returned by pdist and the full symmetric "
+                   "distance matrix with zeros on the diagonal."),
+    "kmeans": (["idx = kmeans(X, k)", "[idx, C, sumd, D] = kmeans(X, k)", "[...] = kmeans(..., Name, Value)"],
+               "k-means clustering of the rows of X into k groups. idx gives each row's cluster number, C "
+               "the cluster centres, sumd the within-cluster sums of distances and D the distance from every "
+               "point to every centre. Options: 'Distance' ('sqeuclidean' default or 'cityblock'), "
+               "'Replicates' (keep the best of several runs), 'MaxIter' (default 100) and 'Start' ('plus' "
+               "k-means++ default, 'sample', 'uniform' or a k-by-p matrix). Rows with NaN get idx NaN. "
+               "Results are random; set rng for repeatable runs."),
+})
+
+# -- hypothesis tests and regression ----------------------------------------------------------------
+HELP.update({
+    "ttest": (["h = ttest(x)", "h = ttest(x, m)", "h = ttest(x, y)", "[h, p, ci, stats] = ttest(..., Name, Value)"],
+              "One-sample t-test that the data have mean m (default 0), or paired t-test on x - y when y has "
+              "the same size. h = 1 rejects the hypothesis at the significance level 'Alpha' (default 0.05). "
+              "'Tail' is 'both' (default), 'right' or 'left'; 'Dim' picks the dimension. ci is the confidence "
+              "interval for the mean and stats holds tstat, df and sd. NaN values are ignored."),
+    "ttest2": (["h = ttest2(x, y)", "[h, p, ci, stats] = ttest2(x, y, Name, Value)"],
+               "Two-sample t-test that x and y come from populations with equal means. Assumes equal variances "
+               "unless 'Vartype' is 'unequal' (Welch's test). 'Alpha', 'Tail' and 'Dim' work as in ttest; ci "
+               "is the interval for the difference of means."),
+    "ranksum": (["p = ranksum(x, y)", "[p, h, stats] = ranksum(x, y, Name, Value)"],
+                "Wilcoxon rank sum test (equivalent to the Mann-Whitney U test), a non-parametric test that "
+                "two samples have equal medians. Two-sided only. Uses the exact distribution for small samples "
+                "without ties and a normal approximation otherwise ('method' 'exact' or 'approximate' "
+                "overrides). 'alpha' sets the level for h."),
+    "anova1": (["p = anova1(y)", "p = anova1(y, group)", "[p, tbl, stats] = anova1(...)"],
+               "One-way analysis of variance: tests whether several groups share the same mean. Groups are the "
+               "columns of y, or are given by labels in group (numbers, a char matrix or a cell array). tbl is "
+               "the ANOVA table as a cell array; stats holds the group names, sizes and means. No figure is "
+               "shown."),
+    "regress": (["b = regress(y, X)", "[b, bint, r, rint, stats] = regress(y, X)", "[...] = regress(y, X, alpha)"],
+                "Multiple linear regression by least squares: finds b so that X*b best fits y. Include a "
+                "column of ones in X to fit an intercept. bint gives 100*(1-alpha)% confidence intervals for b, "
+                "r the residuals, rint residual intervals and stats = [R^2, F, p-value, error variance]. Rows "
+                "containing NaN are ignored. Example: b = regress(y, [ones(size(x)) x]) fits a line."),
+})
+
+# -- optimization (linear, quadratic, nonlinear programming, least squares) --------------------
+_LP_ARGS = "Pass [] for constraints that are not needed."
+HELP.update({
+    "linprog": (["x = linprog(f, A, b)", "x = linprog(f, A, b, Aeq, beq)", "x = linprog(f, A, b, Aeq, beq, lb, ub)",
+                 "[x, fval, exitflag, output] = linprog(...)"],
+                "Linear programming: minimizes f'*x subject to A*x <= b, Aeq*x = beq and lb <= x <= ub, using "
+                f"the HiGHS solver. {_LP_ARGS} exitflag is 1 when solved, 0 at the iteration limit, -2 when "
+                "infeasible and -3 when unbounded (then x is []). An options argument is ignored."),
+    "intlinprog": (["x = intlinprog(f, intcon, A, b)", "x = intlinprog(f, intcon, A, b, Aeq, beq, lb, ub)",
+                    "[x, fval, exitflag] = intlinprog(...)"],
+                   "Mixed-integer linear programming: like linprog, but the variables listed in intcon must "
+                   f"take integer values. {_LP_ARGS} Options are ignored."),
+    "quadprog": (["x = quadprog(H, f)", "x = quadprog(H, f, A, b)", "x = quadprog(H, f, A, b, Aeq, beq, lb, ub)",
+                  "x = quadprog(H, f, A, b, Aeq, beq, lb, ub, x0)", "[x, fval, exitflag] = quadprog(...)"],
+                 "Quadratic programming: minimizes 0.5*x'*H*x + f'*x subject to linear constraints and bounds. "
+                 "Without constraints and with H positive definite the minimum is solved directly; otherwise "
+                 "a sequential quadratic programming method is used, which finds a local minimum. "
+                 "Options are ignored."),
+    "fmincon": (["x = fmincon(fun, x0, A, b)", "x = fmincon(fun, x0, A, b, Aeq, beq, lb, ub)",
+                 "x = fmincon(fun, x0, A, b, Aeq, beq, lb, ub, nonlcon)", "x = fmincon(..., nonlcon, options)",
+                 "[x, fval, exitflag] = fmincon(...)"],
+                "Constrained nonlinear optimization: minimizes fun(x) from the start x0 subject to linear "
+                "constraints, bounds and nonlinear constraints, where nonlcon returns [c, ceq] with c <= 0 and "
+                "ceq = 0 required. Uses sequential quadratic programming with numerical gradients and finds a "
+                "local minimum. Only the MaxIterations (or MaxIter) option is read. exitflag is 1 on success, "
+                "-2 if the result is infeasible."),
+    "lsqnonneg": (["x = lsqnonneg(C, d)", "[x, resnorm, residual, exitflag] = lsqnonneg(C, d)"],
+                  "Non-negative least squares: minimizes norm(C*x - d) subject to x >= 0. resnorm is the "
+                  "squared residual norm."),
+    "lsqcurvefit": (["x = lsqcurvefit(fun, x0, xdata, ydata)", "x = lsqcurvefit(fun, x0, xdata, ydata, lb, ub)",
+                     "x = lsqcurvefit(..., lb, ub, options)", "[x, resnorm, residual, exitflag] = lsqcurvefit(...)"],
+                    "Nonlinear curve fitting by least squares: finds parameters x so that fun(x, xdata) matches "
+                    "ydata as closely as possible, starting from x0. Uses Levenberg-Marquardt, or a "
+                    "trust-region method when bounds are given. Options StepTolerance (TolX) and "
+                    "FunctionTolerance (TolFun) are read. "
+                    "Example: lsqcurvefit(@(p, t) p(1)*exp(p(2)*t), [1 -1], t, y)."),
+    "lsqnonlin": (["x = lsqnonlin(fun, x0)", "x = lsqnonlin(fun, x0, lb, ub)",
+                   "x = lsqnonlin(fun, x0, lb, ub, options)",
+                   "[x, resnorm, residual, exitflag] = lsqnonlin(...)"],
+                  "Nonlinear least squares: minimizes the sum of squares of the residual vector returned by "
+                  "fun(x), starting from x0, optionally within bounds. Methods and options as in lsqcurvefit."),
+})

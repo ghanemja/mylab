@@ -8,7 +8,11 @@ from mylab.help_data import HELP
 
 # Modules whose builtins must all be documented. Builtins from modules added later are not
 # required here until help text is written for them.
-DOCUMENTED_MODULES = {"core", "mathfns", "linalg", "strings", "data", "system", "numerics", "plotting", "table"}
+DOCUMENTED_MODULES = {
+    "core", "mathfns", "linalg", "strings", "data", "system", "numerics", "plotting",
+    "signal", "stats", "optim", "extras", "table",
+    "builtins",  # text functions re-wrapped by _make_string_aware in mylab/builtins/__init__.py
+}
 
 # Names that are deliberately left without help text (keep empty if possible).
 ALLOWLIST: set[str] = set()
