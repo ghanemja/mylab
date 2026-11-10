@@ -1,46 +1,70 @@
 # Compatibility notes
 
-This page lists known differences between mylab and MATLAB. Please report a
-difference that isn't listed here as an issue, with a short `.m` snippet,
+mylab aims to run everyday MATLAB-language code unchanged. This page lists
+what isn't supported yet and where behaviour knowingly differs. If you find a
+difference that isn't listed, please open an issue with a short `.m` snippet,
 what mylab printed, and what you expected.
+
+## Supported (summary)
+
+- N-dimensional arrays, cell arrays, structs and struct arrays, string arrays,
+  function handles, integer and single types, complex numbers.
+- `classdef` classes:
+  - value and handle classes, properties with defaults;
+  - Constant and Dependent properties, `get.`/`set.` methods;
+  - constructors, Static methods, inheritance (`obj@Parent`, `method@Parent`);
+  - operator overloading, custom `disp`/`display`.
+- `containers.Map` and `table` (with `readtable`/`writetable` for delimited
+  text files).
+- About 650 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
 
 ## Not supported yet
 
-- **N-dimensional arrays.** All arrays are 2-D. Indexing with a third index
-  works only when that index is `1`.
-- **String arrays.** `"text"` works as a single string (one string scalar),
-  including `+` to join strings. Arrays of strings such as `["a" "b"]` do not
-  work yet. Use a cell array `{'a', 'b'}` instead.
-- **Classes.** `classdef`, objects, methods and packages are not supported.
-- **Tables, timetables, datetime, categorical, containers.Map** are not
-  supported.
-- **Sparse matrices.** `sparse(...)` builds an ordinary full matrix.
-- **Toolboxes.** Only some Signal Processing, Statistics, Optimization and
-  Control functions exist. Simulink is out of scope.
-- **Graphics handles.** `gcf` and `gca` return figure numbers. `set` and
-  `get` on graphics objects are not supported. Only common plot options are
-  supported (`LineWidth`, `Color`, `DisplayName`, `MarkerSize`, …).
-- **Text input/output.** `fopen`, `fprintf`, `fgetl`, `fileread`,
-  `readmatrix`, `writematrix`, and `save`/`load` of plain numeric `.mat` data
-  work. `textscan`, `fscanf` and `readtable` do not.
-- **Command syntax** (`hold on`, `format long`) works for a fixed list of
-  common commands. For any other function, use call syntax: `f('arg')`.
-- **`nargin('fname')`**, `inputname`, `evalin` and `assignin` are not
-  available.
+- **Object arrays:** you can't index objects into arrays (`objs(3) = Point(...)`).
+  Use a cell array instead: `objs{3} = Point(...)`.
+- **classdef features:**
+  - events and listeners, enumerations, property validation functions;
+  - access restrictions (every member behaves as public);
+  - abstract classes, `subsref`/`subsasgn` overloading;
+  - methods defined in `@ClassName` folders.
+- **Other data types:** datetime, duration, categorical, timetable,
+  `containers.Map` with non-scalar keys, sparse matrices (`sparse(...)` builds
+  an ordinary full matrix).
+- **Tables:** row names, `join`/`innerjoin`/`outerjoin`, `groupsummary`,
+  `rowfun`. Table variables must be columns.
+- **Graphics handles:**
+  - `gcf` and `gca` return figure numbers, and `set`/`get` on graphics objects
+    aren't supported;
+  - only common line options are honoured (`LineWidth`, `Color`, `Marker`,
+    `MarkerSize`, `DisplayName`, `LineStyle`);
+  - there are no animations, GUIs (`uifigure`, App Designer) or interactive
+    tools.
+- **Input and output:** `textscan`, `fscanf`, binary I/O (`fread`/`fwrite`),
+  Excel files, images (`imread`), audio.
+- **Toolboxes:** only the parts listed in FUNCTIONS.md (signal processing,
+  statistics, optimization). Simulink, Symbolic Math, Control System, Image
+  Processing and others are out of scope for now.
+- **Language corners:**
+  - `nargin('fname')`, `inputname`, `evalin`/`assignin`, `persistent`
+    variables (treated like `global`), nested functions sharing their parent's
+    workspace, `parfor` (runs as an ordinary `for` loop), the `arguments`
+    validation block;
+  - command syntax works only for a fixed list of common commands (`hold on`,
+    `format long`, `close all`, …); for anything else, use `f('arg')`.
+- **Browser app:** `input()` isn't available, and Stop clears the workspace.
 
 ## Behaviour differences
 
-- **Speed:** mylab is an interpreter written in Python. Vectorized code runs
-  fast because NumPy does the work. Scalar loops are much slower than in
-  MATLAB, roughly 10 µs per simple statement. Vectorize hot loops where you
-  can.
-- **Display:** the command-window format follows MATLAB's layout. Column
-  widths and scale-factor headers may differ slightly. Very wide matrices are
-  not split into "Columns 1 through N" blocks.
-- **Random numbers:** `rand`, `randn` and `randi` use NumPy's generator. With
-  `rng(seed)`, results repeat from run to run within mylab, but they differ
-  from MATLAB's sequence for the same seed.
-- **Solvers:** `ode45`, `fzero`, `fminsearch`, `integral` and the others use
+- **Speed:** loops are interpreted, roughly 2–10 µs per simple statement.
+  Vectorized code runs at NumPy speed.
+- **Display:** command-window output follows the familiar layout. Column
+  widths, scale-factor headers and blank lines may differ slightly. Very wide
+  matrices aren't split into column blocks.
+- **Random numbers:** `rng(seed)` makes results repeatable within mylab, but
+  the sequences differ from MATLAB's for the same seed.
+- **Solvers** (`ode45`, `fzero`, `fminsearch`, `fmincon`, `integral`, …) use
   SciPy algorithms. Results agree to within tolerances, but step counts and
   the last digits can differ.
 - **Plots** are drawn with Matplotlib and its default style.
+- **Errors:** messages are written for mylab and are not word-for-word copies.
+  Error identifiers you pass to `error` are kept.

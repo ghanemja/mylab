@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mylab"
-version = "0.1.0"
+version = "1.0.0"
 description = "A free, open-source environment for running MATLAB-language code, built on NumPy, SciPy and Matplotlib."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,11 +17,18 @@ dependencies = [
 ]
 keywords = ["matlab", "octave", "numerical computing", "education", "interpreter"]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python :: 3",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ghanemja/mylab"
+Documentation = "https://github.com/ghanemja/mylab/tree/main/docs"
+Issues = "https://github.com/ghanemja/mylab/issues"
+Changelog = "https://github.com/ghanemja/mylab/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.2"]
