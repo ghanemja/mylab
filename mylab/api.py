@@ -74,7 +74,7 @@ def _preview(v: Any, limit: int = 60) -> str:
             from .display import format_scalar
             s = "[" + " ".join(format_scalar(x) for x in v.flat) + "]"
         else:
-            s = f"{size_str(shape_of(v))} {class_name(v)}"
+            s = ""  # size and class are reported separately
     except Exception:  # pragma: no cover - previews must never fail
         s = class_name(v)
     return s if len(s) <= limit else s[: limit - 3] + "..."
@@ -105,6 +105,10 @@ class Session:
             result.error = "exit/quit is not available in this environment."
         except RecursionError:
             result.error = "Maximum recursion limit reached."
+        except KeyboardInterrupt:
+            result.error = "Interrupted."
+        except Exception as e:  # an engine bug: report it instead of crashing the host
+            result.error = f"Internal error: {type(e).__name__}: {e}"
         result.output = "".join(self._buffer)
         self._buffer.clear()
         if capture_figures:
@@ -125,6 +129,11 @@ class Session:
             from .builtins.plotting import close_all
             close_all(self.interp)
         return images
+
+    def clear_file_cache(self) -> None:
+        """Forget parsed .m files (call after editing files on disk)."""
+        self.interp._file_cache.clear()
+        self.interp.classes.clear()
 
     def reset(self) -> None:
         from .builtins.plotting import close_all

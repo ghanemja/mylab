@@ -26,3 +26,11 @@ def test_help_lookup():
     s = Session()
     assert "Print the value" in s.help("disp")
     assert "not found" in s.help("no_such_function_zzz")
+
+
+def test_parse_error_has_line_and_cache_clear():
+    s = Session()
+    r = s.run("x = 1;\ny = [1 2\n")
+    assert not r.ok and r.error_line is not None
+    s.clear_file_cache()
+    assert s.variables() == []  # a parse error stops the whole run before anything executes

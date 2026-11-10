@@ -56,7 +56,9 @@ class Parser:
 
     def error(self, msg: str, tok: Token | None = None) -> MatlabError:
         t = tok or self.tok
-        return MatlabError(f"Parse error at line {t.line}, column {t.col}: {msg}")
+        err = MatlabError(f"Parse error at line {t.line}, column {t.col}: {msg}")
+        err.line = t.line  # type: ignore[attr-defined]
+        return err
 
     def expect_op(self, value: str) -> Token:
         if not self.is_op(value):

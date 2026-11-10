@@ -82,3 +82,14 @@ switch "beta"
 end
 """)
     assert m.val("r").item() == 2
+
+
+def test_toolbox_text_functions_accept_strings(m):
+    m.run('p = split("a,b,c", ",");')
+    assert m.str("class(p)") == "string" and m.num("numel(p)").item() == 3
+    assert m.str('join(["x" "y"], "-")') == "x-y"
+    m.run('r = replace(["cat" "hat"], "at", "og");')
+    assert m.str("r(2)") == "hog"
+    assert m.str('extractAfter("key=value", "=")') == "value"
+    assert m.str("class(extractAfter('key=value', '='))") == "char"
+    assert m.str('strip("  pad  ")') == "pad"

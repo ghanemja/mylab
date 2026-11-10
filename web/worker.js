@@ -81,9 +81,7 @@ def _sync(files):
         changed = True
     if changed:
         # Re-parse edited files even if the clock did not move between writes.
-        cache = getattr(_session.interp, "_file_cache", None)
-        if isinstance(cache, dict):
-            cache.clear()
+        _session.clear_file_cache()
 
 def _run(code, files_json):
     _sync(json.loads(files_json))

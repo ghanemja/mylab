@@ -87,7 +87,7 @@ class Interpreter:
         self.last_warning = ""
         self.depth = 0
         self.max_depth = 256
-        self._file_cache: dict[str, tuple[float, A.Program]] = {}
+        self._file_cache: dict[str, tuple[Any, A.Program]] = {}
         self.state: dict[str, Any] = {}  # scratch space for builtins (tic, rng, figures...)
         self.classes: dict[str, Any] = {}  # classdef name -> ClassInfo
         self.input_func: Callable[[str], str] = input
@@ -928,7 +928,8 @@ class Interpreter:
         for d in dirs:
             path = os.path.join(d, name + ".m")
             if os.path.isfile(path):
-                mtime = os.path.getmtime(path)
+                st = os.stat(path)
+                mtime = (st.st_mtime_ns, st.st_size)
                 cached = self._file_cache.get(path)
                 if cached and cached[0] == mtime:
                     return cached[1], path

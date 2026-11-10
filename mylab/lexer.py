@@ -93,7 +93,9 @@ class Lexer:
         return s
 
     def error(self, msg: str) -> MatlabError:
-        return MatlabError(f"Parse error at line {self.line}, column {self.col}: {msg}")
+        err = MatlabError(f"Parse error at line {self.line}, column {self.col}: {msg}")
+        err.line = self.line  # type: ignore[attr-defined]
+        return err
 
     @property
     def last(self) -> Token | None:
