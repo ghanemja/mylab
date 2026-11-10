@@ -35,13 +35,19 @@ what mylab printed, and what you expected.
   an ordinary full matrix).
 - **Tables:** row names, `join`/`innerjoin`/`outerjoin`, `groupsummary`,
   `rowfun`. Table variables must be columns.
-- **Graphics handles:**
-  - `gcf` and `gca` return figure numbers, and `set`/`get` on graphics objects
-    aren't supported;
-  - only common line options are honoured (`LineWidth`, `Color`, `Marker`,
-    `MarkerSize`, `DisplayName`, `LineStyle`);
-  - there are no animations, GUIs (`uifigure`, App Designer) or interactive
-    tools.
+- **Graphics handles:** `figure`, `gcf`, `gca`, `plot`, `bar`, `histogram`,
+  `title`, `legend`, `colorbar` and the other plotting functions return handle
+  objects. You can read and change their common properties with dot syntax
+  (`h.LineWidth = 2`) or `get`/`set`, and figure numbers still work wherever a
+  figure is expected. Limits:
+  - only a subset of each object's properties exists. Unknown properties raise
+    an error, and a few harmless ones (e.g. `TickLabelInterpreter`) are
+    accepted but have no effect;
+  - several handles come back as a handle array, which can be indexed,
+    extended by one element, or concatenated. `gobjects` and arbitrary object
+    arrays aren't supported;
+  - there are no animations, GUIs (`uifigure`, App Designer), callbacks or
+    interactive tools.
 - **Input and output:** `textscan`, `fscanf`, binary I/O (`fread`/`fwrite`),
   Excel files, images (`imread`), audio.
 - **Toolboxes:** only the parts listed in FUNCTIONS.md (signal processing,
