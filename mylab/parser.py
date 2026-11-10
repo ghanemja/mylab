@@ -85,14 +85,143 @@ class Parser:
         body: list[A.Node] = []
         functions: dict[str, A.Function] = {}
         self.skip_newlines()
+        classdefs: dict[str, A.ClassDef] = {}
         while self.tok.kind != "EOF":
-            if self.is_kw("function"):
+            if self.is_kw("classdef"):
+                cd = self.parse_classdef()
+                classdefs[cd.name] = cd
+            elif self.is_kw("function"):
                 fn = self.parse_function()
                 functions[fn.name] = fn
             else:
                 body.append(self.parse_statement())
             self.skip_newlines()
-        return A.Program(body, functions)
+        return A.Program(body, functions, classdefs)
+
+    # -- classdef ------------------------------------------------------------------
+    def _is_id(self, *names: str) -> bool:
+        return self.tok.kind == "ID" and self.tok.value in names
+
+    def parse_attributes(self) -> dict:
+        """Parse an optional attribute list such as ``(Access = private, Constant)``."""
+        attrs: dict = {}
+        if not self.is_op("("):
+            return attrs
+        self.next()
+        while not self.is_op(")"):
+            if self.is_op(","):
+                self.next()
+                continue
+            if self.is_op("~"):
+                self.next()
+                name = self._ident_name()
+                attrs[name] = False
+                continue
+            name = self._ident_name()
+            value: object = True
+            if self.is_op("="):
+                self.next()
+                parts = []
+                depth = 0
+                while not (depth == 0 and (self.is_op(",") or self.is_op(")"))):
+                    t = self.next()
+                    if t.kind == "OP" and t.value in ("(", "{", "["):
+                        depth += 1
+                    elif t.kind == "OP" and t.value in (")", "}", "]"):
+                        depth -= 1
+                    parts.append(str(t.value))
+                text = "".join(parts).strip("'\"")
+                value = {"true": True, "false": False}.get(text.lower(), text)
+            attrs[name] = value
+        self.next()
+        return attrs
+
+    def parse_classdef(self) -> A.ClassDef:
+        start = self.expect_kw("classdef")
+        attrs = self.parse_attributes()
+        name = self._ident_name()
+        supers: list[str] = []
+        if self.is_op("<"):
+            self.next()
+            while True:
+                sup = self._ident_name()
+                while self.is_op(".") and self.peek().kind == "ID":
+                    self.next()
+                    sup += "." + self.next().value
+                supers.append(sup)
+                if self.is_op("&"):
+                    self.next()
+                    continue
+                break
+        props: list[A.PropertyDef] = []
+        methods: dict[str, A.Function] = {}
+        static: set[str] = set()
+        self.skip_newlines()
+        while not self.is_kw("end"):
+            if self.tok.kind == "EOF":
+                raise self.error(f"missing 'end' for classdef {name}")
+            if self._is_id("properties"):
+                self.next()
+                block_attrs = self.parse_attributes()
+                self.skip_newlines()
+                while not self.is_kw("end"):
+                    props.append(self.parse_property(block_attrs))
+                    self.skip_newlines()
+                self.next()
+            elif self._is_id("methods"):
+                self.next()
+                block_attrs = self.parse_attributes()
+                self.skip_newlines()
+                while not self.is_kw("end"):
+                    if self.is_kw("function"):
+                        fn = self.parse_function()
+                        methods[fn.name] = fn
+                        if block_attrs.get("Static"):
+                            static.add(fn.name)
+                    else:
+                        # A method signature without a body (defined in another file): skip the line.
+                        while self.tok.kind not in ("NL", "EOF"):
+                            self.next()
+                    self.skip_newlines()
+                self.next()
+            elif self._is_id("events", "enumeration"):
+                self.next()
+                self.parse_attributes()
+                depth = 1
+                while depth:
+                    if self.tok.kind == "EOF":
+                        raise self.error("missing 'end'")
+                    if self.is_kw("end"):
+                        depth -= 1
+                    self.next()
+            else:
+                raise self.error(f"unexpected {self._describe(self.tok)} in classdef")
+            self.skip_newlines()
+        self.next()
+        cd = A.ClassDef(name, supers, attrs, props, methods, static)
+        cd.line = start.line
+        return cd
+
+    def parse_property(self, block_attrs: dict) -> A.PropertyDef:
+        name = self._ident_name()
+        # Skip size/class validation syntax: name (1,1) double {mustBePositive} = default
+        depth = 0
+        while self.tok.kind not in ("NL", "EOF"):
+            if depth == 0 and (self.is_op("=") or self.is_op(";") or self.is_op(",")):
+                break
+            if self.is_op("(", "{", "["):
+                depth += 1
+            elif self.is_op(")", "}", "]"):
+                depth -= 1
+            self.next()
+        default = None
+        if self.is_op("="):
+            self.next()
+            default = self.parse_expr()
+        if self.is_op(";") or self.is_op(","):
+            self.next()
+        prop = A.PropertyDef(name, default, dict(block_attrs))
+        return prop
 
     def parse_block(self, *terminators: str) -> list[A.Node]:
         stmts: list[A.Node] = []
@@ -500,6 +629,17 @@ class Parser:
             return A.String(t.value, True)
         if t.kind == "ID":
             self.next()
+            if self.is_op("@") and not self.tok.space_before and self.peek().kind == "ID":
+                self.next()
+                parent = self.next().value
+                while self.is_op(".") and self.peek().kind == "ID":
+                    self.next()
+                    parent += "." + self.next().value
+                args: list[A.Node] = []
+                if self.is_op("("):
+                    self.next()
+                    args = self.parse_args(")")
+                return A.SuperCall(t.value, parent, args)
             node = A.Ident(t.value)
             node.line = t.line
             return node

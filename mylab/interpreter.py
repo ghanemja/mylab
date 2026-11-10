@@ -13,6 +13,7 @@ from . import indexing as ix
 from . import ops
 from .display import format_display, function_handle_text, unparse
 from .errors import BreakSignal, ContinueSignal, MatlabError, ReturnSignal
+from .objects import MObject
 from .parser import parse
 from .values import (
     Cell, FunctionHandle, MString, StringArray, Struct, char, class_name, codes_to_char,
@@ -88,6 +89,7 @@ class Interpreter:
         self.max_depth = 256
         self._file_cache: dict[str, tuple[float, A.Program]] = {}
         self.state: dict[str, Any] = {}  # scratch space for builtins (tic, rng, figures...)
+        self.classes: dict[str, Any] = {}  # classdef name -> ClassInfo
         self.input_func: Callable[[str], str] = input
 
     # -- public API -------------------------------------------------------------------
@@ -121,6 +123,10 @@ class Interpreter:
         try:
             if program.functions:
                 frame.functions = {**frame.functions, **program.functions}
+            if program.classdefs:
+                from .classdef import ClassInfo
+                for cd in program.classdefs.values():
+                    self.classes[cd.name] = ClassInfo(cd, file, self, program.functions)
             if file:
                 frame.file = file
             self.exec_block(program.body, frame)
@@ -233,13 +239,45 @@ class Interpreter:
         expr = stmt.expr
         if isinstance(expr, A.Ident) and frame.has(expr.name):
             if stmt.show:
-                self.out(format_display(expr.name, frame.get(expr.name)))
+                self.show(expr.name, frame.get(expr.name))
             return
         values = self.eval_multi(expr, frame, 0)
         for v in values:
             frame.set("ans", v)
             if stmt.show:
-                self.out(format_display("ans", v))
+                self.show("ans", v)
+
+    def show(self, name: str, value: Any) -> None:
+        """Print a value the way an unsuppressed statement does (honouring disp/display methods)."""
+        from .classdef import UserObject
+        if isinstance(value, UserObject):
+            if "display" in value.cls.methods:
+                value.cls.call(self, "display", [value], 0)
+                return
+            if "disp" in value.cls.methods:
+                self.out(f"{name} = \n\n")
+                value.cls.call(self, "disp", [value], 0)
+                self.out("\n")
+                return
+        self.out(format_display(name, value))
+
+    def eval_super_call(self, node: A.SuperCall, frame: Frame) -> Any:
+        parent = self.find_class(node.parent)
+        if parent is None:
+            raise MatlabError(f"Superclass '{node.parent}' was not found.")
+        args = self.eval_elements(node.args, frame)
+        if frame.has(node.name):
+            from .classdef import UserObject
+            obj = frame.get(node.name)
+            if not isinstance(obj, UserObject):
+                raise MatlabError(f"'{node.name}@{node.parent}' must be called on the object being constructed.")
+            return parent.run_constructor(self, obj, args)
+        if node.name not in parent.methods:
+            raise MatlabError(f"No method '{node.name}' in superclass '{node.parent}'.")
+        vals = parent.call(self, node.name, args, 1)
+        if not vals:
+            raise MatlabError(f"Method '{node.name}' does not return a value.")
+        return vals[0]
 
     def exec_assign(self, stmt: A.Assign, frame: Frame) -> None:
         targets = stmt.targets
@@ -259,7 +297,7 @@ class Interpreter:
                 name = root_name(target)
                 if name and name != "~" and name not in shown and frame.has(name):
                     shown.append(name)
-                    self.out(format_display(name, frame.get(name)))
+                    self.show(name, frame.get(name))
 
     def exec_for(self, stmt: A.For, frame: Frame) -> None:
         iterable = self.eval(stmt.iterable, frame)
@@ -328,6 +366,12 @@ class Interpreter:
         if base is None:
             return None
         try:
+            if isinstance(base, MObject):
+                if isinstance(node, A.Index):
+                    return base.index_get(self, self.eval_index_args(node.args, base, frame))
+                if isinstance(node, (A.Field, A.DynField)):
+                    return base.get_field(self, self.field_name(node, frame))
+                return None
             if isinstance(node, A.Index):
                 if isinstance(base, FunctionHandle):
                     return None
@@ -355,6 +399,21 @@ class Interpreter:
 
     def assign_into(self, target: A.Node, current: Any, value: Any, frame: Frame) -> Any:
         """Return the new value of ``target.base`` after assigning ``value``."""
+        if isinstance(current, MObject):
+            if isinstance(target, (A.Field, A.DynField)):
+                return current.set_field(self, self.field_name(target, frame), value)
+            args = self.eval_index_args(target.args, current, frame)
+            if isinstance(target, A.CellIndex):
+                return current.brace_set(self, args, value)
+            if isinstance(value, np.ndarray) and value.shape == (0, 0) and value.dtype == float:
+                return current.index_delete(self, args)
+            return current.index_set(self, args, value)
+        if isinstance(value, MObject) and isinstance(target, A.Index) and (
+                current is None or (isinstance(current, np.ndarray) and current.size == 0)):
+            args = self.eval_index_args(target.args, empty_double(), frame)
+            if all(isinstance(a, np.ndarray) and a.size == 1 and float(np.real(a.flat[0])) == 1 for a in args):
+                return value
+            raise MatlabError("Object arrays are not supported yet; use a cell array {obj1, obj2}.")
         if isinstance(target, (A.Field, A.DynField)):
             name = self.field_name(target, frame)
             if current is None or (isinstance(current, np.ndarray) and current.size == 0):
@@ -483,11 +542,25 @@ class Interpreter:
                 if op == "||" and lv:
                     return np.array([[True]])
                 return np.array([[self._short_circuit_operand(self.eval(node.right, frame), op)]])
-            return ops.binop(op, self.eval(node.left, frame), self.eval(node.right, frame))
+            left, right = self.eval(node.left, frame), self.eval(node.right, frame)
+            if isinstance(left, MObject) or isinstance(right, MObject):
+                from .classdef import call_operator
+                return call_operator(self, op, left, right)
+            return ops.binop(op, left, right)
         if t is A.UnaryOp:
-            return ops.unary(node.op, self.eval(node.operand, frame))
+            operand = self.eval(node.operand, frame)
+            if isinstance(operand, MObject):
+                from .classdef import call_unary_operator
+                return call_unary_operator(self, node.op, operand)
+            return ops.unary(node.op, operand)
         if t is A.Postfix:
-            return ops.transpose(self.eval(node.operand, frame), node.op == "'")
+            operand = self.eval(node.operand, frame)
+            if isinstance(operand, MObject):
+                from .classdef import call_unary_operator
+                return call_unary_operator(self, node.op, operand)
+            return ops.transpose(operand, node.op == "'")
+        if t is A.SuperCall:
+            return self.eval_super_call(node, frame)
         if t is A.Range:
             return self.eval_range(node, frame)
         if t is A.Matrix:
@@ -595,14 +668,35 @@ class Interpreter:
                 args = self.eval_elements(node.args, frame)
                 args = [ix_colon_to_char(a) for a in args]
                 return self.call_named(base.name, args, nargout, frame, node)
-            base_val = self.eval(base, frame)
+            if isinstance(base, (A.Field, A.DynField)):
+                dotted = self.dotted_name(base, frame)
+                if dotted is not None:
+                    res = self.call_dotted(dotted, lambda: self.eval_elements(node.args, frame), nargout, frame)
+                    if res is not None:
+                        return res
+                container = self.eval(base.base, frame)
+                if isinstance(container, MObject):
+                    name = self.field_name(base, frame)
+                    if container.has_method(name):
+                        args = [ix_colon_to_char(a) for a in self.eval_elements(node.args, frame)]
+                        return container.call_method(self, name, [container, *args], nargout)
+                    base_val = container.get_field(self, name)
+                else:
+                    base_val = self.eval_multi(base, frame, 1)[0] if not isinstance(container, Struct) \
+                        else self._struct_field(container, self.field_name(base, frame))
+            else:
+                base_val = self.eval(base, frame)
             if isinstance(base_val, FunctionHandle):
                 args = self.eval_elements(node.args, frame)
                 return self.call_handle(base_val, args, nargout)
             args = self.eval_index_args(node.args, base_val, frame)
+            if isinstance(base_val, MObject):
+                return [base_val.index_get(self, args)]
             return [index_value(base_val, args)]
         if t is A.CellIndex:
             base_val = self.eval(node.base, frame)
+            if isinstance(base_val, MObject):
+                return base_val.brace_get(self, self.eval_index_args(node.args, base_val, frame))
             if isinstance(base_val, (MString, StringArray)):
                 args = self.eval_index_args(node.args, base_val, frame)
                 picked = ix.get(string_data(base_val), args)
@@ -613,8 +707,15 @@ class Interpreter:
             args = self.eval_index_args(node.args, base_val, frame)
             return Cell(ix.get(base_val.data, args)).values_f()
         if t is A.Field or t is A.DynField:
+            dotted = self.dotted_name(node, frame)
+            if dotted is not None:
+                res = self.call_dotted(dotted, list, nargout, frame)
+                if res is not None:
+                    return res
             base_val = self.eval(node.base, frame)
             name = self.field_name(node, frame)
+            if isinstance(base_val, MObject):
+                return [base_val.get_field(self, name)]
             if isinstance(base_val, Struct):
                 if name not in base_val.fields:
                     raise MatlabError(f"Unrecognized field name \"{name}\".")
@@ -622,15 +723,68 @@ class Interpreter:
             raise MatlabError(f"Dot indexing is not supported for variables of type '{class_name(base_val)}'.")
         return [self.eval(node, frame)]
 
+    def _struct_field(self, s: Struct, name: str) -> Any:
+        if name not in s.fields:
+            raise MatlabError(f"Unrecognized field name \"{name}\".")
+        if s.data.size != 1:
+            raise MatlabError("Indexing a field of a struct array requires a single element, e.g. s(2).f(1).")
+        return s.data.flat[0][name]
+
+    def dotted_name(self, node: A.Node, frame: Frame) -> str | None:
+        """'a.b.c' for a Field chain whose root is not a variable (package or class access)."""
+        parts = []
+        while isinstance(node, A.Field):
+            parts.append(node.name)
+            node = node.base
+        if not isinstance(node, A.Ident) or frame.has(node.name):
+            return None
+        parts.append(node.name)
+        return ".".join(reversed(parts))
+
+    def call_dotted(self, dotted: str, get_args, nargout: int, frame: Frame) -> list[Any] | None:
+        """Resolve pkg.func(...) or Class.staticMethod(...); None if the name is unknown."""
+        builtin = self.builtins.get(dotted)
+        if builtin is not None:
+            return self.call_builtin(dotted, builtin, get_args(), nargout)
+        head, _, rest = dotted.partition(".")
+        cls = self.find_class(head) if "." not in rest else None
+        if cls is not None:
+            return cls.static_access(self, rest, get_args(), nargout)
+        return None
+
+    def find_class(self, name: str):
+        """A classdef class by name (defined in this session or in Name.m on the path)."""
+        cls = self.classes.get(name)
+        if cls is not None:
+            return cls
+        found = self.find_file_function(name)
+        if found is not None and found[0].classdefs:
+            from .classdef import ClassInfo
+            for cd in found[0].classdefs.values():
+                self.classes[cd.name] = ClassInfo(cd, found[1], self, found[0].functions)
+            return self.classes.get(name)
+        return None
+
     # -- calls ----------------------------------------------------------------------------
     def call_named(self, name: str, args: list[Any], nargout: int, frame: Frame,
                    node: A.Node | None = None) -> list[Any]:
+        for a in args:
+            if isinstance(a, MObject) and a.has_method(name):
+                return a.call_method(self, name, list(args), nargout)
         fn = frame.functions.get(name)
         if fn is not None:
             return self.call_user_function(fn, args, nargout, frame.functions, frame.file)
+        cls = self.classes.get(name)
+        if cls is not None:
+            return cls.construct(self, list(args), nargout)
         found = self.find_file_function(name)
         if found is not None:
             program, path = found
+            if program.classdefs:
+                cls = self.find_class(name)
+                if cls is None:
+                    raise MatlabError(f"File {name}.m defines a class with a different name.")
+                return cls.construct(self, list(args), nargout)
             if program.functions and not program.body:
                 main = next(iter(program.functions.values()))
                 return self.call_user_function(main, args, nargout, program.functions, path)
@@ -711,7 +865,8 @@ class Interpreter:
         self.depth = max(0, self.depth - 1)
 
     def call_user_function(self, fn: A.Function, args: list[Any], nargout: int,
-                           functions: dict[str, A.Function], file: str | None) -> list[Any]:
+                           functions: dict[str, A.Function], file: str | None,
+                           preset: dict[str, Any] | None = None) -> list[Any]:
         params = fn.params
         has_varargin = bool(params) and params[-1] == "varargin"
         fixed = params[:-1] if has_varargin else params
@@ -728,6 +883,8 @@ class Interpreter:
                 frame.vars[p] = args[i]
         if has_varargin:
             frame.vars["varargin"] = Cell.from_list(args[len(fixed):])
+        if preset:
+            frame.vars.update(preset)
         self._enter()
         self.frames.append(frame)
         _CURRENT.append(self)

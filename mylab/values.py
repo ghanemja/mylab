@@ -220,6 +220,8 @@ def char(s: str) -> np.ndarray:
 
 def to_matlab(x: Any) -> Any:
     """Convert a Python value into a MATLAB value."""
+    if hasattr(x, "isa_class"):  # MObject instances pass through unchanged
+        return x
     if isinstance(x, (np.ndarray, Cell, Struct, FunctionHandle, MString, StringArray)):
         if isinstance(x, np.ndarray):
             return as_2d(x)
@@ -297,9 +299,15 @@ def numel(v: Any) -> int:
     return n
 
 
+def bool_array(flags, shape) -> np.ndarray:
+    return np.array(flags, dtype=bool).reshape(shape, order="F")
+
+
 def class_name(v: Any) -> str:
     if isinstance(v, (MString, StringArray)):
         return "string"
+    if hasattr(v, "isa_class"):  # MObject (Map, table, classdef instances)
+        return v.class_name()
     if isinstance(v, Cell):
         return "cell"
     if isinstance(v, Struct):

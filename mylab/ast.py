@@ -187,6 +187,32 @@ class Function(Node):
 
 
 @dataclass
+class PropertyDef(Node):
+    name: str
+    default: Node | None
+    attrs: dict
+
+
+@dataclass
+class ClassDef(Node):
+    name: str
+    superclasses: list[str]
+    attrs: dict
+    properties: list[PropertyDef]
+    methods: dict[str, Function]
+    static_methods: set[str] = field(default_factory=set)
+
+
+@dataclass
+class SuperCall(Node):
+    """``name@Parent(args)``: superclass constructor or method call."""
+    name: str
+    parent: str
+    args: list[Node]
+
+
+@dataclass
 class Program(Node):
     body: list[Node]
     functions: dict[str, Function]
+    classdefs: dict[str, ClassDef] = field(default_factory=dict)

@@ -334,3 +334,15 @@ def _structfun(interp, args, nargout):
     if not uniform and isinstance(res, Cell):
         return Struct.scalar(dict(zip(s.fields, res.values_f())))
     return res
+
+
+@builtin("containers.Map")
+def _containers_map(interp, args, nargout):
+    from ..objects import make_map
+    return make_map(list(args))
+
+
+@builtin("isobject")
+def _isobject(interp, args, nargout):
+    from ..objects import MObject
+    return bool_scalar(isinstance(args[0], MObject))

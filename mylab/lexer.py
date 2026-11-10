@@ -19,7 +19,7 @@ from .errors import MatlabError
 KEYWORDS = {
     "if", "elseif", "else", "end", "for", "while", "switch", "case", "otherwise",
     "try", "catch", "break", "continue", "return", "function", "global",
-    "persistent", "parfor",
+    "persistent", "parfor", "classdef",
 }
 
 # Longest first so that greedy matching works.

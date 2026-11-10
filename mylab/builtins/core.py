@@ -439,6 +439,8 @@ builtin("istext")(_type_pred(lambda v: isinstance(v, (MString, StringArray)) or 
 def _isa(interp, args, nargout):
     cls = class_name(args[0])
     want = text(args[1])
+    if hasattr(args[0], "isa_class"):
+        return bool_scalar(args[0].isa_class(want))
     if want == "numeric":
         return bool_scalar(cls in ("double", "single") or cls in INT_TYPES)
     if want == "float":
