@@ -106,6 +106,8 @@ def _linspace(interp, args, nargout):
     nargs(args, 2, 3, "linspace")
     a, b = num(args[0]).flat[0], num(args[1]).flat[0]
     n = to_int(args[2], "n") if len(args) > 2 else 100
+    if n == 1:
+        return np.array([[b]], dtype=complex if np.iscomplexobj(b) else float)
     return np.linspace(a, b, max(n, 0)).reshape(1, -1)
 
 
@@ -458,12 +460,12 @@ def _isequal(interp, args, nargout):
 
 @builtin("isequaln")
 def _isequaln(interp, args, nargout):
-    def norm(v):
-        if isinstance(v, np.ndarray) and v.dtype.kind == "f":
-            v = v.copy()
-            v[np.isnan(v)] = -1.2345e300
-        return v
-    return bool_scalar(all(values_equal(norm(args[0]), norm(b)) for b in args[1:]))
+    def eq(a, b):
+        if isinstance(a, np.ndarray) and isinstance(b, np.ndarray) and a.dtype.kind in "fc" \
+                and b.dtype.kind in "fc":
+            return a.shape == b.shape and bool(np.array_equal(a, b, equal_nan=True))
+        return values_equal(a, b)
+    return bool_scalar(all(eq(args[0], b) for b in args[1:]))
 
 
 # -- conversions ----------------------------------------------------------------------

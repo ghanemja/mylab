@@ -250,7 +250,7 @@ HELP: dict = {
             "rem(a, 0) is NaN. Example: rem(-1, 3) is -1."),
     "nthroot": ("y = nthroot(x, n)",
                 "Real n-th root of each element; for negative x with odd n the real negative root is "
-                "returned, e.g. nthroot(-8, 3) is -2. mylab does not reject even n with negative x."),
+                "returned, e.g. nthroot(-8, 3) is -2. Negative x with an even or non-integer n is an error."),
     "real": ("r = real(z)", "Real part of each element."),
     "imag": ("y = imag(z)", "Imaginary part of each element (0 for real input)."),
     "conj": ("w = conj(z)", "Complex conjugate of each element: the sign of the imaginary part is flipped."),
@@ -324,7 +324,7 @@ HELP: dict = {
     "sum": (["s = sum(x)", "s = sum(x, dim)", "s = sum(x, 'all')", "s = sum(..., 'omitnan')"],
             "Sum of elements. For a vector, the total; for a matrix, a row of column sums. dim = 1 sums "
             "down columns, dim = 2 across rows, and 'all' sums everything. 'omitnan' skips NaN values. "
-            "sum([]) is 0. Example: sum([1 2; 3 4]) is [4 6]."),
+            "sum([]) is 0. Integer inputs keep their class and saturate. Example: sum([1 2; 3 4]) is [4 6]."),
     "prod": (["p = prod(x)", "p = prod(x, dim)", "p = prod(x, 'all')", "p = prod(..., 'omitnan')"],
              "Product of elements, working along the first dimension whose size is not 1 unless dim or "
              "'all' is given. 'omitnan' skips NaN values. prod([]) is 1."),
@@ -612,8 +612,8 @@ HELP: dict = {
                "are written (?<name>...). Matching uses Python's regex engine, so rare constructs may "
                "differ. A cell array s gives a cell of results."),
     "regexpi": (["out = regexpi(s, expr, keyword, ...)"],
-                "Intended as the case-insensitive form of regexp. In mylab it currently runs exactly like "
-                "regexp, so add 'ignorecase' to get case-insensitive matching."),
+                "Case-insensitive form of regexp: the same outputs and options, but letters match "
+                "regardless of case."),
     "regexprep": (["t = regexprep(s, expr, replacement)", "t = regexprep(..., 'ignorecase')",
                    "t = regexprep(..., 'once')"],
                   "Replaces every match of a regular expression. In the replacement, $1, $2, ... insert "
@@ -782,13 +782,12 @@ HELP: dict = {
     "pack": ("pack", "Accepted for compatibility; does nothing."),
     "dbstop": ("dbstop ...", "Accepted for compatibility; mylab has no debugger, so no breakpoint is set."),
     "profile": ("profile on|off|viewer", "Accepted for compatibility; no profiling is done."),
-    "drawnow_noop": ("drawnow_noop", "Internal placeholder that does nothing. Use drawnow to refresh figures."),
     # -- environment -----------------------------------------------------------------------------
     "version": ("v = version", "mylab's version as text, e.g. 'mylab 0.1.0'."),
     "ver": ("ver", "Prints the versions of mylab, Python and NumPy."),
     "isunix": ("tf = isunix", "True when running on a POSIX system (Linux or macOS)."),
-    "ispc": ("tf = ispc", "Always false in mylab."),
-    "ismac": ("tf = ismac", "Always false in mylab, even on macOS; use isunix or computer to detect the platform."),
+    "ispc": ("tf = ispc", "True when running on Windows."),
+    "ismac": ("tf = ismac", "True when running on macOS."),
     "isdeployed": ("tf = isdeployed", "Always false: mylab code never runs as a compiled standalone application."),
     "computer": ("s = computer",
                  "Name of the platform as reported by Python, e.g. 'linux', 'darwin' or 'win32'. These codes "

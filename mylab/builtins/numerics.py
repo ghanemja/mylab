@@ -140,6 +140,8 @@ def _interp1(interp, args, nargout):
             outside = (xq.flatten() < x[0]) | (xq.flatten() > x[-1])
             out[outside] = np.nan if extrap is None else extrap
     else:
+        if kind == "cubic" and x.size < 4:
+            kind = "quadratic" if x.size == 3 else "linear"
         fill = "extrapolate" if (extrap == "extrap" or (extrap is None and method == "spline")) else \
             (np.nan if extrap is None else extrap)
         f = interp1d(x, yv, kind=kind, axis=0, bounds_error=False, fill_value=fill)

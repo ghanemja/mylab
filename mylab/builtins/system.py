@@ -399,7 +399,7 @@ def _format(interp, args, nargout):
     return None
 
 
-@builtin("more", "beep", "drawnow_noop", "commandwindow", "pack", "dbstop", "profile")
+@builtin("more", "beep", "commandwindow", "pack", "dbstop", "profile")
 def _noop(interp, args, nargout):
     return None
 
@@ -415,9 +415,19 @@ def _ver(interp, args, nargout):
     return None
 
 
-@builtin("isdeployed", "ismac", "ispc")
+@builtin("isdeployed")
 def _false_pred(interp, args, nargout):
     return bool_scalar(False)
+
+
+@builtin("ismac")
+def _ismac(interp, args, nargout):
+    return bool_scalar(sys.platform == "darwin")
+
+
+@builtin("ispc")
+def _ispc(interp, args, nargout):
+    return bool_scalar(os.name == "nt")
 
 
 @builtin("isunix")

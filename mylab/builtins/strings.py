@@ -264,7 +264,8 @@ def _num2str(interp, args, nargout):
 
 @builtin("int2str")
 def _int2str(interp, args, nargout):
-    a = np.round(fnum(args[0]))
+    a = fnum(args[0])
+    a = np.sign(a) * np.floor(np.abs(a) + 0.5)  # round halves away from zero
     return _num2str(interp, [a], 1)
 
 
@@ -641,7 +642,12 @@ def _regexprep(interp, args, nargout):
     return _map_text(lambda s: rx.sub(rep, s, count=count), args[0])
 
 
-@builtin("regexp", "regexpi")
+@builtin("regexpi")
+def _regexpi(interp, args, nargout):
+    return _regexp(interp, [*args, char("ignorecase")], nargout)
+
+
+@builtin("regexp")
 def _regexp(interp, args, nargout):
     s_val, pat = args[0], _translate_regex(text(args[1]))
     opts = [text(o).lower() for o in args[2:]]

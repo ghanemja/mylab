@@ -302,3 +302,24 @@ def test_tic_toc(m):
     m.run("t0 = tic; e = toc(t0);")
     assert m.val("e").item() >= 0
     assert m.run("tic; toc").startswith("Elapsed time is")
+
+
+def test_reported_edge_cases(m):
+    """Regression tests for issues found while writing help text."""
+    m.run("c = regexpi('ABC', 'b', 'match');")
+    assert m.str("c{1}") == "B"
+    np.testing.assert_array_equal(m.num("sort(uint8([0 1 2]), 'descend')"), [[2, 1, 0]])
+    assert m.str("class(sum(int8([100 100])))") == "int8"
+    assert m.num("sum(int8([100 100]))").item() == 127
+    assert m.num("prod(uint8([20 20]))").item() == 255
+    assert m.num("cumsum(int8([100 100]))").tolist() == [[100, 127]]
+    assert m.num("abs(int8(-128))").item() == 127
+    np.testing.assert_array_equal(m.num("max(int8([1 2]), 1.7)"), [[2, 2]])
+    assert m.num("linspace(0, 1, 1)").item() == 1
+    assert m.str("int2str(2.5)") == "3"
+    assert np.isfinite(m.num("interp1([1 2 3], [10 20 30], 4, 'spline')").item())
+    with pytest.raises(MatlabError, match="odd integer"):
+        m.run("nthroot(-8, 2)")
+    assert m.num("nthroot(-8, 3)").item() == pytest.approx(-2)
+    assert not m.num("isequaln(NaN, -1.2345e300)").item()
+    assert m.num("isequaln([1 NaN], [1 NaN])").item()

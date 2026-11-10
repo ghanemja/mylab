@@ -70,6 +70,9 @@ for _name, _fn in _ELEMENTWISE.items():
 @builtin("abs")
 def _abs(interp, args, nargout):
     a = num(args[0])
+    if a.dtype.kind == "i":
+        from ..values import saturate_int
+        return saturate_int(np.abs(a.astype(float)), a.dtype)
     return np.abs(a)
 
 
@@ -141,7 +144,14 @@ builtin("atan2d")(_binary_math(lambda a, b: np.degrees(np.arctan2(a, b))))
 builtin("hypot")(_binary_math(np.hypot))
 builtin("mod")(_binary_math(_mod))
 builtin("rem")(_binary_math(_rem))
-builtin("nthroot")(_binary_math(lambda a, n: np.sign(a) * np.abs(a) ** (1.0 / n)))
+def _nthroot(a, n):
+    bad = (a < 0) & ~((n == np.round(n)) & (np.mod(n, 2) == 1))
+    if np.any(bad):
+        raise MatlabError("If X is negative, N must be an odd integer.")
+    return np.sign(a) * np.abs(a) ** (1.0 / n)
+
+
+builtin("nthroot")(_binary_math(_nthroot))
 builtin("beta")(_binary_math(sp.beta))
 
 
@@ -299,14 +309,24 @@ def _reduce(np_fn, empty_value, name, *, nan_fn=None, int_ok=True):
         if a.dtype == bool or (a.dtype.kind in "iu" and not int_ok):
             a = a.astype(float)
         fn = nan_fn if ("omitnan" in flags and nan_fn is not None) else np_fn
+        int_class = a.dtype if (a.dtype.kind in "iu" and "double" not in flags) else None
+        if int_class is not None:
+            a = a.astype(float)  # integer sums keep their class and saturate, as in MATLAB
+
+        def finish(r):
+            if int_class is None:
+                return r
+            from ..values import saturate_int
+            return saturate_int(np.asarray(r, dtype=float), int_class)
+
         if "all" in flags:
-            return fn(a.flatten()) if a.size else empty_value
+            return finish(fn(a.flatten())) if a.size else empty_value
         if a.shape == (0, 0) and len(rest) < 2:
             return empty_value
         axis = get_dim(rest, 1, a)
         if axis >= a.ndim:
-            return a
-        return keep2d(np.asarray(fn(a, axis=axis)), axis, a.ndim)
+            return finish(a)
+        return finish(keep2d(np.asarray(fn(a, axis=axis)), axis, a.ndim))
     return f
 
 
@@ -378,10 +398,18 @@ def _cumulative(np_fn):
         a = num(rest[0])
         if a.dtype == bool:
             a = a.astype(float)
+        int_class = a.dtype if a.dtype.kind in "iu" else None
+        if int_class is not None:
+            a = a.astype(float)
         axis = get_dim(rest, 1, a)
         if "reverse" in flags:
-            return np.flip(np_fn(np.flip(a, axis), axis=axis), axis)
-        return np_fn(a, axis=axis)
+            r = np.flip(np_fn(np.flip(a, axis), axis=axis), axis)
+        else:
+            r = np_fn(a, axis=axis)
+        if int_class is not None:
+            from ..values import saturate_int
+            r = saturate_int(r, int_class)
+        return r
     return f
 
 
@@ -401,9 +429,12 @@ def _minmax(is_max):
         a = num(rest[0])
         if len(rest) >= 2 and not (isinstance(rest[1], np.ndarray) and rest[1].size == 0):
             b = num(rest[1])
-            r = np_pair(a, b)
-            if a.dtype.kind in "iu":
-                r = r.astype(a.dtype)
+            int_class = a.dtype if a.dtype.kind in "iu" else (b.dtype if b.dtype.kind in "iu" else None)
+            r = np_pair(a.astype(float) if a.dtype.kind in "iu" else a,
+                        b.astype(float) if b.dtype.kind in "iu" else b)
+            if int_class is not None:
+                from ..values import saturate_int
+                r = saturate_int(r, int_class)
             return r
         if a.size == 0:
             return (np.zeros((0, 0)), np.zeros((0, 0))) if nargout > 1 else np.zeros((0, 0))
@@ -570,8 +601,8 @@ def _sort(interp, args, nargout):
     key = np.abs(work) if work.dtype.kind == "c" else work
     if "descend" in flags:
         # stable descending sort; NaNs first, as in MATLAB
-        idx = np.argsort(-np.where(np.isnan(key), np.inf, key) if key.dtype.kind == "f" else -key,
-                         axis=axis, kind="stable")
+        fkey = key.astype(float) if key.dtype.kind in "iub" else key
+        idx = np.argsort(-np.where(np.isnan(fkey), np.inf, fkey), axis=axis, kind="stable")
     else:
         idx = np.argsort(key, axis=axis, kind="stable")
     out = np.take_along_axis(a, idx, axis)
