@@ -86,11 +86,13 @@ def _to_positions(idx: Any, extent: int, *, for_set: bool) -> tuple[np.ndarray, 
         bad_mask = (~np.isfinite(vals)) | (vals != np.floor(vals)) | (vals < 1)
         if bad_mask.any():
             raise MatlabError(
-                f"Array indices must be positive integers or logical values. (got {_fmt_index(vals[bad_mask][0])})"
+                f"Array indices must be positive integers or logical values. (got {_fmt_index(vals[bad_mask][0])})",
+                "MATLAB:badsubscript",
             )
     pos = vals.astype(np.int64) - 1
     if not for_set and pos.size and pos.max() >= extent:
-        raise MatlabError(f"Index exceeds the number of array elements. Index must not exceed {extent}.")
+        raise MatlabError(f"Index exceeds the number of array elements. Index must not exceed {extent}.",
+                          "MATLAB:badsubscript")
     return pos, idx.shape
 
 
@@ -141,7 +143,7 @@ def get(arr: np.ndarray, args: list[Any]) -> np.ndarray:
         pos, _ = _to_positions(idx, eshape[d], for_set=True)
         if pos.size and pos.max() >= eshape[d]:
             raise MatlabError(f"Index in position {d + 1} exceeds array bounds. "
-                              f"Index must not exceed {eshape[d]}.")
+                              f"Index must not exceed {eshape[d]}.", "MATLAB:badsubscript")
         positions.append(pos)
     return canonical(view[np.ix_(*positions)])
 

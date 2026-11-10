@@ -92,6 +92,8 @@ class Interpreter:
         self.end_stack: list[tuple[tuple[int, int], int, int]] = []
         self.warnings_enabled = True
         self.last_warning = ""
+        self.last_warning_id = ""
+        self.disabled_warnings: set[str] = set()
         self.depth = 0
         self.max_depth = 500  # MATLAB's default recursion limit
         # Each MATLAB-level call uses a few dozen Python frames.
@@ -169,9 +171,10 @@ class Interpreter:
     def set_var(self, name: str, value: Any) -> None:
         self.base.set(name, to_matlab(value))
 
-    def warn(self, msg: str) -> None:
+    def warn(self, msg: str, identifier: str = "") -> None:
         self.last_warning = msg
-        if self.warnings_enabled:
+        self.last_warning_id = identifier
+        if self.warnings_enabled and identifier not in self.disabled_warnings:
             self.out(f"Warning: {msg}\n")
 
     # -- statements -------------------------------------------------------------------
@@ -875,7 +878,7 @@ class Interpreter:
                 return [base_val.get_field(self, name)]
             if isinstance(base_val, Struct):
                 if name not in base_val.fields:
-                    raise MatlabError(f"Unrecognized field name \"{name}\".")
+                    raise MatlabError(f"Unrecognized field name \"{name}\".", "MATLAB:nonExistentField")
                 return [d[name] for d in base_val.data.flatten(order="F")]
             raise MatlabError(f"Dot indexing is not supported for variables of type '{class_name(base_val)}'.")
         return [self.eval(node, frame)]
@@ -1028,7 +1031,7 @@ class Interpreter:
         has_varargin = bool(params) and params[-1] == "varargin"
         fixed = params[:-1] if has_varargin else params
         if len(args) > len(fixed) and not has_varargin:
-            raise MatlabError(f"Too many input arguments for function '{fn.name}'.")
+            raise MatlabError(f"Too many input arguments for function '{fn.name}'.", "MATLAB:TooManyInputs")
         outputs = fn.outputs
         has_varargout = bool(outputs) and outputs[-1] == "varargout"
         fixed_out = outputs[:-1] if has_varargout else outputs
@@ -1242,15 +1245,15 @@ def switch_matches(subject: Any, option: Any) -> bool:
     return False
 
 
-def make_exception(e: MatlabError) -> Struct:
+def make_exception(e: MatlabError):
+    from .objects import MExceptionObject
+    existing = getattr(e, "mexception", None)
+    if existing is not None:
+        return existing
     stack = Struct.scalar({"file": char(getattr(e, "file", None) or ""),
                            "name": char(getattr(e, "func", "") or ""),
                            "line": np.array([[float(getattr(e, "line", 0) or 0)]])})
-    return Struct.scalar({
-        "message": char(e.message),
-        "identifier": char(e.identifier or ""),
-        "stack": stack,
-    })
+    return MExceptionObject(e.identifier or "", e.message, stack)
 
 
 def free_identifiers(node: A.Node) -> set[str]:

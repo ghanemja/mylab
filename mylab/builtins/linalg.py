@@ -22,7 +22,7 @@ def _inv(interp, args, nargout):
     a = fnum(args[0])
     _square(a, "inv")
     if a.size and (np.linalg.cond(a) > 1 / np.finfo(float).eps):
-        interp.warn("Matrix is singular to working precision.")
+        interp.warn("Matrix is singular to working precision.", "MATLAB:singularMatrix")
         with np.errstate(all="ignore"):
             try:
                 return simplify(np.linalg.inv(a))

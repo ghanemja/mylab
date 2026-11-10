@@ -37,6 +37,9 @@ def _display(interp, args, nargout):
 
 
 def _error_from_args(args) -> MatlabError:
+    from ..objects import MExceptionObject
+    if len(args) == 1 and isinstance(args[0], MExceptionObject):
+        return args[0].to_error()
     if len(args) == 1 and isinstance(args[0], Struct):
         s = args[0].data.flat[0]
         return MatlabError(to_str(s.get("message", char(""))), to_str(s.get("identifier", char(""))))
@@ -48,7 +51,8 @@ def _error_from_args(args) -> MatlabError:
         ident = first
         first = text(rest[0], "error message")
         rest = rest[1:]
-    msg = matlab_sprintf(first, rest) if (rest or ident or "%" in first or "\\" in first) else first
+    # A message given alone is printed literally; with arguments (or an identifier) it is a format.
+    msg = matlab_sprintf(first, rest) if (rest or ident) else first
     return MatlabError(msg, ident)
 
 
@@ -67,10 +71,10 @@ def _rethrow(interp, args, nargout):
 
 @builtin("MException")
 def _mexception(interp, args, nargout):
+    from ..objects import MExceptionObject
     ident = text(args[0])
     msg = matlab_sprintf(text(args[1]), args[2:]) if len(args) > 1 else ""
-    return Struct.scalar({"identifier": char(ident), "message": char(msg),
-                          "stack": Struct.scalar({})})
+    return MExceptionObject(ident, msg)
 
 
 @builtin("warning")
@@ -79,22 +83,37 @@ def _warning(interp, args, nargout):
         return None
     first = text(args[0])
     if first.lower() in ("off", "on") and len(args) <= 2:
+        enable = first.lower() == "on"
         if len(args) == 1 or text(args[1]).lower() == "all":
-            interp.warnings_enabled = first.lower() == "on"
+            interp.warnings_enabled = enable
+            if enable:
+                interp.disabled_warnings.clear()
+        elif enable:
+            interp.disabled_warnings.discard(text(args[1]))
+        else:
+            interp.disabled_warnings.add(text(args[1]))
         return None
     if first.lower() == "query":
-        return None
+        ident = text(args[1]) if len(args) > 1 else "all"
+        on = interp.warnings_enabled and ident not in interp.disabled_warnings
+        return Struct.scalar({"identifier": char(ident), "state": char("on" if on else "off")}) if nargout else None
     rest = list(args[1:])
+    ident = ""
     if rest and ":" in first and " " not in first:
+        ident = first
         first = text(rest[0])
         rest = rest[1:]
-    interp.warn(matlab_sprintf(first, rest))
+    interp.warn(matlab_sprintf(first, rest) if (rest or ident) else first, ident)
     return None
 
 
 @builtin("lastwarn")
 def _lastwarn(interp, args, nargout):
-    return char(interp.last_warning)
+    msg, ident = char(interp.last_warning), char(getattr(interp, "last_warning_id", ""))
+    if args:
+        interp.last_warning = text(args[0])
+        interp.last_warning_id = text(args[1]) if len(args) > 1 else ""
+    return (msg, ident) if nargout > 1 else msg
 
 
 @builtin("assert")

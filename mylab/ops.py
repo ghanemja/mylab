@@ -60,7 +60,8 @@ def _check_broadcast(a: np.ndarray, b: np.ndarray, op: str) -> None:
     for da, db in zip(a.shape, b.shape):
         if da != db and da != 1 and db != 1:
             raise MatlabError(
-                f"Arrays have incompatible sizes for this operation ({_dims(a.shape)} {op} {_dims(b.shape)})."
+                f"Arrays have incompatible sizes for this operation ({_dims(a.shape)} {op} {_dims(b.shape)}).",
+                "MATLAB:sizeDimensionsMustMatch",
             )
 
 
@@ -136,18 +137,19 @@ def matmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         raise MatlabError(
             "Incorrect dimensions for matrix multiplication. Check that the number of columns in the "
             "first matrix matches the number of rows in the second matrix. To operate on each element "
-            "of the matrix individually, use TIMES (.*) for elementwise multiplication."
+            "of the matrix individually, use TIMES (.*) for elementwise multiplication.",
+            "MATLAB:innerdim",
         )
     rtype = _result_type(a, b)
     return _finish(np.asarray(a, dtype=None if a.dtype.kind in "fc" else float)
                    @ np.asarray(b, dtype=None if b.dtype.kind in "fc" else float), rtype)
 
 
-def _warn(msg: str) -> None:
+def _warn(msg: str, identifier: str = "") -> None:
     from .interpreter import current_interpreter
     interp = current_interpreter()
     if interp is not None:
-        interp.warn(msg)
+        interp.warn(msg, identifier)
 
 
 def left_divide(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -162,12 +164,12 @@ def left_divide(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         try:
             cond = np.linalg.cond(af)
             if not np.isfinite(cond) or cond > 1 / np.finfo(float).eps:
-                _warn("Matrix is singular to working precision.")
+                _warn("Matrix is singular to working precision.", "MATLAB:singularMatrix")
                 with np.errstate(all="ignore"):
                     return simplify(np.linalg.lstsq(af, bf, rcond=None)[0])
             return simplify(np.linalg.solve(af, bf))
         except np.linalg.LinAlgError:
-            _warn("Matrix is singular to working precision.")
+            _warn("Matrix is singular to working precision.", "MATLAB:singularMatrix")
             return np.full((a.shape[1], b.shape[1]), np.inf)
     return simplify(np.linalg.lstsq(af, bf, rcond=None)[0])
 
@@ -355,7 +357,8 @@ def _concat_arrays(items: list[np.ndarray], axis: int) -> np.ndarray:
     first = nonempty[0].shape[:axis] + nonempty[0].shape[axis + 1:]
     for i in nonempty[1:]:
         if i.shape[:axis] + i.shape[axis + 1:] != first:
-            raise MatlabError("Dimensions of arrays being concatenated are not consistent.")
+            raise MatlabError("Dimensions of arrays being concatenated are not consistent.",
+                              "MATLAB:catenate:dimensionMismatch")
     return as_2d(np.concatenate(nonempty, axis=axis))
 
 
@@ -376,7 +379,8 @@ def _concat_cells(items: list[Cell], axis: int) -> Cell:
     first = nonempty[0].shape[:axis] + nonempty[0].shape[axis + 1:]
     for d in nonempty[1:]:
         if d.shape[:axis] + d.shape[axis + 1:] != first:
-            raise MatlabError("Dimensions of arrays being concatenated are not consistent.")
+            raise MatlabError("Dimensions of arrays being concatenated are not consistent.",
+                              "MATLAB:catenate:dimensionMismatch")
     return Cell(as_2d(np.concatenate(nonempty, axis=axis)))
 
 
@@ -401,6 +405,9 @@ def concat(items: list[Any], axis: int) -> Any:
     for i in items:
         if hasattr(type(i), "concat") and hasattr(i, "isa_class"):
             return type(i).concat(items, axis)
+    if any(hasattr(i, "isa_class") for i in items):
+        raise MatlabError("Object arrays are not supported yet; store objects in a cell array instead, "
+                          "e.g. {obj1, obj2}.")
     if any(isinstance(i, Cell) for i in items):
         return _concat_cells([_to_cell(i) for i in items], axis)
     if any(isinstance(i, Struct) for i in items):
@@ -418,7 +425,8 @@ def concat(items: list[Any], axis: int) -> Any:
         first = datas[0].shape[:axis] + datas[0].shape[axis + 1:]
         for d in datas[1:]:
             if d.shape[:axis] + d.shape[axis + 1:] != first:
-                raise MatlabError("Dimensions of arrays being concatenated are not consistent.")
+                raise MatlabError("Dimensions of arrays being concatenated are not consistent.",
+                              "MATLAB:catenate:dimensionMismatch")
         return string_result(as_2d(np.concatenate(datas, axis=axis)))
     if any(isinstance(i, FunctionHandle) for i in items):
         raise MatlabError("Function handles cannot be concatenated; use a cell array {...}.")

@@ -68,3 +68,38 @@ def test_comma_list_assignment(m):
 def test_not_enough_inputs_message(m):
     with pytest.raises(MatlabError, match="Not enough input arguments"):
         m.run("function r = add2(a, b)\nr = a + b;\nend\nadd2(1)")
+
+
+def test_mexception_object(m):
+    m.run("try\n  x = [1 2 3]; y = x(5);\ncatch ME\n"
+          "  id = ME.identifier; c = class(ME); ok = isa(ME, 'MException');\nend")
+    assert m.str("id") == "MATLAB:badsubscript"
+    assert m.str("c") == "MException" and m.val("ok").item()
+    m.run("try, [1 2] + [1 2 3]; catch e, id2 = e.identifier; end")
+    assert m.str("id2") == "MATLAB:sizeDimensionsMustMatch"
+    m.run("try, [1 2] * [3 4]; catch e, id3 = e.identifier; end")
+    assert m.str("id3") == "MATLAB:innerdim"
+    m.run("ME2 = MException('my:id', 'Bad value %d', 7);")
+    with pytest.raises(MatlabError, match="Bad value 7"):
+        m.run("throw(ME2)")
+    m.run("try, error('a:b', 'outer'); catch E, r = E.getReport(); end")
+    assert "outer" in m.str("r")
+    m.run("try, error('Simple %d'); catch E2, msg = E2.message; end")
+    assert m.str("msg") == "Simple %d"
+    m.run("try, error('x:y', 'v=%d', 3); catch E3, try, rethrow(E3); catch E4, id4 = E4.identifier; end, end")
+    assert m.str("id4") == "x:y"
+
+
+def test_warning_identifiers(m):
+    out = m.run("warning('off', 'My:id'); warning('My:id', 'hidden'); warning('Other:id', 'shown');")
+    assert "hidden" not in out and "shown" in out
+    out = m.run("warning('off', 'MATLAB:singularMatrix'); x = [1 2; 2 4] \\ [1; 2];")
+    assert "singular" not in out
+    m.run("warning('Last:one', 'msg %d', 2); [msg, id] = lastwarn;")
+    assert m.str("msg") == "msg 2" and m.str("id") == "Last:one"
+
+
+def test_object_concatenation_is_a_clean_error(m):
+    m.run("mp = containers.Map();")
+    with pytest.raises(MatlabError, match="cell array"):
+        m.run("x = [mp, mp];")

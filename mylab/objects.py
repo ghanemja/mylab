@@ -258,3 +258,68 @@ def make_map(args: list) -> MapObject:
     elif value_type == "any" and len(keys) == 1 and is_char(vals_val):
         m.value_type = "char"
     return m
+
+
+# -- MException -----------------------------------------------------------------------------
+
+class MExceptionObject(MObject):
+    """The error object caught by ``catch err`` (and created with MException)."""
+
+    def __init__(self, identifier: str, message: str, stack: Any = None, causes: list | None = None):
+        self.identifier = identifier
+        self.message = message
+        self.stack = stack
+        self.causes = list(causes or [])
+
+    def class_name(self) -> str:
+        return "MException"
+
+    def isa_class(self, name: str) -> bool:
+        return name == "MException"
+
+    _METHODS = {"getReport", "rethrow", "throw", "throwAsCaller", "addCause"}
+
+    def has_method(self, name: str) -> bool:
+        return name in self._METHODS
+
+    def to_error(self) -> MatlabError:
+        err = MatlabError(self.message, self.identifier)
+        err.mexception = self  # type: ignore[attr-defined]
+        return err
+
+    def call_method(self, interp, name: str, args: list, nargout: int) -> list:
+        from .values import char
+        if name in ("rethrow", "throw", "throwAsCaller"):
+            raise self.to_error()
+        if name == "getReport":
+            report = f"Error: {self.message}"
+            for c in self.causes:
+                if isinstance(c, MExceptionObject):
+                    report += f"\nCaused by:\n    {c.message}"
+            return [char(report)]
+        if name == "addCause":
+            other = MExceptionObject(self.identifier, self.message, self.stack, self.causes + [args[1]])
+            return [other]
+        return super().call_method(interp, name, args, nargout)
+
+    def get_field(self, interp, name: str) -> Any:
+        from .values import Cell, Struct, char
+        if name == "message":
+            return char(self.message)
+        if name == "identifier":
+            return char(self.identifier)
+        if name == "stack":
+            return self.stack if self.stack is not None else Struct(np.empty((0, 1), dtype=object), [])
+        if name == "cause":
+            return Cell.from_list(self.causes, column=True)
+        return super().get_field(interp, name)
+
+    def set_field(self, interp, name: str, value: Any) -> "MExceptionObject":
+        raise MatlabError(f"Cannot set read-only property '{name}' of MException.")
+
+    def display_lines(self) -> list[str]:
+        return ["  MException with properties:", "",
+                f"    identifier: '{self.identifier}'",
+                f"       message: '{self.message}'",
+                f"         cause: {{{len(self.causes)}×1 cell}}",
+                "         stack: [1×1 struct]"]
