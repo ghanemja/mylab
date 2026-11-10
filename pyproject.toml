@@ -31,6 +31,7 @@ dev = ["pytest>=7", "ruff>=0.4", "mcp>=1.2", "ipykernel>=6", "jupyter_client>=8"
 [project.scripts]
 mylab = "mylab.cli:main"
 mylab-mcp = "mylab.mcp_server:main"
+mylab-kernel = "mylab.kernel:main"
 
 [tool.setuptools.packages.find]
 include = ["mylab*"]
