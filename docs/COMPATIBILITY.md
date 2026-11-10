@@ -48,9 +48,8 @@ what mylab printed, and what you expected.
   statistics, optimization). Simulink, Symbolic Math, Control System, Image
   Processing and others are out of scope for now.
 - **Language corners:**
-  - `nargin('fname')`, `inputname`, `evalin`/`assignin`, `persistent`
-    variables (treated like `global`), `parfor` (runs as an ordinary `for`
-    loop), the `arguments` validation block;
+  - `nargin('fname')`, `inputname`, `evalin`/`assignin`, `parfor` (runs as an
+    ordinary `for` loop), the `arguments` validation block;
   - command syntax (`hold on`, `shading interp`, `clearvars -except x`) works
     when the arguments are plain words. In classdef files, it works only for
     a fixed list of common commands.

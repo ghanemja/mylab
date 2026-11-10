@@ -52,7 +52,8 @@ class Frame:
         self.interp = interp
         self.vars: dict[str, Any] = {}
         self.functions = functions if functions is not None else {}
-        self.globals: set[str] = set()
+        # Names declared global or persistent -> the dict that stores them.
+        self.globals: dict[str, dict] = {}
         self.name = name
         self.nargin = nargin
         self.nargout = nargout
@@ -61,23 +62,27 @@ class Frame:
         self.owner_class: Any = None  # ClassInfo when running a class method
 
     def has(self, name: str) -> bool:
-        if name in self.globals:
-            return name in self.interp.global_vars
+        store = self.globals.get(name)
+        if store is not None:
+            return name in store
         return name in self.vars
 
     def get(self, name: str) -> Any:
-        if name in self.globals:
-            return self.interp.global_vars[name]
+        store = self.globals.get(name)
+        if store is not None:
+            return store[name]
         return self.vars[name]
 
     def lookup(self, name: str) -> Any | None:
-        if name in self.globals:
-            return self.interp.global_vars.get(name)
+        store = self.globals.get(name)
+        if store is not None:
+            return store.get(name)
         return self.vars.get(name)
 
     def set(self, name: str, value: Any) -> None:
-        if name in self.globals:
-            self.interp.global_vars[name] = value
+        store = self.globals.get(name)
+        if store is not None:
+            store[name] = value
         else:
             self.vars[name] = value
 
@@ -127,6 +132,7 @@ class Interpreter:
         self.builtins = BUILTINS
         self.out = out or (lambda s: (sys.stdout.write(s), sys.stdout.flush()))
         self.global_vars: dict[str, Any] = {}
+        self.persistent_vars: dict[int, dict[str, Any]] = {}
         self.base = Frame(self)
         self.frames: list[Frame] = [self.base]
         self.path: list[str] = path if path is not None else []
@@ -283,10 +289,16 @@ class Interpreter:
         elif t is A.Return:
             raise ReturnSignal()
         elif t is A.Global:
+            if getattr(stmt, "persistent", False):
+                # One store per function definition: survives between calls, private to that function.
+                key = id(getattr(frame, "fn_node", None) or frame)
+                store = self.persistent_vars.setdefault(key, {})
+            else:
+                store = self.global_vars
             for name in stmt.names:
-                frame.globals.add(name)
-                if name not in self.global_vars:
-                    self.global_vars[name] = frame.vars.pop(name, empty_double())
+                frame.globals[name] = store
+                if name not in store:
+                    store[name] = frame.vars.pop(name, empty_double())
         else:  # pragma: no cover
             raise MatlabError(f"Unsupported statement {t.__name__}")
 

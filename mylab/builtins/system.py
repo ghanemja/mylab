@@ -233,7 +233,7 @@ def _clear(interp, args, nargout):
         for n in list(frame.vars):
             if fnmatch.fnmatchcase(n, pattern):
                 del frame.vars[n]
-        frame.globals.discard(pattern)
+        frame.globals.pop(pattern, None)
     return None
 
 

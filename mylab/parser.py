@@ -409,6 +409,7 @@ class Parser:
                 while self.tok.kind == "ID":
                     names.append(self.next().value)
                 node = A.Global(names)
+                node.persistent = kw == "persistent"  # type: ignore[attr-defined]
                 self.end_statement()
             else:
                 raise self.error(f"unexpected keyword '{kw}'")

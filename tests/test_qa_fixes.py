@@ -158,3 +158,21 @@ def test_small_numeric_cases(m):
     assert m.str("class([single(1) 2])") == "single"
     m.run("[fid, msg] = fopen('definitely_missing_file.txt');")
     assert m.val("fid").item() == -1 and "Errno" not in m.str("msg")
+
+
+def test_persistent_is_per_function(m):
+    m.run("""
+function n = counter_a()
+    persistent k
+    if isempty(k), k = 0; end
+    k = k + 1; n = k;
+end
+function n = counter_b()
+    persistent k
+    if isempty(k), k = 100; end
+    k = k + 1; n = k;
+end
+a1 = counter_a(); a2 = counter_a(); b1 = counter_b(); a3 = counter_a();
+""")
+    assert (m.val("a1").item(), m.val("a2").item(), m.val("b1").item(), m.val("a3").item()) == (1, 2, 101, 3)
+    assert not m.interp.base.has("k")
