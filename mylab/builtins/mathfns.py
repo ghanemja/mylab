@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 import math
+from typing import Any
 
 import numpy as np
 import scipy.special as sp
@@ -673,18 +674,59 @@ def _sort(interp, args, nargout):
 
 @builtin("sortrows")
 def _sortrows(interp, args, nargout):
-    a = num(args[0])
-    cols = [int(c) for c in num(args[1]).flatten()] if len(args) > 1 and not is_text(args[1]) else \
+    nargs(args, 1, 3, "sortrows")
+    v = args[0]
+    descend = any(is_text(x) and text(x).lower() == "descend" for x in args[1:])
+    col_arg = next((x for x in args[1:] if not is_text(x) and not isinstance(x, Cell)), None)
+    if isinstance(v, (Cell, StringArray)):
+        data = v.data
+        ncols = data.shape[1]
+        cols = [int(c) for c in num(col_arg).flatten()] if col_arg is not None and np.size(col_arg) else \
+            list(range(1, ncols + 1))
+        order = np.arange(data.shape[0])
+        for c in reversed(cols):
+            j = abs(c) - 1
+            if j >= ncols:
+                raise MatlabError("sortrows: column index exceeds the number of columns.")
+            desc = (c < 0) ^ descend
+            column = [data[i, j] for i in order]
+            if all(x is None or isinstance(x, str) or is_text(x) for x in column):
+                keys = ["" if x is None else to_str(x) for x in column]
+            elif all(isinstance(x, np.ndarray) and x.size == 1 and x.dtype.kind in "biuf" for x in column):
+                keys = [float(x.flat[0]) for x in column]
+            else:
+                raise MatlabError("sortrows on a cell array needs columns of text or of numeric scalars.")
+            # stable in both directions: equal keys keep their order
+            o = sorted(range(len(keys)), key=(lambda i: (_neg_key(keys[i]), i)) if desc else
+                       (lambda i: (keys[i], i)))
+            order = order[np.array(o, dtype=int)] if o else order
+        out = type(v)(data[order, :])
+        return (out, (order + 1.0).reshape(-1, 1)) if nargout > 1 else out
+    a = num(v)
+    cols = [int(c) for c in num(col_arg).flatten()] if col_arg is not None and np.size(col_arg) else \
         list(range(1, a.shape[1] + 1))
-    descend = any(is_text(x) and text(x) == "descend" for x in args[1:])
     order = np.arange(a.shape[0])
     for c in reversed(cols):
+        if abs(c) - 1 >= a.shape[1] or c == 0:
+            raise MatlabError("sortrows: column index out of range.")
         col = a[order, abs(c) - 1]
+        if col.dtype.kind == "c":
+            col = np.abs(col)
         desc = (c < 0) ^ descend
-        o = np.argsort(-col if desc else col, kind="stable")
+        if desc:
+            fcol = col.astype(float)
+            o = np.argsort(-np.where(np.isnan(fcol), np.inf, fcol), kind="stable")
+        else:
+            o = np.argsort(col, kind="stable")
         order = order[o]
-    out = args[0][order, :]
+    out = v[order, :]
     return (out, (order + 1.0).reshape(-1, 1)) if nargout > 1 else out
+
+
+def _neg_key(k):
+    if isinstance(k, str):
+        return tuple(-ord(ch) for ch in k) + (1,)
+    return -k
 
 
 @builtin("unique")
@@ -795,7 +837,20 @@ for _k in ("intersect", "union", "setdiff", "setxor"):
 @builtin("ismember")
 def _ismember(interp, args, nargout):
     from .strings import _as_cell_if_strings
+    args, flags = flag_present(args, "rows", "legacy")
+    nargs(args, 2, 2, "ismember")
     a, b = _as_cell_if_strings(args[0]), _as_cell_if_strings(args[1])
+    if "rows" in flags and not isinstance(a, Cell):
+        av, bv = num(a), num(b)
+        if av.shape[1] != bv.shape[1] and av.size and bv.size:
+            raise MatlabError("ismember(A, B, 'rows') needs A and B with the same number of columns.")
+        lookup: dict = {}
+        for k in range(bv.shape[0]):
+            lookup.setdefault(tuple(bv[k].tolist()), k + 1.0)
+        locs = [lookup.get(tuple(av[k].tolist()), 0.0) for k in range(av.shape[0])]
+        loc = np.array(locs, dtype=float).reshape(-1, 1)
+        tf = loc != 0
+        return (tf, loc) if nargout > 1 else tf
     if isinstance(a, MString) and isinstance(b, Cell):
         a = char(str(a))
     if is_text(a) and isinstance(b, Cell):
@@ -882,33 +937,317 @@ def _tril(interp, args, nargout):
     return np.tril(args[0], k)
 
 
+def _nice_width(w: float) -> float:
+    """Round a raw bin width to 1, 2, 2.5 or 5 times a power of ten."""
+    if not np.isfinite(w) or w <= 0:
+        return 1.0
+    p = 10.0 ** np.floor(np.log10(w))
+    m = w / p
+    # the candidate closest to m on a logarithmic scale
+    return p * min((1.0, 2.0, 2.5, 5.0, 10.0), key=lambda step: abs(np.log(m / step)))
+
+
+def _auto_edges(x: np.ndarray, width: float | None = None, nbins: int | None = None,
+                limits: tuple[float, float] | None = None) -> np.ndarray:
+    """Bin edges chosen automatically: round limits and a round bin width."""
+    finite = x[np.isfinite(x)]
+    if limits is not None:
+        lo, hi = limits
+    elif finite.size:
+        lo, hi = float(finite.min()), float(finite.max())
+    else:
+        lo, hi = 0.0, 1.0
+    if nbins is not None:
+        if lo == hi:
+            lo, hi = lo - 0.5, hi + 0.5
+        return np.linspace(lo, hi, nbins + 1)
+    if width is None:
+        span = hi - lo
+        integers = finite.size > 0 and bool(np.all(finite == np.round(finite)))
+        raw = 3.5 * float(np.std(finite)) / finite.size ** (1 / 3) if finite.size > 1 else 0.0
+        if limits is None and integers and span <= 50 and (raw <= 2.0 or span <= 10):
+            # integer data over a small range: unit bins centred on the integers
+            return np.arange(lo - 0.5, hi + 1.0, 1.0)
+        if span == 0:
+            return np.array([lo - 0.5, lo + 0.5])
+        width = _nice_width(raw if raw > 0 else span)
+        if integers:
+            width = max(1.0, float(np.ceil(width)))
+    if limits is not None:
+        n = max(int(np.ceil((hi - lo) / width - 1e-9)), 1)
+        return lo + width * np.arange(n + 1)
+    left = np.floor(lo / width) * width
+    n = max(int(np.ceil((hi - left) / width - 1e-9)), 1)
+    edges = left + width * np.arange(n + 1)
+    if edges[-1] < hi:
+        edges = np.append(edges, edges[-1] + width)
+    return edges
+
+
 @builtin("histcounts")
 def _histcounts(interp, args, nargout):
-    x = fnum(args[0]).flatten()
-    bins = args[1] if len(args) > 1 else None
-    if bins is None:
-        counts, edges = np.histogram(x[np.isfinite(x)], bins="auto")
+    nargs(args, 1, None, "histcounts")
+    x = np.real(fnum(args[0])).flatten(order="F").astype(float)
+    rest = list(args[1:])
+    edges = None
+    nbins = width = limits = None
+    norm = "count"
+    if rest and not is_text(rest[0]):
+        b = fnum(rest.pop(0)).flatten()
+        if b.size == 1:
+            nbins = int(b[0])
+        else:
+            edges = b.astype(float)
+    if len(rest) % 2:
+        raise MatlabError("histcounts options must be name-value pairs.")
+    for k in range(0, len(rest), 2):
+        name = text(rest[k]).lower()
+        val = rest[k + 1]
+        if name == "binedges":
+            edges = fnum(val).flatten().astype(float)
+        elif name == "numbins":
+            nbins = to_int(val, "NumBins")
+        elif name == "binwidth":
+            width = float(fnum(val).flat[0])
+        elif name == "binlimits":
+            lim = fnum(val).flatten()
+            limits = (float(lim[0]), float(lim[1]))
+        elif name == "normalization":
+            norm = text(val).lower()
+        elif name == "binmethod":
+            meth = text(val).lower()
+            if meth == "integers":
+                f = x[np.isfinite(x)]
+                lo, hi = (np.floor(f.min()), np.ceil(f.max())) if f.size else (0.0, 0.0)
+                edges = np.arange(lo - 0.5, hi + 1.0, 1.0)
+        else:
+            raise MatlabError(f"Unknown histcounts option '{text(rest[k])}'.")
+    if edges is None:
+        if nbins is not None and nbins < 1:
+            raise MatlabError("The number of bins must be a positive integer.")
+        edges = _auto_edges(x, width, nbins, limits)
+    if edges.size < 2:
+        raise MatlabError("Bin edges must have at least two elements.")
+    counts, _ = np.histogram(x[np.isfinite(x) | np.isinf(x)], bins=edges)
+    counts = counts.astype(float)
+    n_total = float(np.count_nonzero(~np.isnan(x)))
+    widths = np.diff(edges)
+    if norm == "count":
+        out = counts
+    elif norm == "probability":
+        out = counts / n_total if n_total else counts * np.nan
+    elif norm == "pdf":
+        out = counts / (n_total * widths) if n_total else counts * np.nan
+    elif norm == "cdf":
+        out = np.cumsum(counts) / n_total if n_total else counts * np.nan
+    elif norm == "countdensity":
+        out = counts / widths
+    elif norm == "cumcount":
+        out = np.cumsum(counts)
     else:
-        b = fnum(bins).flatten()
-        counts, edges = np.histogram(x, bins=int(b[0]) if b.size == 1 else b)
-    out = counts.astype(float).reshape(1, -1)
-    return (out, edges.reshape(1, -1)) if nargout > 1 else out
+        raise MatlabError(f"Unknown normalization '{norm}'.")
+    out = out.reshape(1, -1)
+    if nargout <= 1:
+        return out
+    outs = [out, edges.reshape(1, -1)]
+    if nargout > 2:
+        idx = np.searchsorted(edges, x, side="right").astype(float)
+        idx[x == edges[-1]] = edges.size - 1
+        idx[(x < edges[0]) | (x > edges[-1]) | np.isnan(x)] = 0
+        outs.append(idx.reshape(args[0].shape if isinstance(args[0], np.ndarray) else (1, -1), order="F"))
+    return tuple(outs)
+
+
+def _accum_out_shape(subs: np.ndarray, sz) -> tuple[int, ...]:
+    need = tuple(int(m) for m in subs.max(axis=0)) if subs.size else (0,) * subs.shape[1]
+    if sz is not None and np.asarray(sz).size:
+        shape = tuple(int(v) for v in np.asarray(sz).flatten())
+        if subs.shape[1] == 1 and len(shape) == 2 and 1 in shape:
+            if max(shape) < need[0]:
+                raise MatlabError("accumarray: subscripts exceed the requested size.")
+            return shape
+        if len(shape) != subs.shape[1] or any(s < n for s, n in zip(shape, need)):
+            raise MatlabError("accumarray: the size must have one element per subscript column "
+                              "and be at least as large as the subscripts.")
+        return shape
+    if subs.shape[1] == 1:
+        return (need[0], 1)
+    return need
 
 
 @builtin("accumarray")
 def _accumarray(interp, args, nargout):
-    subs = num(args[0]).astype(int)
-    vals = fnum(args[1]).flatten()
-    if subs.shape[1] == 1 or subs.shape[0] == 1 and subs.shape[1] != 2:
-        s = subs.flatten() - 1
-        n = int(s.max()) + 1 if s.size else 0
-        out = np.zeros(n)
-        np.add.at(out, s, np.broadcast_to(vals, s.shape))
-        return out.reshape(-1, 1)
-    r, c = subs[:, 0] - 1, subs[:, 1] - 1
-    out = np.zeros((int(r.max()) + 1, int(c.max()) + 1))
-    np.add.at(out, (r, c), np.broadcast_to(vals, r.shape))
-    return out
+    nargs(args, 2, 6, "accumarray")
+    subs_v = args[0]
+    if isinstance(subs_v, Cell):
+        subs = np.column_stack([num(c).flatten(order="F") for c in subs_v.values_f()])
+    else:
+        subs = num(subs_v)
+        if subs.ndim == 2 and subs.shape[0] == 1 and subs.shape[1] != 2:
+            subs = subs.reshape(-1, 1)
+    subs = np.real(subs).astype(float)
+    if subs.size and (np.any(subs < 1) or np.any(subs != np.round(subs))):
+        raise MatlabError("accumarray: subscripts must be positive integers.")
+    subs = subs.astype(int)
+    vals_v = args[1]
+    vals = fnum(vals_v).flatten(order="F")
+    m = subs.shape[0]
+    if vals.size == 1:
+        vals = np.repeat(vals, m)
+    elif vals.size != m:
+        raise MatlabError("accumarray: the number of values must match the number of subscript rows.")
+    sz = num(args[2]) if len(args) > 2 and not (isinstance(args[2], np.ndarray) and args[2].size == 0) \
+        else None
+    fun = args[3] if len(args) > 3 and not (isinstance(args[3], np.ndarray) and args[3].size == 0) else None
+    fill = args[4] if len(args) > 4 and not (isinstance(args[4], np.ndarray) and args[4].size == 0) else None
+    shape = _accum_out_shape(subs, sz)
+    lin = np.ravel_multi_index(tuple(subs[:, k] - 1 for k in range(subs.shape[1])),
+                               shape if subs.shape[1] > 1 else (int(np.prod(shape)),), order="F") \
+        if m else np.zeros(0, dtype=int)
+    total = int(np.prod(shape))
+    is_logical = isinstance(vals_v, np.ndarray) and vals_v.dtype == bool
+    if fun is None:
+        out = np.zeros(total, dtype=complex if np.iscomplexobj(vals) else float)
+        np.add.at(out, lin, vals)
+        filled = np.zeros(total, dtype=bool)
+        filled[lin] = True
+        if fill is not None:
+            out[~filled] = float(fnum(fill).flat[0])
+        return simplify(out.reshape(shape, order="F"))
+    groups: dict[int, list[int]] = {}
+    for k, p in enumerate(lin):
+        groups.setdefault(int(p), []).append(k)
+    results: dict[int, Any] = {}
+    for p, members in groups.items():
+        piece = vals[members].reshape(-1, 1)
+        if is_logical:
+            piece = piece.astype(bool)
+        res = interp.call_function_value(fun, [piece], 1)
+        if not res:
+            raise MatlabError("accumarray: the function must return a value.")
+        results[p] = res[0]
+    if any(isinstance(r, Cell) for r in results.values()):
+        data = np.empty(total, dtype=object)
+        empty_fill = fill if fill is not None else np.zeros((0, 0))
+        for p in range(total):
+            r = results.get(p)
+            if r is None:
+                data[p] = empty_fill
+            elif isinstance(r, Cell):
+                if r.data.size != 1:
+                    raise MatlabError("accumarray: the function must return a scalar cell.")
+                data[p] = r.data.flat[0]
+            else:
+                data[p] = r
+        return Cell(data.reshape(shape, order="F"))
+    fill_val = float(np.real(fnum(fill).flat[0])) if fill is not None else 0.0
+    cplx = any(np.iscomplexobj(fnum(r)) for r in results.values())
+    out = np.full(total, fill_val, dtype=complex if cplx else float)
+    all_bool = bool(results) and all(isinstance(r, np.ndarray) and r.dtype == bool for r in results.values())
+    for p, r in results.items():
+        a = fnum(r)
+        if a.size != 1:
+            raise MatlabError("accumarray: the function must return a scalar for each group; "
+                              "wrap non-scalar results in a cell, e.g. @(x) {x}.")
+        out[p] = a.flat[0]
+    out = out.reshape(shape, order="F")
+    if all_bool and fill is None:
+        return out.astype(bool)
+    return simplify(out)
+
+
+@builtin("repelem")
+def _repelem(interp, args, nargout):
+    nargs(args, 2, None, "repelem")
+    v = args[0]
+    data = v.data if isinstance(v, (Cell, StringArray)) else v
+    if not isinstance(data, np.ndarray):
+        data = num(v)
+
+    def counts(arg, n):
+        c = num(arg).flatten().astype(int)
+        if c.size == 1:
+            return np.repeat(c, n)
+        if c.size != n:
+            raise MatlabError("repelem: the repetition vector must match the size of the input.")
+        if np.any(c < 0):
+            raise MatlabError("repelem: repetition counts must be nonnegative.")
+        return c
+
+    if len(args) == 2:
+        if not (data.ndim == 2 and (data.shape[0] == 1 or data.shape[1] == 1)):
+            raise MatlabError("repelem(v, n) needs a vector v; use repelem(A, r, c) for matrices.")
+        res = np.repeat(data.flatten(order="F"), counts(args[1], data.size))
+        res = res.reshape(1, -1) if data.shape[0] == 1 else res.reshape(-1, 1)
+    else:
+        res = data
+        for axis, arg in enumerate(args[1:]):
+            while res.ndim <= axis:
+                res = res[..., np.newaxis]
+            res = np.repeat(res, counts(arg, res.shape[axis]), axis=axis)
+    if isinstance(v, Cell):
+        return Cell(res)
+    if isinstance(v, StringArray):
+        return string_result(res)
+    return res
+
+
+@builtin("issorted")
+def _issorted(interp, args, nargout):
+    nargs(args, 1, 3, "issorted")
+    rest, flags = flag_present(args, "ascend", "descend", "monotonic", "strictascend",
+                               "strictdescend", "strictmonotonic", "rows")
+    v = rest[0]
+    if isinstance(v, (Cell, StringArray)):
+        from .strings import _as_cell_if_strings
+        keys = [to_str(x) for x in _as_cell_if_strings(v).values_f()]
+    elif "rows" in flags:
+        a = num(v)
+        keys = [tuple(r) for r in a]
+    else:
+        a = num(v)
+        keys = list(a.flatten(order="F"))
+    pairs = list(zip(keys, keys[1:]))
+    asc = all(not (b < a) for a, b in pairs)
+    desc = all(not (b > a) for a, b in pairs)
+    if "descend" in flags:
+        ok = desc
+    elif "monotonic" in flags:
+        ok = asc or desc
+    elif "strictascend" in flags:
+        ok = all(a < b for a, b in pairs)
+    elif "strictdescend" in flags:
+        ok = all(a > b for a, b in pairs)
+    elif "strictmonotonic" in flags:
+        ok = all(a < b for a, b in pairs) or all(a > b for a, b in pairs)
+    else:
+        ok = asc
+    return np.array([[bool(ok)]])
+
+
+def _topk(largest: bool):
+    def f(interp, args, nargout):
+        nargs(args, 2, 4, "maxk" if largest else "mink")
+        a = num(args[0])
+        k = to_int(args[1], "k")
+        if k < 0:
+            raise MatlabError("k must be a nonnegative integer.")
+        axis = get_dim(args, 2, a)
+        work = a.astype(float) if a.dtype.kind in "biu" else a
+        key = np.abs(work) if work.dtype.kind == "c" else work
+        if largest:
+            key = np.where(np.isnan(key), -np.inf, -key) if key.dtype.kind == "f" else -key
+        else:
+            key = np.where(np.isnan(key), np.inf, key) if key.dtype.kind == "f" else key
+        idx = np.argsort(key, axis=axis, kind="stable")
+        idx = np.take(idx, np.arange(min(k, a.shape[axis] if a.ndim > axis else 1)), axis=axis)
+        out = np.take_along_axis(a, idx, axis)
+        return (out, idx.astype(float) + 1) if nargout > 1 else out
+    return f
+
+
+builtin("maxk")(_topk(True))
+builtin("mink")(_topk(False))
 
 
 @builtin("dec2bin")

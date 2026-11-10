@@ -12,10 +12,10 @@ from ..display import format_scalar, size_str, summary
 from ..errors import MatlabError
 from ..objects import MObject
 from ..values import (
-    Cell, MString, StringArray, Struct, char, is_char, string_data, string_result, to_str,
+    Cell, FunctionHandle, MString, StringArray, Struct, char, is_char, string_data, string_result, to_str,
 )
 from ._registry import builtin
-from ._util import bool_scalar, is_text, num, text
+from ._util import bool_scalar, fnum, is_text, num, text
 
 
 def _height(v: Any) -> int:
@@ -60,7 +60,8 @@ def _names_from(v: Any) -> list[str]:
 
 
 class TableObject(MObject):
-    def __init__(self, names: list[str], columns: list[Any], description: str = ""):
+    def __init__(self, names: list[str], columns: list[Any], description: str = "",
+                 row_names: list[str] | None = None):
         if len(set(names)) != len(names):
             raise MatlabError("Duplicate table variable names.")
         heights = {_height(c) for c in columns}
@@ -69,6 +70,22 @@ class TableObject(MObject):
         self.names = list(names)
         self.columns = list(columns)
         self.description = description
+        self.row_names: list[str] | None = None
+        if row_names is not None and len(row_names):
+            self.set_row_names(list(row_names))
+
+    def set_row_names(self, names: list[str] | None) -> None:
+        if not names:
+            self.row_names = None
+            return
+        if self.columns and len(names) != self.nrows:
+            raise MatlabError(f"The number of row names ({len(names)}) must match the number of "
+                              f"rows in the table ({self.nrows}).")
+        if len(set(names)) != len(names):
+            raise MatlabError("Duplicate table row names.")
+        if any(n == "" for n in names):
+            raise MatlabError("Table row names must be nonempty.")
+        self.row_names = list(names)
 
     @property
     def nrows(self) -> int:
@@ -81,7 +98,7 @@ class TableObject(MObject):
         return (self.nrows, len(self.names))
 
     def copy(self) -> "TableObject":
-        return TableObject(list(self.names), list(self.columns), self.description)
+        return TableObject(list(self.names), list(self.columns), self.description, self.row_names)
 
     # -- lookup helpers --------------------------------------------------------------------
     def var_index(self, name: str) -> int:
@@ -98,12 +115,27 @@ class TableObject(MObject):
         return [int(p) for p in pos]
 
     def row_positions(self, idx: Any, for_set: bool = False) -> np.ndarray:
+        if is_text(idx) or isinstance(idx, (Cell, StringArray)):
+            if self.row_names is None:
+                raise MatlabError("This table has no row names; index rows by number or logical mask.")
+            out = []
+            for n in _names_from(idx):
+                if n not in self.row_names:
+                    raise MatlabError(f"Unrecognized row name '{n}'.")
+                out.append(self.row_names.index(n))
+            return np.array(out, dtype=int)
         pos, _ = ix._to_positions(idx, self.nrows, for_set=for_set)
         return pos
 
+    def _sub_row_names(self, rows: np.ndarray) -> list[str] | None:
+        if self.row_names is None:
+            return None
+        return [self.row_names[int(r)] for r in np.asarray(rows).flatten()]
+
     # -- protocol ----------------------------------------------------------------------------
     _METHODS = {"height", "width", "head", "tail", "summary", "sortrows", "removevars", "addvars",
-                "renamevars", "table2array", "table2struct", "istable", "varfun", "rows2vars"}
+                "renamevars", "table2array", "table2struct", "istable", "varfun", "rows2vars",
+                "join", "innerjoin", "outerjoin", "table2cell", "movevars"}
 
     def has_method(self, name: str) -> bool:
         return name in self._METHODS
@@ -121,8 +153,12 @@ class TableObject(MObject):
             return Struct.scalar({
                 "VariableNames": Cell.from_list([char(n) for n in self.names]),
                 "Description": char(self.description),
-                "RowNames": Cell(np.empty((0, 1), dtype=object)),
+                "RowNames": Cell.from_list([char(n) for n in self.row_names], column=True)
+                if self.row_names else Cell(np.empty((0, 1), dtype=object)),
+                "DimensionNames": Cell.from_list([char("Row"), char("Variables")]),
             })
+        if name == "Row" and self.row_names is not None:
+            return Cell.from_list([char(n) for n in self.row_names], column=True)
         if name in self.names:
             return self.columns[self.names.index(name)]
         raise MatlabError(f"Unrecognized table variable name '{name}'.")
@@ -138,6 +174,13 @@ class TableObject(MObject):
             t.names = new_names
             if "Description" in value.fields:
                 t.description = to_str(value.get_field(0, "Description"))
+            if "RowNames" in value.fields:
+                rn = value.get_field(0, "RowNames")
+                empty = (isinstance(rn, np.ndarray) and rn.size == 0) or (isinstance(rn, Cell) and rn.data.size == 0)
+                t.set_row_names(None if empty else _names_from(rn))
+            return t
+        if name == "Row":
+            t.set_row_names(None if isinstance(value, np.ndarray) and value.size == 0 else _names_from(value))
             return t
         col = _as_column(value)
         if t.names and _height(col) != t.nrows:
@@ -159,7 +202,7 @@ class TableObject(MObject):
         rows = self.row_positions(args[0])
         cols = self.var_positions(args[1])
         return TableObject([self.names[c] for c in cols], [_rows(self.columns[c], rows) for c in cols],
-                           self.description)
+                           self.description, self._sub_row_names(rows))
 
     def brace_get(self, interp, args: list) -> list:
         if len(args) != 2:
@@ -174,13 +217,15 @@ class TableObject(MObject):
         if rows_all:
             drop = set(self.var_positions(args[1]))
             keep = [k for k in range(len(self.names)) if k not in drop]
-            return TableObject([self.names[k] for k in keep], [self.columns[k] for k in keep], self.description)
+            return TableObject([self.names[k] for k in keep], [self.columns[k] for k in keep], self.description,
+                               self.row_names)
         if args[1] is not ix.COLON:
             raise MatlabError("Delete whole rows with T(rows, :) = [].")
         keep = np.ones(self.nrows, dtype=bool)
         keep[self.row_positions(args[0])] = False
         idx = np.nonzero(keep)[0]
-        return TableObject(list(self.names), [_rows(c, idx) for c in self.columns], self.description)
+        return TableObject(list(self.names), [_rows(c, idx) for c in self.columns], self.description,
+                           self._sub_row_names(idx))
 
     def index_set(self, interp, args: list, value: Any) -> Any:
         if len(args) != 2:
@@ -203,6 +248,68 @@ class TableObject(MObject):
             t.columns[c] = _assign_rows(t.columns[c], rows, pieces[j])
         n = max(_height(c) for c in t.columns)
         t.columns = [_pad_rows(c, n) for c in t.columns]
+        t._pad_row_names(n)
+        return t
+
+    def _pad_row_names(self, n: int) -> None:
+        if self.row_names is not None and len(self.row_names) < n:
+            k = len(self.row_names)
+            self.row_names = self.row_names + [f"Row{j + 1}" for j in range(k, n)]
+
+    def brace_set(self, interp, args: list, value: Any) -> Any:
+        if len(args) != 2:
+            raise MatlabError("Tables are indexed with two subscripts: T{rows, vars} = value.")
+        rows = self.row_positions(args[0], for_set=True) if args[0] is not ix.COLON else np.arange(self.nrows)
+        cols = self.var_positions(args[1])
+        t = self.copy()
+        if len(cols) == 1:
+            c = cols[0]
+            col = t.columns[c]
+            if isinstance(col, Cell):
+                if len(rows) == 1:
+                    piece = Cell(_obj(value))
+                elif isinstance(value, Cell) and value.data.size == len(rows):
+                    piece = Cell(value.data.reshape(-1, 1))
+                else:
+                    raise MatlabError("Assign one value per row into a cell table variable.")
+            elif isinstance(col, StringArray):
+                d = string_data(value)
+                if d.size not in (1, len(rows)):
+                    raise MatlabError("The number of strings must match the number of rows.")
+                piece = StringArray(np.broadcast_to(d.reshape(-1, 1), (len(rows), 1)).copy())
+            else:
+                vals = value if isinstance(value, np.ndarray) and value.dtype.kind in "biufc" else num(value)
+                width = col.shape[1] if col.ndim > 1 else 1
+                if vals.size == 1:
+                    vals = np.full((len(rows), width), vals.flat[0])
+                elif vals.size == len(rows) * width:
+                    vals = vals.reshape(len(rows), width)
+                else:
+                    raise MatlabError("The size of the right-hand side does not match the table subscript.")
+                if col.dtype == bool and vals.dtype != bool:
+                    col = col.astype(float)
+                if vals.dtype.kind == "c" and col.dtype.kind != "c":
+                    col = col.astype(complex)
+                t.columns[c] = col
+                piece = vals
+            t.columns[c] = _assign_rows(t.columns[c], rows, piece)
+        else:
+            if any(not isinstance(t.columns[c], np.ndarray) or is_char(t.columns[c]) for c in cols):
+                raise MatlabError("Brace assignment to several variables needs numeric variables.")
+            vals = num(value)
+            widths = [t.columns[c].shape[1] for c in cols]
+            if vals.size == 1:
+                vals = np.full((len(rows), sum(widths)), vals.flat[0])
+            if vals.shape != (len(rows), sum(widths)):
+                raise MatlabError("The size of the right-hand side does not match the table subscript.")
+            start = 0
+            for c, w in zip(cols, widths):
+                col = t.columns[c].astype(float) if t.columns[c].dtype == bool else t.columns[c]
+                t.columns[c] = _assign_rows(col, rows, vals[:, start:start + w])
+                start += w
+        n = max(_height(c) for c in t.columns)
+        t.columns = [_pad_rows(c, n) for c in t.columns]
+        t._pad_row_names(n)
         return t
 
     @staticmethod
@@ -236,13 +343,16 @@ class TableObject(MObject):
             for t in tables:
                 names += t.names
                 cols += t.columns
-            return TableObject(names, cols, tables[0].description)
+            return TableObject(names, cols, tables[0].description, tables[0].row_names)
         first = tables[0]
         for t in tables[1:]:
             if set(t.names) != set(first.names):
                 raise MatlabError("Vertically concatenated tables must have the same variable names.")
         cols = [cat([t.columns[t.names.index(n)] for t in tables], 0) for n in first.names]
-        return TableObject(list(first.names), cols, first.description)
+        row_names = None
+        if all(t.row_names is not None for t in tables):
+            row_names = [r for t in tables for r in t.row_names]
+        return TableObject(list(first.names), cols, first.description, row_names)
 
     # -- display -------------------------------------------------------------------------------
     def _cell_text(self, col: Any, i: int) -> str:
@@ -270,16 +380,23 @@ class TableObject(MObject):
         shown = list(range(n)) if n <= limit else list(range(10)) + list(range(n - 5, n))
         cells = [[self._cell_text(c, i) for c in self.columns] for i in shown]
         widths = [max([len(self.names[j])] + [len(r[j]) for r in cells]) for j in range(len(self.names))]
+        rn_w = max(len(r) for r in self.row_names) if self.row_names else 0
+
+        def pre(label: str) -> str:
+            return "    " + (label.ljust(rn_w) + "    " if rn_w else "")
+
         lines = [f"  {size_str(self.matlab_shape())} table", ""]
-        lines.append("    " + "    ".join(self.names[j].center(widths[j]) for j in range(len(widths))).rstrip())
-        lines.append("    " + "    ".join("_" * widths[j] for j in range(len(widths))))
+        lines.append((pre("") + "    ".join(self.names[j].center(widths[j])
+                                           for j in range(len(widths)))).rstrip())
+        lines.append(pre("") + "    ".join("_" * widths[j] for j in range(len(widths))))
         lines.append("")
         for k, r in enumerate(cells):
             if n > limit and k == 10:
-                lines.append("    " + ":".center(sum(widths) + 4 * (len(widths) - 1)))
-            lines.append("    " + "    ".join(r[j].center(widths[j]) if not r[j][:1].isdigit() and
-                                                r[j][:1] != "-" else r[j].rjust(widths[j])
-                                                for j in range(len(widths))).rstrip())
+                lines.append("    " + ":".center(sum(widths) + 4 * (len(widths) - 1) + (rn_w + 4 if rn_w else 0)))
+            label = self.row_names[shown[k]] if rn_w else ""
+            lines.append((pre(label) + "    ".join(r[j].center(widths[j]) if not r[j][:1].isdigit() and
+                                                   r[j][:1] != "-" else r[j].rjust(widths[j])
+                                                   for j in range(len(widths)))).rstrip())
         return lines
 
     def format_display(self, name: str) -> str:
@@ -336,6 +453,15 @@ def _split_opts(args: list, names: set[str]) -> tuple[list, dict]:
     return rest, opts
 
 
+def _row_names_opt(opts: dict) -> list[str] | None:
+    if "RowNames" not in opts:
+        return None
+    v = opts["RowNames"]
+    if isinstance(v, np.ndarray) and v.size == 0:
+        return None
+    return _names_from(v)
+
+
 def _table(interp, args: list, nargout: int):
     rest, opts = _split_opts(args, {"VariableNames", "RowNames", "Size", "VariableTypes"})
     if "Size" in opts:
@@ -353,7 +479,7 @@ def _table(interp, args: list, nargout: int):
                 cols.append(np.zeros((h, 1), dtype=bool))
             else:
                 cols.append(np.zeros((h, 1)))
-        return TableObject(names, cols)
+        return TableObject(names, cols, row_names=_row_names_opt(opts))
     cols = [_as_column(a) for a in rest]
     arg_names = interp.state.get("call_arg_names") or []
     if "VariableNames" in opts:
@@ -362,7 +488,7 @@ def _table(interp, args: list, nargout: int):
         names = [arg_names[k] if k < len(arg_names) and arg_names[k] else f"Var{k + 1}" for k in range(len(cols))]
     if len(names) != len(cols):
         raise MatlabError("The number of variable names must match the number of variables.")
-    return TableObject(names, cols)
+    return TableObject(names, cols, row_names=_row_names_opt(opts))
 
 
 builtin("table")(_table)
@@ -374,7 +500,7 @@ def _array2table(interp, args, nargout):
     a = rest[0]
     n = a.shape[1]
     names = _names_from(opts["VariableNames"]) if "VariableNames" in opts else [f"Var{k + 1}" for k in range(n)]
-    return TableObject(names, [a[:, k:k + 1].copy() for k in range(n)])
+    return TableObject(names, [a[:, k:k + 1].copy() for k in range(n)], row_names=_row_names_opt(opts))
 
 
 @builtin("cell2table")
@@ -393,7 +519,7 @@ def _cell2table(interp, args, nargout):
             for i, v in enumerate(vals):
                 d[i, 0] = v
             cols.append(Cell(d))
-    return TableObject(names, cols)
+    return TableObject(names, cols, row_names=_row_names_opt(opts))
 
 
 @builtin("struct2table")
@@ -519,17 +645,6 @@ def _summary(interp, args, nargout):
     return None
 
 
-def _varfun(interp, args, nargout):
-    fn, t = args[0], args[1]
-    fname = fn.name if getattr(fn, "name", None) else "Fun"
-    names, cols = [], []
-    for n, c in zip(t.names, t.columns):
-        res = interp.call_function_value(fn, [c], 1)
-        names.append(f"{fname}_{n}")
-        cols.append(_as_column(res[0]))
-    return TableObject(names, cols)
-
-
 def _rows2vars(interp, args, nargout):
     t = args[0]
     arr = t.to_array()
@@ -539,15 +654,821 @@ def _rows2vars(interp, args, nargout):
     return TableObject(["OriginalVariableNames"] + names, cols)
 
 
+# -- grouping, joins and missing data ------------------------------------------------------------
+
+_MISSING = object()  # key used for a missing value (NaN, '' in a cellstr, <missing> string)
+
+
+def _is_text_value(x: Any) -> bool:
+    return isinstance(x, (str, MString)) or is_char(x)
+
+
+def _col_keys(col: Any) -> list:
+    """One hashable, sortable key per row of a table variable or grouping vector."""
+    if isinstance(col, Cell):
+        keys = []
+        for i in range(col.data.shape[0]):
+            x = col.data[i, 0] if col.data.ndim == 2 else col.data[i]
+            if _is_text_value(x):
+                s = to_str(x)
+                keys.append(_MISSING if s == "" else s)
+            elif isinstance(x, np.ndarray) and x.size == 1 and x.dtype.kind in "biuf":
+                v = float(x.flat[0])
+                keys.append(_MISSING if np.isnan(v) else v)
+            elif isinstance(x, np.ndarray) and x.size == 0:
+                keys.append(_MISSING)
+            else:
+                raise MatlabError("Grouping cell arrays must hold character vectors or numeric scalars.")
+        return keys
+    if isinstance(col, StringArray):
+        return [_MISSING if x is None else x for x in col.data[:, 0]]
+    if isinstance(col, MString):
+        return [str(col)]
+    if is_char(col):
+        return ["".join(r).rstrip() for r in col]
+    a = num(col)
+    if a.ndim == 1:
+        a = a.reshape(-1, 1)
+    keys = []
+    for i in range(a.shape[0]):
+        row = a[i].flatten()
+        if a.dtype.kind in "fc" and np.any(np.isnan(row)):
+            keys.append(_MISSING)
+        elif row.size == 1:
+            keys.append(row[0].item() if hasattr(row[0], "item") else row[0])
+        else:
+            keys.append(tuple(row.tolist()))
+    return keys
+
+
+def _sort_key(k: Any):
+    if isinstance(k, str):
+        return (1, k)
+    return (0, k)
+
+
+def _group_rows(cols: list) -> tuple[np.ndarray, list[int]]:
+    """Group numbers (1-based float, NaN for rows with a missing key) and the first row of each
+    group, with the groups in sorted order of their key values."""
+    per_col = [_col_keys(c) for c in cols]
+    n = len(per_col[0]) if per_col else 0
+    if any(len(k) != n for k in per_col):
+        raise MatlabError("Grouping variables must have the same number of rows.")
+    first: dict[tuple, int] = {}
+    rows_keys = []
+    for i in range(n):
+        key = tuple(k[i] for k in per_col)
+        rows_keys.append(key)
+        if any(x is _MISSING for x in key):
+            continue
+        first.setdefault(key, i)
+    ordered = sorted(first, key=lambda key: tuple(_sort_key(x) for x in key))
+    number = {key: g + 1.0 for g, key in enumerate(ordered)}
+    gidx = np.array([number.get(key, np.nan) for key in rows_keys], dtype=float)
+    return gidx, [first[key] for key in ordered]
+
+
+def _orient(v: Any, row: bool) -> Any:
+    if not row:
+        return v
+    if isinstance(v, Cell):
+        return Cell(v.data.reshape(1, -1))
+    if isinstance(v, StringArray):
+        return StringArray(v.data.reshape(1, -1))
+    if isinstance(v, np.ndarray) and v.ndim == 2 and v.shape[1] == 1:
+        return v.reshape(1, -1)
+    return v
+
+
+def _is_row_vector(v: Any) -> bool:
+    shape = v.data.shape if isinstance(v, (Cell, StringArray)) else (np.shape(v) if isinstance(v, np.ndarray)
+                                                                     else (1, 1))
+    return len(shape) == 2 and shape[0] == 1 and shape[1] > 1 and not is_char(v)
+
+
+@builtin("findgroups")
+def _findgroups(interp, args, nargout):
+    if not args:
+        raise MatlabError("Not enough input arguments for findgroups.")
+    if len(args) == 1 and isinstance(args[0], TableObject):
+        t = args[0]
+        g, first = _group_rows(t.columns)
+        G = g.reshape(-1, 1)
+        if nargout > 1:
+            pos = np.array(first, dtype=int)
+            return G, TableObject(list(t.names), [_rows(c, pos) for c in t.columns])
+        return G
+    row = all(_is_row_vector(a) for a in args)
+    cols = [_as_column(a) for a in args]
+    g, first = _group_rows(cols)
+    G = _orient(g.reshape(-1, 1), row)
+    if nargout <= 1:
+        return G
+    pos = np.array(first, dtype=int)
+    ids = [_orient(_rows(c, pos), row) for c in cols]
+    return (G, *ids[:nargout - 1])
+
+
+def _take_rows(v: Any, pos: np.ndarray, as_vector: bool) -> Any:
+    if isinstance(v, TableObject):
+        return v.index_get(None, [pos.reshape(1, -1) + 1.0, ix.COLON])
+    if as_vector:
+        if isinstance(v, (Cell, StringArray)):
+            flat = v.data.flatten(order="F")[pos]
+            data = flat.reshape(1, -1) if v.data.shape[0] == 1 else flat.reshape(-1, 1)
+            return type(v)(data)
+        flat = v.flatten(order="F")[pos]
+        return flat.reshape(1, -1) if v.shape[0] == 1 else flat.reshape(-1, 1)
+    return _rows(v, pos)
+
+
+def _stack_results(results: list) -> Any:
+    """Concatenate per-group results vertically (scalars give a column)."""
+    if not results:
+        return np.zeros((0, 1))
+    if all(isinstance(r, Cell) for r in results):
+        return Cell(np.vstack([r.data.reshape(1, -1) if r.data.ndim == 2 and r.data.shape[0] == 1 else r.data
+                               for r in results]))
+    if all(isinstance(r, (MString, StringArray)) for r in results):
+        return StringArray(np.vstack([string_data(r).reshape(1, -1) for r in results]))
+    if all(isinstance(r, np.ndarray) and not is_char(r) for r in results):
+        rows = [r.reshape(1, -1) if r.ndim == 2 and r.shape[0] == 1 or r.size == 1 else None for r in results]
+        if any(x is None for x in rows) or len({x.shape[1] for x in rows}) > 1:
+            raise MatlabError("The function must return results of the same size for every group; "
+                              "return a cell, e.g. @(x) {x}, for non-uniform results.")
+        out = np.vstack(rows)
+        return out
+    raise MatlabError("The function must return numeric, logical, string or cell results; "
+                      "return a cell, e.g. @(x) {x}, for other results.")
+
+
+@builtin("splitapply")
+def _splitapply(interp, args, nargout):
+    if len(args) < 3:
+        raise MatlabError("splitapply expects (fun, X, G).")
+    fun = args[0]
+    graw = args[-1]
+    G = num(graw).flatten(order="F")
+    data = []
+    for a in args[1:-1]:
+        if isinstance(a, TableObject):
+            data.extend(a.columns)
+        else:
+            data.append(a)
+    if G.size == 0:
+        return np.zeros((0, 1))
+    valid = G[~np.isnan(G)]
+    ngroups = int(valid.max()) if valid.size else 0
+    if valid.size and (np.any(valid < 1) or np.any(valid != np.round(valid))):
+        raise MatlabError("Group numbers must be positive integers, as returned by findgroups.")
+    present = set(int(x) for x in valid)
+    if present != set(range(1, ngroups + 1)):
+        raise MatlabError("Group numbers must run from 1 to the number of groups with none skipped.")
+    vec_mode = []
+    for d in data:
+        shape = d.data.shape if isinstance(d, (Cell, StringArray)) else np.shape(d)
+        is_vec = len(shape) == 2 and (shape[0] == 1 or shape[1] == 1)
+        if is_vec and int(np.prod(shape)) == G.size:
+            vec_mode.append(True)
+        elif _height(d) == G.size:
+            vec_mode.append(False)
+        else:
+            raise MatlabError("Each data argument must have one row (or element) per group number.")
+    nout = max(nargout, 1)
+    collected: list[list] = [[] for _ in range(nout)]
+    for g in range(1, ngroups + 1):
+        pos = np.nonzero(G == g)[0]
+        pieces = [_take_rows(d, pos, vm) for d, vm in zip(data, vec_mode)]
+        res = interp.call_function_value(fun, pieces, nout)
+        if len(res) < nout:
+            raise MatlabError("The function returned fewer outputs than requested.")
+        for k in range(nout):
+            collected[k].append(res[k])
+    row = isinstance(graw, np.ndarray) and graw.ndim == 2 and graw.shape[0] == 1 and graw.shape[1] > 1
+    outs = []
+    for k in range(nout):
+        y = _stack_results(collected[k])
+        if row and isinstance(y, np.ndarray) and y.shape[1] == 1:
+            y = y.reshape(1, -1)
+        outs.append(y)
+    return tuple(outs) if nout > 1 else outs[0]
+
+
+def _nan_reduce(fn, empty=np.nan):
+    def f(a: np.ndarray) -> np.ndarray:
+        a = a.astype(float) if a.dtype.kind in "biu" else a
+        out = []
+        for j in range(a.shape[1]):
+            col = a[:, j]
+            col = col[~np.isnan(col)] if col.dtype.kind in "fc" else col
+            out.append(fn(col) if col.size else empty)
+        return np.array(out, dtype=float).reshape(1, -1)
+    return f
+
+
+def _mode_of(col: np.ndarray) -> float:
+    vals, counts = np.unique(col, return_counts=True)
+    return float(vals[np.argmax(counts)])
+
+
+_GROUP_METHODS = {
+    "mean": _nan_reduce(np.mean),
+    "sum": _nan_reduce(np.sum, 0.0),
+    "min": _nan_reduce(np.min),
+    "max": _nan_reduce(np.max),
+    "median": _nan_reduce(np.median),
+    "mode": _nan_reduce(_mode_of),
+    "std": _nan_reduce(lambda c: np.std(c, ddof=1) if c.size > 1 else 0.0),
+    "var": _nan_reduce(lambda c: np.var(c, ddof=1) if c.size > 1 else 0.0),
+    "range": _nan_reduce(lambda c: np.max(c) - np.min(c)),
+    "nnz": lambda a: np.count_nonzero((a != 0) & ~np.isnan(a.astype(float)), axis=0).reshape(1, -1).astype(float),
+    "numel": lambda a: np.full((1, a.shape[1]), float(a.shape[0])),
+    "nummissing": lambda a: np.sum(np.isnan(a.astype(float)), axis=0).reshape(1, -1).astype(float),
+}
+
+
+def _method_list(v: Any) -> list:
+    if isinstance(v, Cell):
+        return [x if isinstance(x, FunctionHandle) else to_str(x).lower() for x in v.values_f()]
+    if isinstance(v, StringArray):
+        return [x.lower() for x in v.values_f()]
+    if isinstance(v, FunctionHandle):
+        return [v]
+    m = text(v).lower()
+    if m == "all":
+        return ["mean", "sum", "min", "max", "range", "median", "mode", "var", "std", "nummissing", "nnz"]
+    return [m]
+
+
+def _apply_method(interp, method, piece: Any) -> Any:
+    if isinstance(method, FunctionHandle):
+        res = interp.call_function_value(method, [piece], 1)
+        return res[0]
+    fn = _GROUP_METHODS.get(method)
+    if fn is None:
+        raise MatlabError(f"Unknown summary method '{method}'.")
+    if not isinstance(piece, np.ndarray) or is_char(piece):
+        if method == "numel":
+            return float(_height(piece))
+        raise MatlabError(f"The method '{method}' needs numeric or logical data.")
+    a = piece.reshape(-1, 1) if piece.ndim == 1 else piece
+    return fn(a)
+
+
+def _method_name(method, k: int) -> str:
+    if isinstance(method, FunctionHandle):
+        return f"fun{k + 1}"
+    return method
+
+
+def _is_numeric_var(c: Any) -> bool:
+    return isinstance(c, np.ndarray) and c.dtype.kind in "biufc"
+
+
+def _summarize(interp, t: "TableObject", group_names: list[str], methods: list, data_names: list[str],
+               count: bool = True) -> "TableObject":
+    gcols = [t.columns[t.var_index(n)] for n in group_names]
+    gidx, first = _group_rows(gcols)
+    pos = np.array(first, dtype=int)
+    names = list(group_names)
+    cols = [_rows(c, pos) for c in gcols]
+    members = [np.nonzero(gidx == g + 1)[0] for g in range(len(first))]
+    if count:
+        names.append("GroupCount")
+        cols.append(np.array([[float(m.size)] for m in members]).reshape(-1, 1))
+    for dn in data_names:
+        col = t.columns[t.var_index(dn)]
+        for k, method in enumerate(methods):
+            results = [_apply_method(interp, method, _rows(col, m)) for m in members]
+            results = [r if not isinstance(r, (int, float)) else np.array([[float(r)]]) for r in results]
+            names.append(f"{_method_name(method, k)}_{dn}")
+            cols.append(_stack_results(results) if results else np.zeros((0, 1)))
+    return TableObject(names, cols)
+
+
+@builtin("groupsummary")
+def _groupsummary(interp, args, nargout):
+    if len(args) < 2:
+        raise MatlabError("groupsummary expects (T, groupvars, ...).")
+    if not isinstance(args[0], TableObject):
+        # array form: groupsummary(X, G, method)
+        X = args[0]
+        Gv = args[1]
+        methods = _method_list(args[2]) if len(args) > 2 else []
+        Xc = _as_column(X)
+        t = TableObject(["G", "X"], [_as_column(Gv), Xc])
+        res = _summarize(interp, t, ["G"], methods, ["X"] if methods else [])
+        B = np.hstack([fnum(c) for c in res.columns[2:]]) if methods else np.zeros((len(res.columns[1]), 0))
+        return (B, res.columns[0], res.columns[1])[:max(nargout, 1)] if nargout > 1 else B
+    t = args[0]
+    rest, opts = _split_opts(list(args[1:]), {"IncludeMissingGroups", "IncludeEmptyGroups"})
+    group_names = [t.names[p] for p in t.var_positions(rest[0])]
+    methods = _method_list(rest[1]) if len(rest) > 1 else []
+    if len(rest) > 2:
+        data_names = [t.names[p] for p in t.var_positions(rest[2])]
+    else:
+        data_names = [n for n, c in zip(t.names, t.columns) if n not in group_names and _is_numeric_var(c)] \
+            if methods else []
+    return _summarize(interp, t, group_names, methods, data_names)
+
+
+def _varfun(interp, args, nargout):
+    fn, t = args[0], args[1]
+    if not isinstance(t, TableObject):
+        raise MatlabError("varfun expects a function and a table.")
+    _, opts = _split_opts(list(args[2:]), {"GroupingVariables", "InputVariables", "OutputFormat"})
+    fname = fn.name if getattr(fn, "name", None) else "Fun"
+    groups = [t.names[p] for p in t.var_positions(opts["GroupingVariables"])] \
+        if "GroupingVariables" in opts else []
+    if "InputVariables" in opts:
+        inputs = [t.names[p] for p in t.var_positions(opts["InputVariables"])]
+    else:
+        inputs = [n for n in t.names if n not in groups]
+    fmt = text(opts["OutputFormat"]).lower() if "OutputFormat" in opts else "table"
+    if groups:
+        res = _summarize(interp, t, groups, [fn], inputs)
+        res.names = res.names[:len(groups) + 1] + [f"{fname}_{n}" for n in inputs]
+        if fmt == "uniform":
+            return np.hstack([fnum(c) for c in res.columns[len(groups) + 1:]])
+        return res
+    results = []
+    for n in inputs:
+        r = interp.call_function_value(fn, [t.columns[t.var_index(n)]], 1)
+        if not r:
+            raise MatlabError("The function must return a value.")
+        results.append(r[0])
+    if fmt == "uniform":
+        if not all(isinstance(r, np.ndarray) and r.size == 1 for r in results):
+            raise MatlabError("With 'OutputFormat' 'uniform' the function must return scalars.")
+        return np.array([[float(np.real(r.flat[0])) for r in results]]).reshape(1, -1)
+    if fmt == "cell":
+        return Cell.from_list(results)
+    return TableObject([f"{fname}_{n}" for n in inputs], [_as_column(r) for r in results])
+
+
+def _missing_like(col: Any, n: int) -> Any:
+    if isinstance(col, Cell):
+        d = np.empty((n, 1), dtype=object)
+        for i in range(n):
+            d[i, 0] = char("")
+        return Cell(d)
+    if isinstance(col, StringArray):
+        return StringArray(np.empty((n, 1), dtype=object))
+    if is_char(col):
+        return np.full((n, col.shape[1]), " ", dtype="<U1")
+    width = col.shape[1] if col.ndim > 1 else 1
+    return np.full((n, width), np.nan, dtype=complex if col.dtype.kind == "c" else float)
+
+
+def _take_with_missing(col: Any, idx: list[int]) -> Any:
+    """Rows of a variable, with -1 standing for a missing row."""
+    idx_arr = np.array(idx, dtype=int)
+    present = idx_arr >= 0
+    if present.all():
+        return _rows(col, idx_arr)
+    if isinstance(col, np.ndarray) and not is_char(col) and col.dtype.kind in "biu":
+        col = col.astype(float)
+    out = _missing_like(col, len(idx))
+    if present.any():
+        got = _rows(col, idx_arr[present])
+        where = np.nonzero(present)[0]
+        if isinstance(out, (Cell, StringArray)):
+            out.data[where, ...] = got.data
+        else:
+            out[where, ...] = got
+    return out
+
+
+def _join_keys(t1: "TableObject", t2: "TableObject", opts: dict, default_common: bool):
+    if "Keys" in opts:
+        k1 = [t1.names[p] for p in t1.var_positions(opts["Keys"])]
+        k2 = [t2.names[p] for p in t2.var_positions(opts["Keys"])]
+    elif "LeftKeys" in opts or "RightKeys" in opts:
+        if not ("LeftKeys" in opts and "RightKeys" in opts):
+            raise MatlabError("Specify both 'LeftKeys' and 'RightKeys'.")
+        k1 = [t1.names[p] for p in t1.var_positions(opts["LeftKeys"])]
+        k2 = [t2.names[p] for p in t2.var_positions(opts["RightKeys"])]
+    else:
+        k1 = [n for n in t1.names if n in t2.names]
+        k2 = list(k1)
+        if not k1:
+            raise MatlabError("The tables have no variable names in common to use as keys; "
+                              "specify them with 'Keys'.")
+    if len(k1) != len(k2):
+        raise MatlabError("The left and right keys must have the same number of variables.")
+    return k1, k2
+
+
+def _row_keys(t: "TableObject", keys: list[str]) -> list[tuple]:
+    per = [_col_keys(t.columns[t.var_index(k)]) for k in keys]
+    return [tuple(p[i] for p in per) for i in range(t.nrows)]
+
+
+def _joined_table(t1, t2, left_idx, right_idx, left_vars, right_vars, merged_keys=None):
+    names, cols = [], []
+    right_set = set(right_vars)
+    left_set = set(left_vars)
+    for n in left_vars:
+        col = t1.columns[t1.var_index(n)]
+        if merged_keys and n in merged_keys:
+            rcol = t2.columns[t2.var_index(merged_keys[n])]
+            lpart = _take_with_missing(col, left_idx)
+            rpart = _take_with_missing(rcol, right_idx)
+            lmiss = np.array(left_idx) < 0
+            if isinstance(lpart, (Cell, StringArray)):
+                lpart.data[lmiss, ...] = rpart.data[lmiss, ...]
+            else:
+                lpart = lpart.astype(float) if lpart.dtype.kind in "biu" else lpart
+                lpart[lmiss, ...] = rpart[lmiss, ...]
+            names.append(n)
+            cols.append(lpart)
+            continue
+        names.append(n + "_left" if n in right_set else n)
+        cols.append(_take_with_missing(col, left_idx))
+    for n in right_vars:
+        names.append(n + "_right" if n in left_set else n)
+        cols.append(_take_with_missing(t2.columns[t2.var_index(n)], right_idx))
+    return TableObject(names, cols)
+
+
+_JOIN_OPTS = {"Keys", "LeftKeys", "RightKeys", "LeftVariables", "RightVariables", "MergeKeys", "Type"}
+
+
+def _check_tables(args: list, name: str) -> tuple:
+    if len(args) < 2 or not isinstance(args[0], TableObject) or not isinstance(args[1], TableObject):
+        raise MatlabError(f"{name} expects two tables.")
+    _, opts = _split_opts(list(args[2:]), _JOIN_OPTS)
+    return args[0], args[1], opts
+
+
+def _side_vars(t, opts, key: str, default: list[str]) -> list[str]:
+    if key in opts:
+        return [t.names[p] for p in t.var_positions(opts[key])]
+    return default
+
+
+def _innerjoin(interp, args, nargout):
+    t1, t2, opts = _check_tables(args, "innerjoin")
+    k1, k2 = _join_keys(t1, t2, opts, True)
+    rk1, rk2 = _row_keys(t1, k1), _row_keys(t2, k2)
+    where: dict[tuple, list[int]] = {}
+    for j, key in enumerate(rk2):
+        if not any(x is _MISSING for x in key):
+            where.setdefault(key, []).append(j)
+    pairs = [(i, j) for i, key in enumerate(rk1) for j in where.get(key, [])]
+    pairs.sort(key=lambda p: (tuple(_sort_key(x) for x in rk1[p[0]]), p[0], p[1]))
+    li = [p[0] for p in pairs]
+    ri = [p[1] for p in pairs]
+    left_vars = _side_vars(t1, opts, "LeftVariables", list(t1.names))
+    right_vars = _side_vars(t2, opts, "RightVariables", [n for n in t2.names if n not in k2])
+    res = _joined_table(t1, t2, li, ri, left_vars, right_vars)
+    if nargout > 1:
+        return res, (np.array(li, dtype=float) + 1).reshape(-1, 1), (np.array(ri, dtype=float) + 1).reshape(-1, 1)
+    return res
+
+
+def _join(interp, args, nargout):
+    t1, t2, opts = _check_tables(args, "join")
+    k1, k2 = _join_keys(t1, t2, opts, True)
+    rk1, rk2 = _row_keys(t1, k1), _row_keys(t2, k2)
+    where: dict[tuple, int] = {}
+    for j, key in enumerate(rk2):
+        if key in where:
+            raise MatlabError("The key values of the right table must be unique for join; use innerjoin "
+                              "or outerjoin for one-to-many matches.")
+        where[key] = j
+    ri = []
+    for key in rk1:
+        if key not in where:
+            raise MatlabError("Every key value of the left table must appear in the right table; "
+                              "use outerjoin to keep unmatched rows.")
+        ri.append(where[key])
+    left_vars = _side_vars(t1, opts, "LeftVariables", list(t1.names))
+    right_vars = _side_vars(t2, opts, "RightVariables", [n for n in t2.names if n not in k2])
+    res = _joined_table(t1, t2, list(range(t1.nrows)), ri, left_vars, right_vars)
+    res.row_names = list(t1.row_names) if t1.row_names else None
+    if nargout > 1:
+        return res, (np.array(ri, dtype=float) + 1).reshape(-1, 1)
+    return res
+
+
+def _outerjoin(interp, args, nargout):
+    t1, t2, opts = _check_tables(args, "outerjoin")
+    k1, k2 = _join_keys(t1, t2, opts, True)
+    kind = text(opts["Type"]).lower() if "Type" in opts else "full"
+    if kind not in ("full", "left", "right"):
+        raise MatlabError("'Type' must be 'full', 'left' or 'right'.")
+    merge = "MergeKeys" in opts and bool(num(opts["MergeKeys"]).flat[0])
+    rk1, rk2 = _row_keys(t1, k1), _row_keys(t2, k2)
+    where: dict[tuple, list[int]] = {}
+    for j, key in enumerate(rk2):
+        where.setdefault(key, []).append(j)
+    pairs = []
+    matched_right = set()
+    for i, key in enumerate(rk1):
+        js = [] if any(x is _MISSING for x in key) else where.get(key, [])
+        for j in js:
+            pairs.append((i, j, key))
+            matched_right.add(j)
+        if not js and kind in ("full", "left"):
+            pairs.append((i, -1, key))
+    if kind in ("full", "right"):
+        for j, key in enumerate(rk2):
+            if j not in matched_right:
+                pairs.append((-1, j, key))
+    pairs.sort(key=lambda p: (tuple((2, 0) if x is _MISSING else _sort_key(x) for x in p[2]),
+                              p[0] if p[0] >= 0 else 1 << 30, p[1]))
+    li = [p[0] for p in pairs]
+    ri = [p[1] for p in pairs]
+    left_vars = _side_vars(t1, opts, "LeftVariables", list(t1.names))
+    if merge:
+        right_default = [n for n in t2.names if n not in k2]
+        merged = dict(zip(k1, k2))
+    else:
+        right_default = list(t2.names)
+        merged = None
+    right_vars = _side_vars(t2, opts, "RightVariables", right_default)
+    res = _joined_table(t1, t2, li, ri, left_vars, right_vars, merged)
+    if nargout > 1:
+        return res, (np.array(li, dtype=float) + 1).reshape(-1, 1), (np.array(ri, dtype=float) + 1).reshape(-1, 1)
+    return res
+
+
+def _table2cell(interp, args, nargout):
+    t = args[0]
+    data = np.empty((t.nrows, len(t.names)), dtype=object)
+    for j, c in enumerate(t.columns):
+        for i in range(t.nrows):
+            if isinstance(c, Cell):
+                data[i, j] = c.data[i, 0]
+            elif isinstance(c, StringArray):
+                data[i, j] = string_result(c.data[i:i + 1, :])
+            elif is_char(c):
+                data[i, j] = char("".join(c[i]))
+            else:
+                data[i, j] = c[i:i + 1, :].copy()
+    return Cell(data)
+
+
+def _movevars(interp, args, nargout):
+    t = args[0]
+    if len(args) < 2:
+        raise MatlabError("movevars expects (T, vars, 'Before'|'After', location).")
+    moving = [t.names[p] for p in t.var_positions(args[1])]
+    _, opts = _split_opts(list(args[2:]), {"Before", "After"})
+    rest = [n for n in t.names if n not in moving]
+    if "Before" in opts or "After" in opts:
+        where = opts.get("Before", opts.get("After"))
+        target = t.names[t.var_positions(where)[0]]
+        if target in moving:
+            raise MatlabError("The location cannot be one of the variables being moved.")
+        k = rest.index(target) + (1 if "After" in opts else 0)
+    else:
+        k = len(rest)
+    order = rest[:k] + moving + rest[k:]
+    return TableObject(order, [t.columns[t.var_index(n)] for n in order], t.description, t.row_names)
+
+
+# -- missing data -------------------------------------------------------------------------------
+
+def _missing_mask(v: Any) -> np.ndarray:
+    """Elementwise missing flags (same shape as the value's data)."""
+    if isinstance(v, Cell):
+        return np.vectorize(lambda x: (_is_text_value(x) and to_str(x) == "") or
+                            (isinstance(x, np.ndarray) and x.size == 0), otypes=[bool])(v.data) \
+            if v.data.size else np.zeros(v.data.shape, dtype=bool)
+    if isinstance(v, StringArray):
+        return np.vectorize(lambda x: x is None, otypes=[bool])(v.data) if v.data.size else \
+            np.zeros(v.data.shape, dtype=bool)
+    if isinstance(v, MString):
+        return np.zeros((1, 1), dtype=bool)
+    if is_char(v):
+        return v == " "
+    a = num(v)
+    return np.isnan(a) if a.dtype.kind in "fc" else np.zeros(a.shape, dtype=bool)
+
+
+def _row_missing(v: Any) -> np.ndarray:
+    m = _missing_mask(v)
+    return m.reshape(m.shape[0], -1).sum(axis=1) if m.ndim > 1 else m.astype(int)
+
+
+@builtin("rmmissing")
+def _rmmissing(interp, args, nargout):
+    if not args:
+        raise MatlabError("Not enough input arguments for rmmissing.")
+    v = args[0]
+    rest, opts = _split_opts(list(args[1:]), {"MinNumMissing", "DataVariables"})
+    min_missing = int(num(opts["MinNumMissing"]).flat[0]) if "MinNumMissing" in opts else 1
+    if isinstance(v, TableObject):
+        names = [v.names[p] for p in v.var_positions(opts["DataVariables"])] if "DataVariables" in opts \
+            else v.names
+        counts = np.zeros(v.nrows, dtype=int)
+        for n in names:
+            counts += _row_missing(v.columns[v.var_index(n)])
+        drop = counts >= min_missing
+        keep = np.nonzero(~drop)[0]
+        res = v.index_get(interp, [keep.reshape(1, -1) + 1.0, ix.COLON])
+        return (res, drop.reshape(-1, 1)) if nargout > 1 else res
+    data = v.data if isinstance(v, (Cell, StringArray)) else v
+    if not isinstance(data, np.ndarray):
+        return (v, np.zeros((1, 1), dtype=bool)) if nargout > 1 else v
+    mask = _missing_mask(v)
+    dim = int(num(rest[0]).flat[0]) if rest else None
+    is_vec = data.ndim == 2 and (data.shape[0] == 1 or data.shape[1] == 1) and dim is None
+    if is_vec:
+        drop = mask.flatten(order="F") if min_missing <= 1 else np.zeros(mask.size, dtype=bool)
+        keep = ~drop
+        flat = data.flatten(order="F")[keep]
+        out = flat.reshape(1, -1) if data.shape[0] == 1 else flat.reshape(-1, 1)
+        tf = drop.reshape(data.shape, order="F")
+    else:
+        axis = 0 if dim in (None, 1) else 1
+        counts = mask.sum(axis=1 - axis)
+        drop = counts >= min_missing
+        out = np.take(data, np.nonzero(~drop)[0], axis=axis)
+        tf = drop.reshape(-1, 1) if axis == 0 else drop.reshape(1, -1)
+    res = type(v)(out) if isinstance(v, (Cell, StringArray)) else out
+    return (res, tf) if nargout > 1 else res
+
+
+def _fill_vector(vals: list, miss: np.ndarray, method: str, const: Any, endv: Any) -> tuple[list, np.ndarray]:
+    """Fill the missing entries of one 1-D slice. ``vals`` is a list of Python values."""
+    n = len(vals)
+    known = np.nonzero(~miss)[0]
+    out = list(vals)
+    filled = np.zeros(n, dtype=bool)
+    if method == "constant":
+        for i in np.nonzero(miss)[0]:
+            out[i] = const
+            filled[i] = True
+        return out, filled
+    if known.size == 0:
+        return out, filled
+    first, last = known[0], known[-1]
+    for i in np.nonzero(miss)[0]:
+        prev = known[known < i]
+        nxt = known[known > i]
+        p = prev[-1] if prev.size else None
+        q = nxt[0] if nxt.size else None
+        interior = p is not None and q is not None
+        if not interior and endv is not None and method not in ("previous", "next"):
+            if isinstance(endv, str):
+                if endv == "none":
+                    continue
+                if endv == "nearest":
+                    out[i] = vals[first] if i < first else vals[last]
+                    filled[i] = True
+                    continue
+                if endv == "previous":
+                    if p is not None:
+                        out[i], filled[i] = vals[p], True
+                    continue
+                if endv == "next":
+                    if q is not None:
+                        out[i], filled[i] = vals[q], True
+                    continue
+            else:
+                out[i], filled[i] = endv, True
+                continue
+        if method == "previous":
+            if p is not None:
+                out[i], filled[i] = vals[p], True
+        elif method == "next":
+            if q is not None:
+                out[i], filled[i] = vals[q], True
+        elif method == "nearest":
+            if p is None or (q is not None and (q - i) <= (i - p)):
+                out[i] = vals[q]
+            else:
+                out[i] = vals[p]
+            filled[i] = True
+    if method in ("linear", "spline", "pchip", "makima"):
+        if known.size >= 2:
+            from .numerics import _interp1_object
+            x = known.astype(float)
+            y = np.array([vals[k] for k in known])
+            f = _interp1_object(method, x, y)
+            for i in np.nonzero(miss)[0]:
+                interior = first < i < last
+                if not interior and endv is not None:
+                    continue  # handled above (or deliberately left missing)
+                val = f(np.array([float(i)]))[0]
+                out[i] = complex(val) if np.iscomplexobj(y) else float(val)
+                filled[i] = True
+        elif known.size == 1:
+            for i in np.nonzero(miss)[0]:
+                if endv is None or (isinstance(endv, str) and endv == "extrap"):
+                    out[i], filled[i] = vals[known[0]], True
+    return out, filled
+
+
+def _fill_values(v: Any, method: str, const: Any, endv: Any, axis: int | None) -> tuple[Any, np.ndarray]:
+    mask = _missing_mask(v)
+    if isinstance(v, (Cell, StringArray)):
+        data = v.data
+    else:
+        data = num(v) if not is_char(v) else v
+        if isinstance(data, np.ndarray) and data.dtype.kind in "biu":
+            return v, np.zeros(data.shape, dtype=bool)
+    if axis is None:
+        axis = 1 if data.ndim == 2 and data.shape[0] == 1 else 0
+    out = data.copy()
+    filled = np.zeros(data.shape, dtype=bool)
+    if method == "constant":
+        if isinstance(v, Cell):
+            const = char(text(const)) if is_text(const) else const
+        elif isinstance(v, StringArray):
+            const = text(const)
+        elif is_char(v):
+            const = text(const)
+        else:
+            c = fnum(const)
+            const = c.flat[0] if c.size else np.nan
+    moved = np.moveaxis(out, axis, 0)
+    mmask = np.moveaxis(mask, axis, 0)
+    fmask = np.moveaxis(filled, axis, 0)
+    for idx in np.ndindex(moved.shape[1:]):
+        sl = (slice(None),) + idx
+        vals = list(moved[sl])
+        newvals, f = _fill_vector(vals, mmask[sl], method, const, endv)
+        if f.any():
+            col = moved[sl]
+            for k in np.nonzero(f)[0]:
+                col[k] = newvals[k]
+            fmask[sl] = f
+    if isinstance(v, (Cell, StringArray)):
+        return type(v)(out), filled
+    return out, filled
+
+
+@builtin("fillmissing")
+def _fillmissing(interp, args, nargout):
+    if len(args) < 2:
+        raise MatlabError("fillmissing expects (A, method, ...).")
+    v = args[0]
+    method = text(args[1]).lower()
+    rest = list(args[2:])
+    const = None
+    if method == "constant":
+        if not rest:
+            raise MatlabError("fillmissing(A, 'constant', v) needs a fill value.")
+        const = rest.pop(0)
+    elif method not in ("previous", "next", "nearest", "linear", "spline", "pchip", "makima"):
+        raise MatlabError(f"Unknown fill method '{method}'.")
+    axis = None
+    if rest and not is_text(rest[0]):
+        axis = int(num(rest.pop(0)).flat[0]) - 1
+    _, opts = _split_opts(rest, {"EndValues", "DataVariables", "SamplePoints", "MissingLocations"})
+    endv = None
+    if "EndValues" in opts:
+        e = opts["EndValues"]
+        if is_text(e):
+            endv = text(e).lower()
+            if endv == "extrap":
+                endv = None
+        else:
+            endv = float(fnum(e).flat[0])
+    if isinstance(v, TableObject):
+        names = [v.names[p] for p in v.var_positions(opts["DataVariables"])] if "DataVariables" in opts \
+            else v.names
+        t = v.copy()
+        masks = []
+        for k, n in enumerate(t.names):
+            col = t.columns[k]
+            if n not in names:
+                masks.append(np.zeros((t.nrows, 1), dtype=bool))
+                continue
+            c = const
+            if method == "constant" and isinstance(const, Cell) and const.data.size == len(names):
+                c = const.data.flatten(order="F")[names.index(n)]
+            numeric_col = isinstance(col, np.ndarray) and not is_char(col)
+            if method in ("linear", "spline", "pchip", "makima") and not numeric_col:
+                masks.append(np.zeros((t.nrows, 1), dtype=bool))
+                continue
+            if method == "constant" and numeric_col and is_text(c):
+                masks.append(np.zeros((t.nrows, 1), dtype=bool))
+                continue
+            t.columns[k], m = _fill_values(col, method, c, endv, 0)
+            masks.append(m.reshape(t.nrows, -1).any(axis=1).reshape(-1, 1))
+        if nargout > 1:
+            return t, np.hstack(masks) if masks else np.zeros((t.nrows, 0), dtype=bool)
+        return t
+    res, filled = _fill_values(v, method, const, endv, axis)
+    return (res, filled) if nargout > 1 else res
+
+
 _TABLE_FUNCS = {
     "height": _height_fn, "width": _width_fn, "head": _head, "tail": _tail, "sortrows": _sortrows,
     "removevars": _removevars, "addvars": _addvars, "renamevars": _renamevars,
     "table2array": _table2array, "table2struct": _table2struct, "istable": _istable,
     "summary": _summary, "varfun": _varfun, "rows2vars": _rows2vars,
+    "join": _join, "innerjoin": _innerjoin, "outerjoin": _outerjoin, "table2cell": _table2cell,
+    "movevars": _movevars,
 }
 
 for _name in ("height", "width", "table2array", "table2struct", "removevars", "addvars", "renamevars",
-              "varfun", "rows2vars"):
+              "varfun", "rows2vars", "innerjoin", "outerjoin", "table2cell", "movevars"):
     builtin(_name)(lambda interp, args, nargout, _f=_TABLE_FUNCS[_name]: _f(interp, args, nargout))
 builtin("istable")(_istable)
 

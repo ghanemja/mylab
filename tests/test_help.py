@@ -10,7 +10,7 @@ from mylab.help_data import HELP
 # required here until help text is written for them.
 DOCUMENTED_MODULES = {
     "core", "mathfns", "linalg", "strings", "data", "system", "numerics", "plotting",
-    "signal", "stats", "optim", "extras", "table", "objfuncs",
+    "signal", "stats", "optim", "extras", "table", "objfuncs", "io",
     "builtins",  # text functions re-wrapped by _make_string_aware in mylab/builtins/__init__.py
 }
 

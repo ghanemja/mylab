@@ -24,6 +24,7 @@ SECTIONS = {
     "stats": "Statistics and probability",
     "optim": "Optimization",
     "extras": "More core functions",
+    "io": "Text-file input and output, folders",
 }
 
 

@@ -196,3 +196,20 @@ def _toeplitz(interp, args, nargout):
     r = fnum(args[1]).flatten() if len(args) > 1 else None
     return sla.toeplitz(c, r)
 
+
+@builtin("pascal")
+def _pascal(interp, args, nargout):
+    from math import comb
+    n = to_int(args[0], "n")
+    if n < 0:
+        raise MatlabError("pascal: n must be a nonnegative integer.")
+    kind = to_int(args[1], "type") if len(args) > 1 else 0
+    if kind == 0:
+        # P(i, j) = binomial(i + j - 2, j - 1): symmetric positive definite
+        return np.array([[float(comb(i + j, j)) for j in range(n)] for i in range(n)]).reshape(n, n)
+    if kind == 1:
+        # lower-triangular factor with alternating column signs; it is its own inverse
+        return np.array([[float((-1) ** j * comb(i, j)) if j <= i else 0.0 for j in range(n)]
+                         for i in range(n)]).reshape(n, n)
+    raise MatlabError("pascal: type must be 0 or 1.")
+
