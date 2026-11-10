@@ -542,7 +542,7 @@ def _strsplit(interp, args, nargout):
         # whitespace delimiters; consecutive ones collapse (CollapseDelimiters default)
         parts = re.split(r"\s+", s)
     if want_strings:
-        return string_result(np.array(parts, dtype=object).reshape(-1, 1))
+        return string_result(np.array(parts, dtype=object).reshape(1, -1))
     return Cell.from_list([char(p) for p in parts])
 
 

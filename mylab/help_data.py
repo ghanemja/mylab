@@ -599,7 +599,7 @@ HELP: dict = {
                  "Splits text into a 1-by-N cell array. By default it splits on whitespace, treating a run "
                  "of whitespace as one break. A delimiter (or a cell array of delimiters, with escapes such "
                  "as '\\t' allowed) splits at each occurrence, so adjacent delimiters give empty pieces. "
-                 "A string scalar input gives a column string array instead. "
+                 "A string scalar input gives a row string array instead. "
                  "Example: strsplit('a,b', ',') is {'a', 'b'}."),
     "strjoin": (["s = strjoin(C)", "s = strjoin(C, delimiter)"],
                 "Joins the texts in a cell array or string array into one piece of text, separated by "

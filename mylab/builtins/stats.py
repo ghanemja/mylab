@@ -65,7 +65,8 @@ def _dist(name, fn, defaults):
     def f(interp, args, nargout):
         nparams = len(defaults)
         rest = list(args)
-        upper = bool(rest) and is_text(rest[-1]) and text(rest.pop()).lower() == "upper"
+        # Only cumulative distribution functions take the 'upper' (complementary) flag.
+        upper = name.endswith("cdf") and bool(rest) and is_text(rest[-1]) and text(rest.pop()).lower() == "upper"
         nargs(rest, 1, 1 + nparams, name)
         vals = list(rest) + [None] * (1 + nparams - len(rest))
         vals = [v if v is not None else np.array([[d]]) for v, d in zip(vals, (None,) + tuple(defaults))]
