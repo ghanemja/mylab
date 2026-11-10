@@ -18,7 +18,7 @@ from .parser import parse
 from .values import (
     Cell, FunctionHandle, MString, StringArray, Struct, char, class_name, codes_to_char,
     string_data, string_result,
-    empty_double, is_char, is_true, to_matlab, to_numeric, to_str, values_equal,
+    empty_double, is_char, is_true, shape_of, to_matlab, to_numeric, to_str, values_equal,
 )
 
 _CURRENT: list["Interpreter"] = []
@@ -632,7 +632,7 @@ class Interpreter:
         return [self.eval(node, frame)]
 
     def eval_index_args(self, args: list[A.Node], base: Any, frame: Frame) -> list[Any]:
-        shape = base.shape if isinstance(base, (np.ndarray, Cell, Struct, StringArray)) else (1, 1)
+        shape = shape_of(base)
         count = len(args)
         out: list[Any] = []
         for i, arg in enumerate(args):
@@ -667,6 +667,8 @@ class Interpreter:
             if isinstance(base, A.Ident) and not frame.has(base.name):
                 args = self.eval_elements(node.args, frame)
                 args = [ix_colon_to_char(a) for a in args]
+                # Argument variable names, for functions such as table() that use them.
+                self.state["call_arg_names"] = [a.name if isinstance(a, A.Ident) else None for a in node.args]
                 return self.call_named(base.name, args, nargout, frame, node)
             if isinstance(base, (A.Field, A.DynField)):
                 dotted = self.dotted_name(base, frame)

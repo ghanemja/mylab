@@ -398,6 +398,9 @@ def concat(items: list[Any], axis: int) -> Any:
         return items[0]
     if not items:
         return np.zeros((0, 0))
+    for i in items:
+        if hasattr(type(i), "concat") and hasattr(i, "isa_class"):
+            return type(i).concat(items, axis)
     if any(isinstance(i, Cell) for i in items):
         return _concat_cells([_to_cell(i) for i in items], axis)
     if any(isinstance(i, Struct) for i in items):

@@ -1137,3 +1137,51 @@ HELP.update({
                        "with m(key) and m(key) = value; use keys(m), values(m), isKey(m, k), remove(m, k) and "
                        "m.Count. A map is a handle: copying the variable shares the same map."),
 })
+
+# -- tables -------------------------------------------------------------------------------------
+HELP.update({
+    "table": (["T = table(var1, var2, ...)", "T = table(..., 'VariableNames', names)",
+               "T = table('Size', [h w], 'VariableTypes', types)"],
+              "Creates a table whose columns are the given variables (each must have the same number of rows; "
+              "row vectors are turned into columns). Column names come from the argument variable names, or "
+              "Var1, Var2, ... Access a column with T.Name, a subset with T(rows, vars) and the raw data with "
+              "T{rows, vars}."),
+    "array2table": (["T = array2table(A)", "T = array2table(A, 'VariableNames', names)"],
+                    "Makes a table with one variable per column of the matrix A."),
+    "cell2table": (["T = cell2table(C)", "T = cell2table(C, 'VariableNames', names)"],
+                   "Makes a table with one variable per column of the cell array C. Columns holding only "
+                   "numeric scalars become numeric variables; others stay cell columns."),
+    "struct2table": ("T = struct2table(S)",
+                     "Converts a struct array (one row per element) or a scalar struct of column vectors into a "
+                     "table whose variables are the struct fields."),
+    "table2struct": ("S = table2struct(T)", "Converts a table into an n-by-1 struct array, one element per row."),
+    "table2array": ("A = table2array(T)",
+                    "Concatenates all table variables side by side into one array. The variables must have "
+                    "compatible types."),
+    "height": ("n = height(T)", "Number of rows of a table (or of an array)."),
+    "width": ("n = width(T)", "Number of variables (columns) of a table."),
+    "head": (["T2 = head(T)", "T2 = head(T, k)"], "First k rows of a table or array (default 8)."),
+    "tail": (["T2 = tail(T)", "T2 = tail(T, k)"], "Last k rows of a table or array (default 8)."),
+    "removevars": ("T2 = removevars(T, vars)", "Removes the named (or numbered) variables from a table."),
+    "addvars": (["T2 = addvars(T, var1, ...)", "T2 = addvars(..., 'NewVariableNames', names)"],
+                "Appends variables (columns) to the right of a table."),
+    "renamevars": ("T2 = renamevars(T, oldNames, newNames)", "Renames table variables."),
+    "istable": ("tf = istable(x)", "True if x is a table."),
+    "varfun": ("T2 = varfun(f, T)",
+               "Applies the function f to each table variable and returns a table of the results, with "
+               "variables named f_Name."),
+    "rows2vars": ("T2 = rows2vars(T)",
+                  "Transposes a numeric table: each original row becomes a variable, and a first variable "
+                  "OriginalVariableNames lists the old column names."),
+    "readtable": (["T = readtable(file)", "T = readtable(file, 'Delimiter', d)",
+                   "T = readtable(..., 'ReadVariableNames', false)", "T = readtable(..., 'TextType', 'string')"],
+                  "Reads a delimited text file (CSV, tab, semicolon...) into a table. The first row gives the "
+                  "variable names; all-numeric columns become numbers (blank cells become NaN), other columns "
+                  "become cell arrays of text (or strings with 'TextType', 'string')."),
+    "writetable": (["writetable(T, file)", "writetable(T, file, 'Delimiter', d)",
+                    "writetable(..., 'WriteVariableNames', false)"],
+                   "Writes a table to a delimited text file with a header row of variable names."),
+})
+HELP["summary"] = ("summary(T)",
+                   "Prints a short description of each table variable: its size and type, plus the minimum, "
+                   "median and maximum of numeric variables.")
