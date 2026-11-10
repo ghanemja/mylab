@@ -366,7 +366,7 @@ def call_operator(interp, op: str, left: Any, right: Any) -> Any:
             if not res:
                 raise MatlabError(f"Operator method '{name}' did not return a value.")
             return res[0]
-    if op in ("==", "~=") and isinstance(left, UserObject) and isinstance(right, UserObject) \
+    if op in ("==", "~=") and isinstance(left, MObject) and isinstance(right, MObject) \
             and left.is_handle and right.is_handle:
         same = left is right
         return np.array([[same if op == "==" else not same]])

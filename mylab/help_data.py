@@ -1788,3 +1788,102 @@ HELP.update({
 HELP["delete"] = (["delete(filename)", "delete(h)"],
                   "Deletes the named file(s), or, for a handle object, runs the class's delete method (if any) "
                   "and marks the object invalid so later use raises an error.")
+# -- graphics handles, layouts and extra plot types ---------------------------------------------
+HELP.update({
+    "get": (["v = get(h, name)", "c = get(h, {name1, name2})", "s = get(h)"],
+            "Reads a property of a graphics handle h (from gcf, gca, plot, title, ...). Property names "
+            "ignore case. When h holds several handles (e.g. all lines returned by one plot call) the "
+            "result is a cell array with one row per handle. get(h) returns a struct of the common "
+            "properties. A figure number or 0 (the graphics root) also works as h. Dot syntax, e.g. "
+            "h.LineWidth, reads the same properties."),
+    "set": (["set(h, name, value, ...)", "set(h, s)"],
+            "Changes properties of graphics handles, e.g. set(h, 'LineWidth', 2, 'Color', 'r'). If h holds "
+            "several handles each one is changed. A struct s of property values is also accepted. set(0, "
+            "'DefaultLineLineWidth', w) and a few other root defaults change later plots. Dot assignment, "
+            "e.g. h.LineWidth = 2, does the same for one property; on an array of handles it changes all "
+            "of them, and reading a property from an array gives a cell array."),
+    "groot": ("r = groot", "Handle to the graphics root, the parent of all figures (the same as handle 0). "
+                           "Its properties include CurrentFigure and ScreenSize."),
+    "isgraphics": (["tf = isgraphics(h)", "tf = isgraphics(h, type)"],
+                   "True for each element of h that is a valid (not deleted or closed) graphics handle, "
+                   "optionally of the given type such as 'line' or 'figure'. Figure numbers count as handles "
+                   "of open figures. ishandle and ishghandle are the same."),
+    "ishandle": ("tf = ishandle(h)", "Same as isgraphics: true for valid graphics handles."),
+    "ishghandle": ("tf = ishghandle(h)", "Same as isgraphics: true for valid graphics handles."),
+    "line": (["line(x, y)", "line(x, y, z)", "line('XData', x, 'YData', y, ...)", "h = line(...)"],
+             "Draws a line in the current axes without clearing it, whatever the hold state. A matrix "
+             "draws one line per column. Accepts the same Name/Value options as plot."),
+    "fplot": (["fplot(f)", "fplot(f, [a b])", "fplot(f, [a b], linespec)", "fplot(fx, fy, [a b])",
+               "h = fplot(...)"],
+              "Plots the function handle f over the interval [a b] (default [-5 5]) by sampling it at many "
+              "points; f is called with a vector and, if that fails, one point at a time. With two handles "
+              "draws the parametric curve (fx(t), fy(t))."),
+    "polarplot": (["polarplot(theta, rho)", "polarplot(theta, rho, linespec)", "polarplot(rho)",
+                   "h = polarplot(...)"],
+                  "Plots points given by angle theta (radians) and radius rho on polar axes."),
+    "quiver": (["quiver(U, V)", "quiver(X, Y, U, V)", "quiver(..., scale)", "quiver(..., linespec)",
+                "h = quiver(...)"],
+               "Draws arrows with components (U, V) starting at the points (X, Y), or on a grid of indices. "
+               "Arrows are scaled automatically to fit between grid points; scale multiplies that factor and "
+               "0 turns scaling off ('AutoScale', 'off' does the same)."),
+    "scatter3": (["scatter3(x, y, z)", "scatter3(x, y, z, sz, c)", "scatter3(..., 'filled')"],
+                 "Draws a marker at each 3-D point (x, y, z) on 3-D axes."),
+    "tiledlayout": (["tiledlayout(m, n)", "tiledlayout('flow')",
+                     "t = tiledlayout(..., 'TileSpacing', s, 'Padding', p)"],
+                    "Starts a grid of axes in the current figure (clearing it). An m-by-n layout has fixed "
+                    "tiles; 'flow' grows and rearranges the grid as tiles are added ('vertical' and "
+                    "'horizontal' stack them). Use nexttile to create each axes. title(t, txt), xlabel(t, "
+                    "txt) and ylabel(t, txt) label the whole layout. TileSpacing and Padding accept 'loose', "
+                    "'compact', 'tight' or 'none'."),
+    "nexttile": (["nexttile", "nexttile(k)", "nexttile([r c])", "nexttile(k, [r c])", "ax = nexttile(...)"],
+                 "Creates the next axes of the current tiled layout and makes it current; nexttile(k) "
+                 "goes to tile k (counting along rows) and [r c] makes an axes spanning r rows and c "
+                 "columns. Without a layout a 'flow' layout is started."),
+    "shading": (["shading flat", "shading interp", "shading faceted"],
+                "Sets how surfaces are drawn: 'faceted' (the default) outlines each patch, 'flat' and "
+                "'interp' hide the grid lines. Applies to the surfaces in the current axes and to later "
+                "surf calls. mylab draws 'interp' like 'flat' with smoothing."),
+    "peaks": (["Z = peaks", "Z = peaks(n)", "Z = peaks(v)", "Z = peaks(X, Y)", "[X, Y, Z] = peaks(...)",
+               "peaks"],
+              "A smooth test surface with several hills and dips, given by a sum of Gaussian bumps. The "
+              "default grid is 49-by-49 points on [-3, 3]; peaks(n) uses n points, a vector v builds the "
+              "grid from v, and X, Y give the points directly. Without outputs it draws the surface."),
+    "parula": (["c = parula", "c = parula(n)"],
+               "n-by-3 matrix of RGB colours (default 256) running from dark blue through green to yellow. "
+               "mylab uses matplotlib's perceptually uniform 'viridis' map for parula, also the default "
+               "colormap. Use with colormap, e.g. colormap(parula(16))."),
+    "jet": (["c = jet", "c = jet(n)"], "n-by-3 rainbow colormap (default 256 rows) from dark blue to dark red."),
+    "gray": (["c = gray", "c = gray(n)"], "n-by-3 colormap of greys from black to white (default 256 rows)."),
+    "hot": (["c = hot", "c = hot(n)"], "n-by-3 colormap from black through red and yellow to white."),
+    "cool": (["c = cool", "c = cool(n)"], "n-by-3 colormap from cyan to magenta."),
+    "hsv": (["c = hsv", "c = hsv(n)"], "n-by-3 colormap cycling through the hues of the colour wheel."),
+    "bone": (["c = bone", "c = bone(n)"], "n-by-3 greyscale colormap with a slight blue tint."),
+    "copper": (["c = copper", "c = copper(n)"], "n-by-3 colormap from black to a light copper colour."),
+    "spring": (["c = spring", "c = spring(n)"], "n-by-3 colormap from magenta to yellow."),
+    "summer": (["c = summer", "c = summer(n)"], "n-by-3 colormap from green to yellow."),
+    "autumn": (["c = autumn", "c = autumn(n)"], "n-by-3 colormap from red through orange to yellow."),
+    "winter": (["c = winter", "c = winter(n)"], "n-by-3 colormap from blue to green."),
+    "turbo": (["c = turbo", "c = turbo(n)"], "n-by-3 rainbow colormap with smoother brightness than jet."),
+    "pink": (["c = pink", "c = pink(n)"], "n-by-3 colormap of pastel pinks, from dark to white."),
+    "lines": (["c = lines", "c = lines(n)"],
+              "n-by-3 matrix repeating the default line colour order (default 7 rows)."),
+    "yyaxis": (["yyaxis left", "yyaxis right", "yyaxis(ax, side)"],
+               "Gives the current axes a second y axis on the right. Later plots, labels and limits apply "
+               "to the chosen side; each side has its own colour."),
+    "cla": (["cla", "cla(ax)", "cla reset"],
+            "Removes everything drawn in the current axes, keeping the figure and any other axes."),
+    "subtitle": (["subtitle(txt)", "subtitle(ax, txt)", "t = subtitle(...)"],
+                 "Adds a smaller second line of text under the title of the current axes. "
+                 "title(txt, subtxt) sets both at once."),
+    "xtickangle": (["xtickangle(angle)", "angle = xtickangle"],
+                   "Rotates the x-axis tick labels by angle degrees, or returns the current rotation."),
+    "ytickangle": (["ytickangle(angle)", "angle = ytickangle"],
+                   "Rotates the y-axis tick labels by angle degrees, or returns the current rotation."),
+    "zticks": (["zticks(v)", "v = zticks"], "Sets or returns the z-axis tick positions of 3-D axes."),
+    "annotation": (["annotation('line', x, y)", "annotation('arrow', x, y)", "annotation('doublearrow', x, y)",
+                    "annotation('textarrow', x, y, 'String', s)", "annotation('textbox', pos, 'String', s)",
+                    "annotation('rectangle', pos)", "annotation('ellipse', pos)"],
+                   "Draws a shape on the figure (not tied to axes) in normalized figure units from 0 to 1. "
+                   "x = [x1 x2] and y = [y1 y2] give the start and end points; pos = [left bottom width "
+                   "height]."),
+})
