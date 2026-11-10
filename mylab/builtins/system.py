@@ -437,21 +437,15 @@ def _getenv(interp, args, nargout):
 
 @builtin("help", "doc")
 def _help(interp, args, nargout):
+    from ..help import help_text
     if not args:
-        interp.out("Type 'help <name>' for help on a function. mylab implements a growing subset "
-                   "of the MATLAB language; see docs/FUNCTIONS.md for the list.\n")
-        return None
-    name = text(args[0])
-    fn = BUILTINS.get(name)
-    if fn is not None:
-        doc = (fn.__doc__ or "").strip()
-        interp.out(f"  {name} is a built-in function.\n" + (f"  {doc}\n" if doc else ""))
-        return None
-    found = interp.find_file_function(name)
-    if found:
-        interp.out(f"  {name} is defined in {found[1]}\n")
-        return None
-    interp.out(f"  {name} not found.\n")
+        text_ = ("Type 'help <name>' for help on a function, e.g. help plot.\n"
+                 "mylab runs MATLAB-language code; see docs/FUNCTIONS.md for every function.\n")
+    else:
+        text_ = help_text(text(args[0]), interp)
+    if nargout > 0:
+        return char(text_)
+    interp.out(text_)
     return None
 
 
