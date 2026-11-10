@@ -875,140 +875,223 @@ HELP: dict = {
     # -- ODE solvers -----------------------------------------------------------------------------
     # -- plotting: lines and charts --------------------------------------------------------------
     "plot": (["plot(y)", "plot(x, y)", "plot(x, y, linespec)", "plot(x1, y1, s1, x2, y2, s2, ...)",
-              "plot(..., Name, Value)"],
+              "plot(..., Name, Value)", "plot(ax, ...)", "h = plot(...)"],
              "Draws 2-D lines. With one input, y is plotted against its index (complex y plots real against "
-             "imaginary part). A matrix y draws one line per column. linespec combines a colour "
-             "(r g b c m y k w), a marker (o + * . x s d ^ v < > p h) and a line style (- -- : -.), e.g. "
-             "'r--o'. Name/Value options: LineWidth, Color, MarkerSize, Marker, LineStyle, DisplayName, "
-             "MarkerFaceColor, MarkerEdgeColor. Replaces the current plot unless hold is on; no handle is "
-             "returned. Example: plot(0:0.1:1, (0:0.1:1).^2, 'b-')."),
-    "semilogx": (["semilogx(x, y)", "semilogx(x, y, linespec)", "semilogx(..., Name, Value)"],
+             "imaginary part). A matrix y, or a vector x with a matrix y, draws one line per column. "
+             "linespec combines a colour (r g b c m y k w), a marker (o + * . x s d ^ v < > p h) and a line "
+             "style (- -- : -.) in any order, e.g. 'r--o'. Name/Value options: LineWidth, Color, MarkerSize, "
+             "Marker, LineStyle, DisplayName, MarkerFaceColor, MarkerEdgeColor, Visible. Replaces the "
+             "current plot unless hold is on; an axes handle as first input draws there. h is a Line handle, "
+             "or a column array of them when several lines are drawn, so h.LineWidth = 2 restyles the line "
+             "afterwards. Example: plot(0:0.1:1, (0:0.1:1).^2, 'b-')."),
+    "semilogx": (["semilogx(y)", "semilogx(x, y)", "semilogx(x, y, linespec)", "h = semilogx(...)"],
                  "Like plot, but with a logarithmic x axis."),
-    "semilogy": (["semilogy(x, y)", "semilogy(x, y, linespec)", "semilogy(..., Name, Value)"],
+    "semilogy": (["semilogy(y)", "semilogy(x, y)", "semilogy(x, y, linespec)", "h = semilogy(...)"],
                  "Like plot, but with a logarithmic y axis."),
-    "loglog": (["loglog(x, y)", "loglog(x, y, linespec)", "loglog(..., Name, Value)"],
+    "loglog": (["loglog(y)", "loglog(x, y)", "loglog(x, y, linespec)", "h = loglog(...)"],
                "Like plot, but with logarithmic x and y axes."),
-    "plot3": (["plot3(x, y, z)", "plot3(x, y, z, linespec)", "plot3(..., Name, Value)"],
-              "Draws a line through 3-D points on 3-D axes. Accepts the same line options as plot."),
+    "plot3": (["plot3(x, y, z)", "plot3(x, y, z, linespec)", "plot3(..., Name, Value)", "h = plot3(...)"],
+              "Draws a line through 3-D points on 3-D axes (matrices draw one line per column). Accepts the "
+              "same line options as plot and returns Line handles in the same way."),
     "scatter": (["scatter(x, y)", "scatter(x, y, sz)", "scatter(x, y, sz, c)", "scatter(..., 'filled')",
-                 "scatter(x, y, sz, c, marker)"],
+                 "scatter(x, y, sz, c, marker)", "s = scatter(...)"],
                 "Draws a marker at each point (x, y). sz is the marker area (default 36), scalar or per "
                 "point; c is a colour name, an RGB triplet or one value per point mapped through the "
-                "colormap. Markers are hollow unless 'filled' is given. DisplayName sets the legend label."),
-    "bar": (["bar(y)", "bar(x, y)"],
+                "colormap. Markers are hollow unless 'filled' is given. Options: DisplayName, "
+                "MarkerFaceColor, MarkerEdgeColor, LineWidth, MarkerFaceAlpha. s is a Scatter handle with "
+                "properties such as XData, YData, SizeData and CData."),
+    "bar": (["bar(y)", "bar(x, y)", "bar(..., width)", "bar(..., 'stacked')", "bar(..., color)",
+             "b = bar(...)"],
             "Vertical bar chart of y, at positions x or 1..n. A matrix y draws groups of bars, one group per "
-            "row and one colour per column. Width and style arguments are ignored."),
-    "barh": (["barh(y)", "barh(x, y)"], "Horizontal bar chart of the vector y, at positions x or 1..n."),
-    "histogram": (["histogram(x)", "histogram(x, nbins)", "histogram(x, edges)"],
-                  "Plots a histogram of the finite values in x, with automatic bins, a bin count or bin "
-                  "edges. No histogram object is returned."),
-    "hist": (["hist(x)", "hist(x, nbins)", "counts = hist(x, nbins)", "[counts, centers] = hist(...)"],
-             "Without outputs, plots a histogram like histogram. With outputs, returns the bin counts (and "
-             "bin centres) without plotting, using 10 equal-width bins by default."),
-    "stem": (["stem(y)", "stem(x, y)"],
-             "Plots each value as a vertical stem from zero topped with a marker, as for discrete signals."),
-    "stairs": (["stairs(y)", "stairs(x, y)"], "Draws y as a staircase that holds each value until the next x."),
-    "area": (["area(y)", "area(x, y)"],
-             "Plots the curve y and shades the region between it and zero. Only a single vector is supported."),
-    "fill": (["fill(x, y, c)", "fill(x, y)"],
-             "Draws a filled polygon with corners (x(k), y(k)); c is a colour name or RGB triplet."),
-    "errorbar": (["errorbar(y, err)", "errorbar(x, y, err)", "errorbar(..., linespec)"],
-                 "Plots y with vertical error bars of half-length err at each point. Only symmetric error "
-                 "bars are supported."),
-    "pie": (["pie(x)", "pie(x, labels)"],
+            "row and one colour per column, or stacks them with 'stacked'. width is the fraction of the "
+            "space each group fills (default 0.8). Options: FaceColor, EdgeColor, LineWidth, FaceAlpha, "
+            "DisplayName. b is a Bar handle (a row array of them for a matrix y)."),
+    "barh": (["barh(y)", "barh(x, y)", "b = barh(...)"],
+             "Horizontal bar chart; takes the same inputs and options as bar."),
+    "histogram": (["histogram(x)", "histogram(x, nbins)", "histogram(x, edges)",
+                   "histogram(..., Name, Value)", "h = histogram(...)"],
+                  "Plots a histogram of the finite values in x. Bins are chosen automatically (unit bins for "
+                  "small integer data) unless a bin count or edges are given, or the options NumBins, "
+                  "BinEdges, BinWidth, BinLimits or BinMethod ('integers'). Normalization may be 'count', "
+                  "'probability', 'percentage', 'countdensity', 'pdf', 'cumcount' or 'cdf'. Style options: "
+                  "FaceColor, EdgeColor, FaceAlpha, LineWidth, DisplayName, Orientation. h is a Histogram "
+                  "handle: h.Values gives the bar heights, and changing h.NumBins, h.BinEdges, h.BinWidth "
+                  "or h.Normalization redraws the plot."),
+    "hist": (["hist(x)", "hist(x, nbins)", "hist(x, centers)", "counts = hist(...)",
+              "[counts, centers] = hist(...)"],
+             "Older histogram function using equal-width bins (10 by default) or bins around the given "
+             "centres. With outputs it returns the bin counts (and centres) without plotting; without "
+             "outputs it draws the bars. Use histogram for a graphics handle."),
+    "stem": (["stem(y)", "stem(x, y)", "stem(..., 'filled')", "h = stem(...)"],
+             "Plots each value as a vertical stem from zero topped with a marker, as for discrete signals. "
+             "Returns a graphics handle when an output is requested (see get and set)."),
+    "stairs": (["stairs(y)", "stairs(x, y)", "h = stairs(...)"],
+               "Draws y as a staircase that holds each value until the next x. "
+               "Returns a graphics handle when an output is requested (see get and set)."),
+    "area": (["area(y)", "area(x, y)", "h = area(...)"],
+             "Plots the curve y and shades the region between it and zero. Only a single vector is supported. "
+             "Returns a graphics handle when an output is requested (see get and set)."),
+    "fill": (["fill(x, y, c)", "fill(x, y)", "h = fill(...)"],
+             "Draws a filled polygon with corners (x(k), y(k)); c is a colour name or RGB triplet, and matrix "
+             "x, y draw one polygon per column. fill replaces the plot unless hold is on; patch always adds "
+             "to the current axes. Options: FaceColor, EdgeColor, FaceAlpha, LineWidth, DisplayName. "
+             "Returns a graphics handle when an output is requested (see get and set)."),
+    "errorbar": (["errorbar(y, err)", "errorbar(x, y, err)", "errorbar(x, y, neg, pos)",
+                  "errorbar(..., linespec)", "h = errorbar(...)"],
+                 "Plots y with vertical error bars, of half-length err or with separate lower and upper "
+                 "lengths neg and pos. Returns a graphics handle when an output is requested (see get and set)."),
+    "pie": (["pie(x)", "pie(x, labels)", "h = pie(...)"],
             "Pie chart of the values in x, each slice proportional to its share of the total. Without "
-            "labels each slice shows its percentage; labels is a cell array of text."),
+            "labels each slice shows its percentage; labels is a cell or string array of text."),
     # -- plotting: surfaces and images -------------------------------------------------------------
-    "surf": (["surf(Z)", "surf(X, Y, Z)"],
-             "Draws a coloured 3-D surface with heights Z over the grid X, Y (vectors are expanded to a "
-             "grid; without them the indices are used). It always replaces the figure's contents. surfc "
+    "surf": (["surf(Z)", "surf(X, Y, Z)", "surf(..., Name, Value)", "s = surf(...)"],
+             "Draws a coloured 3-D surface with heights Z over the grid X, Y (vectors are expanded to a grid; "
+             "without them the indices are used), coloured with the current colormap. It replaces the "
+             "current axes (other subplots are kept) unless hold is on. Edges follow the shading setting; "
+             "options EdgeColor, FaceColor and FaceAlpha are honoured. s is a Surface handle. surfc "
              "currently draws the same plot without the contour lines underneath."),
-    "mesh": (["mesh(Z)", "mesh(X, Y, Z)"],
-             "Draws a 3-D wireframe surface. It replaces the figure's contents. meshc currently draws the "
-             "same plot without contour lines."),
-    "contour": (["contour(Z)", "contour(X, Y, Z)", "contour(X, Y, Z, n)"],
-                "Draws contour lines (lines of equal height) of Z, optionally over the grid X, Y and with n "
-                "levels. It replaces the figure's contents."),
-    "contourf": (["contourf(Z)", "contourf(X, Y, Z)", "contourf(X, Y, Z, n)"],
+    "mesh": (["mesh(Z)", "mesh(X, Y, Z)", "m = mesh(...)"],
+             "Draws a 3-D wireframe surface in the current axes, replacing it unless hold is on. meshc "
+             "currently draws the same plot without contour lines. Returns a Surface handle on request."),
+    "contour": (["contour(Z)", "contour(X, Y, Z)", "contour(X, Y, Z, n)", "contour(X, Y, Z, levels)",
+                 "c = contour(...)"],
+                "Draws contour lines (lines of equal height) of Z, optionally over the grid X, Y, with n "
+                "levels or at the given level values (also 'LevelList'). 'ShowText', 'on' labels the lines; "
+                "'LineColor' and 'LineWidth' style them. Replaces the current axes unless hold is on. "
+                "Returns a graphics handle when an output is requested (see get and set)."),
+    "contourf": (["contourf(Z)", "contourf(X, Y, Z)", "contourf(X, Y, Z, n)", "c = contourf(...)"],
                  "Like contour, but fills the regions between the contour lines with colour."),
-    "imagesc": (["imagesc(C)", "imagesc(x, y, C)"],
-                "Shows the matrix C as an image, mapping its value range onto the current colormap; row 1 "
-                "is at the top. The x and y arguments are accepted but the axes always show indices. image "
-                "and imshow behave the same way in mylab."),
-    "colorbar": ("colorbar",
-                 "Adds a colour scale beside the current axes for the most recent image, surface or contour plot."),
-    "colormap": ("colormap(name)",
-                 "Chooses the colour map by name for later surfaces and images, e.g. 'jet', 'hot', 'gray' or "
-                 "'viridis' (the default); any matplotlib colormap name works. Numeric colormap matrices are "
-                 "not supported."),
+    "imagesc": (["imagesc(C)", "imagesc(C, [cmin cmax])", "imagesc(x, y, C)", "im = imagesc(...)"],
+                "Shows the matrix C as an image, mapping its value range (or [cmin cmax]) onto the current "
+                "colormap; row 1 is at the top. x and y give the centres of the first and last columns and "
+                "rows. image and imshow behave the same way in mylab. Returns an Image handle (CData) on "
+                "request."),
+    "colorbar": (["colorbar", "colorbar(location)", "colorbar(..., Name, Value)", "colorbar off",
+                  "c = colorbar(...)"],
+                 "Adds a colour scale beside the current axes for the most recent image, surface or contour "
+                 "plot (or for the colormap alone). location is 'eastoutside' (default), 'westoutside', "
+                 "'northoutside' or 'southoutside'. c is a ColorBar handle: c.Label.String sets its label, "
+                 "and Limits, Ticks, TickLabels and FontSize can be read and set. colorbar off removes it."),
+    "colormap": (["colormap(name)", "colormap(map)", "colormap(target, ...)", "map = colormap"],
+                 "Sets the colour map of the current figure, recolouring its images and surfaces and those "
+                 "drawn later. name is a colormap name such as 'parula' (the default, drawn with matplotlib's "
+                 "viridis), 'jet', 'hot', 'gray' or any matplotlib colormap; map is an m-by-3 matrix of RGB "
+                 "values in [0, 1], e.g. jet(16). target may be an axes or figure handle. With an output, "
+                 "returns the current map as a matrix (256 rows for named maps)."),
     "view": (["view(az, el)", "view(2)"],
              "Sets the viewing angle of the current 3-D axes: azimuth az and elevation el in degrees. view(2) "
              "looks straight down. Has no effect on 2-D axes."),
     # -- plotting: figures and axes ----------------------------------------------------------------
-    "figure": (["figure", "figure(n)", "n = figure(...)", "figure(..., 'Name', title)"],
-               "Opens a new figure window, or makes figure n current (creating it if needed). Later plots go "
-               "to the current figure. The output is the figure number, not a graphics object."),
-    "gcf": ("n = gcf", "Number of the current figure, creating one if none exists."),
-    "gca": ("n = gca",
-            "Makes sure the current figure has axes and returns the figure number. mylab has no graphics "
-            "objects, so the result cannot be used with set or get."),
-    "clf": ("clf", "Clears everything from the current figure."),
-    "close": (["close", "close(n)", "close all"], "Closes the current figure, figure n, or every figure."),
-    "hold": (["hold on", "hold off", "hold"],
-             "With hold on, new plots are added to the current axes instead of replacing them; hold off "
-             "returns to replacing. hold alone toggles."),
+    "figure": (["figure", "figure(n)", "figure(f)", "f = figure(...)", "figure(..., Name, Value)"],
+               "Opens a new figure, or makes figure n (or figure handle f) current, creating it if needed. "
+               "Later plots go to the current figure. f is a Figure handle with properties such as Number, "
+               "Name, Color and Position, which may also be given as Name/Value options; other common window "
+               "options (e.g. 'NumberTitle', 'Visible', 'Units') are accepted."),
+    "gcf": ("f = gcf", "Handle to the current figure, creating one if none exists. f.Number is its figure "
+                       "number; the handle works with get, set, saveas, print and close."),
+    "gca": ("ax = gca",
+            "Handle to the current axes, creating a figure and axes if needed. Its properties (XLim, YLim, "
+            "Title, XLabel, FontSize, XScale, Box, XGrid, XTick, XTickLabel, ...) can be read and set with "
+            "dot syntax or get/set, and most plotting functions accept it as their first input."),
+    "clf": (["clf", "clf(f)"], "Clears everything from the current figure, or from figure handle f."),
+    "close": (["close", "close(n)", "close(f)", "close(name)", "close all"],
+              "Closes the current figure, figure number n, figure handle(s) f, the figure with the given "
+              "Name, or every figure."),
+    "hold": (["hold on", "hold off", "hold all", "hold", "hold(ax, ...)"],
+             "With hold on (or hold all), new plots are added to the current axes instead of replacing "
+             "them; hold off returns to replacing. hold alone toggles. An axes handle selects other axes. "
+             "The axes property NextPlot ('add' or 'replace') shows the same state."),
     "ishold": ("tf = ishold", "True if hold is on for the current axes."),
-    "subplot": (["subplot(m, n, p)", "subplot(mnp)", "subplot(m, n, [p1 p2 ...])"],
+    "subplot": (["subplot(m, n, p)", "subplot(mnp)", "subplot(m, n, [p1 p2 ...])", "subplot(ax)",
+                 "ax = subplot(...)"],
                 "Splits the figure into an m-by-n grid of axes and makes axes p current, counting along "
                 "rows from the top left. A vector p makes one axes spanning those cells. subplot(221) is "
-                "shorthand for subplot(2, 2, 1)."),
-    "title": (["title(txt)", "title(txt, 'FontSize', n)"],
-              "Sets the title of the current axes. A cell array or multi-row char array gives several lines."),
-    "xlabel": (["xlabel(txt)", "xlabel(txt, 'FontSize', n)"], "Labels the x axis of the current axes."),
-    "ylabel": (["ylabel(txt)", "ylabel(txt, 'FontSize', n)"], "Labels the y axis of the current axes."),
+                "shorthand for subplot(2, 2, 1). Asking again for the same cell reuses its axes. ax is an "
+                "Axes handle; subplot(ax) makes it current. See also tiledlayout."),
+    "title": (["title(txt)", "title(txt, subtxt)", "title(target, txt)", "title(..., Name, Value)",
+               "t = title(...)"],
+              "Sets the title of the current axes (or of an axes or tiledlayout handle). A cell array or "
+              "multi-row char array gives several lines, and subtxt adds a subtitle. Options: FontSize, "
+              "FontWeight, Color, FontName, Interpreter (remembered only). t is a Text handle whose String, "
+              "FontSize, Color, ... can be changed."),
+    "xlabel": (["xlabel(txt)", "xlabel(target, txt)", "t = xlabel(...)"],
+               "Labels the x axis of the current axes (or of an axes or tiledlayout handle); accepts the "
+               "same options as title and returns a Text handle on request."),
+    "ylabel": (["ylabel(txt)", "ylabel(target, txt)", "t = ylabel(...)"],
+               "Labels the y axis of the current axes (or of an axes or tiledlayout handle); accepts the "
+               "same options as title and returns a Text handle on request."),
     "zlabel": (["zlabel(txt)", "zlabel(txt, 'FontSize', n)"],
                "Labels the z axis of the current 3-D axes; ignored on 2-D axes."),
     "sgtitle": (["sgtitle(txt)", "sgtitle(txt, 'FontSize', n)"],
                 "Sets one title for the whole figure, above all subplots. suptitle does the same."),
-    "legend": (["legend(label1, label2, ...)", "legend({label1, label2, ...})", "legend(..., 'Location', loc)",
-                "legend", "legend off"],
-               "Adds a legend naming the plotted items in drawing order. With no labels it uses DisplayName "
-               "values. loc is a compass name such as 'northeast' (top right), 'southwest' or 'best'. "
-               "legend off removes it."),
+    "legend": (["legend(label1, label2, ...)", "legend({label1, label2, ...})", "legend(h, labels)",
+                "legend(..., Name, Value)", "legend", "legend show", "legend off", "legend boxoff",
+                "l = legend(...)"],
+               "Adds a legend naming the plotted items in drawing order, or only the graphics handles h. "
+               "Without labels it uses each item's DisplayName, or data1, data2, ... legend off removes it, "
+               "legend boxoff/boxon hides or shows its frame. Options: Location (a compass name such as "
+               "'northeast', 'southwest', 'best', or an outside position like 'eastoutside'), Orientation "
+               "('horizontal'), NumColumns, FontSize, Box, TextColor, Title. l is a Legend handle (String, "
+               "Location, Box, FontSize, ...). With yyaxis, items from both sides are listed."),
     "grid": (["grid on", "grid off", "grid minor", "grid"],
              "Shows or hides grid lines on the current axes; grid alone toggles."),
-    "box": ("box on|off", "Accepted for compatibility; the axes box is not changed."),
-    "axis": (["axis([xmin xmax ymin ymax])", "axis([xmin xmax ymin ymax zmin zmax])", "axis equal", "axis square",
-              "axis tight", "axis off", "axis on", "axis auto", "axis ij", "lims = axis"],
-             "Sets axis limits or appearance: 'equal' makes units the same length on both axes, 'square' "
-             "makes the plot box square, 'tight' fits the limits to the data, 'off' hides the axes, 'auto' "
-             "restores automatic limits and 'ij' puts the y origin at the top. With an output and no input, "
-             "returns [xmin xmax ymin ymax]."),
-    "xlim": (["xlim([xmin xmax])", "lims = xlim", "xlim auto"],
-             "Sets or returns the x-axis limits of the current axes."),
-    "ylim": (["ylim([ymin ymax])", "lims = ylim", "ylim auto"],
-             "Sets or returns the y-axis limits of the current axes."),
+    "box": (["box on", "box off", "box", "box(ax, ...)"],
+            "Shows or hides the top and right edges of the current axes' frame; box alone toggles. The "
+            "axes property Box does the same."),
+    "axis": (["axis([xmin xmax ymin ymax])", "axis([xmin xmax ymin ymax zmin zmax])", "axis equal",
+              "axis image", "axis square", "axis tight", "axis padded", "axis off", "axis on", "axis auto",
+              "axis normal", "axis manual", "axis ij", "axis xy", "lims = axis"],
+             "Sets axis limits or appearance. An Inf or -Inf limit keeps that end automatic, e.g. "
+             "axis([0 Inf 0 Inf]). 'equal' makes units the same length on both axes, 'image' does that and "
+             "fits the data tightly, 'square' makes the plot box square, 'tight' fits the limits to the "
+             "data, 'off' hides the axes, 'auto' restores automatic limits, 'normal' also undoes 'equal' "
+             "and 'square', 'ij' puts the y origin at the top and 'xy' back at the bottom. With an output "
+             "and no input, returns the current limits."),
+    "xlim": (["xlim([xmin xmax])", "lims = xlim", "xlim auto", "xlim manual", "m = xlim('mode')",
+              "xlim(ax, ...)"],
+             "Sets or returns the x-axis limits of the current axes. An infinite end keeps that side "
+             "automatic, e.g. xlim([0 Inf])."),
+    "ylim": (["ylim([ymin ymax])", "lims = ylim", "ylim auto", "ylim manual", "m = ylim('mode')",
+              "ylim(ax, ...)"],
+             "Sets or returns the y-axis limits of the current axes (the active side with yyaxis). An "
+             "infinite end keeps that side automatic, e.g. ylim([0 Inf])."),
     "zlim": (["zlim([zmin zmax])", "lims = zlim", "zlim auto"],
-             "Sets or returns the z-axis limits of the current 3-D axes."),
-    "xticks": ("xticks(v)", "Puts the x-axis tick marks at the values in v. Querying the ticks is not supported."),
-    "yticks": ("yticks(v)", "Puts the y-axis tick marks at the values in v. Querying the ticks is not supported."),
-    "xticklabels": ("xticklabels(labels)",
-                    "Accepted for compatibility but currently ignored; tick labels are not changed."),
-    "text": ("text(x, y, txt)", "Writes text on the current axes with its left end at data point (x, y)."),
+             "Sets or returns the z-axis limits of the current 3-D axes; an infinite end keeps the current "
+             "limit on that side."),
+    "xticks": (["xticks(v)", "v = xticks", "xticks auto", "xticks(ax, ...)"],
+               "Puts the x-axis tick marks at the values in v ([] removes them), returns the visible tick "
+               "positions, or goes back to automatic ticks."),
+    "yticks": (["yticks(v)", "v = yticks", "yticks auto", "yticks(ax, ...)"],
+               "Puts the y-axis tick marks at the values in v ([] removes them), returns the visible tick "
+               "positions, or goes back to automatic ticks."),
+    "xticklabels": (["xticklabels(labels)", "labels = xticklabels", "xticklabels auto",
+                     "yticklabels(labels)", "labels = yticklabels"],
+                    "Sets the text of the tick labels on the x axis (yticklabels: the y axis) at the current "
+                    "tick positions, in order; extra labels are dropped and missing ones left blank. labels "
+                    "is a cell array, string array or char matrix (numbers are also accepted). With no "
+                    "input, returns the labels as a cell column; 'auto' restores automatic labels."),
+    "text": (["text(x, y, txt)", "text(x, y, z, txt)", "text(..., Name, Value)", "t = text(...)"],
+             "Writes text on the current axes starting at data point (x, y), vertically centred on it. Vector "
+             "x, y with a cell array of strings write several labels. Options: FontSize, Color, FontWeight, "
+             "HorizontalAlignment, VerticalAlignment, Rotation. Returns Text handle(s) on request."),
     "drawnow": ("drawnow",
                 "Updates figure windows so that pending drawing appears, e.g. inside an animation loop. "
                 "shg and refresh do the same."),
     # -- plotting: saving -------------------------------------------------------------------------
     "saveas": (["saveas(fig, filename)", "saveas(fig, filename, format)"],
-               "Saves figure number fig (e.g. from gcf) as an image file. The type comes from the file "
-               "extension (png, pdf, svg, jpg, ...) or from format when the name has no extension."),
-    "print": (["print(filename)", "print('-dpng', filename)", "print(fig, '-dpdf', filename)"],
-              "Saves the current figure (or figure fig) to a file. A -d option such as -dpng, -djpeg or "
-              "-dpdf picks the format when the file name has no extension; PNG is the default. Resolution "
-              "options are ignored."),
-    "exportgraphics": ("exportgraphics(fig, filename)",
-                       "Saves figure fig (gcf or gca both work) to an image file, with the format taken from "
-                       "the extension. Same as saveas."),
+               "Saves a figure, given as a handle (e.g. gcf) or a figure number, as an image file at 150 dpi. "
+               "The type comes from the file extension (png, pdf, svg, jpg, eps, tif) or from format when the "
+               "name has no extension. The .fig format is not supported and gives an error."),
+    "print": (["print(filename)", "print('-dpng', filename)", "print(fig, '-dpdf', filename)",
+               "print('-r300', '-dpng', filename)"],
+              "Saves the current figure (or figure fig, a handle or number, or -fN) to a file. A -d option "
+              "such as -dpng, -djpeg, -dpdf, -dsvg or -depsc picks the format when the file name has no "
+              "extension; PNG is the default. -rN sets the resolution in dots per inch (default 150). Renderer "
+              "options such as -painters are ignored. The .fig format is not supported."),
+    "exportgraphics": (["exportgraphics(obj, filename)", "exportgraphics(obj, filename, 'Resolution', dpi)"],
+                       "Saves the figure containing obj (a figure or axes handle, e.g. gcf or gca) to an "
+                       "image file, with the format taken from the extension. The whole figure is saved, even "
+                       "for an axes. Other options are accepted and ignored."),
 }
 
 # -- aliases that share an entry ---------------------------------------------------------------
@@ -1657,7 +1740,8 @@ HELP.update({
                 "name, or a cell/string array of names; subclasses count)."),
     "isvalid": ("tf = isvalid(h)",
                 "True for a handle object (classdef handle class, containers.Map, ...) that has not been "
-                "deleted with delete(h)."),
+                "deleted with delete(h). For graphics handles it is false once the object has been deleted "
+                "or its figure closed; for an array of graphics handles it returns one value per handle."),
     "properties": (["properties(obj)", "names = properties(obj)", "properties('ClassName')"],
                    "Lists the public properties of an object or class; with an output, returns them as a cell "
                    "column."),
@@ -1668,7 +1752,8 @@ HELP.update({
 })
 HELP["delete"] = (["delete(filename)", "delete(h)"],
                   "Deletes the named file(s), or, for a handle object, runs the class's delete method (if any) "
-                  "and marks the object invalid so later use raises an error.")
+                  "and marks the object invalid so later use raises an error. For graphics handles (from plot, "
+                  "figure, legend, ...) the object is removed from its plot; deleting a figure closes it.")
 # -- graphics handles, layouts and extra plot types ---------------------------------------------
 HELP.update({
     "get": (["v = get(h, name)", "c = get(h, {name1, name2})", "s = get(h)"],
