@@ -102,6 +102,9 @@ def _format_one(spec: re.Match, value, width, prec) -> str:
         if isinstance(value, complex):
             value = value.real
         if float(value).is_integer() and math.isfinite(value):
+            if 0 <= value <= 0x10FFFF:
+                # an integer consumed by %s is taken as a character code
+                return f"%{flags}{w}s" % chr(int(value))
             return f"%{flags}{w}s" % _num_text(value)
         if not math.isfinite(value):
             return _fmt_nonfinite(value, flags, w)
@@ -298,9 +301,14 @@ def _mat2str(interp, args, nargout):
 @builtin("str2double")
 def _str2double(interp, args, nargout):
     v = args[0]
-    if isinstance(v, Cell):
-        out = np.array([_parse_double(x) for x in v.data.flatten(order="F")], dtype=float)
+    if isinstance(v, (Cell, StringArray)):
+        vals = [float("nan") if x is None else _parse_double(char(x) if isinstance(x, str) else x)
+                for x in v.data.flatten(order="F")]
+        cplx = any(isinstance(x, complex) for x in vals)
+        out = np.array(vals, dtype=complex if cplx else float)
         return out.reshape(v.shape, order="F")
+    if isinstance(v, np.ndarray) and not is_char(v):
+        return float("nan")
     return _parse_double(v)
 
 
@@ -465,8 +473,19 @@ def _map_text(fn, v):
     raise MatlabError("Expected text input.")
 
 
-builtin("upper")(lambda interp, args, nargout: _map_text(str.upper, args[0]))
-builtin("lower")(lambda interp, args, nargout: _map_text(str.lower, args[0]))
+def _case_map(fn):
+    """Per-character case mapping that never changes the text length (e.g. 'ß' stays)."""
+    def conv(s: str) -> str:
+        out = []
+        for c in s:
+            m = fn(c)
+            out.append(m if len(m) == 1 else c)
+        return "".join(out)
+    return conv
+
+
+builtin("upper")(lambda interp, args, nargout: _map_text(_case_map(str.upper), args[0]))
+builtin("lower")(lambda interp, args, nargout: _map_text(_case_map(str.lower), args[0]))
 builtin("strtrim")(lambda interp, args, nargout: _map_text(lambda s: s.strip(" \t\n\r\f\v\0"), args[0]))
 builtin("deblank")(lambda interp, args, nargout: _map_text(lambda s: s.rstrip(" \t\n\r\f\v\0"), args[0]))
 builtin("reverse")(lambda interp, args, nargout: _map_text(lambda s: s[::-1], args[0]))
@@ -531,19 +550,107 @@ builtin("endsWith")(_text_pred(lambda s, p: s.endswith(p)))
 
 @builtin("strsplit")
 def _strsplit(interp, args, nargout):
+    nargs(args, 1, None, "strsplit")
     s = text(args[0])
-    want_strings = isinstance(args[0], MString)
-    if len(args) > 1:
-        d = args[1]
-        delims = [process_escapes(to_str(x)) for x in d.values_f()] if isinstance(d, Cell) else \
-            [process_escapes(text(d))]
-        parts = re.split("|".join(re.escape(x) for x in delims), s)
+    want_strings = isinstance(args[0], (MString, StringArray))
+    rest = list(args[1:])
+    delim_arg = None
+    if rest and (len(rest) % 2 == 1 or not (is_text(rest[0]) and text(rest[0]).lower() in
+                                             ("collapsedelimiters", "delimitertype"))):
+        delim_arg = rest.pop(0)
+    collapse, regex = True, False
+    for k in range(0, len(rest) - 1, 2):
+        name = text(rest[k]).lower()
+        if name == "collapsedelimiters":
+            collapse = bool(np.all(num(rest[k + 1]) != 0))
+        elif name == "delimitertype":
+            regex = text(rest[k + 1]).lower() == "regularexpression"
+        else:
+            raise MatlabError(f"Unknown strsplit option '{text(rest[k])}'.")
+    if delim_arg is None:
+        pattern = r"\s"
     else:
-        # whitespace delimiters; consecutive ones collapse (CollapseDelimiters default)
-        parts = re.split(r"\s+", s)
-    if want_strings:
-        return string_result(np.array(parts, dtype=object).reshape(1, -1))
-    return Cell.from_list([char(p) for p in parts])
+        d = _as_cell_if_strings(delim_arg)
+        delims = [to_str(x) for x in d.values_f()] if isinstance(d, Cell) else [text(d)]
+        if regex:
+            pattern = "|".join(f"(?:{x})" for x in delims)
+        else:
+            delims = sorted((process_escapes(x) for x in delims), key=len, reverse=True)
+            pattern = "|".join(re.escape(x) for x in delims)
+    if collapse:
+        pattern = f"(?:{pattern})+"
+    rx = re.compile(pattern)
+    parts, matches, last = [], [], 0
+    for m in rx.finditer(s):
+        if m.end() == m.start():
+            continue
+        parts.append(s[last:m.start()])
+        matches.append(m.group(0))
+        last = m.end()
+    parts.append(s[last:])
+
+    def wrap(items):
+        if want_strings:
+            data = np.empty((1, len(items)), dtype=object)
+            for k, x in enumerate(items):
+                data[0, k] = x
+            return StringArray(data) if len(items) != 1 else string_result(data)
+        return Cell.from_list([char(p) for p in items])
+
+    if nargout > 1:
+        return wrap(parts), wrap(matches)
+    return wrap(parts)
+
+
+@builtin("strtok")
+def _strtok(interp, args, nargout):
+    nargs(args, 1, 2, "strtok")
+    delims = process_escapes(text(args[1])) if len(args) > 1 else " \t\n\v\f\r\0"
+
+    def tok(s: str):
+        i = 0
+        while i < len(s) and s[i] in delims:
+            i += 1
+        j = i
+        while j < len(s) and s[j] not in delims:
+            j += 1
+        return s[i:j], s[j:]
+
+    v = args[0]
+    if isinstance(v, (Cell, StringArray)):
+        src = _as_cell_if_strings(v)
+        toks = np.empty(src.shape, dtype=object)
+        rems = np.empty(src.shape, dtype=object)
+        for idx in np.ndindex(src.shape):
+            toks[idx], rems[idx] = tok(to_str(src.data[idx]))
+        if isinstance(v, StringArray):
+            return (string_result(toks), string_result(rems)) if nargout > 1 else string_result(toks)
+        tc = Cell(np.vectorize(char, otypes=[object])(toks)) if toks.size else Cell(toks)
+        rc = Cell(np.vectorize(char, otypes=[object])(rems)) if rems.size else Cell(rems)
+        return (tc, rc) if nargout > 1 else tc
+    t, r = tok(text(v))
+    if isinstance(v, MString):
+        return (MString(t), MString(r)) if nargout > 1 else MString(t)
+    return (char(t), char(r)) if nargout > 1 else char(t)
+
+
+@builtin("splitlines")
+def _splitlines(interp, args, nargout):
+    nargs(args, 1, 1, "splitlines")
+    parts = re.split(r"\r\n|\n|\r", text(args[0]))
+    if isinstance(args[0], MString):
+        data = np.empty((len(parts), 1), dtype=object)
+        for k, x in enumerate(parts):
+            data[k, 0] = x
+        return string_result(data)
+    return Cell.from_list([char(p) for p in parts], column=True)
+
+
+@builtin("missing")
+def _missing(interp, args, nargout):
+    data = np.empty((1, 1), dtype=object)
+    data[0, 0] = None
+    return StringArray(data)
 
 
 @builtin("strjoin")
@@ -685,10 +792,16 @@ def _regexp(interp, args, nargout):
     pieces.append(char(s[last:]))
     results["split"] = Cell.from_list(pieces)
     from ..values import Struct
-    names = Struct()
-    if matches and rx.groupindex:
-        for name in rx.groupindex:
-            names.set_field(0, name, char(matches[0].group(name) or ""))
+    group_names = list(rx.groupindex)
+    if not group_names:
+        names = Struct()
+    elif not matches:
+        names = Struct(np.empty((0, 0), dtype=object), group_names)
+    else:
+        sdata = np.empty((1, len(matches)), dtype=object)
+        for k, m in enumerate(matches):
+            sdata[0, k] = {name: char(m.group(name) or "") for name in group_names}
+        names = Struct(sdata, group_names)
     results["names"] = names
     if once:
         if matches:

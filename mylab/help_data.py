@@ -402,16 +402,6 @@ HELP: dict = {
               "Cross product of two 3-element vectors, shaped like a. Matrix inputs are not supported. "
               "Example: cross([1 0 0], [0 1 0]) is [0 0 1]."),
     "kron": ("K = kron(A, B)", "Kronecker product: every element A(i,j) is replaced by the block A(i,j)*B."),
-    "histcounts": (["n = histcounts(x)", "n = histcounts(x, nbins)", "n = histcounts(x, edges)",
-                    "[n, edges] = histcounts(...)"],
-                   "Counts how many values of x fall in each bin. Bins are chosen automatically, set by a "
-                   "bin count, or given as an edge vector; the last bin includes its right edge. The "
-                   "automatic bin choice may differ from other implementations."),
-    "accumarray": ("A = accumarray(subs, vals)",
-                   "Adds each vals(k) into position subs(k) of the output. A column of indices gives a "
-                   "column vector; a two-column index matrix gives a matrix. vals may be a scalar. Only "
-                   "summing is supported (no size or function arguments). "
-                   "Example: accumarray([1; 2; 1], [10; 20; 30]) is [40; 20]."),
     # -- find, sort and sets ----------------------------------------------------------------
     "find": (["k = find(x)", "k = find(x, n)", "k = find(x, n, 'last')", "[r, c] = find(x)", "[r, c, v] = find(x)"],
              "Linear indices of the nonzero elements of x, in column-major order. n limits the result to "
@@ -425,10 +415,6 @@ HELP: dict = {
              "when ascending and first when descending; complex values sort by magnitude. Cell arrays of "
              "char vectors and string arrays are sorted alphabetically (by character code). "
              "Example: sort([3 1 2]) is [1 2 3]."),
-    "sortrows": (["B = sortrows(A)", "B = sortrows(A, cols)", "B = sortrows(A, 'descend')", "[B, idx] = sortrows(...)"],
-                 "Sorts the rows of a matrix, comparing the first column, then the second for ties, and so "
-                 "on. cols picks the columns to compare; a negative column number sorts that column in "
-                 "descending order. idx gives the original row numbers. Cell arrays are not supported."),
     "unique": (["u = unique(x)", "u = unique(x, 'stable')", "u = unique(A, 'rows')", "[u, ia, ic] = unique(...)"],
                "The distinct values of x, sorted unless 'stable' is given (first-appearance order). The "
                "result is a row if x is a row, otherwise a column. ia and ic are index columns with "
@@ -449,10 +435,6 @@ HELP: dict = {
     "setxor": (["c = setxor(a, b)", "c = setxor(..., 'stable')", "[c, ia, ib] = setxor(...)"],
                "Values found in exactly one of a and b, without repeats, sorted unless 'stable' is given. "
                "Accepts cell arrays of text. The 'rows' option is ignored."),
-    "ismember": (["tf = ismember(a, s)", "[tf, loc] = ismember(a, s)"],
-                 "True for each element of a that also occurs in s; loc gives the index of its first match "
-                 "in s, or 0. Works for numbers, and for text (char, string or string array) against a cell "
-                 "array or string array of text. Example: ismember([1 5], [5 6]) is [false true]."),
     # -- rearranging --------------------------------------------------------------------------
     "fliplr": ("B = fliplr(A)", "Reverses the order of the columns (left-right mirror). Works on cell arrays too."),
     "flipud": ("B = flipud(A)", "Reverses the order of the rows (up-down mirror). Works on cell arrays too."),
@@ -529,7 +511,8 @@ HELP: dict = {
                 "Formats data into text using % conversions (%d, %i, %u, %f, %e, %g, %x, %o, %c, %s, %%) "
                 "with optional flags, width and precision (a * takes them from the data). Escapes such as "
                 "\\n and \\t are expanded. Array arguments are taken element by element and the format is "
-                "reused until all data is consumed. A non-integer given to %d is shown in %e style. Returns "
+                "reused until all data is consumed. A non-integer given to %d is shown in %e style; an integer "
+                "given to %s is taken as a character code, so sprintf('%s', 65) is 'A'. Returns "
                 "a char vector, or a string if fmt is a string. Example: sprintf('%d-%d', 1, 2) is '1-2'."),
     "fprintf": (["fprintf(fmt, a1, a2, ...)", "fprintf(fid, fmt, ...)", "n = fprintf(...)"],
                 "Formats data like sprintf and writes it out. Without a file id, or with fid 1 or 2, the "
@@ -545,10 +528,6 @@ HELP: dict = {
     "mat2str": (["s = mat2str(A)", "s = mat2str(A, n)"],
                 "Text that recreates A when evaluated, such as '[1 2;3 4]'. Uses up to n significant digits "
                 "(15 by default). Logical values print as true/false and char input is returned in quotes."),
-    "str2double": ("x = str2double(s)",
-                   "Parses text as one number. Accepts decimal, exponent and complex forms, Inf and NaN, and "
-                   "ignores thousands commas. Gives NaN if the text is not a valid number. A cell array "
-                   "gives an array of results. Example: str2double('2.5e3') is 2500."),
     "str2num": (["x = str2num(s)", "[x, ok] = str2num(s)"],
                 "Evaluates text as a bracketed expression, so '1 2 3' gives [1 2 3] and '[1;2]' a column. "
                 "On failure returns [] and ok is false. Because the text is executed, prefer str2double "
@@ -572,8 +551,6 @@ HELP: dict = {
                 "True if the first n characters of two texts match (case-sensitive). Texts shorter than n "
                 "never match. Cell arrays compare element by element."),
     "strncmpi": ("tf = strncmpi(a, b, n)", "Like strncmp but ignores upper/lower case."),
-    "upper": ("t = upper(s)", "Converts text to upper case. Works on char arrays, strings, string arrays and cells."),
-    "lower": ("t = lower(s)", "Converts text to lower case. Works on char arrays, strings, string arrays and cells."),
     "strtrim": ("t = strtrim(s)",
                 "Removes leading and trailing whitespace (and null characters). Works on char arrays, "
                 "strings, string arrays and cell arrays of text."),
@@ -595,12 +572,6 @@ HELP: dict = {
     "endsWith": (["tf = endsWith(s, pattern)", "tf = endsWith(s, pattern, 'IgnoreCase', true)"],
                  "True if s ends with pattern (or any pattern in a cell array). Works element-wise on a "
                  "cell array s."),
-    "strsplit": (["C = strsplit(s)", "C = strsplit(s, delimiter)"],
-                 "Splits text into a 1-by-N cell array. By default it splits on whitespace, treating a run "
-                 "of whitespace as one break. A delimiter (or a cell array of delimiters, with escapes such "
-                 "as '\\t' allowed) splits at each occurrence, so adjacent delimiters give empty pieces. "
-                 "A string scalar input gives a row string array instead. "
-                 "Example: strsplit('a,b', ',') is {'a', 'b'}."),
     "strjoin": (["s = strjoin(C)", "s = strjoin(C, delimiter)"],
                 "Joins the texts in a cell array or string array into one piece of text, separated by "
                 "delimiter (a space by default). Escapes such as '\\n' in the delimiter are expanded. Returns "
@@ -624,7 +595,8 @@ HELP: dict = {
                "choose which results are returned, in the order given; without them the outputs are start "
                "indices, end indices, token extents (always empty in mylab), matches, tokens, named tokens "
                "and split pieces. 'once' returns only the first match, not wrapped in a cell. Named groups "
-               "are written (?<name>...). Matching uses Python's regex engine, so rare constructs may "
+               "are written (?<name>...); 'names' gives a 1-by-N struct array with one element per match (a "
+               "scalar struct with 'once'). Matching uses Python's regex engine, so rare constructs may "
                "differ. A cell array s gives a cell of results."),
     "regexpi": (["out = regexpi(s, expr, keyword, ...)"],
                 "Case-insensitive form of regexp: the same outputs and options, but letters match "
@@ -849,22 +821,6 @@ HELP: dict = {
               "Reads the next line from a file without its line ending. Returns -1 at end of file."),
     "fgets": ("line = fgets(fid)", "Reads the next line from a file, keeping its newline. Returns -1 at end of file."),
     "feof": ("tf = feof(fid)", "True if there is nothing more to read from the file."),
-    "writematrix": ("writematrix(A, filename)",
-                    "Writes a numeric matrix to a text file as comma-separated values with up to 15 "
-                    "significant digits. Other delimiters and options are not supported."),
-    "csvwrite": ("csvwrite(filename, A)", "Writes a numeric matrix as comma-separated values, like writematrix. "
-                 "Row and column offsets are not supported."),
-    "dlmwrite": ("dlmwrite(filename, A)",
-                 "Writes a numeric matrix to a text file. mylab always uses commas; a delimiter argument is "
-                 "not supported."),
-    "readmatrix": ("A = readmatrix(filename)",
-                   "Reads a comma-separated text file into a numeric matrix. Fields that are not numbers become "
-                   "NaN. Options are not supported."),
-    "csvread": ("A = csvread(filename)", "Reads a comma-separated file into a numeric matrix, like readmatrix. "
-                "Row and column offsets are not supported."),
-    "dlmread": ("A = dlmread(filename)",
-                "Reads a comma-separated file into a numeric matrix. mylab always splits on commas; other "
-                "delimiters and ranges are not supported."),
     "save": (["save", "save(filename)", "save(filename, 'var1', 'var2', ...)", "save filename var1 var2"],
              "Writes variables from the workspace to a .mat file (the extension is added if missing; the "
              "default name is matlab.mat). Only numeric, logical, char and string variables are saved; "
@@ -874,14 +830,6 @@ HELP: dict = {
              "given. Numeric data is loaded as double. A .csv, .txt or .dat file is read as a numeric matrix "
              "and stored in a variable named after the file (or returned)."),
     # -- polynomials ---------------------------------------------------------------------------
-    "polyfit": (["p = polyfit(x, y, n)", "[p, S] = polyfit(x, y, n)"],
-                "Least-squares polynomial of degree n through the points (x, y). p is a row vector of "
-                "coefficients, highest power first. S has fields normr (norm of the residuals) and df "
-                "(degrees of freedom). Centering and scaling (a third output) are not supported. "
-                "Example: polyfit([0 1 2], [1 3 5], 1) is about [2 1]."),
-    "polyval": ("y = polyval(p, x)",
-                "Evaluates the polynomial with coefficients p (highest power first) at every element of x. "
-                "Example: polyval([1 0 -1], 3) is 8."),
     "roots": ("r = roots(p)", "Roots of the polynomial with coefficients p, as a column vector (possibly complex)."),
     "poly": (["p = poly(r)", "p = poly(A)"],
              "Polynomial coefficients from a vector of roots r, or the characteristic polynomial of a "
@@ -902,41 +850,12 @@ HELP: dict = {
                "a row vector or down the columns of a matrix. Initial conditions are not supported. "
                "Example: filter(1, [1 -0.5], [1 1 1]) is [1 1.5 1.75]."),
     # -- interpolation ---------------------------------------------------------------------------
-    "interp1": (["yq = interp1(x, y, xq)", "yq = interp1(y, xq)", "yq = interp1(..., method)",
-                 "yq = interp1(..., method, 'extrap')", "yq = interp1(..., method, fillvalue)"],
-                "1-D interpolation of the data (x, y) at the query points xq. When x is omitted it is "
-                "1:n. method is 'linear' (default), 'nearest', 'previous', 'next', 'pchip' or 'spline'; "
-                "'cubic' and 'makima' are treated as 'spline' in mylab. Points outside the data give NaN, "
-                "or fillvalue, or are extrapolated with 'extrap' (the default for 'spline'). If y is a matrix "
-                "each column is interpolated. 'spline' needs at least four data points."),
-    "spline": ("yq = spline(x, y, xq)",
-               "Cubic spline through the points (x, y) with not-a-knot end conditions, evaluated at xq. "
-               "The form without query points (returning a piecewise polynomial) is not supported."),
-    "interp2": (["Zq = interp2(X, Y, Z, Xq, Yq)", "Zq = interp2(X, Y, Z, Xq, Yq, method)"],
-                "2-D interpolation on a grid such as one made by meshgrid. method is 'linear' (default) or "
-                "'nearest' (any other name is treated as 'nearest'). Points outside the grid give NaN. "
-                "The grid coordinates must be given."),
     # -- solving and optimization ----------------------------------------------------------------
     "optimset": (["opts = optimset(name, value, ...)"],
                  "Builds an options struct from name/value pairs for fzero, fminsearch and similar solvers. "
                  "mylab reads TolX, TolFun, MaxIter and MaxFunEvals where they apply and ignores other names."),
     "optimoptions": ("opts = optimoptions(solvername, name, value, ...)",
                      "Same as optimset; the solver name is accepted and ignored. Returns a plain struct."),
-    "fzero": (["x = fzero(f, x0)", "x = fzero(f, [a b])", "x = fzero(f, x0, options)",
-               "[x, fval, exitflag] = fzero(...)"],
-              "Finds a point where the scalar function f crosses zero. With an interval [a b], f(a) and "
-              "f(b) must have opposite signs; with a single start x0 it first searches outward for such an "
-              "interval and fails if none is found. Example: fzero(@cos, [1 2]) is pi/2."),
-    "fminsearch": (["x = fminsearch(f, x0)", "x = fminsearch(f, x0, options)", "[x, fval, exitflag] = fminsearch(...)"],
-                   "Minimizes a function of one or more variables, starting at x0, with the derivative-free "
-                   "Nelder-Mead simplex method. Options TolX, TolFun, MaxIter and MaxFunEvals are honoured. "
-                   "Finds a local minimum only."),
-    "fminbnd": (["x = fminbnd(f, a, b)", "[x, fval, exitflag] = fminbnd(...)"],
-                "Minimizes a scalar function of one variable on the interval [a, b]. An options argument is "
-                "not supported."),
-    "fminunc": (["x = fminunc(f, x0)", "[x, fval, exitflag] = fminunc(...)"],
-                "Minimizes a smooth function of several variables from x0 with a quasi-Newton (BFGS) method "
-                "using numerical gradients. Options are ignored."),
     "fsolve": (["x = fsolve(f, x0)", "[x, fval, exitflag] = fsolve(...)"],
                "Solves the system of equations f(x) = 0, starting from x0. f returns a vector of residuals. "
                "Options are ignored."),
@@ -954,26 +873,6 @@ HELP: dict = {
                   "and ymax may be numbers or functions of x. f is called with scalars. Options are not "
                   "supported."),
     # -- ODE solvers -----------------------------------------------------------------------------
-    "ode45": (["[t, y] = ode45(f, tspan, y0)", "[t, y] = ode45(f, tspan, y0, options)", "sol = ode45(...)"],
-              "Solves the ODE system dy/dt = f(t, y) from y0, using an adaptive explicit Runge-Kutta (4,5) "
-              "method. f receives t and a column y and returns the derivatives. With tspan = [t0 tf] the "
-              "solver's own steps are returned (each step refined into four points); with more entries the "
-              "solution is reported at those times. Each row of y is the state at t. With one output, sol "
-              "is a struct with fields x, y and solver for use with deval. RelTol and AbsTol options apply."),
-    "ode23": (["[t, y] = ode23(f, tspan, y0)", "[t, y] = ode23(f, tspan, y0, options)", "sol = ode23(...)"],
-              "Like ode45 but with a lower-order Runge-Kutta (2,3) pair; can be cheaper at loose tolerances."),
-    "ode113": (["[t, y] = ode113(f, tspan, y0)", "[t, y] = ode113(f, tspan, y0, options)", "sol = ode113(...)"],
-               "Same calling forms as ode45. mylab solves it with a high-order (8th) explicit Runge-Kutta "
-               "method rather than a multistep method, suited to tight tolerances."),
-    "ode15s": (["[t, y] = ode15s(f, tspan, y0)", "[t, y] = ode15s(f, tspan, y0, options)", "sol = ode15s(...)"],
-               "Solver for stiff problems, with the same calling forms as ode45. mylab uses an implicit "
-               "backward differentiation (BDF) method; ode23s, ode23t and ode23tb use the same method."),
-    "odeset": ("opts = odeset(name, value, ...)",
-               "Builds an options struct for the ODE solvers from name/value pairs. The solvers use RelTol "
-               "(default 1e-3) and AbsTol (default 1e-6); other names are stored but ignored."),
-    "deval": ("y = deval(sol, t)",
-              "Evaluates a solution struct returned by an ODE solver at the times t; each row of the result "
-              "is one state component. mylab interpolates linearly between the stored solution points."),
     # -- plotting: lines and charts --------------------------------------------------------------
     "plot": (["plot(y)", "plot(x, y)", "plot(x, y, linespec)", "plot(x1, y1, s1, x2, y2, s2, ...)",
               "plot(..., Name, Value)"],
@@ -1116,7 +1015,6 @@ HELP: dict = {
 _ALIASES = {
     "nan": "NaN", "inf": "Inf", "j": "i",
     "home": "clc", "clearvars": "clear", "quit": "exit", "isdir": "isfolder",
-    "ode23s": "ode15s", "ode23t": "ode15s", "ode23tb": "ode15s",
     "patch": "fill", "image": "imagesc", "imshow": "imagesc",
     "surfc": "surf", "meshc": "mesh", "suptitle": "sgtitle",
     "yticklabels": "xticklabels", "shg": "drawnow", "refresh": "drawnow",
@@ -1156,14 +1054,6 @@ HELP.update({
 
 # -- tables -------------------------------------------------------------------------------------
 HELP.update({
-    "table": (["T = table(var1, var2, ...)", "T = table(..., 'VariableNames', names)",
-               "T = table('Size', [h w], 'VariableTypes', types)"],
-              "Creates a table whose columns are the given variables (each must have the same number of rows; "
-              "row vectors are turned into columns). Column names come from the argument variable names, or "
-              "Var1, Var2, ... Access a column with T.Name, a subset with T(rows, vars) and the raw data with "
-              "T{rows, vars}."),
-    "array2table": (["T = array2table(A)", "T = array2table(A, 'VariableNames', names)"],
-                    "Makes a table with one variable per column of the matrix A."),
     "cell2table": (["T = cell2table(C)", "T = cell2table(C, 'VariableNames', names)"],
                    "Makes a table with one variable per column of the cell array C. Columns holding only "
                    "numeric scalars become numeric variables; others stay cell columns."),
@@ -1183,9 +1073,6 @@ HELP.update({
                 "Appends variables (columns) to the right of a table."),
     "renamevars": ("T2 = renamevars(T, oldNames, newNames)", "Renames table variables."),
     "istable": ("tf = istable(x)", "True if x is a table."),
-    "varfun": ("T2 = varfun(f, T)",
-               "Applies the function f to each table variable and returns a table of the results, with "
-               "variables named f_Name."),
     "rows2vars": ("T2 = rows2vars(T)",
                   "Transposes a numeric table: each original row becomes a variable, and a first variable "
                   "OriginalVariableNames lists the old column names."),
@@ -1215,12 +1102,6 @@ HELP.update({
               "column of pieces (a cell of char vectors, or a string array for string input); a cell array "
               "whose elements all split into the same number of pieces gives a matrix. "
               "Example: split(\"a,b\", \",\") is [\"a\"; \"b\"]."),
-    "join": (["s = join(C)", "s = join(C, delimiter)", "s = join(C, delimiter, dim)"],
-             "Joins text elements with a delimiter (a space by default). delimiter may also be a list with "
-             "one entry fewer than the items. A vector of text gives one joined result; for a matrix, each "
-             "row is joined (dim = 2, the default) or each column (dim = 1). For cell input the result is "
-             "still a cell array, e.g. join({'a', 'b'}, '-') is {'a-b'}; string input gives strings. A char "
-             "vector or string scalar is returned unchanged."),
     "compose": (["str = compose(fmt)", "str = compose(fmt, A)", "str = compose(fmt, A1, A2, ...)"],
                 "Formats data into text with sprintf-style conversions, giving one piece of text per row "
                 "rather than one long result. With a single array, each row is fed to the format, using as "
@@ -1734,3 +1615,357 @@ HELP.update({
                   "Nonlinear least squares: minimizes the sum of squares of the residual vector returned by "
                   "fun(x), starting from x0, optionally within bounds. Methods and options as in lsqcurvefit."),
 })
+
+# -- data analysis, interpolation, solvers and text-file input/output (library fixes) ------------
+HELP.update({
+    "accumarray": (["A = accumarray(subs, vals)", "A = accumarray(subs, vals, sz)",
+                    "A = accumarray(subs, vals, sz, fun)", "A = accumarray(subs, vals, sz, fun, fillval)"],
+                   "Groups the values vals by the subscripts in subs and combines each group. Each row of "
+                   "subs is one subscript (a column of indices for a vector result, two columns for a "
+                   "matrix, or a cell of index vectors). sz fixes the output size ([] lets the largest "
+                   "subscript decide). fun is called with each group's values as a column and must return "
+                   "a scalar (default: sum); if it returns a cell such as @(x) {x}, the result is a cell "
+                   "array. Positions that receive no values hold fillval (default 0, or [] for cells). "
+                   "Example: accumarray([1; 2; 1], [10; 20; 30], [], @max) is [30; 20]."),
+    "histcounts": (["n = histcounts(x)", "n = histcounts(x, nbins)", "n = histcounts(x, edges)",
+                    "n = histcounts(..., 'BinWidth', w)", "n = histcounts(..., 'NumBins', k)",
+                    "n = histcounts(..., 'BinEdges', e)", "n = histcounts(..., 'BinLimits', [lo hi])",
+                    "n = histcounts(..., 'Normalization', type)", "[n, edges, bin] = histcounts(...)"],
+                   "Counts how many values of x fall in each bin; every bin includes its left edge and "
+                   "the last bin also its right edge. Automatic bins use a round width (1, 2, 2.5 or 5 "
+                   "times a power of ten) based on the spread of the data, with edges on multiples of it; "
+                   "integer data over a small range gets unit-width bins centred on the integers. "
+                   "Normalization may be 'count', 'probability', 'pdf', 'cdf', 'countdensity' or "
+                   "'cumcount'. bin gives the bin number of each element (0 when outside). "
+                   "Example: histcounts(1:5) is [1 1 1 1 1] with edges 0.5:1:5.5."),
+    "sortrows": (["B = sortrows(A)", "B = sortrows(A, cols)", "B = sortrows(A, 'descend')",
+                  "[B, idx] = sortrows(...)", "T2 = sortrows(T, vars)"],
+                 "Sorts the rows of a matrix, char array or cell array. Rows are compared by the listed "
+                 "columns in turn (by default all columns, left to right); a negative column number sorts "
+                 "that column in descending order. Cell array columns must hold text or numeric scalars. "
+                 "Ties keep their original order. idx is the row permutation. "
+                 "Example: sortrows([3 1; 1 2; 3 0], [1 -2]) is [1 2; 3 1; 3 0]."),
+    "ismember": (["tf = ismember(a, s)", "[tf, loc] = ismember(a, s)", "[tf, loc] = ismember(A, B, 'rows')"],
+                 "True where an element of a is found in s; loc gives the index of the first match in s "
+                 "(0 when absent). Works for numbers, text and cell arrays of text. With 'rows', each row "
+                 "of A is looked up among the rows of B and column vectors are returned. "
+                 "Example: ismember([1 2; 5 6], [5 6; 0 0], 'rows') is [false; true]."),
+    "strsplit": (["C = strsplit(s)", "C = strsplit(s, delimiter)", "C = strsplit(..., 'CollapseDelimiters', tf)",
+                  "C = strsplit(..., 'DelimiterType', 'RegularExpression')", "[C, matches] = strsplit(...)"],
+                 "Splits text at a delimiter (default: whitespace) or at any of a cell array of "
+                 "delimiters, which may contain escapes such as '\\t'. Runs of consecutive delimiters "
+                 "count as one unless 'CollapseDelimiters' is false. A string input gives a string row; "
+                 "a char input gives a cell row. matches holds the delimiter text that was found. "
+                 "Example: strsplit('a,,b', ',') is {'a', 'b'}; with 'CollapseDelimiters', false it is "
+                 "{'a', '', 'b'}."),
+    "strtok": (["tok = strtok(s)", "tok = strtok(s, delimiters)", "[tok, rest] = strtok(...)"],
+               "First token of the text: leading delimiter characters (default: whitespace) are skipped "
+               "and the token runs up to the next delimiter. rest is the remainder, starting at that "
+               "delimiter. Works elementwise on cell and string arrays. "
+               "Example: [t, r] = strtok('  red green') gives t = 'red' and r = ' green'."),
+    "splitlines": ("lines = splitlines(s)",
+                   "Splits text at line breaks (\\n, \\r\\n or \\r). A string gives a string column; a char "
+                   "vector gives a cell column of char vectors."),
+    "missing": ("m = missing",
+                "A missing value. Here it is a string scalar holding <missing>; ismissing(m) is true."),
+    "str2double": ("x = str2double(s)",
+                   "Converts text to a double. Returns NaN when the text is not a number. Cell arrays and "
+                   "string arrays are converted element by element (a <missing> string gives NaN); a "
+                   "numeric input gives NaN. Example: str2double([\"1.5\" \"x\"]) is [1.5 NaN]."),
+    "upper": ("t = upper(s)", "Converts text to upper case, character by character, so the length never "
+                              "changes (a letter whose upper-case form is longer, such as the German sharp s, "
+                              "is kept). Works on char arrays, strings, string arrays and cells."),
+    "lower": ("t = lower(s)", "Converts text to lower case, character by character, so the length never "
+                              "changes. Works on char arrays, strings, string arrays and cells."),
+    "repelem": (["B = repelem(v, n)", "B = repelem(A, r, c)"],
+                "Repeats elements. For a vector v, each element is repeated n times (n may be a vector "
+                "with one count per element). For a matrix, each row is repeated r times and each column "
+                "c times. Example: repelem([1 2], [2 3]) is [1 1 2 2 2]."),
+    "issorted": (["tf = issorted(A)", "tf = issorted(A, 'descend')", "tf = issorted(A, 'monotonic')",
+                  "tf = issorted(A, 'rows')"],
+                 "True if the elements (or rows, with 'rows') are already in order. Other modes: "
+                 "'strictascend', 'strictdescend' and 'strictmonotonic'. Works on cell arrays of text too."),
+    "maxk": (["B = maxk(A, k)", "B = maxk(A, k, dim)", "[B, I] = maxk(...)"],
+             "The k largest elements along the first non-singleton dimension (or dim), largest first. "
+             "NaN values come last. I gives their indices. Example: maxk([3 9 4 7], 2) is [9 7]."),
+    "mink": (["B = mink(A, k)", "B = mink(A, k, dim)", "[B, I] = mink(...)"],
+             "The k smallest elements along the first non-singleton dimension (or dim), smallest first. "
+             "NaN values come last. Example: mink([3 9 4 7], 2) is [3 4]."),
+    "pascal": (["P = pascal(n)", "L = pascal(n, 1)"],
+               "Pascal matrix: P(i, j) is the binomial coefficient (i+j-2 choose j-1), a symmetric "
+               "positive definite matrix of integers. pascal(n, 1) is a lower-triangular factor with "
+               "alternating column signs that is its own inverse."),
+    "gradient": (["g = gradient(f)", "g = gradient(f, h)", "[gx, gy] = gradient(F)",
+                  "[gx, gy] = gradient(F, h)", "[gx, gy] = gradient(F, hx, hy)"],
+                 "Numerical derivative: central differences in the interior and one-sided differences at "
+                 "the ends. Spacing may be a scalar step or a vector of coordinates. For a matrix, gx "
+                 "differentiates along each row (across columns) and gy along each column. "
+                 "Example: gradient([1 4 9 16]) is [3 4 6 7]."),
+    "conv2": (["C = conv2(A, B)", "C = conv2(A, B, shape)", "C = conv2(u, v, A)", "C = conv2(u, v, A, shape)"],
+              "Two-dimensional convolution. shape 'full' (default) returns the whole result, 'same' the "
+              "central part with the size of A, and 'valid' only the part computed without zero padding. "
+              "With two vectors u and v, A is convolved with column u and then with row v."),
+    "interp1": (["yq = interp1(x, y, xq)", "yq = interp1(y, xq)", "yq = interp1(..., method)",
+                 "yq = interp1(..., method, 'extrap')", "yq = interp1(..., method, extrapval)"],
+                "One-dimensional interpolation of the samples (x, y) at the points xq. Methods: "
+                "'linear' (default), 'nearest', 'previous', 'next', 'spline' (not-a-knot cubic spline), "
+                "'pchip' and 'cubic' (shape-preserving piecewise cubic) and 'makima' (modified Akima). "
+                "Outside the range of x the result is NaN for the first four methods and extrapolated "
+                "for the cubic ones, unless 'extrap' or a fill value is given. If y is a matrix, each "
+                "column is interpolated. Example: interp1([1 2 3], [10 20 30], 2.5) is 25."),
+    "spline": (["pp = spline(x, y)", "yq = spline(x, y, xq)"],
+               "Cubic spline through the points (x, y) with not-a-knot end conditions; if y has two more "
+               "values than x, the first and last give the end slopes. With xq, returns the values there; "
+               "otherwise returns a piecewise polynomial for ppval. If y is a matrix, each row is a "
+               "component of a vector-valued spline."),
+    "pchip": (["pp = pchip(x, y)", "yq = pchip(x, y, xq)"],
+              "Shape-preserving piecewise cubic Hermite interpolation: no overshoot between data points, "
+              "and monotone data stay monotone. Returns values at xq or a piecewise polynomial for ppval."),
+    "makima": (["pp = makima(x, y)", "yq = makima(x, y, xq)"],
+               "Modified Akima piecewise cubic interpolation, which avoids most overshoot without "
+               "flattening the curve as much as pchip. Returns values at xq or a piecewise polynomial."),
+    "ppval": ("v = ppval(pp, xq)",
+              "Evaluates a piecewise polynomial (from spline, pchip, makima or mkpp) at xq. Points "
+              "outside the breaks use the first or last piece."),
+    "mkpp": (["pp = mkpp(breaks, coefs)", "pp = mkpp(breaks, coefs, d)"],
+             "Builds a piecewise polynomial. Row k of coefs holds the coefficients of piece k (highest "
+             "power first) in the local variable x - breaks(k); d is the number of components for a "
+             "vector-valued polynomial. Example: ppval(mkpp([0 1 2], [1 0; -1 1]), 1.5) is 0.5."),
+    "unmkpp": ("[breaks, coefs, l, k, d] = unmkpp(pp)",
+               "Takes a piecewise polynomial apart: its breaks, coefficient matrix, number of pieces l, "
+               "order k and number of components d."),
+    "interp2": (["Zq = interp2(X, Y, Z, Xq, Yq)", "Zq = interp2(Z, Xq, Yq)", "Zq = interp2(..., method)",
+                 "Zq = interp2(..., method, extrapval)", "Zq = interp2(Z, k)", "Zq = interp2(Z)"],
+                "Interpolation on a 2-D grid. X and Y are grid vectors or meshgrid matrices (default "
+                "1:n and 1:m). A row vector Xq with a column vector Yq is expanded to a grid. Methods: "
+                "'linear' (default), 'nearest', 'cubic', 'spline' and 'makima'. Points outside the grid "
+                "give NaN or extrapval. interp2(Z, k) refines the grid by halving the spacing k times "
+                "(once if k is omitted)."),
+    "polyfit": (["p = polyfit(x, y, n)", "[p, S] = polyfit(x, y, n)", "[p, S, mu] = polyfit(x, y, n)"],
+                "Least-squares polynomial of degree n through the points (x, y), highest power first. S "
+                "holds the triangular factor R, the degrees of freedom df, the residual norm normr and "
+                "rsquared, for error estimates with polyval. With mu, x is first centred and scaled: "
+                "the fit uses (x - mu(1)) / mu(2), where mu = [mean(x); std(x)]; this helps with large "
+                "or badly scaled x."),
+    "polyval": (["y = polyval(p, x)", "[y, delta] = polyval(p, x, S)", "y = polyval(p, x, [], mu)",
+                 "[y, delta] = polyval(p, x, S, mu)"],
+                "Evaluates the polynomial p (highest power first) at each element of x. With mu from "
+                "polyfit, x is centred and scaled first. With S from polyfit, delta is an error estimate "
+                "such that y +/- delta covers new observations about 68% of the time for normal errors."),
+    "fzero": (["x = fzero(f, x0)", "x = fzero(f, [a b])", "x = fzero(f, x0, options)",
+               "[x, fval, exitflag, output] = fzero(...)"],
+              "Finds a zero of a function of one variable, starting from x0 (a sign change is searched "
+              "for around it) or inside the interval [a b] whose ends have opposite signs. output holds "
+              "iterations, funcCount, algorithm and message."),
+    "fminsearch": (["x = fminsearch(f, x0)", "x = fminsearch(f, x0, options)",
+                    "[x, fval, exitflag, output] = fminsearch(...)"],
+                   "Minimizes a function of several variables without derivatives (Nelder-Mead simplex), "
+                   "starting at x0. Options TolX, TolFun, MaxIter and MaxFunEvals are read. output holds "
+                   "iterations, funcCount, algorithm and message."),
+    "fminbnd": (["x = fminbnd(f, a, b)", "x = fminbnd(f, a, b, options)", "[x, fval, exitflag, output] = fminbnd(...)"],
+                "Minimizes a function of one variable on the interval [a, b] (golden section search with "
+                "parabolic steps). output holds iterations, funcCount, algorithm and message."),
+    "fminunc": (["x = fminunc(f, x0)", "[x, fval, exitflag, output, grad, hessian] = fminunc(...)"],
+                "Minimizes a smooth function of several variables without constraints (quasi-Newton BFGS). "
+                "grad is the gradient and hessian an approximation of the Hessian at the solution."),
+    "ode45": (["[t, y] = ode45(f, tspan, y0)", "[t, y] = ode45(f, tspan, y0, options)",
+               "[t, y, te, ye, ie] = ode45(f, tspan, y0, options)", "sol = ode45(...)"],
+              "Solves the ODE y' = f(t, y) from y(tspan(1)) = y0 with an explicit Runge-Kutta (4,5) pair. "
+              "If tspan has two elements, the output holds the solver steps, refined with four points per "
+              "step taken from the solver's own interpolant; with more elements, the solution at exactly "
+              "those times. Options from odeset: RelTol (default 1e-3), AbsTol (1e-6), MaxStep, "
+              "InitialStep, Refine and Events. An event function [value, isterminal, direction] = "
+              "g(t, y) reports zero crossings of value (direction 1: rising only, -1: falling only, 0: "
+              "both); te, ye and ie give their times, states and indices, and a terminal event stops the "
+              "integration. sol is a structure with x, y (and xe, ye, ie) for use with deval."),
+    "ode23": (["[t, y] = ode23(f, tspan, y0)", "[t, y] = ode23(f, tspan, y0, options)",
+               "[t, y, te, ye, ie] = ode23(...)", "sol = ode23(...)"],
+              "Like ode45 but with a lower-order (2,3) Runge-Kutta pair, which can be cheaper at loose "
+              "tolerances. Supports the same options and outputs."),
+    "ode113": (["[t, y] = ode113(f, tspan, y0)", "[t, y] = ode113(f, tspan, y0, options)",
+                "[t, y, te, ye, ie] = ode113(...)", "sol = ode113(...)"],
+               "Solver for non-stiff problems at tight tolerances. mylab uses a high-order (8th order) "
+               "Runge-Kutta method instead of a multistep method; options and outputs are as for ode45."),
+    "ode78": (["[t, y] = ode78(f, tspan, y0)", "sol = ode78(...)"],
+              "High-order Runge-Kutta solver for smooth non-stiff problems at tight tolerances. Options "
+              "and outputs are as for ode45."),
+    "ode89": (["[t, y] = ode89(f, tspan, y0)", "sol = ode89(...)"],
+              "High-order Runge-Kutta solver (the same method as ode78 here). Options and outputs are as "
+              "for ode45."),
+    "ode15s": (["[t, y] = ode15s(f, tspan, y0)", "[t, y] = ode15s(f, tspan, y0, options)",
+                "[t, y, te, ye, ie] = ode15s(...)", "sol = ode15s(...)"],
+               "Solver for stiff problems (implicit backward differentiation formulas). ode23t and ode23tb "
+               "use the same method and ode23s an implicit Runge-Kutta method. Options and outputs are "
+               "as for ode45; mass matrices are not supported."),
+    "odeset": (["opts = odeset(name, value, ...)", "opts = odeset(oldopts, name, value, ...)"],
+               "Creates or updates an options structure for the ODE solvers, e.g. odeset('RelTol', 1e-6, "
+               "'Events', @myevents)."),
+    "odeget": (["v = odeget(opts, name)", "v = odeget(opts, name, default)"],
+               "Reads one option from an odeset structure (the name is not case sensitive), or returns "
+               "default (or []) when it is not set."),
+    "deval": (["y = deval(sol, t)", "y = deval(sol, t, idx)", "[y, yp] = deval(...)", "y = deval(t, sol)"],
+              "Evaluates a solution structure from an ODE solver at the times t, using the solver's own "
+              "continuous interpolant, so the values are as accurate as the solution itself. Each column "
+              "of y is the state at one time; idx selects components and yp holds the derivatives. "
+              "Times must lie within the solved interval."),
+    "etime": ("s = etime(t1, t0)",
+              "Seconds elapsed from date vector t0 to date vector t1 ([year month day hour minute "
+              "seconds], as returned by clock)."),
+    "timeit": (["t = timeit(f)", "t = timeit(f, numOutputs)"],
+               "Measures how long the function handle f (taking no inputs) takes to run: calls it several "
+               "times and returns the median time in seconds. numOutputs is the number of outputs to "
+               "request on each call (default 0)."),
+    # -- tables ----------------------------------------------------------------------------------
+    "table": (["T = table(var1, var2, ...)", "T = table(..., 'VariableNames', names)",
+               "T = table(..., 'RowNames', rownames)",
+               "T = table('Size', [m n], 'VariableTypes', types, 'VariableNames', names)"],
+              "Creates a table: columns (variables) of equal height that may hold numbers, logicals, "
+              "text in cells or strings. Variables are named after the input variables, or Var1, Var2, "
+              "... Rows can be named with 'RowNames' (or later through T.Properties.RowNames) and then "
+              "indexed by name, as in T('row2', :). Access a variable with T.name, a sub-table with "
+              "T(rows, vars) and the contents with T{rows, vars}, which can also be assigned."),
+    "array2table": (["T = array2table(A)", "T = array2table(A, 'VariableNames', names)",
+                     "T = array2table(A, 'RowNames', rownames)"],
+                    "Turns each column of the matrix A into a table variable."),
+    "table2cell": ("C = table2cell(T)",
+                   "Cell array with one cell per table entry: numbers as numeric values, text as char "
+                   "vectors or strings."),
+    "varfun": (["T2 = varfun(f, T)", "T2 = varfun(f, T, 'InputVariables', vars)",
+                "T2 = varfun(f, T, 'GroupingVariables', groupvars)", "A = varfun(f, T, 'OutputFormat', 'uniform')"],
+               "Applies the function f to each table variable. Result variables are named like "
+               "mean_Height. With 'GroupingVariables', f is applied to each group of rows separately and "
+               "the result has one row per group, with the group values and a GroupCount column. "
+               "'OutputFormat' 'uniform' returns a numeric row and 'cell' a cell row instead of a table."),
+    "findgroups": (["G = findgroups(A)", "[G, ID] = findgroups(A)", "[G, ID1, ID2, ...] = findgroups(A1, A2, ...)",
+                    "[G, TID] = findgroups(T)"],
+                   "Numbers the groups formed by the unique values (or unique combinations of values) of "
+                   "the grouping vectors, in sorted order of those values. G gives the group number of "
+                   "each element (NaN when a value is missing); ID holds each group's value. Works for "
+                   "numeric, logical, cell arrays of text and string vectors, and for all variables of a "
+                   "table. Example: findgroups([5 3 5]) is [2 1 2]."),
+    "splitapply": (["Y = splitapply(f, X, G)", "Y = splitapply(f, X1, X2, ..., G)", "[Y1, Y2] = splitapply(...)"],
+                   "Splits the data into groups given by the group numbers G (from findgroups), calls f "
+                   "on each group and stacks the results, one row per group. Matrices are split by rows. "
+                   "f must return the same size for each group; return a cell such as @(x) {x} for "
+                   "anything else. Example: splitapply(@sum, [1 2 3], [1 2 1]) is [4 2]."),
+    "groupsummary": (["S = groupsummary(T, groupvars)", "S = groupsummary(T, groupvars, method)",
+                      "S = groupsummary(T, groupvars, method, datavars)", "B = groupsummary(X, G, method)"],
+                     "Summary statistics for each group of table rows. The result has one row per group "
+                     "with the grouping values, a GroupCount column and one column per method and data "
+                     "variable, named like mean_Height. Methods: 'mean', 'sum', 'min', 'max', 'median', "
+                     "'mode', 'std', 'var', 'range', 'numel', 'nnz', 'nummissing', 'all', or a function "
+                     "handle; NaN values are left out of the statistics. datavars defaults to all other "
+                     "numeric variables."),
+    "innerjoin": (["T = innerjoin(Tleft, Tright)", "T = innerjoin(Tleft, Tright, 'Keys', keys)",
+                   "T = innerjoin(..., 'LeftKeys', lk, 'RightKeys', rk)", "[T, ileft, iright] = innerjoin(...)"],
+                  "Combines rows of two tables that have equal key values (by default all variables with "
+                  "the same name). Every matching pair of rows gives one output row; the result is sorted "
+                  "by key. Non-key variables of the right table are appended; names used in both tables "
+                  "get _left and _right suffixes. 'LeftVariables' and 'RightVariables' choose the "
+                  "variables to keep."),
+    "outerjoin": (["T = outerjoin(Tleft, Tright)", "T = outerjoin(..., 'Keys', keys)",
+                   "T = outerjoin(..., 'MergeKeys', true)", "T = outerjoin(..., 'Type', 'left')",
+                   "[T, ileft, iright] = outerjoin(...)"],
+                  "Like innerjoin but also keeps rows without a match ('Type' 'full', 'left' or 'right'), "
+                  "filling the missing side with NaN, empty text or <missing>. Without 'MergeKeys' the key "
+                  "variables of both tables are kept (with _left and _right suffixes); with it they are "
+                  "merged into one."),
+    "join": (["s = join(C)", "s = join(C, delimiter)", "s = join(C, delimiter, dim)", "T = join(Tleft, Tright)",
+              "T = join(Tleft, Tright, 'Keys', keys)"],
+             "Text: joins the strings in C with a delimiter (default a space) along the last dimension, "
+             "or along dim. Tables: adds to each row of Tleft the variables of the row of Tright with the "
+             "same key values (by default the variables with the same name); every left row must match "
+             "exactly one right row, and the left row order is kept."),
+    "movevars": (["T2 = movevars(T, vars)", "T2 = movevars(T, vars, 'Before', location)",
+                  "T2 = movevars(T, vars, 'After', location)"],
+                 "Moves table variables to a new position, before or after another variable (given by "
+                 "name or number), or to the end."),
+    "rmmissing": (["B = rmmissing(A)", "B = rmmissing(A, dim)", "[B, TF] = rmmissing(...)",
+                   "B = rmmissing(..., 'MinNumMissing', n)"],
+                  "Removes missing entries: NaN in numeric data, empty char vectors in cell arrays, "
+                  "<missing> strings. A vector loses the missing elements, a matrix or table the rows "
+                  "(or columns, with dim 2) that contain at least n missing values (default 1). TF marks "
+                  "what was removed."),
+    "fillmissing": (["F = fillmissing(A, 'constant', v)", "F = fillmissing(A, method)",
+                     "F = fillmissing(A, method, dim)", "F = fillmissing(..., 'EndValues', e)",
+                     "[F, TF] = fillmissing(...)"],
+                    "Replaces missing entries. Methods: 'constant' (the value v), 'previous', 'next', "
+                    "'nearest' and, for numeric data, 'linear', 'spline', 'pchip' and 'makima'. Matrices "
+                    "are filled column by column (or along dim); tables variable by variable. Leading or "
+                    "trailing gaps are extrapolated by the interpolating methods unless 'EndValues' is "
+                    "'none', 'nearest' or a constant. TF marks the entries that were filled. "
+                    "Example: fillmissing([1 NaN 3], 'linear') is [1 2 3]."),
+    # -- text-file input and output ------------------------------------------------------------
+    "readmatrix": (["A = readmatrix(filename)", "A = readmatrix(filename, 'NumHeaderLines', n)",
+                    "A = readmatrix(filename, 'Delimiter', d)"],
+                   "Reads delimited numeric text into a matrix. The delimiter (comma, tab, semicolon, bar "
+                   "or whitespace) is detected when not given. Leading lines with only text, such as a "
+                   "header row, are skipped automatically unless 'NumHeaderLines' says how many to skip. "
+                   "Empty or non-numeric fields become NaN, and short rows are padded with NaN."),
+    "csvread": (["A = csvread(filename)", "A = csvread(filename, r, c)"],
+                "Reads a comma-separated numeric file; empty fields become 0. r and c are zero-based row "
+                "and column offsets of the first value to read."),
+    "dlmread": (["A = dlmread(filename)", "A = dlmread(filename, delimiter)", "A = dlmread(filename, delimiter, r, c)"],
+                "Reads a delimited numeric file; empty fields become 0. r and c are zero-based offsets."),
+    "writematrix": (["writematrix(A, filename)", "writematrix(A, filename, 'Delimiter', d)",
+                     "writematrix(A, filename, 'WriteMode', 'append')"],
+                    "Writes a matrix to a delimited text file with full precision, one row per line. The "
+                    "delimiter may be 'comma' (default; tab for .tsv files), 'tab', 'space', 'semi', 'bar' "
+                    "or any single character. Cell arrays, strings and char arrays are written as text, "
+                    "quoted when they contain the delimiter."),
+    "csvwrite": (["csvwrite(filename, A)", "csvwrite(filename, A, r, c)"],
+                 "Writes a numeric matrix as comma-separated values with five significant digits; r and c "
+                 "shift the data down and right, padding with zeros."),
+    "dlmwrite": (["dlmwrite(filename, A)", "dlmwrite(filename, A, delimiter)", "dlmwrite(filename, A, delimiter, r, c)",
+                  "dlmwrite(filename, A, 'delimiter', d, 'precision', p)", "dlmwrite(filename, A, '-append', ...)"],
+                 "Writes a numeric matrix to a delimited text file (comma by default; '\\t' or 'tab' for "
+                 "tabs). precision is a number of significant digits or a format such as '%.3f' "
+                 "(default five significant digits)."),
+    "writecell": (["writecell(C, filename)", "writecell(C, filename, 'Delimiter', d)"],
+                  "Writes a cell array of numbers and text to a delimited text file, one row of the cell "
+                  "array per line."),
+    "readcell": (["C = readcell(filename)", "C = readcell(filename, 'Delimiter', d)",
+                  "C = readcell(filename, 'NumHeaderLines', n)"],
+                 "Reads a delimited text file into a cell array: numeric fields become numbers, other "
+                 "fields char vectors and empty fields <missing>."),
+    "readlines": (["lines = readlines(filename)", "lines = readlines(filename, 'EmptyLineRule', 'skip')",
+                   "lines = readlines(filename, 'WhitespaceRule', 'trim')"],
+                  "Reads a text file into a string column, one element per line (a final line break does "
+                  "not add an empty line)."),
+    "writelines": (["writelines(lines, filename)", "writelines(lines, filename, 'WriteMode', 'append')"],
+                   "Writes text (a string array, cell array or char vector) to a file, one element per "
+                   "line, each followed by a line break."),
+    "type": ("type filename",
+             "Prints the contents of a text file. If the file is not found as given, name.m and the "
+             "search path are tried."),
+    "importdata": (["A = importdata(filename)", "A = importdata(filename, delimiter)",
+                    "A = importdata(filename, delimiter, nheaderlines)",
+                    "[A, delimiter, nheaderlines] = importdata(...)"],
+                   "Loads numeric text data. Without header lines the result is a matrix. With header "
+                   "lines it is a structure with data (the matrix), textdata (the header text) and, when "
+                   "the last header line names the columns, colheaders. The delimiter and number of "
+                   "header lines are detected when not given. .mat files are loaded as with load."),
+    "fscanf": (["A = fscanf(fid, format)", "A = fscanf(fid, format, size)", "[A, count] = fscanf(...)"],
+               "Reads formatted data from the rest of an open file, like sscanf: conversions such as %d, "
+               "%f, %g and %s are applied repeatedly. size may be n, Inf or [m n] (with n possibly Inf) "
+               "and fills the result column by column."),
+    "textscan": (["C = textscan(fid, format)", "C = textscan(str, format)", "C = textscan(..., N)",
+                  "C = textscan(..., 'Delimiter', d, 'HeaderLines', n)"],
+                 "Reads columns of formatted text into a 1-by-n cell array, one cell per conversion: %f "
+                 "and %n give double columns, %d and %u integer columns (int32/uint32, or with a size "
+                 "suffix such as %d8), %s and %q cell columns of text (%q removes double quotes) and %c "
+                 "characters; %*s skips a field. Fields are separated by whitespace or by 'Delimiter'; "
+                 "'HeaderLines' skips lines first and N limits the number of records. Other options: "
+                 "'MultipleDelimsAsOne', 'CollectOutput', 'CommentStyle', 'EmptyValue' and 'TextType'."),
+    "dir": (["dir", "dir(name)", "listing = dir(...)"],
+            "Lists a folder, the files matching a wildcard pattern such as '*.csv', or a single file. "
+            "With an output, returns a column struct array with fields name, folder, date, bytes, isdir "
+            "and datenum. A folder listing includes '.' and '..'."),
+    "rmdir": (["rmdir(folder)", "rmdir(folder, 's')", "[status, msg] = rmdir(...)"],
+              "Removes an empty folder, or with 's' the folder and everything in it. With outputs, "
+              "failure is reported through status and msg instead of an error."),
+    "tempdir": ("d = tempdir", "The system folder for temporary files, ending with a file separator."),
+    "tempname": (["f = tempname", "f = tempname(folder)"],
+                 "A unique name for a temporary file or folder (nothing is created)."),
+})
+HELP["ode23s"] = HELP["ode23t"] = HELP["ode23tb"] = HELP["ode15s"]

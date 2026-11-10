@@ -1329,3 +1329,83 @@ def _typecast(interp, args, nargout):
     out = np.frombuffer(raw, dtype=np.dtype(_TYPECAST[cls]).newbyteorder("<")).astype(_TYPECAST[cls])
     return out.reshape(-1, 1) if x.shape[1] == 1 and x.shape[0] > 1 else out.reshape(1, -1)
 
+
+# -- timing ---------------------------------------------------------------------------------------
+
+@builtin("etime")
+def _etime(interp, args, nargout):
+    import datetime as dt
+    nargs(args, 2, 2, "etime")
+
+    def stamp(v):
+        c = fnum(v).flatten()
+        if c.size != 6:
+            raise MatlabError("etime expects date vectors [year month day hour minute seconds] "
+                              "such as clock returns.")
+        whole = int(np.floor(c[5]))
+        base = dt.datetime(int(c[0]), int(c[1]), int(c[2]), int(c[3]), int(c[4]), whole)
+        return base, float(c[5] - whole)
+
+    (b1, f1), (b0, f0) = stamp(args[0]), stamp(args[1])
+    return (b1 - b0).total_seconds() + (f1 - f0)
+
+
+@builtin("timeit")
+def _timeit(interp, args, nargout):
+    import time
+    nargs(args, 1, 2, "timeit")
+    f = args[0]
+    nout = to_int(args[1], "number of outputs") if len(args) > 1 else 0
+
+    def once() -> float:
+        t0 = time.perf_counter()
+        interp.call_function_value(f, [], nout)
+        return time.perf_counter() - t0
+
+    first = once()
+    runs = 3 if first > 0.25 else min(25, max(5, int(0.25 / max(first, 1e-6))))
+    return float(np.median([once() for _ in range(runs)]))
+
+
+# -- fourth output for fmincon (registered in optim.py) -------------------------------------------
+
+def _with_output_struct(name: str, algorithm: str) -> None:
+    from ._registry import BUILTINS
+    base = BUILTINS.get(name)
+    if base is None:
+        return
+
+    def wrapped(interp, args, nargout):
+        if nargout < 4:
+            return base(interp, args, nargout)
+        fn = args[0] if args else None
+        count = [0]
+        patched_before = "call_function_value" in vars(interp)
+        original = interp.call_function_value
+
+        def counting(f, a, n=1):
+            if f is fn:
+                count[0] += 1
+            return original(f, a, n)
+
+        interp.call_function_value = counting
+        try:
+            res = base(interp, args, 3)
+        finally:
+            if patched_before:
+                interp.call_function_value = original
+            else:
+                del interp.call_function_value
+        flag = float(fnum(res[2]).flat[0])
+        msg = "Local minimum found that satisfies the constraints." if flag > 0 else \
+            "The solver stopped before meeting its convergence criteria."
+        output = Struct.scalar({"iterations": np.nan, "funcCount": float(count[0]),
+                                "algorithm": char(algorithm), "message": char(msg)})
+        return (*res[:3], output)[:nargout]
+
+    wrapped.__module__ = base.__module__
+    BUILTINS[name] = wrapped
+
+
+_with_output_struct("fmincon", "sqp")
+
