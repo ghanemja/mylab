@@ -29,6 +29,70 @@ class MString(str):
     """A MATLAB string scalar ("double quoted")."""
 
 
+class StringArray:
+    """A non-scalar string array: an object ndarray of Python str (None = <missing>).
+
+    1x1 string arrays are represented by :class:`MString`; use :func:`string_result`
+    to build a value from data so that scalars collapse to ``MString``.
+    """
+
+    __slots__ = ("data",)
+
+    def __init__(self, data: np.ndarray):
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+        self.data = data
+
+    @property
+    def shape(self) -> tuple:
+        return self.data.shape
+
+    def values_f(self) -> list:
+        return list(self.data.flatten(order="F"))
+
+
+def string_result(data: np.ndarray):
+    """Wrap an object array of str as a MATLAB string value (scalar -> MString)."""
+    data = np.asarray(data, dtype=object)
+    if data.ndim < 2:
+        data = data.reshape(1, -1) if data.ndim == 1 else data.reshape(1, 1)
+    if data.size == 1 and data.flat[0] is not None:
+        return MString(data.flat[0])
+    return StringArray(data)
+
+
+def string_data(v) -> np.ndarray:
+    """Object array of str for a string scalar/array, char row, or cellstr."""
+    if isinstance(v, StringArray):
+        return v.data
+    if isinstance(v, MString):
+        d = np.empty((1, 1), dtype=object)
+        d[0, 0] = str(v)
+        return d
+    if isinstance(v, np.ndarray) and v.dtype.kind == "U":
+        d = np.empty((1, 1), dtype=object)
+        if v.ndim == 2 and v.shape[0] > 1:
+            d = np.empty((v.shape[0], 1), dtype=object)
+            for i in range(v.shape[0]):
+                d[i, 0] = "".join(v[i])
+            return d
+        d[0, 0] = "".join(v.flatten(order="F")) if v.size else ""
+        return d
+    if isinstance(v, Cell):
+        d = np.empty(v.data.shape, dtype=object)
+        for idx in np.ndindex(v.data.shape):
+            d[idx] = to_str(v.data[idx], "cell element")
+        return d
+    if isinstance(v, np.ndarray):
+        from .display import format_scalar_plain
+        d = np.empty(v.shape, dtype=object)
+        for idx in np.ndindex(v.shape):
+            x = v[idx]
+            d[idx] = None if (v.dtype.kind == "f" and np.isnan(x)) else format_scalar_plain(x)
+        return d
+    raise MatlabError(f"Cannot convert a value of type {class_name(v)} to string.")
+
+
 class Cell:
     """A cell array: a 2-D numpy object array holding arbitrary values."""
 
@@ -156,7 +220,7 @@ def char(s: str) -> np.ndarray:
 
 def to_matlab(x: Any) -> Any:
     """Convert a Python value into a MATLAB value."""
-    if isinstance(x, (np.ndarray, Cell, Struct, FunctionHandle, MString)):
+    if isinstance(x, (np.ndarray, Cell, Struct, FunctionHandle, MString, StringArray)):
         if isinstance(x, np.ndarray):
             return as_2d(x)
         return x
@@ -210,7 +274,7 @@ def is_string_like(v: Any) -> bool:
 def is_empty(v: Any) -> bool:
     if isinstance(v, np.ndarray):
         return v.size == 0
-    if isinstance(v, (Cell, Struct)):
+    if isinstance(v, (Cell, Struct, StringArray)):
         return v.data.size == 0
     return False
 
@@ -219,7 +283,7 @@ def shape_of(v: Any) -> tuple[int, ...]:
     """Full MATLAB size (at least two dimensions)."""
     if isinstance(v, np.ndarray):
         return v.shape
-    if isinstance(v, (Cell, Struct)):
+    if isinstance(v, (Cell, Struct, StringArray)):
         return v.data.shape
     if hasattr(v, "matlab_shape"):
         return v.matlab_shape()
@@ -234,7 +298,7 @@ def numel(v: Any) -> int:
 
 
 def class_name(v: Any) -> str:
-    if isinstance(v, MString):
+    if isinstance(v, (MString, StringArray)):
         return "string"
     if isinstance(v, Cell):
         return "cell"
@@ -299,8 +363,8 @@ def to_numeric(v: Any, what: str = "operand") -> np.ndarray:
         if v.dtype == bool:
             return v.astype(float)
         return v
-    if isinstance(v, MString):
-        raise MatlabError(f"Arithmetic on string \"{v}\" is not supported; use double() or str2double().")
+    if isinstance(v, (MString, StringArray)):
+        raise MatlabError("Arithmetic on strings is not supported; use double() or str2double().")
     if isinstance(v, Cell):
         raise MatlabError(f"Undefined operation for a cell array {what}. Use {{}} to get the contents.")
     if isinstance(v, Struct):
@@ -336,7 +400,7 @@ def to_int(v: Any, what: str = "value") -> int:
 
 def is_true(v: Any) -> bool:
     """MATLAB truthiness used by ``if``/``while``: non-empty and all nonzero."""
-    if isinstance(v, MString):
+    if isinstance(v, (MString, StringArray)):
         raise MatlabError("Conditional expressions must be numeric or logical, not string.")
     if isinstance(v, (Cell, Struct, FunctionHandle)):
         raise MatlabError(f"Conditional expressions cannot be of type {class_name(v)}.")
@@ -366,6 +430,10 @@ def saturate_int(a: np.ndarray, dtype) -> np.ndarray:
 
 def values_equal(a: Any, b: Any) -> bool:
     """``isequal`` semantics."""
+    if isinstance(a, StringArray) or isinstance(b, StringArray):
+        if not (isinstance(a, StringArray) and isinstance(b, StringArray)):
+            return False
+        return a.shape == b.shape and all(x == y for x, y in zip(a.data.flat, b.data.flat))
     if isinstance(a, MString) or isinstance(b, MString):
         try:
             return to_str(a) == to_str(b)

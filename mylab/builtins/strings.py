@@ -9,10 +9,22 @@ import numpy as np
 
 from ..errors import MatlabError
 from ..values import (
-    Cell, MString, char, is_char, to_int, to_str,
+    Cell, MString, StringArray, char, is_char, string_data, string_result, to_int, to_str,
 )
+
 from ._registry import builtin
 from ._util import bool_scalar, fnum, is_text, nargs, num, text
+
+
+def _as_cell_if_strings(v):
+    """Treat a string array like a cell array of char vectors (same shape)."""
+    if isinstance(v, StringArray):
+        data = np.empty(v.data.shape, dtype=object)
+        for idx in np.ndindex(v.data.shape):
+            x = v.data[idx]
+            data[idx] = char(x) if x is not None else char("")
+        return Cell(data)
+    return v
 
 # -- sprintf ----------------------------------------------------------------------------
 
@@ -50,6 +62,8 @@ def _flatten_args(args) -> list:
             items.append(str(a))
         elif is_char(a):
             items.append(to_str(a))
+        elif isinstance(a, StringArray):
+            items.extend("" if x is None else x for x in a.data.flatten(order="F"))
         elif isinstance(a, Cell):
             raise MatlabError("sprintf/fprintf do not accept cell arrays; use c{:} to pass contents.")
         elif isinstance(a, np.ndarray):
@@ -320,21 +334,49 @@ def _str2num(interp, args, nargout):
 
 @builtin("string")
 def _string(interp, args, nargout):
+    if not args:
+        return MString("")
     v = args[0]
-    if isinstance(v, MString):
+    if isinstance(v, (MString, StringArray)):
         return v
-    if is_char(v):
+    if is_char(v) and v.ndim == 2 and v.shape[0] <= 1:
         return MString(to_str(v))
-    a = num(v)
-    if a.size != 1:
-        raise MatlabError("String arrays are not supported yet.")
-    from ..display import format_scalar_plain
-    return MString(format_scalar_plain(a.flat[0]))
+    return string_result(string_data(v))
+
+
+@builtin("strings")
+def _strings(interp, args, nargout):
+    from ._util import dims_from_args
+    shape, _ = dims_from_args(args, "strings") if args else ((1, 1), None)
+    data = np.empty(shape, dtype=object)
+    data[...] = ""
+    return string_result(data) if data.size != 1 else MString("")
 
 
 @builtin("strlength")
 def _strlength(interp, args, nargout):
-    return float(len(text(args[0])))
+    v = args[0]
+    if isinstance(v, (StringArray, Cell)):
+        d = string_data(v)
+        out = np.array([np.nan if x is None else float(len(x)) for x in d.flatten(order="F")])
+        return out.reshape(d.shape, order="F")
+    return float(len(text(v)))
+
+
+@builtin("ismissing")
+def _ismissing(interp, args, nargout):
+    v = args[0]
+    if isinstance(v, StringArray):
+        return np.vectorize(lambda x: x is None, otypes=[bool])(v.data)
+    if isinstance(v, MString):
+        return np.array([[False]])
+    if isinstance(v, np.ndarray) and v.dtype.kind in "fc":
+        return np.isnan(v)
+    if isinstance(v, np.ndarray):
+        return np.zeros(v.shape, dtype=bool)
+    if isinstance(v, Cell):
+        return np.vectorize(lambda x: is_char(x) and x.size == 0, otypes=[bool])(v.data)
+    raise MatlabError("ismissing: unsupported input type.")
 
 
 @builtin("newline")
@@ -359,7 +401,7 @@ def _str_or_none(v):
 def _cmp_builtin(fn):
     def f(interp, args, nargout):
         nargs(args, 2, 3, "strcmp")
-        a, b = args[0], args[1]
+        a, b = _as_cell_if_strings(args[0]), _as_cell_if_strings(args[1])
         extra = args[2:] if len(args) > 2 else []
         if isinstance(a, Cell) or isinstance(b, Cell):
             if isinstance(a, Cell) and isinstance(b, Cell):
@@ -400,6 +442,12 @@ builtin("strncmpi")(_cmp_builtin(lambda a, b, e: a is not None and len(a) >= _n(
 
 def _map_text(fn, v):
     """Apply a str->str function to char, string or each element of a cell."""
+    if isinstance(v, StringArray):
+        data = np.empty(v.data.shape, dtype=object)
+        for idx in np.ndindex(v.data.shape):
+            x = v.data[idx]
+            data[idx] = None if x is None else fn(x)
+        return string_result(data)
     if isinstance(v, Cell):
         data = np.empty(v.shape, dtype=object)
         for idx in np.ndindex(v.shape):
@@ -459,14 +507,15 @@ def _text_pred(fn):
         if len(rest) >= 4 and is_text(rest[-2]) and text(rest[-2]).lower() == "ignorecase":
             ignore_case = bool(num(rest[-1]).flat[0])
             rest = rest[:-2]
-        pats = [to_str(x) for x in rest[1].values_f()] if isinstance(rest[1], Cell) else [text(rest[1])]
+        pat_val = _as_cell_if_strings(rest[1])
+        pats = [to_str(x) for x in pat_val.values_f()] if isinstance(pat_val, Cell) else [text(pat_val)]
 
         def test(s):
             if ignore_case:
                 return any(fn(s.lower(), p.lower()) for p in pats)
             return any(fn(s, p) for p in pats)
 
-        v = rest[0]
+        v = _as_cell_if_strings(rest[0])
         if isinstance(v, Cell):
             return np.vectorize(lambda x: test(to_str(x)), otypes=[bool])(v.data) if v.data.size else \
                 np.zeros(v.shape, bool)
@@ -482,6 +531,7 @@ builtin("endsWith")(_text_pred(lambda s, p: s.endswith(p)))
 @builtin("strsplit")
 def _strsplit(interp, args, nargout):
     s = text(args[0])
+    want_strings = isinstance(args[0], MString)
     if len(args) > 1:
         d = args[1]
         delims = [process_escapes(to_str(x)) for x in d.values_f()] if isinstance(d, Cell) else \
@@ -490,14 +540,18 @@ def _strsplit(interp, args, nargout):
     else:
         # whitespace delimiters; consecutive ones collapse (CollapseDelimiters default)
         parts = re.split(r"\s+", s)
+    if want_strings:
+        return string_result(np.array(parts, dtype=object).reshape(-1, 1))
     return Cell.from_list([char(p) for p in parts])
 
 
 @builtin("strjoin")
 def _strjoin(interp, args, nargout):
-    items = [to_str(x) for x in args[0].values_f()]
+    src = _as_cell_if_strings(args[0])
+    items = [to_str(x) for x in src.values_f()]
     delim = process_escapes(text(args[1])) if len(args) > 1 else " "
-    return char(delim.join(items))
+    joined = delim.join(items)
+    return MString(joined) if isinstance(args[0], (StringArray, MString)) else char(joined)
 
 
 @builtin("strcat")

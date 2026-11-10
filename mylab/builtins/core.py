@@ -7,7 +7,8 @@ import numpy as np
 from ..errors import MatlabError
 from ..ops import concat
 from ..values import (
-    INT_TYPES, Cell, FunctionHandle, MString, Struct, char, class_name, codes_to_char,
+    INT_TYPES, Cell, FunctionHandle, MString, StringArray, Struct, char, class_name, codes_to_char,
+    string_data,
     is_char, saturate_int, shape_of, to_int, to_str, values_equal,
 )
 from ._registry import builtin
@@ -426,12 +427,12 @@ builtin("isfloat")(_type_pred(lambda v: isinstance(v, np.ndarray) and v.dtype.ki
 builtin("isinteger")(_type_pred(lambda v: isinstance(v, np.ndarray) and v.dtype.kind in "iu"))
 builtin("islogical")(_type_pred(lambda v: isinstance(v, np.ndarray) and v.dtype == bool))
 builtin("ischar")(_type_pred(is_char))
-builtin("isstring")(_type_pred(lambda v: isinstance(v, MString)))
+builtin("isstring")(_type_pred(lambda v: isinstance(v, (MString, StringArray))))
 builtin("iscell")(_type_pred(lambda v: isinstance(v, Cell)))
 builtin("isstruct")(_type_pred(lambda v: isinstance(v, Struct)))
 builtin("isreal")(_type_pred(lambda v: not (isinstance(v, np.ndarray) and v.dtype.kind == "c")))
 builtin("is_function_handle")(_type_pred(lambda v: isinstance(v, FunctionHandle)))
-builtin("istext")(_type_pred(lambda v: isinstance(v, MString) or is_char(v)))
+builtin("istext")(_type_pred(lambda v: isinstance(v, (MString, StringArray)) or is_char(v)))
 
 
 @builtin("isa")
@@ -468,11 +469,11 @@ def _isequaln(interp, args, nargout):
 @builtin("double")
 def _double(interp, args, nargout):
     v = args[0]
-    if isinstance(v, MString):
-        try:
-            return float(str(v))
-        except ValueError:
-            return np.nan
+    if isinstance(v, (MString, StringArray)):
+        from .strings import _parse_double
+        d = string_data(v)
+        out = np.array([np.nan if x is None else _parse_double(MString(x)) for x in d.flatten(order="F")])
+        return out.reshape(d.shape, order="F")
     if isinstance(v, np.ndarray):
         if v.dtype.kind == "U":
             return num(v)
@@ -511,6 +512,8 @@ def _char(interp, args, nargout):
         v = args[0]
         if isinstance(v, MString):
             return char(str(v))
+        if isinstance(v, StringArray):
+            return _char_rows(["" if x is None else x for x in v.data.flatten(order="F")])
         if isinstance(v, Cell):
             return _char_rows([to_str(x) for x in v.values_f()])
         if isinstance(v, np.ndarray):

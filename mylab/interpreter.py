@@ -15,7 +15,8 @@ from .display import format_display, function_handle_text, unparse
 from .errors import BreakSignal, ContinueSignal, MatlabError, ReturnSignal
 from .parser import parse
 from .values import (
-    Cell, FunctionHandle, MString, Struct, char, class_name, codes_to_char,
+    Cell, FunctionHandle, MString, StringArray, Struct, char, class_name, codes_to_char,
+    string_data, string_result,
     empty_double, is_char, is_true, to_matlab, to_numeric, to_str, values_equal,
 )
 
@@ -271,6 +272,9 @@ class Interpreter:
             columns = [Struct(data[:, j:j + 1].copy(), iterable.fields) for j in range(data.shape[1])]
         elif isinstance(iterable, (MString, FunctionHandle)):
             columns = [iterable]
+        elif isinstance(iterable, StringArray):
+            data = iterable.data.reshape((iterable.data.shape[0], -1), order="F")
+            columns = [string_result(data[:, j:j + 1]) for j in range(data.shape[1])]
         else:
             arr = iterable
             if arr.ndim > 2:  # iterate over columns of reshape(A, size(A, 1), [])
@@ -294,7 +298,10 @@ class Interpreter:
         subject = self.eval(stmt.subject, frame)
         for case_expr, body in stmt.cases:
             case_val = self.eval(case_expr, frame)
-            options = case_val.values_f() if isinstance(case_val, Cell) else [case_val]
+            if isinstance(case_val, StringArray):
+                options = [MString(x) for x in case_val.values_f() if x is not None]
+            else:
+                options = case_val.values_f() if isinstance(case_val, Cell) else [case_val]
             if any(switch_matches(subject, opt) for opt in options):
                 self.exec_block(body, frame)
                 return
@@ -363,6 +370,13 @@ class Interpreter:
             s.set_field(0, name, value)
             return s
 
+        if isinstance(target, A.CellIndex) and isinstance(current, (MString, StringArray)):
+            args = self.eval_index_args(target.args, current, frame)
+            data = string_data(current)
+            wrapped = np.empty((1, 1), dtype=object)
+            wrapped[0, 0] = to_str(value, "string element")
+            return string_result(ix.set_(data, args, wrapped, lambda: None))
+
         if isinstance(target, A.CellIndex):
             if current is None or (isinstance(current, np.ndarray) and current.size == 0):
                 current = Cell(np.empty((0, 0), dtype=object))
@@ -380,6 +394,8 @@ class Interpreter:
             args = self.eval_index_args(target.args, current if current is not None else empty_double(), frame)
             is_delete = isinstance(value, np.ndarray) and value.shape == (0, 0) and value.dtype == float
             if is_delete and current is not None:
+                if isinstance(current, (MString, StringArray)):
+                    return string_result(ix.delete(string_data(current), args))
                 if isinstance(current, Cell):
                     return Cell(ix.delete(current.data, args))
                 if isinstance(current, Struct):
@@ -392,12 +408,16 @@ class Interpreter:
                     current = Cell(np.empty((0, 0), dtype=object))
                 elif isinstance(value, Struct):
                     current = Struct(np.empty((0, 0), dtype=object), value.fields)
-                elif isinstance(value, MString):
-                    raise MatlabError("String arrays are not supported yet; use a cell array {...}.")
+                elif isinstance(value, (MString, StringArray)):
+                    current = StringArray(np.empty((0, 0), dtype=object))
                 elif isinstance(value, np.ndarray):
                     current = np.zeros((0, 0), dtype=value.dtype)
                 else:
                     raise MatlabError(f"Cannot index-assign a {class_name(value)}.")
+            if isinstance(current, (MString, StringArray)):
+                if isinstance(value, (Cell, Struct, FunctionHandle)):
+                    raise MatlabError(f"Cannot assign a {class_name(value)} into a string array.")
+                return string_result(ix.set_(string_data(current), args, string_data(value), lambda: None))
             if isinstance(current, Cell):
                 if not isinstance(value, Cell):
                     raise MatlabError("Conversion to cell from " + class_name(value) +
@@ -420,8 +440,11 @@ class Interpreter:
                         d.setdefault(f, empty_double())
                 fill = lambda: {f: empty_double() for f in fields}  # noqa: E731
                 return Struct(ix.set_(data, args, vdata, fill), fields)
+            if isinstance(current, np.ndarray) and isinstance(value, (MString, StringArray)) and current.size == 0:
+                return string_result(ix.set_(np.empty((0, 0), dtype=object), args, string_data(value),
+                                             lambda: None))
             if isinstance(current, np.ndarray):
-                if isinstance(value, (Cell, Struct, FunctionHandle, MString)):
+                if isinstance(value, (Cell, Struct, FunctionHandle, MString, StringArray)):
                     raise MatlabError(f"Unable to perform assignment: cannot put a {class_name(value)} "
                                       f"into a {class_name(current)} array.")
                 cur, val = coerce_for_assignment(current, value)
@@ -536,7 +559,7 @@ class Interpreter:
         return [self.eval(node, frame)]
 
     def eval_index_args(self, args: list[A.Node], base: Any, frame: Frame) -> list[Any]:
-        shape = base.shape if isinstance(base, (np.ndarray, Cell, Struct)) else (1, 1)
+        shape = base.shape if isinstance(base, (np.ndarray, Cell, Struct, StringArray)) else (1, 1)
         count = len(args)
         out: list[Any] = []
         for i, arg in enumerate(args):
@@ -580,6 +603,10 @@ class Interpreter:
             return [index_value(base_val, args)]
         if t is A.CellIndex:
             base_val = self.eval(node.base, frame)
+            if isinstance(base_val, (MString, StringArray)):
+                args = self.eval_index_args(node.args, base_val, frame)
+                picked = ix.get(string_data(base_val), args)
+                return [char(x or "") for x in picked.flatten(order="F")]
             if not isinstance(base_val, Cell):
                 raise MatlabError(f"Brace indexing is not supported for variables of type "
                                   f"'{class_name(base_val)}'.")
@@ -780,13 +807,8 @@ def index_value(base: Any, args: list[Any]) -> Any:
         return Cell(ix.get(base.data, args))
     if isinstance(base, Struct):
         return Struct(ix.get(base.data, args), base.fields)
-    if isinstance(base, MString):
-        arr = np.empty((1, 1), dtype=object)
-        arr[0, 0] = base
-        res = ix.get(arr, args)
-        if res.size != 1:
-            raise MatlabError("String arrays are not supported yet.")
-        return res.flat[0]
+    if isinstance(base, (MString, StringArray)):
+        return string_result(ix.get(string_data(base), args))
     raise MatlabError(f"Indexing is not supported for values of type '{class_name(base)}'.")
 
 
@@ -843,6 +865,8 @@ def colon_range(start_v: Any, step_v: Any, stop_v: Any) -> np.ndarray:
 
 
 def switch_matches(subject: Any, option: Any) -> bool:
+    if isinstance(subject, StringArray) or isinstance(option, StringArray):
+        return values_equal(subject, option)
     if isinstance(subject, MString) or is_char(subject) or isinstance(option, MString) or is_char(option):
         try:
             return to_str(subject) == to_str(option)

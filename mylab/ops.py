@@ -8,9 +8,36 @@ import numpy as np
 
 from .errors import MatlabError
 from .values import (
-    Cell, FunctionHandle, MString, Struct, as_2d, codes_to_char, is_char,
-    saturate_int, simplify, to_numeric, to_str,
+    Cell, FunctionHandle, MString, StringArray, Struct, as_2d, codes_to_char, is_char,
+    saturate_int, simplify, string_data, string_result, to_numeric, to_str,
 )
+
+
+def _is_str(v: Any) -> bool:
+    return isinstance(v, (MString, StringArray))
+
+
+def _string_binop(op: str, a: Any, b: Any) -> Any:
+    """Elementwise + (join) and comparisons on string arrays, with implicit expansion."""
+    x, y = align(string_data(a), string_data(b))
+    _check_broadcast(x, y, op)
+    xb, yb = np.broadcast_arrays(x, y)
+    out_shape = xb.shape
+    if op == "+":
+        out = np.empty(out_shape, dtype=object)
+        for idx in np.ndindex(out_shape):
+            p, q = xb[idx], yb[idx]
+            out[idx] = None if p is None or q is None else p + q
+        return string_result(out)
+    fns = {"==": lambda p, q: p == q, "~=": lambda p, q: p != q, "<": lambda p, q: p < q,
+           ">": lambda p, q: p > q, "<=": lambda p, q: p <= q, ">=": lambda p, q: p >= q}
+    if op not in fns:
+        raise MatlabError(f"Operator '{op}' is not supported for operands of type 'string'.")
+    res = np.zeros(out_shape, dtype=bool)
+    for idx in np.ndindex(out_shape):
+        p, q = xb[idx], yb[idx]
+        res[idx] = (op == "~=") if (p is None or q is None) else fns[op](p, q)
+    return as_2d(res)
 
 ELEMENTWISE = {"+", "-", ".*", "./", ".\\", ".^"}
 COMPARE = {"==", "~=", "<", "<=", ">", ">="}
@@ -175,13 +202,8 @@ def matpower(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 def compare(op: str, a: Any, b: Any) -> np.ndarray:
-    if isinstance(a, MString) or isinstance(b, MString):
-        if op not in ("==", "~=", "<", ">", "<=", ">="):
-            raise MatlabError(f"Operator {op} not supported for strings.")
-        sa, sb = to_str(a), to_str(b)
-        r = {"==": sa == sb, "~=": sa != sb, "<": sa < sb, ">": sa > sb,
-             "<=": sa <= sb, ">=": sa >= sb}[op]
-        return np.array([[r]])
+    if _is_str(a) or _is_str(b):
+        return _string_binop(op, a, b)
     x, y = align(to_numeric(a), to_numeric(b))
     _check_broadcast(x, y, op)
     if op in ("<", "<=", ">", ">="):
@@ -251,9 +273,9 @@ def binop(op: str, a: Any, b: Any) -> Any:
         x, y = align(_logical_operand(a), _logical_operand(b))
         _check_broadcast(x, y, op)
         return (x & y) if op == "&" else (x | y)
-    if isinstance(a, MString) or isinstance(b, MString):
+    if _is_str(a) or _is_str(b):
         if op == "+":
-            return MString(_to_string_piece(a) + _to_string_piece(b))
+            return _string_binop("+", a, b)
         raise MatlabError(f"Operator '{op}' is not supported for operands of type 'string'.")
     x, y = to_numeric(a), to_numeric(b)
     if op in ELEMENTWISE:
@@ -298,6 +320,10 @@ def transpose(v: Any, conjugate: bool) -> Any:
         return Struct(v.data.T.copy(), v.fields)
     if isinstance(v, (MString, FunctionHandle)):
         return v
+    if isinstance(v, StringArray):
+        if v.data.ndim > 2:
+            raise MatlabError("Transpose on N-D arrays is not defined. Use permute instead.")
+        return StringArray(v.data.T.copy())
     a = v
     if a.ndim > 2:
         raise MatlabError("Transpose on N-D arrays is not defined. Use permute instead.")
@@ -379,11 +405,18 @@ def concat(items: list[Any], axis: int) -> Any:
         if not all(isinstance(i, Struct) for i in real):
             raise MatlabError("Cannot concatenate a struct with a non-struct value.")
         return _concat_structs(real, axis)
-    if any(isinstance(i, MString) for i in items):
-        pieces = [i for i in items if not (isinstance(i, np.ndarray) and i.size == 0)]
-        if len(pieces) == 1:
-            return pieces[0]
-        raise MatlabError("String arrays are not supported yet; use + to join strings or a cell array {...}.")
+    if any(_is_str(i) for i in items):
+        pieces = [i for i in items if not (isinstance(i, np.ndarray) and i.size == 0 and not is_char(i))]
+        if any(isinstance(i, (Cell, Struct, FunctionHandle)) for i in pieces):
+            raise MatlabError("Cannot concatenate a string with a cell, struct or function handle.")
+        datas = [string_data(i) for i in pieces]
+        nd = max([axis + 1] + [d.ndim for d in datas])
+        datas = [d.reshape(d.shape + (1,) * (nd - d.ndim)) if d.ndim < nd else d for d in datas]
+        first = datas[0].shape[:axis] + datas[0].shape[axis + 1:]
+        for d in datas[1:]:
+            if d.shape[:axis] + d.shape[axis + 1:] != first:
+                raise MatlabError("Dimensions of arrays being concatenated are not consistent.")
+        return string_result(as_2d(np.concatenate(datas, axis=axis)))
     if any(isinstance(i, FunctionHandle) for i in items):
         raise MatlabError("Function handles cannot be concatenated; use a cell array {...}.")
     return _concat_arrays([np.asarray(i) for i in items], axis)

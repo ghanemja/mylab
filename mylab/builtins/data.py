@@ -7,7 +7,7 @@ import numpy as np
 from ..errors import MatlabError
 from ..ops import build_matrix
 from ..values import (
-    Cell, FunctionHandle, MString, Struct, char, empty_double, is_char, to_str,
+    Cell, FunctionHandle, MString, StringArray, Struct, char, empty_double, is_char, to_str,
 )
 from ._registry import builtin
 from ._util import bool_scalar, dims_from_args, is_text, nargs, num, text
@@ -35,6 +35,11 @@ def _cellstr(interp, args, nargout):
         return v
     if isinstance(v, MString):
         return Cell.from_list([char(str(v))])
+    if isinstance(v, StringArray):
+        data = np.empty(v.data.shape, dtype=object)
+        for idx in np.ndindex(v.data.shape):
+            data[idx] = char(v.data[idx] or "")
+        return Cell(data)
     if is_char(v):
         rows = ["".join(r).rstrip() for r in v] if v.size else [""]
         return Cell.from_list([char(r) for r in rows], column=True)

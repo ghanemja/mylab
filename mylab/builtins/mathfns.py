@@ -8,7 +8,7 @@ import scipy.special as sp
 
 from ..errors import MatlabError
 from ..ops import binop, unary
-from ..values import Cell, char, is_char, simplify, to_int, to_str
+from ..values import Cell, MString, StringArray, char, is_char, simplify, string_result, to_int, to_str
 from ._registry import builtin
 from ._util import (
     as_row_or_col, default_dim, flag_present, fnum, get_dim, is_text, keep2d, nargs, num, text,
@@ -547,6 +547,12 @@ def _nnz(interp, args, nargout):
 def _sort(interp, args, nargout):
     rest, flags = flag_present(args, "ascend", "descend")
     v = rest[0]
+    if isinstance(v, StringArray):
+        from .strings import _as_cell_if_strings
+        res = _sort(interp, [_as_cell_if_strings(v), *rest[1:], *(char(f) for f in flags)], nargout)
+        cell = res[0] if isinstance(res, tuple) else res
+        out = string_result(np.vectorize(to_str, otypes=[object])(cell.data))
+        return (out, res[1]) if isinstance(res, tuple) else out
     if isinstance(v, Cell):
         strs = [to_str(x) for x in v.values_f()]
         order = sorted(range(len(strs)), key=lambda k: strs[k], reverse="descend" in flags)
@@ -594,6 +600,12 @@ def _sortrows(interp, args, nargout):
 def _unique(interp, args, nargout):
     rest, flags = flag_present(args, "stable", "sorted", "rows", "first", "last")
     v = rest[0]
+    if isinstance(v, StringArray):
+        from .strings import _as_cell_if_strings
+        res = _unique(interp, [_as_cell_if_strings(v), *(char(f) for f in flags)], nargout)
+        cell = res[0] if isinstance(res, tuple) else res
+        out = string_result(np.vectorize(to_str, otypes=[object])(cell.data))
+        return (out, *res[1:]) if isinstance(res, tuple) else out
     if isinstance(v, Cell):
         strs = [to_str(x) for x in v.values_f()]
         if "stable" in flags:
@@ -691,7 +703,10 @@ for _k in ("intersect", "union", "setdiff", "setxor"):
 
 @builtin("ismember")
 def _ismember(interp, args, nargout):
-    a, b = args[0], args[1]
+    from .strings import _as_cell_if_strings
+    a, b = _as_cell_if_strings(args[0]), _as_cell_if_strings(args[1])
+    if isinstance(a, MString) and isinstance(b, Cell):
+        a = char(str(a))
     if is_text(a) and isinstance(b, Cell):
         strs = [to_str(x) for x in b.values_f()]
         s = to_str(a)

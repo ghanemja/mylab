@@ -8,7 +8,15 @@ from typing import Any
 import numpy as np
 
 from . import ast as A
-from .values import Cell, FunctionHandle, MString, Struct, class_name, is_char, to_str
+from .values import Cell, FunctionHandle, MString, StringArray, Struct, class_name, is_char, to_str
+
+
+def _string_cells(v: StringArray) -> list[str]:
+    data = v.data
+    cells = [['<missing>' if x is None else f'"{x}"' for x in row] for row in data]
+    widths = [max(len(cells[r][j]) for r in range(len(cells))) for j in range(data.shape[1])]
+    return ["    " + "    ".join(cells[r][j].ljust(widths[j]) for j in range(len(widths))).rstrip()
+            for r in range(len(cells))]
 
 TIMES = "×"  # multiplication sign used in size strings, e.g. 2x3
 
@@ -132,6 +140,8 @@ def _char_rows(a: np.ndarray) -> list[str]:
 def summary(v: Any, in_cell: bool) -> str:
     if isinstance(v, MString):
         return f'"{v}"'
+    if isinstance(v, StringArray):
+        return f"{size_str(v.shape)} string" if in_cell else f"[{size_str(v.shape)} string]"
     if isinstance(v, FunctionHandle):
         return function_handle_text(v)
     if isinstance(v, Cell):
@@ -245,8 +255,10 @@ def display_lines(v: Any) -> list[str]:
         for suffix, page in _pages(v):
             lines += [f"ans{suffix} =", ""] + display_lines(page) + [""]
         return lines
-    if isinstance(v, (Cell, Struct)) and v.data.ndim > 2:
+    if isinstance(v, (Cell, Struct, StringArray)) and v.data.ndim > 2:
         return [f"  {size_str(v.data.shape)} {class_name(v)} array"]
+    if isinstance(v, StringArray):
+        return _string_cells(v)
     if isinstance(v, MString):
         return [str(v)]
     if is_char(v):
@@ -281,6 +293,14 @@ def format_display(name: str, v: Any) -> str:
                 body = "\n".join(_matrix_lines(page))
             out.append(f"{name}{suffix} =\n\n{body}\n\n")
         return "".join(out)
+    if isinstance(v, StringArray):
+        if v.data.size == 0:
+            return f"{name} = \n\n  {size_str(v.shape)} empty string array\n\n"
+        if v.data.ndim > 2:
+            return f"{name} =\n\n  {size_str(v.shape)} string array\n\n"
+        if v.data.size == 1:
+            return f"{name} = <missing>\n"
+        return f"{name} = \n\n  {size_str(v.shape)} string array\n\n" + "\n".join(_string_cells(v)) + "\n\n"
     if isinstance(v, (Cell, Struct)) and v.data.ndim > 2:
         kind = "cell array" if isinstance(v, Cell) else "struct array with fields:\n\n" + \
             "\n".join("    " + f for f in v.fields)
