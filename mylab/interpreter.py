@@ -23,6 +23,12 @@ from .values import (
 
 _CURRENT: list["Interpreter"] = []
 
+# Built-ins without side effects: index expressions calling them may be evaluated twice.
+_PURE_FUNCS = frozenset({
+    "mod", "rem", "floor", "ceil", "round", "fix", "abs", "min", "max", "numel", "length", "size",
+    "sqrt", "idivide",
+})
+
 
 def current_interpreter() -> "Interpreter | None":
     return _CURRENT[-1] if _CURRENT else None
@@ -88,6 +94,7 @@ class Interpreter:
         self.depth = 0
         self.max_depth = 256
         self._file_cache: dict[str, tuple[Any, A.Program]] = {}
+        self._dir_cache: dict[str, tuple[int, frozenset]] = {}
         self.state: dict[str, Any] = {}  # scratch space for builtins (tic, rng, figures...)
         self.classes: dict[str, Any] = {}  # classdef name -> ClassInfo
         self.input_func: Callable[[str], str] = input
@@ -351,9 +358,77 @@ class Interpreter:
         if isinstance(target, A.Ident):
             frame.set(target.name, value)  # shadowing built-ins (e.g. i, pi) is allowed
             return
+        if type(target) is A.Index and type(target.base) is A.Ident and self._assign_inplace(target, value, frame):
+            return
         current = self.lvalue_current(target, frame)
         new = self.assign_into(target, current, value, frame)
         self.assign(target.base, new, frame)
+
+    def _scalar_positions(self, args: list[A.Node], arr: np.ndarray, frame: Frame) -> tuple | None:
+        """0-based positions for all-scalar, in-range numeric indices; None otherwise."""
+        count = len(args)
+        if count == 0 or count > arr.ndim or (count > 1 and count != arr.ndim):
+            return None
+        if not all(self._pure(a, frame) for a in args):
+            return None  # may have side effects: let the general path evaluate it exactly once
+        pos = []
+        for i, node in enumerate(args):
+            if type(node) is A.Colon:
+                return None
+            self.end_stack.append((arr.shape, i, count))
+            try:
+                v = self.eval(node, frame)
+            finally:
+                self.end_stack.pop()
+            if type(v) is not np.ndarray or v.size != 1 or v.dtype.kind not in "fiu":
+                return None
+            x = v.item()
+            k = int(x)
+            if k != x or k < 1:
+                return None
+            pos.append(k - 1)
+        if count == 1:
+            if pos[0] >= arr.size:
+                return None
+            return np.unravel_index(pos[0], arr.shape, order="F")
+        if any(p >= s for p, s in zip(pos, arr.shape)):
+            return None
+        return tuple(pos)
+
+    def _pure(self, node: A.Node, frame: Frame) -> bool:
+        """True for index expressions with no side effects (safe to evaluate twice)."""
+        t = type(node)
+        if t is A.Number or t is A.End:
+            return True
+        if t is A.Ident:
+            return frame.has(node.name)
+        if t is A.BinOp:
+            return node.op not in ("&&", "||") and self._pure(node.left, frame) and self._pure(node.right, frame)
+        if t is A.UnaryOp:
+            return self._pure(node.operand, frame)
+        if t is A.Index and type(node.base) is A.Ident and node.base.name in _PURE_FUNCS \
+                and not frame.has(node.base.name) and node.base.name not in frame.functions:
+            return all(self._pure(a, frame) for a in node.args)
+        return False
+
+    def _assign_inplace(self, target: A.Index, value: Any, frame: Frame) -> bool:
+        """``x(i) = scalar`` without copying x, when x is a plain unshared numeric array."""
+        name = target.base.name
+        if name in frame.globals:
+            return False
+        arr = frame.vars.get(name)
+        if type(arr) is not np.ndarray or type(value) is not np.ndarray or value.size != 1:
+            return False
+        if not arr.flags.writeable or arr.dtype.kind not in "fb" or arr.dtype != value.dtype \
+                and not (arr.dtype.kind == "f" and value.dtype.kind in "b"):
+            return False
+        if arr.base is not None or sys.getrefcount(arr) > 3:  # shared elsewhere: copy-on-write path
+            return False
+        pos = self._scalar_positions(target.args, arr, frame)
+        if pos is None:
+            return False
+        arr[pos] = value.item()
+        return True
 
     def lvalue_current(self, target: A.Node, frame: Frame) -> Any:
         """Current value of ``target.base`` (None if it does not exist yet)."""
@@ -520,14 +595,25 @@ class Interpreter:
     # -- expressions --------------------------------------------------------------------
     def eval(self, node: A.Node, frame: Frame) -> Any:
         t = type(node)
-        if t is A.Number:
-            v = node.value
-            return np.array([[v]], dtype=complex if isinstance(v, complex) else float)
+        if t is A.Ident:
+            name = node.name
+            v = frame.vars.get(name)
+            if v is not None and name not in frame.globals:
+                return v
+            if frame.has(name):
+                return frame.get(name)
+        elif t is A.Number:
+            # Literals are cached as read-only arrays; values are never modified in place.
+            cached = node.__dict__.get("_cached")
+            if cached is None:
+                v = node.value
+                cached = np.array([[v]], dtype=complex if isinstance(v, complex) else float)
+                cached.setflags(write=False)
+                node._cached = cached
+            return cached
         if t is A.String:
             return MString(node.value) if node.double else char(node.value)
         if t is A.Ident:
-            if frame.has(node.name):
-                return frame.get(node.name)
             vals = self.call_named(node.name, [], 1, frame, node)
             if not vals:
                 raise MatlabError(f"Function '{node.name}' does not return a value.")
@@ -694,6 +780,10 @@ class Interpreter:
             args = self.eval_index_args(node.args, base_val, frame)
             if isinstance(base_val, MObject):
                 return [base_val.index_get(self, args)]
+            if type(base_val) is np.ndarray:
+                pos = _scalar_index(base_val, args)
+                if pos is not None:
+                    return [base_val[pos].reshape(1, 1).copy()]
             return [index_value(base_val, args)]
         if t is A.CellIndex:
             base_val = self.eval(node.base, frame)
@@ -920,12 +1010,30 @@ class Interpreter:
         return results
 
     # -- .m files on the path -------------------------------------------------------------
+    def _dir_listing(self, d: str) -> frozenset:
+        """Names of .m files in a directory, cached until the directory changes."""
+        try:
+            mtime = os.stat(d).st_mtime_ns
+        except OSError:
+            return frozenset()
+        cached = self._dir_cache.get(d)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+        try:
+            names = frozenset(f for f in os.listdir(d) if f.endswith(".m"))
+        except OSError:
+            names = frozenset()
+        self._dir_cache[d] = (mtime, names)
+        return names
+
     def find_file_function(self, name: str) -> tuple[A.Program, str] | None:
         dirs = list(self.path)
         cwd = os.getcwd()
         if cwd not in dirs:
             dirs.append(cwd)
         for d in dirs:
+            if name + ".m" not in self._dir_listing(d):
+                continue
             path = os.path.join(d, name + ".m")
             if os.path.isfile(path):
                 st = os.stat(path)
@@ -958,6 +1066,27 @@ def root_name(node: A.Node) -> str | None:
         if node is None:
             return None
     return node.name
+
+
+def _scalar_index(arr: np.ndarray, args: list[Any]) -> tuple | None:
+    """Positions for all-scalar, in-range numeric indices (fast element access), else None."""
+    count = len(args)
+    if count == 0 or (count > 1 and count != arr.ndim):
+        return None
+    pos = []
+    for v in args:
+        if type(v) is not np.ndarray or v.size != 1 or v.dtype.kind not in "fiu":
+            return None
+        x = v.item()
+        k = int(x)
+        if k != x or k < 1:
+            return None
+        pos.append(k - 1)
+    if count == 1:
+        return np.unravel_index(pos[0], arr.shape, order="F") if pos[0] < arr.size else None
+    if any(p >= d for p, d in zip(pos, arr.shape)):
+        return None
+    return tuple(pos)
 
 
 def index_value(base: Any, args: list[Any]) -> Any:

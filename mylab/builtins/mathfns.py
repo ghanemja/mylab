@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 
+import math
+
 import numpy as np
 import scipy.special as sp
 
@@ -17,8 +19,27 @@ from ._util import (
 
 # -- elementwise ------------------------------------------------------------------------
 
-def _unary_math(fn, *, allow_int=False):
+_F64 = np.dtype(float)
+
+
+def _scalar_arg(v):
+    """The float value of a 1x1 double array, else None (for fast scalar paths)."""
+    if type(v) is np.ndarray and v.dtype is _F64 and v.size == 1:
+        return v.item()
+    return None
+
+
+def _unary_math(fn, *, allow_int=False, scalar=None):
     def f(interp, args, nargout):
+        if scalar is not None and len(args) == 1:
+            x = _scalar_arg(args[0])
+            if x is not None:
+                try:
+                    r = scalar(x)
+                except (ValueError, OverflowError, ZeroDivisionError):
+                    r = None
+                if r is not None:
+                    return np.array([[r]])
         nargs(args, 1, 1, "function")
         a = num(args[0])
         if a.dtype.kind in "iu" and not allow_int:
@@ -63,8 +84,23 @@ def _sind(a):
     return np.where(exact, 0.0, r)
 
 
+_SCALAR = {
+    "sqrt": lambda x: math.sqrt(x) if x >= 0 else None,
+    "exp": lambda x: math.exp(x) if x < 700 else None,
+    "log": lambda x: math.log(x) if x > 0 else None,
+    "log2": lambda x: math.log2(x) if x > 0 else None,
+    "log10": lambda x: math.log10(x) if x > 0 else None,
+    "sin": lambda x: math.sin(x) if math.isfinite(x) else None,
+    "cos": lambda x: math.cos(x) if math.isfinite(x) else None,
+    "tan": lambda x: math.tan(x) if math.isfinite(x) else None,
+    "atan": math.atan,
+    "floor": lambda x: float(math.floor(x)) if math.isfinite(x) else None,
+    "ceil": lambda x: float(math.ceil(x)) if math.isfinite(x) else None,
+    "fix": lambda x: float(math.trunc(x)) if math.isfinite(x) else None,
+}
+
 for _name, _fn in _ELEMENTWISE.items():
-    builtin(_name)(_unary_math(_fn))
+    builtin(_name)(_unary_math(_fn, scalar=_SCALAR.get(_name)))
 
 
 @builtin("abs")
@@ -115,8 +151,17 @@ def _isfinite(interp, args, nargout):
     return np.isfinite(a) if a.dtype.kind in "fc" else np.ones(a.shape, bool)
 
 
-def _binary_math(fn):
+def _binary_math(fn, scalar=None):
     def f(interp, args, nargout):
+        if scalar is not None and len(args) == 2:
+            x, y = _scalar_arg(args[0]), _scalar_arg(args[1])
+            if x is not None and y is not None:
+                try:
+                    r = scalar(x, y)
+                except (ValueError, OverflowError, ZeroDivisionError):
+                    r = None
+                if r is not None:
+                    return np.array([[r]])
         nargs(args, 2, 2, "function")
         a, b = fnum(args[0]), fnum(args[1])
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -139,11 +184,26 @@ def _rem(a, b):
     return np.where(b == 0, np.where(np.isinf(a), np.nan, np.nan), r)
 
 
-builtin("atan2")(_binary_math(np.arctan2))
+builtin("atan2")(_binary_math(np.arctan2, math.atan2))
 builtin("atan2d")(_binary_math(lambda a, b: np.degrees(np.arctan2(a, b))))
-builtin("hypot")(_binary_math(np.hypot))
-builtin("mod")(_binary_math(_mod))
-builtin("rem")(_binary_math(_rem))
+builtin("hypot")(_binary_math(np.hypot, math.hypot))
+def _mod_scalar(a, b):
+    if b == 0:
+        return a
+    if not (math.isfinite(a) and math.isfinite(b)):
+        return None
+    r = a - math.floor(a / b) * b
+    return 0.0 if abs(r - b) <= 4 * 2.220446049250313e-16 * max(abs(a), 1.0) else r
+
+
+def _rem_scalar(a, b):
+    if b == 0 or not (math.isfinite(a) and math.isfinite(b)):
+        return None
+    return a - math.trunc(a / b) * b
+
+
+builtin("mod")(_binary_math(_mod, _mod_scalar))
+builtin("rem")(_binary_math(_rem, _rem_scalar))
 def _nthroot(a, n):
     bad = (a < 0) & ~((n == np.round(n)) & (np.mod(n, 2) == 1))
     if np.any(bad):

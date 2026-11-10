@@ -309,3 +309,20 @@ def test_nested_cell_literal(m):
     assert m.num("numel(d)").item() == 2
     m.run("e = [c, {4}];")  # square brackets still concatenate cells
     assert m.num("numel(e)").item() == 3
+
+
+def test_fast_paths_keep_semantics(m):
+    m.run("x = zeros(1, 3); y = x; y(2) = 5;")  # copy-on-write: x must not change
+    assert m.num("x").tolist() == [[0, 0, 0]]
+    m.run("c = {zeros(1, 2)}; z = c{1}; z(1) = 9;")
+    assert m.num("c{1}").tolist() == [[0, 0]]
+    m.run("k = 3; v = 1:5; v(k) = 0; w = v(k - 1);")
+    assert m.num("v").tolist() == [[1, 2, 0, 4, 5]] and m.val("w").item() == 2
+    out = m.run("function r = noisy(i)\nfprintf('called\\n'); r = i;\nend\nq = [10 20 30]; t = q(noisy(2));")
+    assert out == "called\n" and m.val("t").item() == 20
+    m.run("b = true(1, 2); b(1) = false; A = magic(3); A(2, 3) = -1; e = A(end, end);")
+    assert m.num("b").tolist() == [[False, True]] and m.num("A(2, 3)").item() == -1 and m.val("e").item() == 2
+    m.run("p = 1:3; p(2) = 2.5;")
+    assert m.num("p").tolist() == [[1, 2.5, 3]]
+    m.run("s.v = [1 2]; s.v(2) = 7;")
+    assert m.num("s.v").tolist() == [[1, 7]]

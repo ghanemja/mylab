@@ -133,6 +133,7 @@ class Session:
     def clear_file_cache(self) -> None:
         """Forget parsed .m files (call after editing files on disk)."""
         self.interp._file_cache.clear()
+        self.interp._dir_cache.clear()
         self.interp.classes.clear()
 
     def reset(self) -> None:

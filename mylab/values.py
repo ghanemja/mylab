@@ -410,6 +410,11 @@ def to_int(v: Any, what: str = "value") -> int:
 
 def is_true(v: Any) -> bool:
     """MATLAB truthiness used by ``if``/``while``: non-empty and all nonzero."""
+    if type(v) is np.ndarray and v.size == 1 and v.dtype.kind in "bf":
+        x = v.item()
+        if x != x:  # NaN
+            raise MatlabError("NaN's cannot be converted to logicals.")
+        return bool(x)
     if isinstance(v, (MString, StringArray)):
         raise MatlabError("Conditional expressions must be numeric or logical, not string.")
     if isinstance(v, (Cell, Struct, FunctionHandle)):
