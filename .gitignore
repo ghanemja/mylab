@@ -12,3 +12,6 @@ dist/
 *.mat
 .DS_Store
 .claude/
+
+# Built by scripts/build_web.py (CI builds it for GitHub Pages)
+web/wheels/
