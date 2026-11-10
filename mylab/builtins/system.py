@@ -674,3 +674,29 @@ def _load(interp, args, nargout):
     for k, v in loaded.items():
         interp.frame.set(k, v)
     return None
+
+
+@builtin("run")
+def _run(interp, args, nargout):
+    """Run a script file in the caller's workspace."""
+    from ..parser import parse
+    path = text(args[0])
+    if not path.endswith(".m") and os.path.isfile(path + ".m"):
+        path += ".m"
+    if not os.path.isfile(path):
+        found = interp.find_file_function(os.path.splitext(os.path.basename(path))[0])
+        if found is None:
+            raise MatlabError(f"run: file '{path}' not found.")
+        path = found[1]
+    path = os.path.abspath(path)
+    with open(path, encoding="utf-8") as fh:
+        program = parse(fh.read())
+    directory = os.path.dirname(path)
+    if directory not in interp.path:
+        interp.path.insert(0, directory)
+    if not program.body and program.functions:
+        main = next(iter(program.functions.values()))
+        interp.call_user_function(main, [], 0, program.functions, path)
+        return None
+    interp.run_program(program, interp.frame, path)
+    return None

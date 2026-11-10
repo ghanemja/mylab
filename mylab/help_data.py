@@ -1185,3 +1185,6 @@ HELP.update({
 HELP["summary"] = ("summary(T)",
                    "Prints a short description of each table variable: its size and type, plus the minimum, "
                    "median and maximum of numeric variables.")
+HELP["run"] = ("run(file)",
+               "Runs a script file (with or without the .m extension) in the current workspace, so its variables "
+               "stay available afterwards. The script's folder is added to the search path.")
