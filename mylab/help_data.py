@@ -1734,3 +1734,57 @@ HELP.update({
                   "Nonlinear least squares: minimizes the sum of squares of the residual vector returned by "
                   "fun(x), starting from x0, optionally within bounds. Methods and options as in lsqcurvefit."),
 })
+
+# -- validators and object utilities ------------------------------------------------------------
+_VALIDATORS = {
+    "mustBePositive": "every element is greater than zero",
+    "mustBeNonnegative": "every element is zero or greater",
+    "mustBeNegative": "every element is less than zero",
+    "mustBeNonpositive": "every element is zero or less",
+    "mustBeNonzero": "no element is zero",
+    "mustBeInteger": "every element is a finite whole number",
+    "mustBeFinite": "no element is Inf or NaN",
+    "mustBeNonNan": "no element is NaN",
+    "mustBeReal": "the value has no imaginary part",
+    "mustBeNumeric": "the value is a numeric array",
+    "mustBeNumericOrLogical": "the value is numeric or logical",
+    "mustBeNonempty": "the value is not empty",
+    "mustBeVector": "the value is a row or column vector",
+    "mustBeText": "the value is a char vector, string, or cell array of char vectors",
+    "mustBeTextScalar": "the value is one piece of text (char row vector or string scalar)",
+    "mustBeNonzeroLengthText": "the value is text with at least one character",
+    "mustBeFile": "the value names an existing file",
+    "mustBeFolder": "the value names an existing folder",
+}
+for _name, _rule in _VALIDATORS.items():
+    HELP[_name] = (f"{_name}(value)",
+                   f"Validation function: does nothing if {_rule}, and raises an error otherwise. "
+                   "Useful in classdef property declarations, e.g. r (1,1) double {" + _name + "}.")
+for _name, _rule in {"mustBeGreaterThan": "greater than c", "mustBeGreaterThanOrEqual": "at least c",
+                     "mustBeLessThan": "less than c", "mustBeLessThanOrEqual": "at most c"}.items():
+    HELP[_name] = (f"{_name}(value, c)",
+                   f"Validation function: raises an error unless every element of value is {_rule}.")
+HELP.update({
+    "mustBeInRange": ("mustBeInRange(value, lower, upper)",
+                      "Validation function: raises an error unless every element lies between lower and upper "
+                      "(inclusive)."),
+    "mustBeMember": ("mustBeMember(value, allowed)",
+                     "Validation function: raises an error unless value (number, text or cell of text) is one of "
+                     "the allowed values."),
+    "mustBeA": ("mustBeA(value, classNames)",
+                "Validation function: raises an error unless value is of one of the named classes (a class "
+                "name, or a cell/string array of names; subclasses count)."),
+    "isvalid": ("tf = isvalid(h)",
+                "True for a handle object (classdef handle class, containers.Map, ...) that has not been "
+                "deleted with delete(h)."),
+    "properties": (["properties(obj)", "names = properties(obj)", "properties('ClassName')"],
+                   "Lists the public properties of an object or class; with an output, returns them as a cell "
+                   "column."),
+    "methods": (["methods(obj)", "names = methods(obj)", "methods('ClassName')"],
+                "Lists the public methods of an object or class; with an output, returns them as a cell column."),
+    "isprop": ("tf = isprop(obj, name)", "True if obj has a public property called name."),
+    "ismethod": ("tf = ismethod(obj, name)", "True if obj has a public method called name."),
+})
+HELP["delete"] = (["delete(filename)", "delete(h)"],
+                  "Deletes the named file(s), or, for a handle object, runs the class's delete method (if any) "
+                  "and marks the object invalid so later use raises an error.")

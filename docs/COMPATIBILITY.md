@@ -12,8 +12,14 @@ what mylab printed, and what you expected.
 - `classdef` classes:
   - value and handle classes, properties with defaults;
   - Constant and Dependent properties, `get.`/`set.` methods;
+  - property validation (`(1,1) double {mustBePositive}`);
+  - access control (`Access`, `GetAccess`, `SetAccess`: private, protected,
+    immutable), abstract classes;
   - constructors, Static methods, inheritance (`obj@Parent`, `method@Parent`);
-  - operator overloading, custom `disp`/`display`.
+  - operator overloading, custom `disp`/`display`, `delete`/`isvalid`.
+- Nested functions sharing their parent's variables.
+- `MException` objects with MATLAB-style error identifiers;
+  `warning('off', id)`.
 - `containers.Map` and `table` (with `readtable`/`writetable` for delimited
   text files).
 - About 650 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
@@ -22,11 +28,8 @@ what mylab printed, and what you expected.
 
 - **Object arrays:** you can't index objects into arrays (`objs(3) = Point(...)`).
   Use a cell array instead: `objs{3} = Point(...)`.
-- **classdef features:**
-  - events and listeners, enumerations, property validation functions;
-  - access restrictions (every member behaves as public);
-  - abstract classes, `subsref`/`subsasgn` overloading;
-  - methods defined in `@ClassName` folders.
+- **classdef features:** events and listeners, enumerations,
+  `subsref`/`subsasgn` overloading, and methods defined in `@ClassName` folders.
 - **Other data types:** datetime, duration, categorical, timetable,
   `containers.Map` with non-scalar keys, sparse matrices (`sparse(...)` builds
   an ordinary full matrix).
@@ -46,11 +49,11 @@ what mylab printed, and what you expected.
   Processing and others are out of scope for now.
 - **Language corners:**
   - `nargin('fname')`, `inputname`, `evalin`/`assignin`, `persistent`
-    variables (treated like `global`), nested functions sharing their parent's
-    workspace, `parfor` (runs as an ordinary `for` loop), the `arguments`
-    validation block;
-  - command syntax works only for a fixed list of common commands (`hold on`,
-    `format long`, `close all`, …); for anything else, use `f('arg')`.
+    variables (treated like `global`), `parfor` (runs as an ordinary `for`
+    loop), the `arguments` validation block;
+  - command syntax (`hold on`, `shading interp`, `clearvars -except x`) works
+    when the arguments are plain words. In classdef files, it works only for
+    a fixed list of common commands.
 - **Browser app:** `input()` isn't available, and Stop clears the workspace.
 
 ## Behaviour differences
