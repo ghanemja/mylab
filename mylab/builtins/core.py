@@ -45,8 +45,10 @@ def _false(interp, args, nargout):
 
 @builtin("eye")
 def _eye(interp, args, nargout):
-    (r, c), cls = dims_from_args(args, "eye")
-    return cast_class(np.eye(r, c), cls)
+    shape, cls = dims_from_args(args, "eye")
+    if len(shape) > 2:
+        raise MatlabError("eye: N-D arrays are not supported.")
+    return cast_class(np.eye(shape[0], shape[1]), cls)
 
 
 def _rng(interp):
@@ -161,29 +163,32 @@ def _magic(interp, args, nargout):
 
 @builtin("repmat")
 def _repmat(interp, args, nargout):
-    nargs(args, 2, 3, "repmat")
+    nargs(args, 2, None, "repmat")
     v = args[0]
     if len(args) == 2:
-        r = num(args[1]).flatten()
-        m, n = (int(r[0]), int(r[0])) if r.size == 1 else (int(r[0]), int(r[1]))
+        r = [int(x) for x in num(args[1]).flatten()]
+        reps = [r[0], r[0]] if len(r) == 1 else r
     else:
-        m, n = to_int(args[1], "m"), to_int(args[2], "n")
-    if isinstance(v, Cell):
-        return Cell(np.tile(v.data, (m, n)))
-    if isinstance(v, Struct):
-        return Struct(np.tile(v.copy().data, (m, n)), v.fields)
+        reps = [to_int(a, "repetitions") for a in args[1:]]
     if isinstance(v, MString):
-        if m * n == 1:
+        if int(np.prod(reps)) == 1:
             return v
-        raise MatlabError("String arrays are not supported yet.")
-    return np.tile(v, (m, n))
+        raise MatlabError("repmat of a string scalar is not supported; use a cell array.")
+    from ..values import as_2d
+    data = _container_data(v)
+    if isinstance(v, Struct):
+        data = v.copy().data
+    nd = max(len(reps), data.ndim)
+    data = data.reshape(data.shape + (1,) * (nd - data.ndim))
+    reps = reps + [1] * (nd - len(reps))
+    return _rewrap(v, as_2d(np.tile(data, reps)))
 
 
 @builtin("reshape")
 def _reshape(interp, args, nargout):
     nargs(args, 2, None, "reshape")
     v = args[0]
-    total = shape_of(v)[0] * shape_of(v)[1]
+    total = int(np.prod(shape_of(v)))
     if len(args) == 2:
         dims = [int(x) for x in num(args[1]).flatten()]
     else:
@@ -200,26 +205,22 @@ def _reshape(interp, args, nargout):
             if known == 0 or total % known:
                 raise MatlabError("Size arguments must divide the number of elements.")
             dims[unknown] = total // known
-    while len(dims) > 2 and dims[-1] == 1:
-        dims.pop()
-    if len(dims) != 2:
-        raise MatlabError("reshape: only 2-D arrays are supported.")
-    if dims[0] * dims[1] != total:
+    if int(np.prod(dims)) != total:
         raise MatlabError("Number of elements must not change. Use [] as one of the size inputs to "
                           "automatically calculate the appropriate size for that dimension.")
-    if isinstance(v, Cell):
-        return Cell(v.data.reshape(dims, order="F"))
-    if isinstance(v, Struct):
-        return Struct(v.data.reshape(dims, order="F"), v.fields)
-    return v.reshape(dims, order="F")
+    from ..values import as_2d
+    if isinstance(v, (Cell, Struct)):
+        return _rewrap(v, as_2d(v.data.reshape(dims, order="F")))
+    return as_2d(v.reshape(dims, order="F"))
 
 
 @builtin("cat")
 def _cat(interp, args, nargout):
     dim = to_int(args[0], "dim")
-    if dim not in (1, 2):
-        raise MatlabError("cat: only dimensions 1 and 2 are supported.")
-    return concat(list(args[1:]), 1 if dim == 2 else 0)
+    if dim < 1:
+        raise MatlabError("cat: dimension must be a positive integer.")
+    axis = {1: 0, 2: 1}.get(dim, dim - 1)
+    return concat(list(args[1:]), axis)
 
 
 @builtin("horzcat")
@@ -234,18 +235,25 @@ def _vertcat(interp, args, nargout):
 
 @builtin("meshgrid")
 def _meshgrid(interp, args, nargout):
-    x = fnum(args[0]).flatten(order="F")
-    y = fnum(args[1]).flatten(order="F") if len(args) > 1 else x
-    X, Y = np.meshgrid(x, y)
-    return (X, Y)
+    vecs = [fnum(a).flatten(order="F") for a in args]
+    if len(vecs) == 1:
+        vecs = vecs * (3 if nargout == 3 else 2)
+    if nargout == 3 or len(vecs) == 3:
+        if len(vecs) == 2:
+            vecs.append(vecs[0])
+        return tuple(np.meshgrid(*vecs[:3]))
+    return tuple(np.meshgrid(vecs[0], vecs[1]))
 
 
 @builtin("ndgrid")
 def _ndgrid(interp, args, nargout):
-    x = fnum(args[0]).flatten(order="F")
-    y = fnum(args[1]).flatten(order="F") if len(args) > 1 else x
-    X, Y = np.meshgrid(x, y, indexing="ij")
-    return (X, Y)
+    vecs = [fnum(a).flatten(order="F") for a in args]
+    n = max(nargout, len(vecs), 2)
+    if len(vecs) == 1:
+        vecs = vecs * n
+    grids = np.meshgrid(*vecs, indexing="ij")
+    from ..values import as_2d
+    return tuple(as_2d(g) for g in grids[:max(nargout, 1)])
 
 
 @builtin("diag")
@@ -296,47 +304,107 @@ def _intmin(interp, args, nargout):
 @builtin("size")
 def _size(interp, args, nargout):
     nargs(args, 1, 2, "size")
-    r, c = shape_of(args[0])
+    dims = shape_of(args[0])
     if len(args) == 2:
-        d = to_int(args[1], "dim")
-        return float(r if d == 1 else c if d == 2 else 1)
+        want = [int(d) for d in num(args[1]).flatten()]
+        vals = [float(dims[d - 1]) if d <= len(dims) else 1.0 for d in want]
+        return vals[0] if len(vals) == 1 else np.array([vals])
     if nargout <= 1:
-        return np.array([[float(r), float(c)]])
-    outs = [float(r), float(c)] + [1.0] * (nargout - 2)
+        return np.array([[float(d) for d in dims]])
+    # [r, c] = size(A) folds trailing dimensions into the last output.
+    outs = [float(d) for d in dims[: nargout - 1]]
+    rest = dims[nargout - 1:]
+    outs.append(float(int(np.prod(rest))) if rest else 1.0)
+    outs += [1.0] * (nargout - len(outs))
     return tuple(outs[:nargout])
 
 
 @builtin("numel")
 def _numel(interp, args, nargout):
-    r, c = shape_of(args[0])
-    return float(r * c)
+    return float(int(np.prod(shape_of(args[0]))))
 
 
 @builtin("length")
 def _length(interp, args, nargout):
-    r, c = shape_of(args[0])
-    return float(0 if r == 0 or c == 0 else max(r, c))
+    dims = shape_of(args[0])
+    return float(0 if 0 in dims else max(dims))
 
 
 @builtin("ndims")
 def _ndims(interp, args, nargout):
-    return 2.0
+    return float(len(shape_of(args[0])))
 
 
 def _shape_pred(fn):
     def f(interp, args, nargout):
         nargs(args, 1, 1, "shape test")
-        return bool_scalar(fn(*shape_of(args[0])))
+        dims = shape_of(args[0])
+        return bool_scalar(fn(dims))
     return f
 
 
-builtin("isempty")(_shape_pred(lambda r, c: r == 0 or c == 0))
-builtin("isscalar")(_shape_pred(lambda r, c: r == 1 and c == 1))
-builtin("isvector")(_shape_pred(lambda r, c: (r == 1 or c == 1) and r * c >= 1))
-builtin("isrow")(_shape_pred(lambda r, c: r == 1))
-builtin("iscolumn")(_shape_pred(lambda r, c: c == 1))
-builtin("ismatrix")(_shape_pred(lambda r, c: True))
-builtin("issquare")(_shape_pred(lambda r, c: r == c))
+builtin("isempty")(_shape_pred(lambda d: 0 in d))
+builtin("isscalar")(_shape_pred(lambda d: all(x == 1 for x in d)))
+builtin("isvector")(_shape_pred(lambda d: len(d) == 2 and (d[0] == 1 or d[1] == 1) and d[0] * d[1] >= 1))
+builtin("isrow")(_shape_pred(lambda d: len(d) == 2 and d[0] == 1))
+builtin("iscolumn")(_shape_pred(lambda d: len(d) == 2 and d[1] == 1))
+builtin("ismatrix")(_shape_pred(lambda d: len(d) == 2))
+builtin("issquare")(_shape_pred(lambda d: len(d) == 2 and d[0] == d[1]))
+
+
+def _container_data(v):
+    return v.data if isinstance(v, (Cell, Struct)) else v
+
+
+def _rewrap(v, data):
+    if isinstance(v, Cell):
+        return Cell(data)
+    if isinstance(v, Struct):
+        return Struct(data, v.fields)
+    return data
+
+
+@builtin("squeeze")
+def _squeeze(interp, args, nargout):
+    v = args[0]
+    a = _container_data(v)
+    if a.ndim <= 2:
+        return v
+    dims = [d for d in a.shape if d != 1]
+    while len(dims) < 2:
+        dims.append(1)
+    return _rewrap(v, a.reshape(dims, order="F"))
+
+
+@builtin("permute")
+def _permute(interp, args, nargout):
+    v = args[0]
+    a = _container_data(v)
+    order = [int(d) - 1 for d in num(args[1]).flatten()]
+    if sorted(order) != list(range(len(order))) or len(order) < a.ndim:
+        raise MatlabError("permute: the order must be a permutation of the dimensions.")
+    a = a.reshape(a.shape + (1,) * (len(order) - a.ndim))
+    from ..values import as_2d
+    return _rewrap(v, as_2d(np.transpose(a, order).copy()))
+
+
+@builtin("ipermute")
+def _ipermute(interp, args, nargout):
+    order = [int(d) - 1 for d in num(args[1]).flatten()]
+    inverse = np.argsort(order) + 1.0
+    return _permute(interp, [args[0], inverse.reshape(1, -1)], nargout)
+
+
+@builtin("pagemtimes")
+def _pagemtimes(interp, args, nargout):
+    a, b = fnum(args[0]), fnum(args[1])
+    a3 = a.reshape(a.shape[:2] + (-1,), order="F") if a.ndim > 2 else a[:, :, None]
+    b3 = b.reshape(b.shape[:2] + (-1,), order="F") if b.ndim > 2 else b[:, :, None]
+    out = np.einsum("ijk,jlk->ilk", a3, b3) if a3.shape[2] == b3.shape[2] else \
+        np.einsum("ijk,jl->ilk", a3, b3[:, :, 0]) if b3.shape[2] == 1 else np.einsum("ij,jlk->ilk", a3[:, :, 0], b3)
+    trailing = a.shape[2:] if a.ndim > 2 else b.shape[2:]
+    from ..values import as_2d
+    return as_2d(out.reshape(out.shape[:2] + tuple(trailing), order="F"))
 
 
 # -- type queries ------------------------------------------------------------------

@@ -110,8 +110,17 @@ def _matrix_lines(a: np.ndarray) -> list[str]:
     return header + ["".join(f"{c:>{width}}" for c in row) for row in cells]
 
 
-def size_str(shape: tuple[int, int]) -> str:
-    return f"{shape[0]}{TIMES}{shape[1]}"
+def size_str(shape: tuple) -> str:
+    return TIMES.join(str(d) for d in shape)
+
+
+def _pages(a: np.ndarray):
+    """Yield (suffix, 2-D page) for an N-D array, e.g. ('(:,:,2)', page)."""
+    trailing = a.shape[2:]
+    for idx in np.ndindex(*trailing[::-1]):
+        idx = idx[::-1]  # column-major page order: first trailing index varies fastest
+        page = a[(slice(None), slice(None)) + idx]
+        yield "(:,:," + ",".join(str(i + 1) for i in idx) + ")", page
 
 
 def _char_rows(a: np.ndarray) -> list[str]:
@@ -231,6 +240,13 @@ def function_handle_text(f: FunctionHandle) -> str:
 
 def display_lines(v: Any) -> list[str]:
     """Lines printed by ``disp(v)``."""
+    if isinstance(v, np.ndarray) and v.ndim > 2 and v.size:
+        lines: list[str] = []
+        for suffix, page in _pages(v):
+            lines += [f"ans{suffix} =", ""] + display_lines(page) + [""]
+        return lines
+    if isinstance(v, (Cell, Struct)) and v.data.ndim > 2:
+        return [f"  {size_str(v.data.shape)} {class_name(v)} array"]
     if isinstance(v, MString):
         return [str(v)]
     if is_char(v):
@@ -245,11 +261,30 @@ def display_lines(v: Any) -> list[str]:
         if v.size == 0:
             return []
         return _matrix_lines(v)
+    if hasattr(v, "display_lines"):
+        return v.display_lines()
     return [str(v)]
 
 
 def format_display(name: str, v: Any) -> str:
     """Text printed for an unsuppressed statement such as ``x = 5``."""
+    if hasattr(v, "format_display"):
+        return v.format_display(name)
+    if isinstance(v, np.ndarray) and v.ndim > 2:
+        if v.size == 0:
+            return f"{name} =\n\n  {size_str(v.shape)} empty {class_name(v)} array\n\n"
+        out = []
+        for suffix, page in _pages(v):
+            if is_char(page):
+                body = "\n".join(f"    '{r}'" for r in _char_rows(page))
+            else:
+                body = "\n".join(_matrix_lines(page))
+            out.append(f"{name}{suffix} =\n\n{body}\n\n")
+        return "".join(out)
+    if isinstance(v, (Cell, Struct)) and v.data.ndim > 2:
+        kind = "cell array" if isinstance(v, Cell) else "struct array with fields:\n\n" + \
+            "\n".join("    " + f for f in v.fields)
+        return f"{name} =\n\n  {size_str(v.data.shape)} {kind}\n\n"
     if isinstance(v, MString):
         return f'{name} = "{v}"\n'
     if isinstance(v, FunctionHandle):

@@ -36,6 +36,7 @@ include = ["mylab*"]
 testpaths = ["tests"]
 
 [tool.ruff]
+extend-exclude = [".claude", "web"]
 line-length = 120
 target-version = "py310"
 

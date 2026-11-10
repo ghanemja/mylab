@@ -15,8 +15,11 @@ from ._util import bool_scalar, dims_from_args, is_text, nargs, num, text
 
 @builtin("cell")
 def _cell(interp, args, nargout):
-    (r, c), _ = dims_from_args(args, "cell")
-    return Cell.empty(r, c)
+    shape, _ = dims_from_args(args, "cell")
+    data = np.empty(shape, dtype=object)
+    for idx in np.ndindex(shape):
+        data[idx] = np.zeros((0, 0))
+    return Cell(data)
 
 
 @builtin("iscellstr")

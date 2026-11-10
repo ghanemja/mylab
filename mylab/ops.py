@@ -8,7 +8,7 @@ import numpy as np
 
 from .errors import MatlabError
 from .values import (
-    Cell, FunctionHandle, MString, Struct, codes_to_char, is_char,
+    Cell, FunctionHandle, MString, Struct, as_2d, codes_to_char, is_char,
     saturate_int, simplify, to_numeric, to_str,
 )
 
@@ -16,12 +16,24 @@ ELEMENTWISE = {"+", "-", ".*", "./", ".\\", ".^"}
 COMPARE = {"==", "~=", "<", "<=", ">", ">="}
 
 
+def align(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Pad the lower-dimensional operand with trailing singleton dims (MATLAB expansion rule)."""
+    if a.ndim == b.ndim:
+        return a, b
+    if a.ndim < b.ndim:
+        return a.reshape(a.shape + (1,) * (b.ndim - a.ndim)), b
+    return a, b.reshape(b.shape + (1,) * (a.ndim - b.ndim))
+
+
+def _dims(shape) -> str:
+    return "x".join(str(d) for d in shape)
+
+
 def _check_broadcast(a: np.ndarray, b: np.ndarray, op: str) -> None:
     for da, db in zip(a.shape, b.shape):
         if da != db and da != 1 and db != 1:
             raise MatlabError(
-                f"Arrays have incompatible sizes for this operation ({a.shape[0]}x{a.shape[1]} "
-                f"{op} {b.shape[0]}x{b.shape[1]})."
+                f"Arrays have incompatible sizes for this operation ({_dims(a.shape)} {op} {_dims(b.shape)})."
             )
 
 
@@ -64,6 +76,7 @@ def _divide(a, b):
 
 
 def elementwise(op: str, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    a, b = align(a, b)
     rtype = _result_type(a, b)
     if rtype is not None and np.dtype(rtype).kind in "iu":
         a = a.astype(float) if a.dtype.kind in "iu" else a
@@ -90,6 +103,8 @@ def elementwise(op: str, a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def matmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     if a.size == 1 or b.size == 1:
         return elementwise(".*", a, b)
+    if a.ndim > 2 or b.ndim > 2:
+        raise MatlabError("Matrix multiplication is only defined for 2-D arrays; use .* or pagemtimes.")
     if a.shape[1] != b.shape[0]:
         raise MatlabError(
             "Incorrect dimensions for matrix multiplication. Check that the number of columns in the "
@@ -167,7 +182,7 @@ def compare(op: str, a: Any, b: Any) -> np.ndarray:
         r = {"==": sa == sb, "~=": sa != sb, "<": sa < sb, ">": sa > sb,
              "<=": sa <= sb, ">=": sa >= sb}[op]
         return np.array([[r]])
-    x, y = to_numeric(a), to_numeric(b)
+    x, y = align(to_numeric(a), to_numeric(b))
     _check_broadcast(x, y, op)
     if op in ("<", "<=", ">", ">="):
         x, y = np.real(x), np.real(y)
@@ -233,7 +248,7 @@ def binop(op: str, a: Any, b: Any) -> Any:
     if op in COMPARE:
         return compare(op, a, b)
     if op in ("&", "|"):
-        x, y = _logical_operand(a), _logical_operand(b)
+        x, y = align(_logical_operand(a), _logical_operand(b))
         _check_broadcast(x, y, op)
         return (x & y) if op == "&" else (x | y)
     if isinstance(a, MString) or isinstance(b, MString):
@@ -284,6 +299,8 @@ def transpose(v: Any, conjugate: bool) -> Any:
     if isinstance(v, (MString, FunctionHandle)):
         return v
     a = v
+    if a.ndim > 2:
+        raise MatlabError("Transpose on N-D arrays is not defined. Use permute instead.")
     if conjugate and a.dtype.kind == "c":
         return a.conj().T.copy()
     return a.T.copy()
@@ -298,6 +315,8 @@ def _concat_arrays(items: list[np.ndarray], axis: int) -> np.ndarray:
     nonempty = [i for i in items if i.size > 0]
     if not nonempty:
         return np.zeros((0, 0), dtype="<U1") if any_char else items[0]
+    nd = max([axis + 1] + [i.ndim for i in nonempty])
+    nonempty = [i.reshape(i.shape + (1,) * (nd - i.ndim)) if i.ndim < nd else i for i in nonempty]
     if any_char:
         nonempty = [codes_to_char(i) if i.dtype.kind != "U" else i for i in nonempty]
     else:
@@ -307,12 +326,11 @@ def _concat_arrays(items: list[np.ndarray], axis: int) -> np.ndarray:
             nonempty = [saturate_int(i, dt) if i.dtype != dt else i for i in nonempty]
         elif not all(i.dtype == bool for i in nonempty):
             nonempty = [i.astype(float) if i.dtype == bool else i for i in nonempty]
-    other = 1 - axis
-    first = nonempty[0].shape[other]
+    first = nonempty[0].shape[:axis] + nonempty[0].shape[axis + 1:]
     for i in nonempty[1:]:
-        if i.shape[other] != first:
+        if i.shape[:axis] + i.shape[axis + 1:] != first:
             raise MatlabError("Dimensions of arrays being concatenated are not consistent.")
-    return np.concatenate(nonempty, axis=axis)
+    return as_2d(np.concatenate(nonempty, axis=axis))
 
 
 def _to_cell(v: Any) -> Cell:
@@ -327,12 +345,13 @@ def _concat_cells(items: list[Cell], axis: int) -> Cell:
     nonempty = [c.data for c in items if c.data.size > 0]
     if not nonempty:
         return Cell(np.empty((0, 0), dtype=object))
-    other = 1 - axis
-    first = nonempty[0].shape[other]
+    nd = max([axis + 1] + [d.ndim for d in nonempty])
+    nonempty = [d.reshape(d.shape + (1,) * (nd - d.ndim)) if d.ndim < nd else d for d in nonempty]
+    first = nonempty[0].shape[:axis] + nonempty[0].shape[axis + 1:]
     for d in nonempty[1:]:
-        if d.shape[other] != first:
+        if d.shape[:axis] + d.shape[axis + 1:] != first:
             raise MatlabError("Dimensions of arrays being concatenated are not consistent.")
-    return Cell(np.concatenate(nonempty, axis=axis))
+    return Cell(as_2d(np.concatenate(nonempty, axis=axis)))
 
 
 def _concat_structs(items: list[Struct], axis: int) -> Struct:
@@ -348,7 +367,7 @@ def _concat_structs(items: list[Struct], axis: int) -> Struct:
 
 
 def concat(items: list[Any], axis: int) -> Any:
-    """Concatenate along ``axis`` (1 = horizontal, 0 = vertical)."""
+    """Concatenate along numpy ``axis`` (1 = horizontal, 0 = vertical, 2 = third dim, ...)."""
     if len(items) == 1:
         return items[0]
     if not items:

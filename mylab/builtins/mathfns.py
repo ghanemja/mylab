@@ -304,9 +304,9 @@ def _reduce(np_fn, empty_value, name, *, nan_fn=None, int_ok=True):
         if a.shape == (0, 0) and len(rest) < 2:
             return empty_value
         axis = get_dim(rest, 1, a)
-        if axis > 1:
+        if axis >= a.ndim:
             return a
-        return keep2d(np.asarray(fn(a, axis=axis)), axis)
+        return keep2d(np.asarray(fn(a, axis=axis)), axis, a.ndim)
     return f
 
 
@@ -325,7 +325,7 @@ def _anyall(np_fn, empty_value):
         if a.shape == (0, 0) and len(rest) < 2:
             return np.array([[empty_value]])
         axis = get_dim(rest, 1, a)
-        return keep2d(np_fn(a, axis=axis), axis)
+        return keep2d(np_fn(a, axis=axis), axis, a.ndim)
     return f
 
 
@@ -346,7 +346,7 @@ def _std_var(power):
         n = a.shape[axis]
         ddof = 0 if (w == 1 or n == 1) else 1
         fn = np.nanvar if "omitnan" in flags else np.var
-        v = keep2d(np.asarray(fn(a, axis=axis, ddof=ddof)), axis)
+        v = keep2d(np.asarray(fn(a, axis=axis, ddof=ddof)), axis, a.ndim)
         return np.sqrt(v) if power == 0.5 else v
     return f
 
@@ -369,7 +369,7 @@ def _mode(interp, args, nargout):
         return vals[np.argmax(counts)]
 
     r = np.apply_along_axis(mode1, axis, a)
-    return keep2d(np.asarray(r), axis)
+    return keep2d(np.asarray(r), axis, a.ndim)
 
 
 def _cumulative(np_fn):
@@ -416,7 +416,7 @@ def _minmax(is_max):
             v = a.flatten(order="F")[k]
             return (v, float(k + 1)) if nargout > 1 else v
         axis = get_dim(rest, 2, a)
-        if axis > 1:
+        if axis >= a.ndim:
             return (a, np.ones(a.shape)) if nargout > 1 else a
         with np.errstate(invalid="ignore"):
             if cmp.dtype.kind == "f":
@@ -430,7 +430,7 @@ def _minmax(is_max):
         if cmp.dtype.kind == "f":
             vals = np.where(np.expand_dims(allnan, axis), np.nan, vals)
         if nargout > 1:
-            return vals, keep2d(idx.astype(float) + 1, axis)
+            return vals, keep2d(idx.astype(float) + 1, axis, a.ndim)
         return vals
     return f
 
@@ -449,7 +449,7 @@ def _bounds(interp, args, nargout):
 def _range(interp, args, nargout):
     a = fnum(args[0])
     axis = get_dim(args, 1, a)
-    return keep2d(np.ptp(a, axis=axis), axis)
+    return keep2d(np.ptp(a, axis=axis), axis, a.ndim)
 
 
 @builtin("diff")
@@ -476,7 +476,7 @@ def _trapz(interp, args, nargout):
     axis = default_dim(y)
     trap = getattr(np, "trapezoid", None) or np.trapz
     r = trap(y, x=x, axis=axis) if x is not None else trap(y, axis=axis)
-    return keep2d(np.asarray(r), axis)
+    return keep2d(np.asarray(r), axis, y.ndim)
 
 
 @builtin("cumtrapz")

@@ -176,10 +176,16 @@ def to_matlab(x: Any) -> Any:
 
 
 def as_2d(a: np.ndarray) -> np.ndarray:
+    """Canonical MATLAB shape: at least 2-D, no trailing singleton dims beyond the 2nd."""
     if a.ndim == 0:
         return a.reshape(1, 1)
     if a.ndim == 1:
         return a.reshape(1, -1)
+    if a.ndim > 2 and a.shape[-1] == 1:
+        shape = list(a.shape)
+        while len(shape) > 2 and shape[-1] == 1:
+            shape.pop()
+        return a.reshape(shape)
     return a
 
 
@@ -209,17 +215,22 @@ def is_empty(v: Any) -> bool:
     return False
 
 
-def shape_of(v: Any) -> tuple[int, int]:
+def shape_of(v: Any) -> tuple[int, ...]:
+    """Full MATLAB size (at least two dimensions)."""
     if isinstance(v, np.ndarray):
-        return v.shape  # type: ignore[return-value]
+        return v.shape
     if isinstance(v, (Cell, Struct)):
         return v.data.shape
+    if hasattr(v, "matlab_shape"):
+        return v.matlab_shape()
     return (1, 1)
 
 
 def numel(v: Any) -> int:
-    r, c = shape_of(v)
-    return r * c
+    n = 1
+    for d in shape_of(v):
+        n *= d
+    return n
 
 
 def class_name(v: Any) -> str:

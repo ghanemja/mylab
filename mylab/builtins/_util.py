@@ -37,7 +37,7 @@ def text(v: Any, what: str = "argument") -> str:
     return to_str(v, what)
 
 
-def dims_from_args(args: list, name: str) -> tuple[tuple[int, int], str | None]:
+def dims_from_args(args: list, name: str) -> tuple[tuple[int, ...], str | None]:
     """Parse size arguments like zeros(n), zeros(m, n), zeros([m n]), zeros(..., 'int32')."""
     cls = None
     nums = []
@@ -70,12 +70,11 @@ def dims_from_args(args: list, name: str) -> tuple[tuple[int, int], str | None]:
             if a.size != 1:
                 raise MatlabError(f"Size inputs to {name} must be scalar.")
             dims.append(max(int(np.real(a.flat[0])), 0))
-    for extra in dims[2:]:
-        if extra != 1:
-            if extra == 0:
-                return (dims[0], 0), cls
-            raise MatlabError(f"{name}: only 2-D arrays are supported.")
-    return (dims[0], dims[1]), cls
+    while len(dims) > 2 and dims[-1] == 1:
+        dims.pop()
+    if len(dims) == 1:
+        dims.append(dims[0])
+    return tuple(dims), cls
 
 
 def cast_class(a: np.ndarray, cls: str | None) -> np.ndarray:
@@ -108,11 +107,17 @@ def get_dim(args: list, pos: int, a: np.ndarray) -> int:
     return default_dim(a)
 
 
-def keep2d(r: np.ndarray, axis: int) -> np.ndarray:
-    """Re-add the reduced axis so the result stays 2-D (sum of a matrix -> row)."""
-    if r.ndim == 2:
-        return r
-    return np.expand_dims(r, axis)
+def keep2d(r: np.ndarray, axis: int, ndim: int = 2) -> np.ndarray:
+    """Re-insert the reduced ``axis`` (sum of a matrix -> row vector).
+
+    ``ndim`` is the dimension count of the array that was reduced; the reduced
+    result has one dimension fewer, so the axis is put back as a singleton.
+    """
+    r = np.asarray(r)
+    if r.ndim < ndim:
+        r = np.expand_dims(r, axis)
+    from ..values import as_2d
+    return as_2d(r)
 
 
 def flag_present(args: list, *flags: str) -> tuple[list, set[str]]:

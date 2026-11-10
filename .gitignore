@@ -11,3 +11,4 @@ dist/
 !docs/**/*.png
 *.mat
 .DS_Store
+.claude/

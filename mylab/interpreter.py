@@ -273,6 +273,8 @@ class Interpreter:
             columns = [iterable]
         else:
             arr = iterable
+            if arr.ndim > 2:  # iterate over columns of reshape(A, size(A, 1), [])
+                arr = arr.reshape((arr.shape[0], -1), order="F")
             if arr.size == 0:
                 columns = []
             elif arr.shape[0] == 1:
