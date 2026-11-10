@@ -47,6 +47,7 @@ class Frame:
         self.nargin = nargin
         self.nargout = nargout
         self.file = file
+        self.missing_inputs: frozenset[str] = frozenset()
 
     def has(self, name: str) -> bool:
         if name in self.globals:
@@ -92,7 +93,10 @@ class Interpreter:
         self.warnings_enabled = True
         self.last_warning = ""
         self.depth = 0
-        self.max_depth = 256
+        self.max_depth = 500  # MATLAB's default recursion limit
+        # Each MATLAB-level call uses a few dozen Python frames.
+        if sys.getrecursionlimit() < 40000:
+            sys.setrecursionlimit(40000)
         self._file_cache: dict[str, tuple[Any, A.Program]] = {}
         self._dir_cache: dict[str, tuple[int, frozenset]] = {}
         self.state: dict[str, Any] = {}  # scratch space for builtins (tic, rng, figures...)
@@ -273,31 +277,48 @@ class Interpreter:
         if parent is None:
             raise MatlabError(f"Superclass '{node.parent}' was not found.")
         args = self.eval_elements(node.args, frame)
+        vals = self.super_call(node, frame, 1, args)
+        if not vals:
+            raise MatlabError(f"Method '{node.name}' does not return a value.")
+        return vals[0]
+
+    def super_call(self, node: A.SuperCall, frame: Frame, nargout: int, args: list | None = None) -> list:
+        parent = self.find_class(node.parent)
+        if parent is None:
+            raise MatlabError(f"Superclass '{node.parent}' was not found.")
+        if args is None:
+            args = self.eval_elements(node.args, frame)
         if frame.has(node.name):
             from .classdef import UserObject
             obj = frame.get(node.name)
             if not isinstance(obj, UserObject):
                 raise MatlabError(f"'{node.name}@{node.parent}' must be called on the object being constructed.")
-            return parent.run_constructor(self, obj, args)
+            return [parent.run_constructor(self, obj, args)]
         if node.name not in parent.methods:
             raise MatlabError(f"No method '{node.name}' in superclass '{node.parent}'.")
-        vals = parent.call(self, node.name, args, 1)
-        if not vals:
-            raise MatlabError(f"Method '{node.name}' does not return a value.")
-        return vals[0]
+        return parent.call(self, node.name, args, nargout)
 
     def exec_assign(self, stmt: A.Assign, frame: Frame) -> None:
         targets = stmt.targets
-        if len(targets) == 1:
+        if len(targets) == 1 and (not isinstance(targets[0], (A.Field, A.DynField, A.CellIndex))
+                                  or self._target_count(targets[0], frame) == 1):
             self.assign(targets[0], self.eval(stmt.value, frame), frame)
         else:
-            values = self.eval_multi(stmt.value, frame, len(targets))
-            if len(values) < len(targets):
+            counts = [self._target_count(t, frame) for t in targets]
+            total = sum(counts)
+            values = self.eval_multi(stmt.value, frame, total)
+            if len(values) < total:
                 raise MatlabError("Too many output arguments.")
-            for target, value in zip(targets, values):
+            k = 0
+            for target, n in zip(targets, counts):
+                chunk = values[k:k + n]
+                k += n
                 if isinstance(target, A.Ident) and target.name == "~":
                     continue
-                self.assign(target, value, frame)
+                if n == 1:
+                    self.assign(target, chunk[0], frame)
+                else:
+                    self._assign_list(target, chunk, frame)
         if stmt.show:
             shown: list[str] = []
             for target in targets:
@@ -305,6 +326,46 @@ class Interpreter:
                 if name and name != "~" and name not in shown and frame.has(name):
                     shown.append(name)
                     self.show(name, frame.get(name))
+
+    def _target_count(self, target: A.Node, frame: Frame) -> int:
+        """How many values an assignment target takes: [s.f] and [c{:}] take one per element."""
+        if isinstance(target, (A.Field, A.DynField)):
+            base = self.lookup_existing(target.base, frame)
+            if isinstance(base, Struct) and base.numel() > 1:
+                return base.numel()
+        if isinstance(target, A.CellIndex):
+            base = self.lookup_existing(target.base, frame)
+            if isinstance(base, Cell):
+                args = self.eval_index_args(target.args, base, frame)
+                try:
+                    return max(1, int(ix.get(base.data, args).size))
+                except MatlabError:
+                    return 1
+        return 1
+
+    def _assign_list(self, target: A.Node, values: list, frame: Frame) -> None:
+        if isinstance(target, (A.Field, A.DynField)):
+            base = self.lookup_existing(target.base, frame).copy()
+            name = self.field_name(target, frame)
+            for i, v in enumerate(values):
+                base.set_field(i, name, v)
+            self.assign(target.base, base, frame)
+            return
+        if isinstance(target, A.CellIndex):
+            base = self.lookup_existing(target.base, frame)
+            args = self.eval_index_args(target.args, base, frame)
+            data = base.data.copy()
+            picked = ix.get(np.arange(data.size).reshape(data.shape, order="F"), args).flatten(order="F")
+            flat = data.reshape(-1, order="F")
+            for pos, v in zip(picked, values):
+                flat[int(pos)] = v
+            self.assign(target.base, Cell(flat.reshape(data.shape, order="F")), frame)
+            return
+        raise MatlabError("Invalid assignment target.")
+
+    def _check_missing_input(self, name: str, frame: Frame) -> None:
+        if name in frame.missing_inputs:
+            raise MatlabError("Not enough input arguments.", "MATLAB:minrhs")
 
     def exec_for(self, stmt: A.For, frame: Frame) -> None:
         iterable = self.eval(stmt.iterable, frame)
@@ -602,6 +663,7 @@ class Interpreter:
                 return v
             if frame.has(name):
                 return frame.get(name)
+            self._check_missing_input(name, frame)
         elif t is A.Number:
             # Literals are cached as read-only arrays; values are never modified in place.
             cached = node.__dict__.get("_cached")
@@ -747,7 +809,10 @@ class Interpreter:
         if t is A.Ident:
             if frame.has(node.name):
                 return [frame.get(node.name)]
+            self._check_missing_input(node.name, frame)
             return self.call_named(node.name, [], nargout, frame, node)
+        if t is A.SuperCall:
+            return self.super_call(node, frame, max(nargout, 0))
         if t is A.Index:
             base = node.base
             if isinstance(base, A.Ident) and not frame.has(base.name):
@@ -973,6 +1038,8 @@ class Interpreter:
         for i, p in enumerate(fixed):
             if i < len(args) and p != "~":
                 frame.vars[p] = args[i]
+        if len(args) < len(fixed):
+            frame.missing_inputs = frozenset(fixed[len(args):])
         if has_varargin:
             frame.vars["varargin"] = Cell.from_list(args[len(fixed):])
         if preset:
@@ -1116,8 +1183,13 @@ def coerce_for_assignment(current: np.ndarray, value: np.ndarray) -> tuple[np.nd
     if ck == "b":
         if vk == "b":
             return current, value
-        current = current.astype(value.dtype if vk in "fciu" else float)
-        return current, value
+        if current.size == 0:  # an empty logical takes the class of what is assigned
+            return current.astype(value.dtype), value
+        # Assigning numbers into a logical array keeps it logical, as in MATLAB.
+        v = np.real(value) if vk == "c" else value
+        if v.dtype.kind == "f" and np.isnan(v).any():
+            raise MatlabError("NaN's cannot be converted to logicals.")
+        return current, v != 0
     if vk == "c" and ck != "c":
         return current.astype(complex), value
     if vk == "b":

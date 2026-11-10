@@ -62,7 +62,7 @@ def _ends_value(tok: Token | None) -> bool:
     if tok.kind == "KW" and tok.value == "end":
         return True
     if tok.kind == "OP" and tok.value in (")", "]", "}", "'", ".'"):
-        return True
+        return not getattr(tok, "lambda_params_end", False)
     return False
 
 
@@ -272,8 +272,6 @@ class Lexer:
             prev = self.tokens[-2]
             if not (prev.kind == "NL" or (prev.kind == "OP" and prev.value in (";", ","))):
                 return False
-        if word not in COMMAND_WORDS:
-            return False
         ch = self.peek()
         if ch not in " \t":
             return False
@@ -287,7 +285,15 @@ class Lexer:
         # ``disp (x)``, ``hold = 3`` or ``tic + 1`` are expressions, not commands.
         if first in "=(" or (first in "+-*/^<>&|" and len(rest) > 1 and rest[1] in " \t"):
             return False
-        return first.isalnum() or first in "_-'"
+        if word in COMMAND_WORDS:
+            return first.isalnum() or first in "_-'"
+        # Any other name: ``shading interp``, ``colormap jet``, ``clearvars -except y``.
+        # Only plain words count, so expressions such as ``a -1`` or ``x '...`` are left alone.
+        body = rest.split("%", 1)[0].rstrip().rstrip(";,").rstrip()
+        if not body or word in KEYWORDS:
+            return False
+        import re
+        return bool(re.fullmatch(r"-?[A-Za-z][\w.]*(\s+-?[A-Za-z_][\w.]*)*", body))
 
     def _command_args(self) -> None:
         """Turn ``word arg1 arg2`` into ``word('arg1', 'arg2')``."""
@@ -344,11 +350,17 @@ class Lexer:
         for op in OPERATORS:
             if self.text.startswith(op, self.pos):
                 self.advance(len(op))
+                closes_lambda = False
                 if op in ("(", "[", "{"):
-                    self.brackets.append(op)
+                    after_at = op == "(" and self.last is not None and self.last.kind == "OP" \
+                        and self.last.value == "@"
+                    self.brackets.append("@(" if after_at else op)
                 elif op in (")", "]", "}"):
                     expected = {")": "(", "]": "[", "}": "{"}[op]
-                    if not self.brackets or self.brackets[-1] != expected:
+                    top = self.brackets[-1] if self.brackets else None
+                    if top == "@(" and op == ")":
+                        closes_lambda = True
+                    elif top != expected:
                         raise self.error(f"unbalanced '{op}'")
                     self.brackets.pop()
                     # Drop a trailing separator before a closing bracket.
@@ -363,6 +375,8 @@ class Lexer:
                 elif op == "!":
                     op = "~"
                 self.add("OP", op, line, col, space)
+                if closes_lambda:
+                    self.last.lambda_params_end = True  # type: ignore[attr-defined]
                 return
         raise self.error(f"unexpected character {self.peek()!r}")
 

@@ -565,13 +565,16 @@ class Parser:
             # The exponent may carry its own unary sign: 2^-1
             if self.is_op("-", "+", "~"):
                 uop = self.next().value
-                exponent: A.Node = A.UnaryOp(uop, self.parse_postfix())
+                exponent: A.Node = A.UnaryOp(uop, self.parse_postfix(transpose=False))
             else:
-                exponent = self.parse_postfix()
+                exponent = self.parse_postfix(transpose=False)
             base = A.BinOp(op, base, exponent)
+            # Power and transpose share a precedence level and apply left to right.
+            while self.is_op("'", ".'"):
+                base = A.Postfix(self.next().value, base)
         return base
 
-    def parse_postfix(self) -> A.Node:
+    def parse_postfix(self, transpose: bool = True) -> A.Node:
         node = self.parse_primary()
         while True:
             t = self.tok
@@ -592,7 +595,7 @@ class Parser:
                 expr = self.parse_expr()
                 self.expect_op(")")
                 node = A.DynField(node, expr)
-            elif t.value in ("'", ".'"):
+            elif t.value in ("'", ".'") and transpose:
                 self.next()
                 node = A.Postfix(t.value, node)
             else:

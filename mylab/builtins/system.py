@@ -186,6 +186,16 @@ def _clc(interp, args, nargout):
 def _clear(interp, args, nargout):
     frame = interp.frame
     names = [text(a) for a in args]
+    if "-except" in names:
+        import fnmatch
+        k = names.index("-except")
+        keep = names[k + 1:]
+        targets = names[:k] or ["*"]
+        for n in list(frame.vars):
+            if any(fnmatch.fnmatchcase(n, t) for t in targets) and \
+                    not any(fnmatch.fnmatchcase(n, p) for p in keep):
+                del frame.vars[n]
+        return None
     if not names or names in (["all"], ["variables"], ["-all"]):
         frame.vars.clear()
         if names and names[0] in ("all", "-all"):
