@@ -597,8 +597,20 @@ def _dot(interp, args, nargout):
 @builtin("cross")
 def _cross(interp, args, nargout):
     a, b = num(args[0]), num(args[1])
-    r = np.cross(a.flatten(), b.flatten())
-    return as_row_or_col(r, a)
+    if a.size == 3 and b.size == 3:
+        return as_row_or_col(np.cross(a.flatten(), b.flatten()), a)
+    if a.shape != b.shape:
+        raise MatlabError("cross: A and B must be the same size.")
+    if len(args) > 2:
+        axis = to_int(args[2], "dim") - 1
+    else:
+        sizes = [d for d, n in enumerate(a.shape) if n == 3]
+        if not sizes:
+            raise MatlabError("cross: A and B must have a dimension of length 3.")
+        axis = sizes[0]
+    if a.shape[axis] != 3:
+        raise MatlabError("cross: the chosen dimension must have length 3.")
+    return np.cross(a, b, axis=axis)
 
 
 @builtin("kron")

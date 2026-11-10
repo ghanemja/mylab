@@ -1,5 +1,6 @@
 """Regression tests for issues found in pre-release QA."""
 
+import numpy as np
 import pytest
 
 from mylab import MatlabError
@@ -185,3 +186,8 @@ def test_command_syntax_after_semicolon_and_type_headers(m):
     assert "1×3 int32 row vector" in m.run("k = int32([1 2 3])")
     assert m.run("t = true") == "t =\n\n  logical\n\n   1\n\n"
     assert "{0×0 char}" in m.run("c = {''}")
+
+
+def test_cross_columnwise(m):
+    r = m.num("cross([1 2 3; 4 5 6]', [7 8 9; 1 2 3]')")
+    np.testing.assert_array_equal(r, np.cross([[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [1, 2, 3]]).T)
