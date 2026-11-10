@@ -179,7 +179,19 @@ layout, and that there are no console errors. It also saves the screenshot at
 
 ## Deployment
 
-`.github/workflows/pages.yml` runs on every push to `main`: it builds the
-wheel with `scripts/build_web.py` and publishes `web/` to GitHub Pages. To
-enable it, open the repository's **Settings → Pages** and set **Source** to
-**GitHub Actions**.
+`.github/workflows/pages.yml` builds the wheel with `scripts/build_web.py`
+and publishes `web/` to GitHub Pages. To turn it on:
+
+1. Open the repository's **Settings → Pages** and set **Source** to
+   **GitHub Actions**. Publishing Pages from a private repository needs a paid
+   GitHub plan; public repositories can publish for free.
+2. Under **Settings → Secrets and variables → Actions → Variables**, add the
+   variable `DEPLOY_PAGES` with the value `true`.
+
+After that, every push to `main` redeploys the app. You can also run the
+workflow by hand from the **Actions** tab. The site address is
+`https://<user>.github.io/<repository>/`.
+
+The app is a plain static site, so any static host works too (Netlify,
+Cloudflare Pages, a university web server). Run `python scripts/build_web.py`
+and upload the `web/` folder.

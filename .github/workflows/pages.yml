@@ -1,5 +1,10 @@
 name: Deploy web app to GitHub Pages
 
+# One-time setup: in the repository settings, open Pages and set "Source" to
+# "GitHub Actions", then create the repository variable DEPLOY_PAGES = true
+# (Settings > Secrets and variables > Actions > Variables). Until then this
+# workflow is skipped on push; it can still be started by hand.
+
 on:
   push:
     branches: [main]
@@ -16,6 +21,7 @@ concurrency:
 
 jobs:
   build:
+    if: vars.DEPLOY_PAGES == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
