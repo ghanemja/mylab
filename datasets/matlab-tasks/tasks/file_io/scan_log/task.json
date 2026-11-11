@@ -1,0 +1,19 @@
+{
+  "id": "file_io/scan_log",
+  "title": "Summarise a log file",
+  "category": "file_io",
+  "difficulty": "medium",
+  "function": "scan_log",
+  "signature": "[counts, firstError] = scan_log(filename)",
+  "tags": [
+    "fgetl",
+    "parsing",
+    "regexp",
+    "text-files"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

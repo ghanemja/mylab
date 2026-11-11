@@ -1,0 +1,15 @@
+out = 'cr_ranges_out.csv';
+R = column_ranges('example.csv', out);
+assert(isequal(R, [3 4 -1; 7 10 2]), 'example');
+B = readmatrix(out);
+assert(isequal(B, R), 'written file reads back');
+R = column_ranges('decimals.csv', out);
+assert(isequal(size(R), [2 2]), 'size');
+assert(all(abs(R(:) - [-2.5; 1.75; 0.125; 9]) < 1e-12), 'decimals and negatives');
+R = column_ranges('gap.csv', out);
+assert(isequal(R(:, [1 3]), [1 5; 4 6]) && all(isnan(R(:, 2))), 'all-missing column');
+B = readmatrix(out);
+assert(isequal(size(B), [2 3]) && isequal(B(:, 3), [5; 6]), 'gap written');
+R = column_ranges('single.csv', out);
+assert(isequal(R, [8; 8]), 'single value');
+delete(out);

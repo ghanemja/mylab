@@ -1,0 +1,12 @@
+2025-03-01 10:00:00 [DEBUG] config loaded
+2025-03-01 10:00:01 [INFO] listening
+
+2025-03-01 10:00:02 [WARN] slow response
+2025-03-01 10:00:03 [FATAL] not a real level
+    at module.function (line 3)
+2025-03-01 10:00:04 [ERROR]   boom: code=7 [retry]  
+2025-03-01 10:00:05 [info] lower-case level is invalid
+2025-3-01 10:00:06 [ERROR] bad date format
+2025-03-01 10:00:07 [INFO] retrying
+2025-03-01 10:00:08 [WARN] still slow
+2025-03-01 10:00:09 [INFO] ok

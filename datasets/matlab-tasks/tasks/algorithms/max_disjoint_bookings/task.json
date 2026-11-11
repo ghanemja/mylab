@@ -1,0 +1,18 @@
+{
+  "id": "algorithms/max_disjoint_bookings",
+  "title": "Maximum number of compatible bookings",
+  "category": "algorithms",
+  "difficulty": "medium",
+  "function": "max_disjoint_bookings",
+  "signature": "k = max_disjoint_bookings(slots)",
+  "tags": [
+    "greedy",
+    "intervals",
+    "sorting"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

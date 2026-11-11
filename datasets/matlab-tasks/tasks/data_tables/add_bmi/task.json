@@ -1,0 +1,18 @@
+{
+  "id": "data_tables/add_bmi",
+  "title": "Add computed BMI variables",
+  "category": "data_tables",
+  "difficulty": "easy",
+  "function": "add_bmi",
+  "signature": "T = add_bmi(T)",
+  "tags": [
+    "table",
+    "computed-variables",
+    "cellfun"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

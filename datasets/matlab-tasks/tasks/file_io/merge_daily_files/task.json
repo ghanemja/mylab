@@ -1,0 +1,20 @@
+{
+  "id": "file_io/merge_daily_files",
+  "title": "Merge daily CSV files",
+  "category": "file_io",
+  "difficulty": "hard",
+  "function": "merge_daily_files",
+  "signature": "[nDays, total] = merge_daily_files(files, outfile)",
+  "tags": [
+    "fgetl",
+    "csv",
+    "sorting",
+    "containers.Map",
+    "text-files"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "classes_oop/tally_counter",
+  "title": "Tally counter handle class",
+  "category": "classes_oop",
+  "difficulty": "easy",
+  "function": "Tally",
+  "signature": "t = Tally(start)",
+  "tags": [
+    "classdef",
+    "handle",
+    "properties"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

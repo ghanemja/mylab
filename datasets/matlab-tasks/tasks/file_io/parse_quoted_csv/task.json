@@ -1,0 +1,19 @@
+{
+  "id": "file_io/parse_quoted_csv",
+  "title": "Parse CSV with quoted fields",
+  "category": "file_io",
+  "difficulty": "hard",
+  "function": "parse_quoted_csv",
+  "signature": "C = parse_quoted_csv(filename)",
+  "tags": [
+    "parsing",
+    "state-machine",
+    "fgetl",
+    "cell-arrays"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

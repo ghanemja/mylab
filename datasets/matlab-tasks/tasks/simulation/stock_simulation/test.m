@@ -1,0 +1,14 @@
+[s, l, o] = stock_simulation(10, [4 4 4 4 4 4], 5, 10, 2);
+assert(isequal(s, [6 2 0 6 2 0]) && l == 4 && isequal(o, [2 5]), 'example');
+[s, l, o] = stock_simulation(3, [5 0 1], 3, 4, 1);
+assert(isequal(s, [0 4 3]) && l == 2 && isequal(o, [1 3]), 'lead time 1 and position equal to reorder point');
+[s, l, o] = stock_simulation(0, [0 0 0], 10, 4, 3);
+assert(isequal(s, [0 0 0]) && l == 0 && isequal(o, [1 2 3]), 'outstanding orders count toward position');
+[s, l, o] = stock_simulation(0, [0 0 0 0 0 0], 5, 4, 3);
+assert(isequal(s, [0 0 0 4 8 8]) && isequal(o, [1 2]), 'deliveries raise the position');
+[s, l, o] = stock_simulation(50, [5 5], 0, 10, 1);
+assert(isequal(s, [45 40]) && l == 0 && isequal(size(o), [1 0]), 'no orders');
+[s, l, o] = stock_simulation(5, [], 1, 1, 1);
+assert(isequal(size(s), [1 0]) && l == 0 && isequal(size(o), [1 0]), 'no days');
+[s, l, o] = stock_simulation(2, [10; 1; 1; 1], 0, 3, 2);
+assert(isequal(s, [0 0 2 1]) && l == 9 && isequal(o, 1), 'column demand, big lost sale');

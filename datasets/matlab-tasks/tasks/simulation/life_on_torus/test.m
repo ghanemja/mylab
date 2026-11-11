@@ -1,0 +1,17 @@
+A = false(5); A(3, 2:4) = true;
+B = life_on_torus(A, 1);
+V = false(5); V(2:4, 3) = true;
+assert(islogical(B) && isequal(B, V), 'blinker flips');
+assert(isequal(life_on_torus(A, 2), A), 'blinker period 2');
+assert(isequal(life_on_torus(double(A), 0), A) && islogical(life_on_torus(double(A), 0)), 'zero generations, logical output');
+W = false(5); W(1, [5 1 2]) = true;
+X = false(5); X([5 1 2], 1) = true;
+assert(isequal(life_on_torus(W, 1), X), 'wrap-around blinker');
+blk = false(4, 6); blk(2:3, 3:4) = true;
+assert(isequal(life_on_torus(blk, 7), blk), 'still life');
+gl = false(6); gl(1, 2) = true; gl(2, 3) = true; gl(3, 1:3) = true;
+g4 = life_on_torus(gl, 4);
+assert(isequal(g4, circshift(gl, [1 1])), 'glider moves diagonally');
+assert(isequal(life_on_torus(gl, 24), gl), 'glider returns on 6x6 torus');
+one = false(3); one(2, 2) = true;
+assert(~any(any(life_on_torus(one, 1))), 'lonely cell dies');

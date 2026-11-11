@@ -1,0 +1,18 @@
+{
+  "id": "simulation/rule_automaton",
+  "title": "Elementary cellular automaton",
+  "category": "simulation",
+  "difficulty": "medium",
+  "function": "rule_automaton",
+  "signature": "G = rule_automaton(rule, init, steps)",
+  "tags": [
+    "cellular-automata",
+    "bitget",
+    "logical"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": false,
+    "octave": true
+  }
+}

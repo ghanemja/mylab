@@ -1,0 +1,18 @@
+{
+  "id": "maps_sets/all_dependencies",
+  "title": "Transitive package dependencies",
+  "category": "maps_sets",
+  "difficulty": "hard",
+  "function": "all_dependencies",
+  "signature": "out = all_dependencies(deps, name)",
+  "tags": [
+    "containers.Map",
+    "graph-traversal",
+    "sets"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

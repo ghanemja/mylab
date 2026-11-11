@@ -1,0 +1,10 @@
+assert(isequal(component_labels(6, [2 5; 4 1; 5 6]), [1 2 3 1 2 2]), 'example');
+assert(isequal(component_labels(4, zeros(0, 2)), [1 2 3 4]), 'no edges');
+assert(isequal(component_labels(1, zeros(0, 2)), 1), 'single node');
+assert(isequal(component_labels(5, [5 4; 4 3; 3 2; 2 1]), ones(1, 5)), 'chain given backwards');
+assert(isequal(component_labels(5, [3 3; 2 4; 4 2; 2 4]), [1 2 3 2 4]), 'self loop and repeats');
+L = component_labels(8, [8 7; 6 5; 7 3; 5 1]);
+assert(isequal(L, [1 2 3 4 1 1 3 3]), 'numbering by smallest member');
+L = component_labels(10, [1 10; 10 2; 3 9; 9 4; 2 9]);
+assert(isequal(L, [1 1 1 1 2 3 4 5 1 1]), 'merging two groups');
+assert(isequal(size(L), [1 10]), 'row output');

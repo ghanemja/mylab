@@ -1,0 +1,12 @@
+m = containers.Map({'zoe', 'adam', 'mia'}, {'red', 'blue', 'red'});
+inv = invert_map(m);
+assert(isa(inv, 'containers.Map') && inv.Count == 2, 'two teams');
+assert(isequal(inv('red'), {'mia', 'zoe'}) && isequal(inv('blue'), {'adam'}), 'example');
+assert(m.Count == 3 && strcmp(m('zoe'), 'red'), 'input unchanged');
+e = invert_map(containers.Map('KeyType', 'char', 'ValueType', 'any'));
+assert(isa(e, 'containers.Map') && e.Count == 0, 'empty map');
+m2 = containers.Map({'b', 'B', 'a', 'c', 'd'}, {'x', 'x', 'y', 'x', 'Y'});
+inv = invert_map(m2);
+assert(isequal(inv('x'), {'B', 'b', 'c'}), 'sorted keys, upper case first');
+assert(isequal(inv('y'), {'a'}) && isequal(inv('Y'), {'d'}), 'values are case-sensitive');
+assert(isequal(sort(keys(inv)), {'Y', 'x', 'y'}), 'inverse keys');

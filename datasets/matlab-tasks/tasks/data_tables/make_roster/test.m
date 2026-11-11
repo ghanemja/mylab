@@ -1,0 +1,11 @@
+T = make_roster({'Ines', 'Tomas'}, [17 18]);
+assert(istable(T), 'returns a table');
+assert(isequal(T.Properties.VariableNames, {'Name', 'Age', 'Adult'}), 'variable names and order');
+assert(isequal(T.Name, {'Ines'; 'Tomas'}), 'names column');
+assert(isequal(T.Age, [17; 18]), 'ages column');
+assert(islogical(T.Adult) && isequal(T.Adult, [false; true]), 'adult flag');
+T = make_roster({'Ola'; 'Pia'; 'Rui'}, int8([40; 5; 18]));
+assert(height(T) == 3 && isa(T.Age, 'double'), 'column input, converted to double');
+assert(isequal(T.Adult, [true; false; true]), 'boundary 18');
+E = make_roster({}, []);
+assert(istable(E) && height(E) == 0 && width(E) == 3, 'empty input');

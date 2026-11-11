@@ -1,0 +1,11 @@
+R = top_students('scores_small.csv', 2);
+assert(istable(R) && isequal(R.Properties.VariableNames, {'Student', 'Mean'}), 'variables');
+assert(height(R) == 2 && all(strcmp(R.Student, {'Omar'; 'Lena'})), 'example names');
+assert(all(abs(R.Mean - [90; 80]) < 1e-9), 'example means with a missing score');
+R = top_students('scores_small.csv', 10);
+assert(height(R) == 3 && strcmp(R.Student{3}, 'Kim'), 'k larger than class');
+R = top_students('scores_ties.csv', 4);
+assert(all(strcmp(R.Student, {'Bea'; 'Cyd'; 'Abe'; 'Dov'})), 'ties ordered by name');
+assert(all(abs(R.Mean - [88; 88; 70; 70]) < 1e-9), 'tie means');
+R = top_students('scores_ties.csv', 1);
+assert(height(R) == 1 && strcmp(R.Student{1}, 'Bea'), 'k = 1');

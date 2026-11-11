@@ -1,0 +1,18 @@
+{
+  "id": "data_tables/low_stock",
+  "title": "Low-stock report from an inventory table",
+  "category": "data_tables",
+  "difficulty": "easy",
+  "function": "low_stock",
+  "signature": "R = low_stock(T, threshold)",
+  "tags": [
+    "table",
+    "logical-indexing",
+    "sort"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

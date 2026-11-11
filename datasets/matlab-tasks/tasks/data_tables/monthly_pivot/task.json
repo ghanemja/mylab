@@ -1,0 +1,19 @@
+{
+  "id": "data_tables/monthly_pivot",
+  "title": "Pivot expenses by month",
+  "category": "data_tables",
+  "difficulty": "hard",
+  "function": "monthly_pivot",
+  "signature": "P = monthly_pivot(T)",
+  "tags": [
+    "table",
+    "pivot",
+    "accumarray",
+    "dynamic-fieldnames"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

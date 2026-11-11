@@ -1,0 +1,16 @@
+{
+  "id": "algorithms/fewest_tokens",
+  "title": "Fewest tokens to pay an amount",
+  "category": "algorithms",
+  "difficulty": "medium",
+  "function": "fewest_tokens",
+  "signature": "k = fewest_tokens(values, amount)",
+  "tags": [
+    "dynamic-programming"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

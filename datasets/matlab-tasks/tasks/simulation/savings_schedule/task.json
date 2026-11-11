@@ -1,0 +1,18 @@
+{
+  "id": "simulation/savings_schedule",
+  "title": "Monthly savings balances",
+  "category": "simulation",
+  "difficulty": "easy",
+  "function": "savings_schedule",
+  "signature": "b = savings_schedule(principal, annualRate, monthly, months)",
+  "tags": [
+    "finance",
+    "loops",
+    "compound-interest"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

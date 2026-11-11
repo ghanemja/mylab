@@ -1,0 +1,14 @@
+deps = containers.Map({'app', 'web', 'db', 'log'}, {{'web', 'db'}, {'log', 'http'}, {'log'}, {}});
+assert(isequal(all_dependencies(deps, 'app'), {'db', 'http', 'log', 'web'}), 'example 1');
+assert(isequal(all_dependencies(deps, 'db'), {'log'}), 'example 2');
+r = all_dependencies(deps, 'log');
+assert(iscell(r) && isequal(size(r), [1 0]), 'no dependencies');
+r = all_dependencies(deps, 'unknown');
+assert(isequal(size(r), [1 0]), 'name not in map');
+cyc = containers.Map({'a', 'b', 'c', 'd'}, {{'b'}, {'c', 'c'}, {'a', 'd'}, {'b'}});
+assert(isequal(all_dependencies(cyc, 'a'), {'b', 'c', 'd'}), 'cycle back to start excluded');
+assert(isequal(all_dependencies(cyc, 'd'), {'a', 'b', 'c'}), 'cycle from another node');
+self = containers.Map({'x'}, {{'x', 'Y'}});
+assert(isequal(all_dependencies(self, 'x'), {'Y'}), 'self dependency');
+chain = containers.Map({'p1', 'p2', 'p3', 'p4'}, {{'p2'}, {'p3'}, {'p4'}, {'p5'}});
+assert(isequal(all_dependencies(chain, 'p1'), {'p2', 'p3', 'p4', 'p5'}), 'long chain');

@@ -1,0 +1,14 @@
+[m, c] = lru_cache_misses([1 2 3 1 4 2], 3);
+assert(m == 5 && isequal(c, [2 4 1]), 'example');
+[m, c] = lru_cache_misses([1 1 1 1], 1);
+assert(m == 1 && isequal(c, 1), 'repeated item');
+[m, c] = lru_cache_misses([1 2 1 2], 0);
+assert(m == 4 && isequal(size(c), [1 0]), 'capacity zero');
+[m, c] = lru_cache_misses([], 2);
+assert(m == 0 && isequal(size(c), [1 0]), 'no requests');
+[m, c] = lru_cache_misses([1 2 3 4 1 2 3 4], 3);
+assert(m == 8 && isequal(c, [4 3 2]), 'cyclic pattern thrashes');
+[m, c] = lru_cache_misses([7; 8; 7; 9; 8; 7], 2);
+assert(m == 5 && isequal(c, [7 8]), 'column input, recency update on hit');
+[m, c] = lru_cache_misses([5 6 5 6 7], 10);
+assert(m == 3 && isequal(c, [7 6 5]), 'large capacity');

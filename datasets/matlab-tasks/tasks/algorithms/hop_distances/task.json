@@ -1,0 +1,18 @@
+{
+  "id": "algorithms/hop_distances",
+  "title": "Hop distances in a directed graph",
+  "category": "algorithms",
+  "difficulty": "medium",
+  "function": "hop_distances",
+  "signature": "d = hop_distances(A, src)",
+  "tags": [
+    "graphs",
+    "bfs",
+    "adjacency-matrix"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

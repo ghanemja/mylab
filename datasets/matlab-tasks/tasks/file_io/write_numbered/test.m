@@ -1,0 +1,17 @@
+nl = char(10);
+f = 'wn_test_out.txt';
+n = write_numbered(f, {'alpha', 'beta'});
+assert(n == 2, 'count');
+assert(isequal(fileread(f), ['001: alpha' nl '002: beta' nl]), 'example content');
+n = write_numbered(f, {'50% off', 'C:\temp'});
+assert(n == 2 && isequal(fileread(f), ['001: 50% off' nl '002: C:\temp' nl]), 'literal % and backslash, overwrite');
+n = write_numbered(f, {});
+assert(n == 0 && isempty(fileread(f)), 'empty list');
+n = write_numbered(f, {''});
+assert(n == 1 && isequal(fileread(f), ['001: ' nl]), 'empty text');
+many = repmat({'x'}, 1, 1002);
+n = write_numbered(f, many);
+txt = fileread(f);
+assert(n == 1002 && sum(txt == nl) == 1002, 'many lines');
+assert(~isempty(strfind(txt, ['099: x' nl '100: x' nl])) && ~isempty(strfind(txt, [nl '1002: x' nl])), 'padding to at least three digits');
+delete(f);

@@ -1,0 +1,18 @@
+{
+  "id": "maps_sets/lru_cache_misses",
+  "title": "Simulate an LRU cache",
+  "category": "maps_sets",
+  "difficulty": "hard",
+  "function": "lru_cache_misses",
+  "signature": "[misses, contents] = lru_cache_misses(requests, capacity)",
+  "tags": [
+    "caching",
+    "containers.Map",
+    "simulation"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

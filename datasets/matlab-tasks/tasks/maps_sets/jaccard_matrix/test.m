@@ -1,0 +1,13 @@
+J = jaccard_matrix({[1 2 3], [2 3 4 4], []});
+assert(isequal(size(J), [3 3]), 'size');
+assert(max(max(abs(J - [1 0.5 0; 0.5 1 0; 0 0 1]))) < 1e-12, 'example');
+J = jaccard_matrix({});
+assert(isequal(size(J), [0 0]), 'empty cell');
+J = jaccard_matrix({[], []});
+assert(isequal(J, ones(2)), 'two empty sets');
+J = jaccard_matrix({[5 5 5], 5});
+assert(isequal(J, ones(2)), 'repeats count once');
+J = jaccard_matrix({1:4, [3; 4; 5; 6], [10 20], [4 3 2 1]});
+assert(abs(J(1, 2) - 2 / 6) < 1e-12 && J(1, 3) == 0 && J(1, 4) == 1, 'mixed shapes');
+assert(isequal(J, J.') && all(diag(J) == 1), 'symmetric with unit diagonal');
+assert(abs(jaccard_matrix({7}) - 1) < 1e-12, 'single set');

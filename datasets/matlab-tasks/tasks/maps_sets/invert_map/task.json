@@ -1,0 +1,17 @@
+{
+  "id": "maps_sets/invert_map",
+  "title": "Invert a many-to-one map",
+  "category": "maps_sets",
+  "difficulty": "medium",
+  "function": "invert_map",
+  "signature": "inv = invert_map(m)",
+  "tags": [
+    "containers.Map",
+    "grouping"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,15 @@
+[s, k] = insertion_sort_shifts([3 1 2]);
+assert(isequal(s, [1 2 3]) && k == 2, 'example 1');
+[s, k] = insertion_sort_shifts([2; 2; 1]);
+assert(isequal(s, [1; 2; 2]) && k == 2, 'column input with ties');
+[s, k] = insertion_sort_shifts([5 4 3 2 1]);
+assert(isequal(s, 1:5) && k == 10, 'reversed input');
+[s, k] = insertion_sort_shifts(1:6);
+assert(isequal(s, 1:6) && k == 0, 'already sorted');
+[s, k] = insertion_sort_shifts([]);
+assert(isempty(s) && k == 0, 'empty');
+[s, k] = insertion_sort_shifts(-4);
+assert(s == -4 && k == 0, 'scalar');
+[s, k] = insertion_sort_shifts([0.5 -1 3 -1 2]);
+assert(isequal(s, [-1 -1 0.5 2 3]) && k == 4, 'negatives and duplicates');
+assert(isequal(size(s), [1 5]), 'orientation kept');

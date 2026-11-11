@@ -1,0 +1,18 @@
+{
+  "id": "simulation/stock_simulation",
+  "title": "Inventory reorder simulation",
+  "category": "simulation",
+  "difficulty": "hard",
+  "function": "stock_simulation",
+  "signature": "[stock, lost, orderDays] = stock_simulation(start, demand, reorderPoint, orderQty, leadTime)",
+  "tags": [
+    "inventory",
+    "event-simulation",
+    "loops"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

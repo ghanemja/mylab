@@ -1,0 +1,18 @@
+{
+  "id": "file_io/write_numbered",
+  "title": "Write numbered lines to a file",
+  "category": "file_io",
+  "difficulty": "easy",
+  "function": "write_numbered",
+  "signature": "n = write_numbered(filename, lines)",
+  "tags": [
+    "fopen",
+    "fprintf",
+    "text-files"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

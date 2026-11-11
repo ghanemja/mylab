@@ -1,0 +1,14 @@
+s = read_settings('demo.ini');
+assert(isstruct(s) && strcmp(s.name, 'Lab 4'), 'string value with space');
+assert(isequal(s.db_port, 5432) && isa(s.db_port, 'double'), 'numeric value');
+assert(islogical(s.db_ssl) && s.db_ssl, 'logical TRUE');
+s = read_settings('full.ini');
+assert(isequal(s.rate, -0.25) && isequal(s.limit, 1e3), 'numbers in global part');
+assert(strcmp(s.query, 'a=b=c'), 'split at first equals sign');
+assert(islogical(s.ui_dark) && ~s.ui_dark, 'logical false');
+assert(isequal(s.ui_size, 14), 'later value wins');
+assert(ischar(s.ui_title) && isempty(s.ui_title), 'empty value is empty char');
+assert(strcmp(s.net_host, 'example.org') && isequal(s.net_port, 8080), 'second section');
+assert(~isfield(s, 'size') && ~isfield(s, 'port') && ~isfield(s, 'ignored'), 'section prefixes and comments');
+s = read_settings('none.ini');
+assert(isstruct(s) && isempty(fieldnames(s)), 'no settings');

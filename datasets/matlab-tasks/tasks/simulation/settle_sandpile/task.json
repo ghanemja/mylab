@@ -1,0 +1,18 @@
+{
+  "id": "simulation/settle_sandpile",
+  "title": "Settle a sandpile",
+  "category": "simulation",
+  "difficulty": "hard",
+  "function": "settle_sandpile",
+  "signature": "[G, topples] = settle_sandpile(G)",
+  "tags": [
+    "cellular-automata",
+    "while",
+    "matrices"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

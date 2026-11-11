@@ -1,0 +1,19 @@
+{
+  "id": "data_tables/top_students",
+  "title": "Top students from a CSV file",
+  "category": "data_tables",
+  "difficulty": "medium",
+  "function": "top_students",
+  "signature": "R = top_students(filename, k)",
+  "tags": [
+    "table",
+    "readtable",
+    "csv",
+    "sort"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

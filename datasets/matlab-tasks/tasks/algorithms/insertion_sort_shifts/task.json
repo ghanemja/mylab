@@ -1,0 +1,18 @@
+{
+  "id": "algorithms/insertion_sort_shifts",
+  "title": "Insertion sort with shift count",
+  "category": "algorithms",
+  "difficulty": "easy",
+  "function": "insertion_sort_shifts",
+  "signature": "[s, shifts] = insertion_sort_shifts(v)",
+  "tags": [
+    "sorting",
+    "loops",
+    "while"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

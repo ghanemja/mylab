@@ -1,0 +1,18 @@
+{
+  "id": "file_io/count_file_words",
+  "title": "Count words in a text file",
+  "category": "file_io",
+  "difficulty": "easy",
+  "function": "count_file_words",
+  "signature": "n = count_file_words(filename)",
+  "tags": [
+    "fileread",
+    "strings",
+    "regexp"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,13 @@
+assert(isequal(pairs_with_sum([3 1 4 1 2], 5), [1 5; 2 3; 3 4]), 'example');
+P = pairs_with_sum([1 2 3], 10);
+assert(isequal(size(P), [0 2]), 'no pairs');
+P = pairs_with_sum([], 0);
+assert(isequal(size(P), [0 2]), 'empty input');
+assert(isequal(pairs_with_sum([2 2 2], 4), [1 2; 1 3; 2 3]), 'equal values');
+assert(isequal(pairs_with_sum([5], 10), zeros(0, 2)), 'element not paired with itself');
+assert(isequal(pairs_with_sum([-3; 7; 0; 4; 3; -3], 4), [1 2; 2 6; 3 4]), 'negatives, column input');
+assert(isequal(pairs_with_sum([0 0 1 -1], 0), [1 2; 3 4]), 'zero target');
+v = repmat([1 9], 1, 50);
+P = pairs_with_sum(v, 10);
+assert(size(P, 1) == 2500 && all(v(P(:, 1)) + v(P(:, 2)) == 10) && all(P(:, 1) < P(:, 2)), 'many pairs');
+assert(issorted(P(:, 1)) && isequal(P(1:3, :), [1 2; 1 4; 1 6]), 'row order');

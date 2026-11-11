@@ -1,0 +1,17 @@
+{
+  "id": "data_tables/make_roster",
+  "title": "Build a roster table",
+  "category": "data_tables",
+  "difficulty": "easy",
+  "function": "make_roster",
+  "signature": "T = make_roster(names, ages)",
+  "tags": [
+    "table",
+    "logical"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

@@ -1,0 +1,12 @@
+b = savings_schedule(1000, 0.12, 100, 2);
+assert(isequal(size(b), [1 2]) && max(abs(b - [1110 1221.1])) < 1e-9, 'example');
+b = savings_schedule(500, 0, 50, 4);
+assert(isequal(b, [550 600 650 700]), 'zero interest');
+b = savings_schedule(500, 0.05, 0, 0);
+assert(isequal(size(b), [1 0]), 'zero months');
+P = 2500; r = 0.048 / 12; c = 75; m = 120;
+b = savings_schedule(P, 0.048, c, m);
+closed = P * (1 + r).^(1:m) + c * ((1 + r).^(1:m) - 1) / r;
+assert(numel(b) == m && max(abs(b - closed) ./ closed) < 1e-12, 'matches closed form');
+b = savings_schedule(1000, 0.06, -200, 3);
+assert(max(abs(b - [805 609.025 412.070125])) < 1e-9, 'withdrawals');

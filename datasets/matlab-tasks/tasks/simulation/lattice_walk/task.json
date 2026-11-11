@@ -1,0 +1,18 @@
+{
+  "id": "simulation/lattice_walk",
+  "title": "Random walk on a square lattice",
+  "category": "simulation",
+  "difficulty": "easy",
+  "function": "lattice_walk",
+  "signature": "P = lattice_walk(n)",
+  "tags": [
+    "random",
+    "randi",
+    "cumsum"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

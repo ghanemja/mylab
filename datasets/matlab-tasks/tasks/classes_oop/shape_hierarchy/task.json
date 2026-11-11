@@ -1,0 +1,19 @@
+{
+  "id": "classes_oop/shape_hierarchy",
+  "title": "Shape class hierarchy",
+  "category": "classes_oop",
+  "difficulty": "medium",
+  "function": "Shape",
+  "signature": "Shape (abstract); Circle(r); Square(side); Triangle(a, b, c)",
+  "tags": [
+    "classdef",
+    "inheritance",
+    "abstract-class",
+    "static-methods"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": false,
+    "octave": false
+  }
+}

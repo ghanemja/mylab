@@ -1,0 +1,19 @@
+{
+  "id": "classes_oop/value_stack",
+  "title": "Stack handle class",
+  "category": "classes_oop",
+  "difficulty": "medium",
+  "function": "ValueStack",
+  "signature": "s = ValueStack()",
+  "tags": [
+    "classdef",
+    "handle",
+    "cell-arrays",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

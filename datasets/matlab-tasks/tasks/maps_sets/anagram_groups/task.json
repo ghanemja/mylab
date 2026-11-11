@@ -1,0 +1,19 @@
+{
+  "id": "maps_sets/anagram_groups",
+  "title": "Group words that are anagrams",
+  "category": "maps_sets",
+  "difficulty": "medium",
+  "function": "anagram_groups",
+  "signature": "groups = anagram_groups(words)",
+  "tags": [
+    "containers.Map",
+    "grouping",
+    "cell-arrays",
+    "strings"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}
