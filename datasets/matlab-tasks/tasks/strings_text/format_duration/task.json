@@ -1,0 +1,18 @@
+{
+  "id": "strings_text/format_duration",
+  "title": "Format seconds as a clock duration",
+  "category": "strings_text",
+  "difficulty": "easy",
+  "function": "format_duration",
+  "signature": "s = format_duration(sec)",
+  "tags": [
+    "sprintf",
+    "floor",
+    "mod"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

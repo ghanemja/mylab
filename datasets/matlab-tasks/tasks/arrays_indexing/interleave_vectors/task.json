@@ -1,0 +1,18 @@
+{
+  "id": "arrays_indexing/interleave_vectors",
+  "title": "Interleave two vectors",
+  "category": "arrays_indexing",
+  "difficulty": "easy",
+  "function": "interleave_vectors",
+  "signature": "v = interleave_vectors(a, b)",
+  "tags": [
+    "indexing",
+    "concatenation",
+    "orientation"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "cells_structs/split_by_class",
+  "title": "Sort cell contents by kind",
+  "category": "cells_structs",
+  "difficulty": "easy",
+  "function": "split_by_class",
+  "signature": "[nums, texts, others] = split_by_class(c)",
+  "tags": [
+    "cell-arrays",
+    "class",
+    "isnumeric"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

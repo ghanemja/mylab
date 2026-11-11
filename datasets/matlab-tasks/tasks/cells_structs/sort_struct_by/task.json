@@ -1,0 +1,19 @@
+{
+  "id": "cells_structs/sort_struct_by",
+  "title": "Stable sort of a struct array",
+  "category": "cells_structs",
+  "difficulty": "medium",
+  "function": "sort_struct_by",
+  "signature": "s = sort_struct_by(s, field, direction)",
+  "tags": [
+    "struct-arrays",
+    "sort",
+    "stable-sort",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

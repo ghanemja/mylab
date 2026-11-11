@@ -1,0 +1,18 @@
+{
+  "id": "functions/apply_repeatedly",
+  "title": "Apply a function n times",
+  "category": "functions",
+  "difficulty": "easy",
+  "function": "apply_repeatedly",
+  "signature": "y = apply_repeatedly(f, x, n)",
+  "tags": [
+    "function-handles",
+    "loops",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

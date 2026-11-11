@@ -1,0 +1,11 @@
+assert(parking_fee(30) == 0, 'free period');
+assert(parking_fee(0) == 0, 'zero minutes');
+assert(parking_fee(31) == 2.5, 'just over free period');
+assert(parking_fee(60) == 2.5, 'exactly one hour');
+assert(parking_fee(61) == 5, 'second started hour');
+assert(parking_fee(600) == 18, 'daily cap');
+f = parking_fee([61; 600; 10]);
+assert(isequal(size(f), [3 1]) && isequal(f, [5; 18; 0]), 'column input keeps shape');
+f = parking_fee([180.5 420 421]);
+assert(isequal(f, [10 17.5 18]), 'row input, values near cap');
+assert(isa(parking_fee(45), 'double'), 'double output');

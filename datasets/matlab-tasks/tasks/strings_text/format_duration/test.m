@@ -1,0 +1,10 @@
+assert(strcmp(format_duration(0), '0:00'), 'zero');
+assert(strcmp(format_duration(59), '0:59'), 'seconds only');
+assert(strcmp(format_duration(245), '4:05'), 'padded seconds');
+assert(strcmp(format_duration(3599), '59:59'), 'just under an hour');
+assert(strcmp(format_duration(3600), '1:00:00'), 'one hour');
+assert(strcmp(format_duration(86399), '23:59:59'), 'almost a day');
+assert(strcmp(format_duration(90061), '25:01:01'), 'more than a day');
+assert(strcmp(format_duration(36000 + 61), '10:01:01'), 'two-digit hours');
+s = format_duration(7);
+assert(ischar(s) && size(s, 1) == 1, 'char row');

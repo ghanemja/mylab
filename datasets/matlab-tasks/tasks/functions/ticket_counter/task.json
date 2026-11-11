@@ -1,0 +1,18 @@
+{
+  "id": "functions/ticket_counter",
+  "title": "Ticket dispenser with persistent state",
+  "category": "functions",
+  "difficulty": "medium",
+  "function": "ticket_counter",
+  "signature": "n = ticket_counter(cmd)",
+  "tags": [
+    "persistent",
+    "nargin",
+    "state"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

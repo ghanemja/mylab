@@ -1,0 +1,18 @@
+{
+  "id": "arrays_indexing/fill_forward",
+  "title": "Fill gaps with the last known value",
+  "category": "arrays_indexing",
+  "difficulty": "easy",
+  "function": "fill_forward",
+  "signature": "y = fill_forward(x)",
+  "tags": [
+    "loops",
+    "isnan",
+    "orientation"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

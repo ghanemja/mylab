@@ -1,0 +1,18 @@
+{
+  "id": "basics/integer_sqrt",
+  "title": "Exact integer square root",
+  "category": "basics",
+  "difficulty": "medium",
+  "function": "integer_sqrt",
+  "signature": "r = integer_sqrt(n)",
+  "tags": [
+    "floating-point",
+    "integer-arithmetic",
+    "edge-cases"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

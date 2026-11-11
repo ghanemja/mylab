@@ -1,0 +1,18 @@
+{
+  "id": "arrays_indexing/antidiagonal_sums",
+  "title": "Sums along anti-diagonals",
+  "category": "arrays_indexing",
+  "difficulty": "medium",
+  "function": "antidiagonal_sums",
+  "signature": "s = antidiagonal_sums(A)",
+  "tags": [
+    "indexing",
+    "accumarray",
+    "matrices"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

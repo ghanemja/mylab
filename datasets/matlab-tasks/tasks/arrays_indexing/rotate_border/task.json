@@ -1,0 +1,18 @@
+{
+  "id": "arrays_indexing/rotate_border",
+  "title": "Rotate the outer ring of a matrix",
+  "category": "arrays_indexing",
+  "difficulty": "hard",
+  "function": "rotate_border",
+  "signature": "B = rotate_border(A, k)",
+  "tags": [
+    "linear-indexing",
+    "circshift",
+    "matrices"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "arrays_indexing/flood_fill",
+  "title": "Flood fill a connected region",
+  "category": "arrays_indexing",
+  "difficulty": "hard",
+  "function": "flood_fill",
+  "signature": "[B, count] = flood_fill(A, r, c, newValue)",
+  "tags": [
+    "queue",
+    "neighbours",
+    "while-loop"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

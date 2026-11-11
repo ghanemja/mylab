@@ -1,0 +1,18 @@
+{
+  "id": "strings_text/wrap_text",
+  "title": "Greedy word wrapping",
+  "category": "strings_text",
+  "difficulty": "medium",
+  "function": "wrap_text",
+  "signature": "lines = wrap_text(s, width)",
+  "tags": [
+    "strsplit",
+    "loops",
+    "cell-arrays"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

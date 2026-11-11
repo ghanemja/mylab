@@ -1,0 +1,13 @@
+[n, t, o] = split_by_class({3, 'abc', [1 2], int8(4), true});
+assert(isequal(n, [3 4]) && isa(n, 'double'), 'numbers converted to double');
+assert(isequal(t, {'abc'}), 'texts');
+assert(numel(o) == 2 && isequal(o{1}, [1 2]) && islogical(o{2}), 'others');
+c = {'', {1}, single(-2.5), struct('a', 1); 'xy', [], uint16(7), 'z'};
+[n, t, o] = split_by_class(c);
+assert(isequal(n, [-2.5 7]), 'column-major order of numbers');
+assert(isequal(t, {'', 'xy', 'z'}), 'column-major order of texts, empty char');
+assert(numel(o) == 3 && iscell(o{1}) && isempty(o{2}) && isstruct(o{3}), 'cell, empty and struct');
+[n, t, o] = split_by_class({});
+assert(isequal(size(n), [1 0]) && isequal(size(t), [1 0]) && isequal(size(o), [1 0]), 'empty input');
+[n, t, o] = split_by_class({NaN, Inf});
+assert(isequal(size(n), [1 2]) && isnan(n(1)) && isinf(n(2)) && isempty(t) && isempty(o), 'NaN and Inf are numbers');

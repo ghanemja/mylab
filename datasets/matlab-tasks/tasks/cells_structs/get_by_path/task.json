@@ -1,0 +1,19 @@
+{
+  "id": "cells_structs/get_by_path",
+  "title": "Look up nested data by a path string",
+  "category": "cells_structs",
+  "difficulty": "hard",
+  "function": "get_by_path",
+  "signature": "v = get_by_path(data, path)",
+  "tags": [
+    "structs",
+    "cell-arrays",
+    "parsing",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

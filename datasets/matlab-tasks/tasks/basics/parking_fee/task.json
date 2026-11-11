@@ -1,0 +1,18 @@
+{
+  "id": "basics/parking_fee",
+  "title": "Car park fee with free period and daily cap",
+  "category": "basics",
+  "difficulty": "easy",
+  "function": "parking_fee",
+  "signature": "fee = parking_fee(minutes)",
+  "tags": [
+    "conditionals",
+    "ceil",
+    "vectorization"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

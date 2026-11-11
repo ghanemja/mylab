@@ -1,0 +1,11 @@
+out = names_last_first(["Mara Ilse Vogt", "  Tomas   Reyes ", "Okonkwo"]);
+assert(isa(out, 'string'), 'string output');
+assert(isequal(size(out), [1 3]), 'same size');
+assert(out(1) == "Vogt, Mara I." && out(2) == "Reyes, Tomas" && out(3) == "Okonkwo", 'example');
+out = names_last_first(["Lena Maria Sofia Berg"; ""]);
+assert(isequal(size(out), [2 1]), 'column kept');
+assert(out(1) == "Berg, Lena M. S." && strlength(out(2)) == 0, 'two middle names, empty name');
+out = names_last_first("   ");
+assert(isa(out, 'string') && strlength(out) == 0, 'blank scalar');
+out = names_last_first(["ana de silva", "Q R"]);
+assert(out(1) == "silva, ana d." && out(2) == "R, Q", 'lowercase kept, short words');

@@ -1,0 +1,19 @@
+{
+  "id": "functions/describe_vector",
+  "title": "Summary statistics with nargout-dependent outputs",
+  "category": "functions",
+  "difficulty": "medium",
+  "function": "describe_vector",
+  "signature": "varargout = describe_vector(x)",
+  "tags": [
+    "nargout",
+    "varargout",
+    "structs",
+    "nan"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

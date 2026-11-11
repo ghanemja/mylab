@@ -1,0 +1,18 @@
+{
+  "id": "functions/adaptive_simpson",
+  "title": "Adaptive Simpson integration",
+  "category": "functions",
+  "difficulty": "hard",
+  "function": "adaptive_simpson",
+  "signature": "q = adaptive_simpson(f, a, b, tol)",
+  "tags": [
+    "recursion",
+    "function-handles",
+    "numerics"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

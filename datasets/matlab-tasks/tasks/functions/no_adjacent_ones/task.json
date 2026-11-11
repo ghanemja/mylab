@@ -1,0 +1,18 @@
+{
+  "id": "functions/no_adjacent_ones",
+  "title": "Binary strings without adjacent ones",
+  "category": "functions",
+  "difficulty": "medium",
+  "function": "no_adjacent_ones",
+  "signature": "c = no_adjacent_ones(n)",
+  "tags": [
+    "recursion",
+    "cell-arrays",
+    "combinatorics"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

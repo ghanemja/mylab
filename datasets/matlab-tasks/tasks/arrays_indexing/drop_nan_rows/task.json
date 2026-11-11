@@ -1,0 +1,18 @@
+{
+  "id": "arrays_indexing/drop_nan_rows",
+  "title": "Remove rows that contain NaN",
+  "category": "arrays_indexing",
+  "difficulty": "easy",
+  "function": "drop_nan_rows",
+  "signature": "[B, removed] = drop_nan_rows(A)",
+  "tags": [
+    "logical-indexing",
+    "any",
+    "find"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

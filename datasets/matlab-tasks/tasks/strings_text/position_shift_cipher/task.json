@@ -1,0 +1,18 @@
+{
+  "id": "strings_text/position_shift_cipher",
+  "title": "Letter shift by position cipher",
+  "category": "strings_text",
+  "difficulty": "medium",
+  "function": "position_shift_cipher",
+  "signature": "out = position_shift_cipher(s, mode)",
+  "tags": [
+    "cipher",
+    "char-arithmetic",
+    "nargin"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

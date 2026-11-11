@@ -1,0 +1,13 @@
+items = struct('name', {'tea', 'flour', 'eggs'}, 'qty', {4, 30, 6}, 'reorder_level', {5, 10, 6});
+[n, u] = restock_list(items);
+assert(isequal(n, {'eggs'; 'tea'}) && isequal(u, [6; 6]), 'example');
+items = struct('name', {'rice', 'oil', 'milk', 'salt'}, 'qty', {0, 2, 12, 1}, 'reorder_level', {8, 3, 12, 0});
+[n, u] = restock_list(items);
+assert(isequal(n, {'milk'; 'oil'; 'rice'}), 'sorted names');
+assert(isequal(u, [12; 4; 16]), 'units follow name order');
+[n, u] = restock_list(items(4));
+assert(iscell(n) && isequal(size(n), [0 1]) && isequal(size(u), [0 1]), 'nothing to restock');
+[n, u] = restock_list(struct('name', {}, 'qty', {}, 'reorder_level', {}));
+assert(isequal(size(n), [0 1]) && isequal(size(u), [0 1]), 'empty inventory');
+[n, u] = restock_list(items([2; 1]));
+assert(isequal(n, {'oil'; 'rice'}) && isequal(u, [4; 16]), 'column struct array');

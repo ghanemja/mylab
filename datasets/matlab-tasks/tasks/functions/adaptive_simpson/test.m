@@ -1,0 +1,10 @@
+assert(abs(adaptive_simpson(@(x) x.^2, 0, 3, 1e-8) - 9) < 1e-12, 'exact for quadratics');
+assert(abs(adaptive_simpson(@exp, 0, 1, 1e-10) - (exp(1) - 1)) < 1e-9, 'exp');
+assert(abs(adaptive_simpson(@(x) sqrt(x), 0, 1, 1e-8) - 2/3) < 1e-7, 'endpoint singularity');
+assert(abs(adaptive_simpson(@(x) 1 ./ (1 + x.^2), 0, 1, 1e-10) - pi/4) < 1e-9, 'arctan');
+assert(abs(adaptive_simpson(@exp, 1, 0, 1e-10) + (exp(1) - 1)) < 1e-9, 'reversed limits');
+assert(adaptive_simpson(@(x) x.^5, 2, 2, 1e-6) == 0, 'empty interval');
+q = adaptive_simpson(@(x) exp(-x.^2), -3, 3, 1e-10);
+assert(abs(q - 1.772414696519042) < 1e-8, 'gaussian');
+q = adaptive_simpson(@(x) abs(x - 0.3), 0, 1, 1e-9);
+assert(abs(q - 0.29) < 1e-8, 'kink inside the interval');

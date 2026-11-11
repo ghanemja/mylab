@@ -1,0 +1,18 @@
+{
+  "id": "arrays_indexing/longest_rising_run",
+  "title": "Longest strictly increasing stretch",
+  "category": "arrays_indexing",
+  "difficulty": "medium",
+  "function": "longest_rising_run",
+  "signature": "[start, len] = longest_rising_run(x)",
+  "tags": [
+    "diff",
+    "runs",
+    "loops"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

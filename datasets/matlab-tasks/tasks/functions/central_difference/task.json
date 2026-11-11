@@ -1,0 +1,18 @@
+{
+  "id": "functions/central_difference",
+  "title": "Numerical derivative with optional step",
+  "category": "functions",
+  "difficulty": "easy",
+  "function": "central_difference",
+  "signature": "d = central_difference(f, x, h)",
+  "tags": [
+    "function-handles",
+    "nargin",
+    "numerics"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

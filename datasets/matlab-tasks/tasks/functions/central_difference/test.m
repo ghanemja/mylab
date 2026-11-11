@@ -1,0 +1,11 @@
+assert(abs(central_difference(@sin, 0) - 1) < 1e-9, 'sin at 0 with default h');
+d = central_difference(@(t) t.^2, [1 2], 0.1);
+assert(all(abs(d - [2 4]) < 1e-12), 'quadratic is exact');
+d = central_difference(@(t) t.^3, [1 2], 1e-3);
+assert(all(abs(d - ([3 12] + 1e-6)) < 1e-9), 'cubic error term shows the given h is used');
+d = central_difference(@(t) t.^3, 2);
+assert(abs(d - (12 + 1e-10)) < 1e-6, 'default step');
+d = central_difference(@exp, [0 1; 2 3]);
+assert(isequal(size(d), [2 2]) && all(all(abs(d - exp([0 1; 2 3])) < 1e-8)), 'matrix shape kept');
+d = central_difference(@(t) 5 * ones(size(t)), [1; 2; 3], 0.5);
+assert(isequal(d, [0; 0; 0]), 'constant function, column input');

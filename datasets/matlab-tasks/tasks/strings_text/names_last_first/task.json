@@ -1,0 +1,18 @@
+{
+  "id": "strings_text/names_last_first",
+  "title": "Reformat names in a string array",
+  "category": "strings_text",
+  "difficulty": "medium",
+  "function": "names_last_first",
+  "signature": "out = names_last_first(names)",
+  "tags": [
+    "string-arrays",
+    "strsplit",
+    "formatting"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "functions/make_scaler",
+  "title": "Linear scaler closures",
+  "category": "functions",
+  "difficulty": "easy",
+  "function": "make_scaler",
+  "signature": "[fwd, inv] = make_scaler(lo, hi)",
+  "tags": [
+    "anonymous-functions",
+    "closures",
+    "multiple-outputs"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

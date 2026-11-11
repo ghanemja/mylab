@@ -1,0 +1,10 @@
+assert(strcmp(name_initials('ada  lovelace'), 'AL'), 'two parts, double space');
+assert(strcmp(name_initials('jean-luc picard'), 'JLP'), 'hyphen');
+assert(strcmp(name_initials('Mary Ann o''Neil'), 'MAO'), 'three parts, apostrophe');
+assert(strcmp(name_initials('  x '), 'X'), 'surrounding spaces');
+s = name_initials('   ');
+assert(ischar(s) && isempty(s), 'blank name');
+s = name_initials('');
+assert(ischar(s) && isempty(s), 'empty name');
+s = name_initials('--anna--maria--');
+assert(isequal(s, 'AM') && size(s, 1) == 1, 'leading and repeated hyphens');

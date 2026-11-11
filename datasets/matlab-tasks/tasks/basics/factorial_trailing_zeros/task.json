@@ -1,0 +1,17 @@
+{
+  "id": "basics/factorial_trailing_zeros",
+  "title": "Trailing zeros of a factorial",
+  "category": "basics",
+  "difficulty": "easy",
+  "function": "factorial_trailing_zeros",
+  "signature": "z = factorial_trailing_zeros(n)",
+  "tags": [
+    "while-loop",
+    "number-theory"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

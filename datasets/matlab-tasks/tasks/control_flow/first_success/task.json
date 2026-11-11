@@ -1,0 +1,18 @@
+{
+  "id": "control_flow/first_success",
+  "title": "Try functions until one succeeds",
+  "category": "control_flow",
+  "difficulty": "medium",
+  "function": "first_success",
+  "signature": "[y, idx] = first_success(fns, x)",
+  "tags": [
+    "try-catch",
+    "function-handles",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

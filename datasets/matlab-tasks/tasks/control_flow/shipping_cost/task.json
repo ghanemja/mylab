@@ -1,0 +1,18 @@
+{
+  "id": "control_flow/shipping_cost",
+  "title": "Parcel shipping cost by region",
+  "category": "control_flow",
+  "difficulty": "easy",
+  "function": "shipping_cost",
+  "signature": "cost = shipping_cost(region, kg)",
+  "tags": [
+    "switch",
+    "errors",
+    "strings"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

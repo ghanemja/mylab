@@ -1,0 +1,18 @@
+{
+  "id": "strings_text/phrase_palindrome",
+  "title": "Palindromic phrases",
+  "category": "strings_text",
+  "difficulty": "easy",
+  "function": "phrase_palindrome",
+  "signature": "tf = phrase_palindrome(s)",
+  "tags": [
+    "char",
+    "isletter",
+    "logical"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

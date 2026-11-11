@@ -1,0 +1,14 @@
+L = wrap_text('small tasks make the benchmark easy to grow over time', 12);
+assert(isequal(L, {'small tasks'; 'make the'; 'benchmark'; 'easy to grow'; 'over time'}), 'example');
+L = wrap_text('a extraordinarily b', 5);
+assert(isequal(L, {'a'; 'extraordinarily'; 'b'}), 'long word on its own line');
+L = wrap_text(sprintf('  one\ttwo\n three  '), 7);
+assert(isequal(L, {'one two'; 'three'}), 'mixed whitespace');
+L = wrap_text('fits on one line', 100);
+assert(isequal(L, {'fits on one line'}), 'single line');
+L = wrap_text('ab cd', 5);
+assert(isequal(L, {'ab cd'}), 'exactly width');
+L = wrap_text('ab cd', 4);
+assert(isequal(L, {'ab'; 'cd'}), 'one over width');
+L = wrap_text(sprintf(' \t '), 10);
+assert(iscell(L) && isequal(size(L), [0 1]), 'no words');

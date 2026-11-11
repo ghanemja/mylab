@@ -1,0 +1,17 @@
+{
+  "id": "control_flow/first_pair_with_sum",
+  "title": "First pair adding up to a target",
+  "category": "control_flow",
+  "difficulty": "easy",
+  "function": "first_pair_with_sum",
+  "signature": "pair = first_pair_with_sum(x, target)",
+  "tags": [
+    "nested-loops",
+    "early-return"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

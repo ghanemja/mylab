@@ -1,0 +1,18 @@
+{
+  "id": "cells_structs/totals_by_category",
+  "title": "Expense totals per category",
+  "category": "cells_structs",
+  "difficulty": "medium",
+  "function": "totals_by_category",
+  "signature": "t = totals_by_category(expenses)",
+  "tags": [
+    "struct-arrays",
+    "dynamic-fields",
+    "loops"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

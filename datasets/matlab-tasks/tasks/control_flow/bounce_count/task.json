@@ -1,0 +1,17 @@
+{
+  "id": "control_flow/bounce_count",
+  "title": "Counting the bounces of a dropped ball",
+  "category": "control_flow",
+  "difficulty": "easy",
+  "function": "bounce_count",
+  "signature": "n = bounce_count(h0, r, hmin)",
+  "tags": [
+    "while-loop",
+    "simulation"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}
