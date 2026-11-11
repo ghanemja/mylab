@@ -1,0 +1,11 @@
+y = direct_convolution([1 -2 3 0.5], [0.25 0.5 0.25]);
+assert(isequal(size(y), [1 6]) && all(abs(y - [0.25 0 0 1.125 1 0.125]) < 1e-15), 'example');
+y = direct_convolution([2; 0; -1; 4; 1; -3; 2.5], [1 -1]);
+assert(isequal(size(y), [1 8]) && all(abs(y - [2 -2 -1 5 -3 -4 5.5 -2.5]) < 1e-15), 'first difference of a column input');
+assert(isequal(direct_convolution(3, [1 2 3]), [3 6 9]), 'scalar times kernel');
+assert(isequal(direct_convolution([1 2 3], 1), [1 2 3]), 'identity kernel');
+y = direct_convolution([1 1 1], [1 1 1]);
+assert(isequal(y, [1 2 3 2 1]), 'boxcar with itself');
+assert(isequal(direct_convolution([0 0 1], [5 6]), [0 0 5 6]), 'delay');
+e = direct_convolution([], [1 2]);
+assert(isequal(size(e), [1 0]), 'empty input');

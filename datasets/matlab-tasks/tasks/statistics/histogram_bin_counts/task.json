@@ -1,0 +1,19 @@
+{
+  "id": "statistics/histogram_bin_counts",
+  "title": "Histogram counts with explicit bin edges",
+  "category": "statistics",
+  "difficulty": "medium",
+  "function": "bin_counts",
+  "signature": "[counts, centers] = bin_counts(x, edges)",
+  "tags": [
+    "histogram",
+    "binning",
+    "edge-cases",
+    "nan"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

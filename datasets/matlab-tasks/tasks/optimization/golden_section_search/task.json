@@ -1,0 +1,19 @@
+{
+  "id": "optimization/golden_section_search",
+  "title": "Golden-section search for a 1-D minimum",
+  "category": "optimization",
+  "difficulty": "medium",
+  "function": "golden_min",
+  "signature": "[xmin, fmin, nevals] = golden_min(f, a, b, tol)",
+  "tags": [
+    "line-search",
+    "golden-section",
+    "derivative-free",
+    "unimodal"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "optimization/box_constrained_least_squares",
+  "title": "Least squares with bounds by projected gradient",
+  "category": "optimization",
+  "difficulty": "hard",
+  "function": "box_least_squares",
+  "signature": "x = box_least_squares(A, b, lo, hi)",
+  "tags": [
+    "constrained-optimization",
+    "projected-gradient",
+    "least-squares",
+    "bounds"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

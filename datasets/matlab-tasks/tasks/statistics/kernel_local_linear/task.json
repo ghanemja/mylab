@@ -1,0 +1,19 @@
+{
+  "id": "statistics/kernel_local_linear",
+  "title": "Gaussian-kernel local linear smoother",
+  "category": "statistics",
+  "difficulty": "hard",
+  "function": "local_linear_smooth",
+  "signature": "yq = local_linear_smooth(x, y, xq, bw)",
+  "tags": [
+    "nonparametric-regression",
+    "smoothing",
+    "weighted-least-squares",
+    "kernels"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

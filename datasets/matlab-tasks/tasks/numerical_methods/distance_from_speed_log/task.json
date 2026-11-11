@@ -1,0 +1,19 @@
+{
+  "id": "numerical_methods/distance_from_speed_log",
+  "title": "Cumulative distance from irregular speed samples",
+  "category": "numerical_methods",
+  "difficulty": "easy",
+  "function": "cumulative_distance",
+  "signature": "d = cumulative_distance(t, v)",
+  "tags": [
+    "integration",
+    "trapezoid",
+    "cumsum",
+    "nonuniform-grid"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

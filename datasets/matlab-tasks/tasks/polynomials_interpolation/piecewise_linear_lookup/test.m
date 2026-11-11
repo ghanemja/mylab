@@ -1,0 +1,10 @@
+yq = pw_linear([0 10 20], [0 50 40], [5 15 25]);
+assert(isequal(size(yq), [1 3]) && all(abs(yq(1:2) - [25 45]) < 1e-14) && isnan(yq(3)), 'example');
+yq = pw_linear([0 1.5 2 4 7], [3; 1; 2.5; 2.5; -1], [0; 0.75; 1.5; 1.9; 3; 4; 6.999; 7]);
+assert(isequal(size(yq), [8 1]) && all(abs(yq - [3; 2; 1; 2.1999999999999997; 2.5; 2.5; -0.9988333333333332; -1]) < 1e-12), 'uneven table');
+assert(isequal(pw_linear([1 2 3], [4 5 7], [1 2 3]), [4 5 7]), 'exact at breakpoints');
+Q = pw_linear([0 1], [0 2], [0.25 0.5; 0.75 1]);
+assert(isequal(size(Q), [2 2]) && all(all(abs(Q - [0.5 1; 1.5 2]) < 1e-15)), 'matrix of queries');
+yq = pw_linear([0 1], [5 6], [-0.1 NaN 1.0001]);
+assert(all(isnan(yq)), 'outside the table and NaN queries');
+assert(isempty(pw_linear([0 1], [0 1], [])), 'no queries');

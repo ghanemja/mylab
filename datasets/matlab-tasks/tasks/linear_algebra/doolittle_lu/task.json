@@ -1,0 +1,18 @@
+{
+  "id": "linear_algebra/doolittle_lu",
+  "title": "LU factorization without pivoting",
+  "category": "linear_algebra",
+  "difficulty": "medium",
+  "function": "doolittle_lu",
+  "signature": "[L, U] = doolittle_lu(A)",
+  "tags": [
+    "lu-decomposition",
+    "matrix-factorization",
+    "loops"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

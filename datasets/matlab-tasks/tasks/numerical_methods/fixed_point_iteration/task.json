@@ -1,0 +1,19 @@
+{
+  "id": "numerical_methods/fixed_point_iteration",
+  "title": "Fixed-point iteration with convergence flag",
+  "category": "numerical_methods",
+  "difficulty": "easy",
+  "function": "fixed_point",
+  "signature": "[x, iters, converged] = fixed_point(g, x0, tol, maxit)",
+  "tags": [
+    "fixed-point",
+    "iteration",
+    "convergence",
+    "vectors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

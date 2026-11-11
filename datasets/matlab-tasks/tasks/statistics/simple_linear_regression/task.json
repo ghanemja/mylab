@@ -1,0 +1,19 @@
+{
+  "id": "statistics/simple_linear_regression",
+  "title": "Simple linear regression with standard errors",
+  "category": "statistics",
+  "difficulty": "medium",
+  "function": "simple_regression",
+  "signature": "out = simple_regression(x, y)",
+  "tags": [
+    "regression",
+    "least-squares",
+    "standard-error",
+    "struct"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

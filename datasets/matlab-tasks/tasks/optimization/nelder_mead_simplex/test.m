@@ -1,0 +1,14 @@
+[x, fx, k] = nelder_mead(@(p) (p(1) - 3)^2 + 2*(p(2) + 1)^2, [0 0], 0.5, 1e-10, 2000);
+assert(isequal(size(x), [1 2]) && norm(x - [3 -1]) < 1e-4 && fx < 1e-9, 'quadratic bowl');
+assert(k > 10 && k < 2000, 'iterations reported');
+rb = @(p) 100*(p(2) - p(1)^2)^2 + (1 - p(1))^2;
+[x, fx] = nelder_mead(rb, [-1.2; 1], 0.1, 1e-12, 5000);
+assert(isequal(size(x), [2 1]) && norm(x - [1; 1]) < 1e-4 && fx < 1e-8, 'Rosenbrock valley');
+[x, fx] = nelder_mead(@(v) sum((v - [1 2 3]).^2) + 5, [0 0 0], 1, 1e-10, 5000);
+assert(norm(x - [1 2 3]) < 1e-4 && abs(fx - 5) < 1e-8, 'three variables');
+[x, fx] = nelder_mead(@(t) (t - 0.7)^2, 4, 1, 1e-12, 500);
+assert(abs(x - 0.7) < 1e-5, 'one variable');
+[x, fx] = nelder_mead(@(p) abs(p(1)) + abs(p(2) - 2), [1 1], 0.3, 1e-10, 3000);
+assert(norm(x - [0 2]) < 1e-4, 'non-smooth objective');
+[~, ~, k] = nelder_mead(@(p) sum(p.^2), [5 5], 1, 1e-10, 7);
+assert(k == 7, 'stops after maxit');

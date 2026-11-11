@@ -1,0 +1,19 @@
+{
+  "id": "linear_algebra/gauss_partial_pivoting",
+  "title": "Gaussian elimination with partial pivoting",
+  "category": "linear_algebra",
+  "difficulty": "hard",
+  "function": "gauss_solve",
+  "signature": "X = gauss_solve(A, B)",
+  "tags": [
+    "linear-systems",
+    "gaussian-elimination",
+    "pivoting",
+    "back-substitution"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

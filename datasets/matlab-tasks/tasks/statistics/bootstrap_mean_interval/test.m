@@ -1,0 +1,18 @@
+x = [12.1 9.8 11.4 10.2 13.5 8.9 10.7 11.9 12.6 9.5 10.9 11.2];
+[ci, bm] = bootstrap_mean_ci(x, 4000, 0.05);
+assert(isequal(size(ci), [1 2]) && isequal(size(bm), [4000 1]), 'output sizes');
+assert(all(bm >= min(x) - 1e-12) && all(bm <= max(x) + 1e-12), 'bootstrap means stay within the data range');
+assert(ci(1) <= mean(x) && mean(x) <= ci(2), 'interval brackets the sample mean');
+assert(abs(mean(bm) - mean(x)) < 0.1, 'bootstrap means centred on the sample mean');
+se = std(x) / sqrt(numel(x));
+assert(std(bm) > 0.7*se && std(bm) < 1.2*se, 'spread of the bootstrap means is about the standard error');
+w = ci(2) - ci(1);
+assert(w > 2.5*se && w < 5*se, 'plausible interval width');
+s = sort(bm);
+assert(ci(1) == s(100) && ci(2) == s(3900), 'percentile positions');
+[ci50, ~] = bootstrap_mean_ci(x, 4000, 0.5);
+assert(ci50(2) - ci50(1) < w, 'a lower confidence level gives a narrower interval');
+[c7, b7] = bootstrap_mean_ci([7 7 7], 50, 0.1);
+assert(isequal(c7, [7 7]) && all(b7 == 7), 'constant data');
+[c1, b1] = bootstrap_mean_ci(3.5, 10, 0.05);
+assert(isequal(c1, [3.5 3.5]) && isequal(b1, 3.5*ones(10, 1)), 'single observation');

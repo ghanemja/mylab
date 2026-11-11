@@ -1,0 +1,19 @@
+{
+  "id": "optimization/lp_two_variables",
+  "title": "Two-variable linear program by vertex enumeration",
+  "category": "optimization",
+  "difficulty": "medium",
+  "function": "lp2d_max",
+  "signature": "[x, fval] = lp2d_max(c, A, b)",
+  "tags": [
+    "linear-programming",
+    "vertex-enumeration",
+    "production-planning",
+    "geometry"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

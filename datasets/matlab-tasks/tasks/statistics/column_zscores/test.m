@@ -1,0 +1,12 @@
+assert(all(all(abs(column_zscores([1 10; 3 10; 5 10]) - [-1 0; 0 0; 1 0]) < 1e-14)), 'example');
+Z = column_zscores([170  65  3; 182  80  3; 165  58  3; 175  72  3; 190  95  3]);
+assert(isequal(size(Z), [5 3]), 'size');
+assert(max(max(abs(Z - [-0.648818991919501  -0.629355241147559  0; 0.5677166179295623  0.4195701607650394  0; -1.1557088293566107  -1.1188537620401051  0; -0.1419291544823913  -0.13985672025501314  0; 1.378740357828938  1.468495562677638  0]))) < 1e-12, 'height/weight/constant columns');
+assert(all(abs(mean(Z(:, 1:2))) < 1e-14) && all(abs(std(Z(:, 1:2)) - 1) < 1e-14), 'zero mean, unit std');
+zr = column_zscores([4 8 6 2]);
+assert(isequal(size(zr), [1 4]) && all(abs(zr - [-0.3872983346207417 1.161895003862225 0.3872983346207417 -1.161895003862225]) < 1e-14), 'row vector standardized as a whole');
+zc = column_zscores([4; 8; 6; 2]);
+assert(isequal(size(zc), [4 1]) && all(abs(zc - [-0.3872983346207417; 1.161895003862225; 0.3872983346207417; -1.161895003862225]) < 1e-14), 'column vector');
+assert(isequal(column_zscores([5 5 5]), [0 0 0]), 'constant vector');
+assert(isequal(column_zscores(7), 0), 'scalar');
+assert(isempty(column_zscores([])), 'empty');

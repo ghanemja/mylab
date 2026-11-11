@@ -1,0 +1,20 @@
+{
+  "id": "numerical_methods/cooling_euler_heun",
+  "title": "Newton cooling with Euler and Heun steps",
+  "category": "numerical_methods",
+  "difficulty": "medium",
+  "function": "cooling_profile",
+  "signature": "T = cooling_profile(T0, Tamb, k, dt, n, method)",
+  "tags": [
+    "ode",
+    "euler",
+    "heun",
+    "function-handles",
+    "physics"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

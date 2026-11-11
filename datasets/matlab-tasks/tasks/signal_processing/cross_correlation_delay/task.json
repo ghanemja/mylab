@@ -1,0 +1,19 @@
+{
+  "id": "signal_processing/cross_correlation_delay",
+  "title": "Time delay from the cross-correlation peak",
+  "category": "signal_processing",
+  "difficulty": "hard",
+  "function": "estimate_delay",
+  "signature": "[lag, peak] = estimate_delay(x, y, maxlag)",
+  "tags": [
+    "cross-correlation",
+    "time-delay",
+    "sonar",
+    "loops"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

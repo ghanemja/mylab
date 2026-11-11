@@ -1,0 +1,14 @@
+Q = [3 1; 1 2]; b = [1; -1];
+[x, k] = grad_descent(@(x) Q*x - b, [0 0], 0.3, 1e-10, 1000);
+assert(isequal(size(x), [2 1]) && all(abs(x - [0.6; -0.7999999999999999]) < 1e-9), 'quadratic minimum');
+assert(k == 44, 'number of steps');
+assert(norm(Q*x - b) < 1e-10, 'stopping test met');
+[x, k] = grad_descent(@(x) 2*(x - 5), 1, 0.5, 1e-12, 10);
+assert(x == 5 && k == 1, 'one exact step for a scaled parabola');
+[x, k] = grad_descent(@(x) 2*x, 3, 1.1, 1e-8, 7);
+assert(k == 7 && abs(x - 3*(-1.2)^7) < 1e-12, 'step too large: stops after maxit');
+[x, k] = grad_descent(@(x) x - [1; 2; 3], [1; 2; 3], 0.1, 1e-6, 50);
+assert(k == 0 && isequal(x, [1; 2; 3]), 'start at the minimum');
+gr = @(p) [exp(p(1) - 1) - 1 - 4*(p(2) - 2*p(1)); 2*(p(2) - 2*p(1))];
+[x, k] = grad_descent(gr, [0; 0], 0.15, 1e-9, 5000);
+assert(norm(x - [1; 2]) < 1e-7 && k > 100 && k < 5000, 'non-quadratic function with a narrow valley');

@@ -1,0 +1,20 @@
+{
+  "id": "signal_processing/framewise_rms",
+  "title": "Frame-by-frame RMS with optional Hann window",
+  "category": "signal_processing",
+  "difficulty": "medium",
+  "function": "frame_rms",
+  "signature": "[r, tc] = frame_rms(x, fs, L, hop, window)",
+  "tags": [
+    "framing",
+    "rms",
+    "windowing",
+    "hann",
+    "audio"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

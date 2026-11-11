@@ -1,0 +1,14 @@
+[p, dp] = horner_eval([1 -3 2], [0 1 3]);
+assert(isequal(p, [2 0 2]) && isequal(dp, [-3 -1 3]), 'example');
+[p, dp] = horner_eval([2 -3 0 5 -1], [-1.5  0; 0.5  2.25]);
+assert(isequal(size(p), [2 2]) && isequal(size(dp), [2 2]), 'matrix input keeps its shape');
+assert(max(max(abs(p - [11.75  -1; 1.25  27.3359375]))) < 1e-12 && max(max(abs(dp - [-42.25  5; 3.75  50.5625]))) < 1e-12, 'quartic');
+[p, dp] = horner_eval(7, [1; 2; 3]);
+assert(isequal(p, [7; 7; 7]) && isequal(dp, [0; 0; 0]), 'constant polynomial');
+[p, dp] = horner_eval([], [1 2]);
+assert(isequal(p, [0 0]) && isequal(dp, [0 0]), 'empty coefficients');
+[p, dp] = horner_eval([0 0 1 0], 4);
+assert(p == 4 && dp == 1, 'leading zeros');
+x = linspace(-2, 2, 7);
+[p, dp] = horner_eval([1 0 0 0 0 0 -1], x);
+assert(all(abs(p - (x.^6 - 1)) < 1e-12) && all(abs(dp - 6*x.^5) < 1e-12), 'sixth degree');

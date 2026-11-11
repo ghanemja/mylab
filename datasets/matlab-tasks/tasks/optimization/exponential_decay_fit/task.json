@@ -1,0 +1,19 @@
+{
+  "id": "optimization/exponential_decay_fit",
+  "title": "Fit an exponential decay with fminsearch",
+  "category": "optimization",
+  "difficulty": "medium",
+  "function": "fit_decay",
+  "signature": "p = fit_decay(t, y)",
+  "tags": [
+    "fminsearch",
+    "curve-fitting",
+    "nonlinear-least-squares",
+    "initial-guess"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

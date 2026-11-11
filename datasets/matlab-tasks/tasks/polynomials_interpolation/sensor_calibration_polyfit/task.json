@@ -1,0 +1,19 @@
+{
+  "id": "polynomials_interpolation/sensor_calibration_polyfit",
+  "title": "Polynomial calibration curve for a sensor",
+  "category": "polynomials_interpolation",
+  "difficulty": "easy",
+  "function": "calibrate_sensor",
+  "signature": "[c, rmse] = calibrate_sensor(raw, ref, deg)",
+  "tags": [
+    "polyfit",
+    "polyval",
+    "calibration",
+    "least-squares"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

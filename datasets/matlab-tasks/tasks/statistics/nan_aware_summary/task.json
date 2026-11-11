@@ -1,0 +1,19 @@
+{
+  "id": "statistics/nan_aware_summary",
+  "title": "Summary statistics that skip missing readings",
+  "category": "statistics",
+  "difficulty": "easy",
+  "function": "nan_summary",
+  "signature": "s = nan_summary(x)",
+  "tags": [
+    "descriptive-statistics",
+    "nan",
+    "struct",
+    "omitnan"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

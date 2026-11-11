@@ -1,0 +1,19 @@
+{
+  "id": "optimization/fixed_step_gradient_descent",
+  "title": "Gradient descent with a fixed step",
+  "category": "optimization",
+  "difficulty": "easy",
+  "function": "grad_descent",
+  "signature": "[x, iters] = grad_descent(gradf, x0, alpha, tol, maxit)",
+  "tags": [
+    "gradient-descent",
+    "iteration",
+    "vectors",
+    "function-handles"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

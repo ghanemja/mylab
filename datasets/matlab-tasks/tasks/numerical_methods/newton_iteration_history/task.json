@@ -1,0 +1,19 @@
+{
+  "id": "numerical_methods/newton_iteration_history",
+  "title": "Newton's method with iteration history",
+  "category": "numerical_methods",
+  "difficulty": "medium",
+  "function": "newton_solve",
+  "signature": "[x, hist] = newton_solve(f, df, x0, tol, maxit)",
+  "tags": [
+    "root-finding",
+    "newton",
+    "convergence",
+    "function-handles"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "numerical_methods/second_order_differences",
+  "title": "Second-order finite-difference derivative",
+  "category": "numerical_methods",
+  "difficulty": "medium",
+  "function": "fd_derivative",
+  "signature": "dy = fd_derivative(y, h)",
+  "tags": [
+    "finite-differences",
+    "differentiation",
+    "vectorization"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

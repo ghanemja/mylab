@@ -1,0 +1,19 @@
+{
+  "id": "linear_algebra/resistor_network_nodes",
+  "title": "Node voltages of a resistor network",
+  "category": "linear_algebra",
+  "difficulty": "medium",
+  "function": "node_voltages",
+  "signature": "[v, Isrc] = node_voltages(edges, nnodes, vs)",
+  "tags": [
+    "linear-systems",
+    "circuits",
+    "nodal-analysis",
+    "matrix-assembly"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

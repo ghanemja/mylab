@@ -1,0 +1,19 @@
+{
+  "id": "polynomials_interpolation/newton_divided_differences",
+  "title": "Newton divided-difference interpolation",
+  "category": "polynomials_interpolation",
+  "difficulty": "medium",
+  "function": "newton_interp",
+  "signature": "[coef, yq] = newton_interp(x, y, xq)",
+  "tags": [
+    "interpolation",
+    "divided-differences",
+    "newton-form",
+    "nested-evaluation"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

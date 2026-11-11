@@ -1,0 +1,19 @@
+{
+  "id": "polynomials_interpolation/piecewise_linear_lookup",
+  "title": "Piecewise-linear table lookup",
+  "category": "polynomials_interpolation",
+  "difficulty": "easy",
+  "function": "pw_linear",
+  "signature": "yq = pw_linear(x, y, xq)",
+  "tags": [
+    "interpolation",
+    "piecewise-linear",
+    "lookup-table",
+    "nan"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "statistics/mad_outlier_filter",
+  "title": "Robust outlier detection with the median absolute deviation",
+  "category": "statistics",
+  "difficulty": "medium",
+  "function": "mad_outliers",
+  "signature": "[mask, cleaned] = mad_outliers(x, thresh)",
+  "tags": [
+    "outliers",
+    "median",
+    "robust-statistics",
+    "logical-indexing"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "linear_algebra/survey_plane_fit",
+  "title": "Least-squares plane through survey points",
+  "category": "linear_algebra",
+  "difficulty": "easy",
+  "function": "fit_plane",
+  "signature": "[coef, rms] = fit_plane(P)",
+  "tags": [
+    "least-squares",
+    "backslash",
+    "regression",
+    "geometry"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

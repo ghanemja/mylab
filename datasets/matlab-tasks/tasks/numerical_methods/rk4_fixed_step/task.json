@@ -1,0 +1,19 @@
+{
+  "id": "numerical_methods/rk4_fixed_step",
+  "title": "Classical Runge-Kutta integrator for systems",
+  "category": "numerical_methods",
+  "difficulty": "hard",
+  "function": "rk4_integrate",
+  "signature": "[t, Y] = rk4_integrate(f, tspan, y0, h)",
+  "tags": [
+    "ode",
+    "runge-kutta",
+    "systems",
+    "function-handles"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

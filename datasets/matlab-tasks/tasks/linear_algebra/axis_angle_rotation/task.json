@@ -1,0 +1,19 @@
+{
+  "id": "linear_algebra/axis_angle_rotation",
+  "title": "Rotation matrix from axis and angle",
+  "category": "linear_algebra",
+  "difficulty": "easy",
+  "function": "axis_angle_rotation",
+  "signature": "R = axis_angle_rotation(u, theta)",
+  "tags": [
+    "rotation",
+    "rodrigues",
+    "3d-geometry",
+    "orthogonal-matrices"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

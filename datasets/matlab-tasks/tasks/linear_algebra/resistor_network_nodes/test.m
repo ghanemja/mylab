@@ -1,0 +1,13 @@
+[v, I] = node_voltages([1 2 1000; 2 0 1000], 2, 10);
+assert(isequal(size(v), [2 1]) && all(abs(v - [10; 5]) < 1e-12), 'divider voltages');
+assert(abs(I - 0.005) < 1e-15, 'divider current');
+[v, I] = node_voltages([1  2  100; 1  3  220; 2  0  330; 3  0  150; 2  3  470], 3, 12);
+assert(all(abs(v - [12; 8.68501734583947; 5.474169030510886]) < 1e-10), 'bridge voltages');
+assert(abs(I - 0.06281269458473765) < 1e-12, 'bridge source current');
+[v, I] = node_voltages([1  2  10; 2  0  20; 2  3  10; 3  0  20; 3  4  10; 4  0  20; 2  4  50; 2  0  40], 4, 5);
+assert(isequal(size(v), [4 1]) && all(abs(v - [5; 2.1996615905245345; 1.2859560067681894; 1.015228426395939]) < 1e-10), 'ladder with parallel resistors');
+assert(abs(I - 0.2800338409475466) < 1e-12, 'ladder source current');
+[v, I] = node_voltages([1 0 50; 1 0 50], 1, 3);
+assert(isequal(v, 3) && abs(I - 0.12) < 1e-14, 'two parallel resistors straight to ground');
+[v, I] = node_voltages([1 2 100; 2 3 100; 3 0 100], 3, 9);
+assert(all(abs(v - [9; 6; 3]) < 1e-12) && abs(I - 0.03) < 1e-14, 'series chain');

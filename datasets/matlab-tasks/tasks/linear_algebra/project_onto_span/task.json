@@ -1,0 +1,19 @@
+{
+  "id": "linear_algebra/project_onto_span",
+  "title": "Orthogonal projection onto a column space",
+  "category": "linear_algebra",
+  "difficulty": "medium",
+  "function": "project_onto_span",
+  "signature": "[p, r] = project_onto_span(V, x)",
+  "tags": [
+    "projection",
+    "orthogonality",
+    "rank",
+    "subspaces"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

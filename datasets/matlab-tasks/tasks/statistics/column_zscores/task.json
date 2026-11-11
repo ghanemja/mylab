@@ -1,0 +1,19 @@
+{
+  "id": "statistics/column_zscores",
+  "title": "Standardize measurements column by column",
+  "category": "statistics",
+  "difficulty": "easy",
+  "function": "column_zscores",
+  "signature": "Z = column_zscores(X)",
+  "tags": [
+    "standardization",
+    "z-score",
+    "matrices",
+    "broadcasting"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

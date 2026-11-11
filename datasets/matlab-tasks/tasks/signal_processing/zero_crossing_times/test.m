@@ -1,0 +1,16 @@
+tz = zero_crossing_times(0:4, [1 -1 -2 0 3]);
+assert(isequal(size(tz), [1 2]) && all(abs(tz - [0.5 3]) < 1e-15), 'example');
+t = linspace(0, 1, 23);
+tz = zero_crossing_times(t', sin(2*pi*3*t' + 0.3));
+assert(isequal(size(tz), [1 6]), 'row output for column input');
+assert(all(abs(tz - [0.1512026254092617 0.3173212900881503 0.4836979525514676 0.6512026254092617 0.8173212900881504 0.9836979525514675]) < 1e-12), 'interpolated crossings of a sampled sine');
+assert(all(abs(tz - ((1:6)/2 - 0.3/(2*pi))/3) < 0.01), 'close to the true crossing times');
+tz = zero_crossing_times(0:11, [0 0 2 0 -1 -3 0 0 -2 1 0 0]);
+assert(all(abs(tz - [3 26/3]) < 1e-12), 'zero runs: leading zeros, crossing through zero, touching zero');
+tz = zero_crossing_times(0:4, [2 0 0 1 3]);
+assert(isempty(tz) && isequal(size(tz), [1 0]), 'touching zero is not a crossing');
+tz = zero_crossing_times(0:3, [-1 0 0 4]);
+assert(isequal(tz, 1), 'crossing through a run of zeros reported at its first zero');
+tz = zero_crossing_times([0 0.1 0.3], [-2 -1 0]);
+assert(isempty(tz), 'zero at the end is not a crossing');
+assert(isempty(zero_crossing_times(1, 5)), 'single sample');

@@ -1,0 +1,19 @@
+{
+  "id": "statistics/pearson_spearman",
+  "title": "Pearson and Spearman correlation with tied ranks",
+  "category": "statistics",
+  "difficulty": "medium",
+  "function": "correlations",
+  "signature": "[r, rho] = correlations(x, y)",
+  "tags": [
+    "correlation",
+    "ranks",
+    "ties",
+    "nan"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

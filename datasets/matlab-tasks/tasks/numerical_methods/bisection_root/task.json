@@ -1,0 +1,19 @@
+{
+  "id": "numerical_methods/bisection_root",
+  "title": "Bisection root finder with step count",
+  "category": "numerical_methods",
+  "difficulty": "easy",
+  "function": "bisect_root",
+  "signature": "[r, nsteps] = bisect_root(f, a, b, tol)",
+  "tags": [
+    "root-finding",
+    "bisection",
+    "function-handles",
+    "while-loop"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}
