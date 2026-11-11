@@ -249,3 +249,13 @@ def test_empty_cell_concatenation_keeps_shape(m):
     assert m.num("size([cell(0,1); cell(0,1)])").tolist() == [[0, 1]]
     assert m.num("size([cell(1,0), {}])").tolist() == [[1, 0]]
     assert m.num("size([{}, {}])").tolist() == [[0, 0]]
+
+
+def test_empty_array_concatenation_keeps_dimensions(m):
+    assert m.num("size([zeros(0,1) zeros(0,1)])").tolist() == [[0, 2]]
+    assert m.num("size([zeros(0,1), zeros(0,3)])").tolist() == [[0, 4]]
+    assert m.num("size([zeros(1,0); zeros(1,0)])").tolist() == [[2, 0]]
+    assert m.num("size([[] [1 2]])").tolist() == [[1, 2]]
+    m.run("x = []; for k = 1:3, x = [x; k k^2]; end")
+    assert m.num("size(x)").tolist() == [[3, 2]]
+    assert m.str("['' 'ab']") == "ab"

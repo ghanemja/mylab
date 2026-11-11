@@ -342,7 +342,8 @@ def _concat_arrays(items: list[np.ndarray], axis: int) -> np.ndarray:
     if not items:
         return np.zeros((0, 0))
     any_char = any(i.dtype.kind == "U" for i in items)
-    nonempty = [i for i in items if i.size > 0]
+    # Only [] (0x0) is skipped; other empties (0x1, 1x0, ...) take part and add to the size.
+    nonempty = [i for i in items if i.shape != (0, 0)]
     if not nonempty:
         return np.zeros((0, 0), dtype="<U1") if any_char else items[0]
     nd = max([axis + 1] + [i.ndim for i in nonempty])
