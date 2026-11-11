@@ -196,3 +196,49 @@ def test_cross_columnwise(m):
 def test_import_statement_is_accepted(m):
     out = m.run("import matlab.desktop.editor.*\nx = 1;")
     assert out == "" and m.val("x").item() == 1
+
+
+def test_corpus_syntax_forms(m):
+    from mylab.parser import parse
+    # command syntax with paths, URLs, numbers and quoted text
+    for line in ["addpath ../lib", "addpath ./utils", "web http://example.org/page?x=1 -new",
+                 "format long g", "title 'My results'", "mex -largeArrayDims file.c", "im plc 2 2"]:
+        body = parse(line + "\n").body
+        assert len(body) == 1 and type(body[0].expr).__name__ == "Index", line
+    # but these stay expressions
+    m.run("a = 5; b = 2; c = a -1; d = a - b; e = a ./ b; f = [a -1];")
+    assert (m.val("c").item(), m.val("d").item(), m.val("e").item()) == (4, 3, 2.5)
+    assert m.num("f").tolist() == [[5, -1]]
+    # Name=Value arguments
+    m.run("s = struct(alpha=1, beta='x');")
+    assert m.val("s").fields == ["alpha", "beta"]
+    # Octave-style block ends
+    m.run("function r = twice(x)\n  if x > 0\n    r = 2*x;\n  else\n    r = 0;\n  endif\nendfunction\nq = twice(4);")
+    assert m.val("q").item() == 8
+
+
+def test_arguments_block(m):
+    m.run("""
+function out = scale_data(x, factor, opts)
+    arguments
+        x (1,:) double
+        factor (1,1) double {mustBePositive} = 2
+        opts.Offset (1,1) double = 0
+        opts.Label string = "data"
+    end
+    out = struct('values', x * factor + opts.Offset, 'label', opts.Label);
+end
+r1 = scale_data([1 2 3]);
+r2 = scale_data([1 2 3], 10, Offset=1, Label='custom');
+r3 = scale_data(int8([1 2]), 3, 'offset', 5);
+""")
+    assert m.num("r1.values").tolist() == [[2, 4, 6]]
+    assert m.str("r1.label") == "data"
+    assert m.num("r2.values").tolist() == [[11, 21, 31]] and m.str("r2.label") == "custom"
+    assert m.str("class(r3.values)") == "double" and m.num("r3.values").tolist() == [[8, 11]]
+    with pytest.raises(MatlabError, match="positive"):
+        m.run("scale_data([1 2], -1)")
+    with pytest.raises(MatlabError, match="Invalid name-value argument"):
+        m.run("scale_data([1 2], 1, Bogus=3)")
+    with pytest.raises(MatlabError, match="position 1"):
+        m.run("scale_data([1 2; 3 4])")

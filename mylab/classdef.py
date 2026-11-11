@@ -248,36 +248,8 @@ class UserObject(MObject):
     def validate(self, interp, name: str, value: Any) -> Any:
         """Apply a property's class, size and validator functions (as declared in the classdef)."""
         prop = self.cls.prop_defs[name][0]
-        cls = prop.attrs.get("_class")
-        if cls:
-            value = _convert_class(value, cls, name)
-        size = prop.attrs.get("_size")
-        if size:
-            from .values import shape_of
-            shape = list(shape_of(value))
-            ok = len(size) == len(shape) and all(d is None or d == s for d, s in zip(size, shape))
-            if not ok:
-                want = "x".join(":" if d is None else str(d) for d in size)
-                got = "x".join(str(d) for d in shape)
-                raise MatlabError(f"Error setting property '{name}' of class '{self.cls.name}'. "
-                                  f"Value must be {want} (it is {got}).")
-        for v in prop.attrs.get("_validators", []):
-            from .interpreter import Frame
-            frame = Frame(interp, self.cls.functions, name=f"{self.cls.name}.{name} validator")
-            frame.vars[name] = value
-            try:
-                if isinstance(v, A.Ident) and not frame.has(v.name):
-                    interp.call_named(v.name, [value], 0, frame)
-                else:
-                    interp.frames.append(frame)
-                    try:
-                        interp.eval_multi(v, frame, 0)
-                    finally:
-                        interp.frames.pop()
-            except MatlabError as e:
-                raise MatlabError(f"Error setting property '{name}' of class '{self.cls.name}'. {e.message}",
-                                  e.identifier)
-        return value
+        return validate_value(interp, prop.attrs, value, name, self.cls.functions,
+                              f"Error setting property '{name}' of class '{self.cls.name}'.")
 
     def get_field(self, interp, name: str) -> Any:
         self._check_valid()
@@ -434,3 +406,43 @@ def _convert_class(value: Any, cls: str, name: str) -> Any:
     if isinstance(value, np.ndarray) and value.size == 0:
         return value
     raise MatlabError(f"Value of property '{name}' must be of class '{cls}'.")
+
+
+def validate_value(interp, attrs: dict, value: Any, name: str, functions: dict, context: str) -> Any:
+    """Check (and convert) a value against declared class, size and validator functions.
+
+    Shared by classdef property declarations and function ``arguments`` blocks.
+    """
+    cls = attrs.get("_class")
+    if cls:
+        try:
+            value = _convert_class(value, cls, name)
+        except MatlabError as e:
+            raise MatlabError(f"{context} {e.message}", e.identifier) from None
+    size = attrs.get("_size")
+    if size:
+        from .values import shape_of
+        shape = list(shape_of(value))
+        ok = len(size) == len(shape) and all(d is None or d == s for d, s in zip(size, shape))
+        if not ok:
+            want = "x".join(":" if d is None else str(d) for d in size)
+            got = "x".join(str(d) for d in shape)
+            raise MatlabError(f"{context} Value must be {want} (it is {got}).")
+    for v in attrs.get("_validators", []):
+        from .interpreter import Frame
+        frame = Frame(interp, functions, name=f"{name} validator")
+        frame.vars[name.split(".")[-1]] = value
+        if "." in name:
+            frame.vars[name.split(".")[0]] = value
+        try:
+            if isinstance(v, A.Ident) and not frame.has(v.name):
+                interp.call_named(v.name, [value], 0, frame)
+            else:
+                interp.frames.append(frame)
+                try:
+                    interp.eval_multi(v, frame, 0)
+                finally:
+                    interp.frames.pop()
+        except MatlabError as e:
+            raise MatlabError(f"{context} {e.message}", e.identifier) from None
+    return value

@@ -1072,6 +1072,58 @@ class Interpreter:
         name = to_str(f, "function name")
         return self.call_named(name, args, nargout, self.frame)
 
+    def _apply_arguments_block(self, fn: A.Function, args: list[Any], frame: Frame,
+                               functions: dict) -> None:
+        """Defaults, conversion and validation from a function's ``arguments`` block."""
+        from .classdef import validate_value
+        positional = [e for e in fn.arguments if "." not in e.name]
+        name_value = [e for e in fn.arguments if "." in e.name]
+        n_pos = len(positional)
+        self.frames.append(frame)
+        try:
+            for k, entry in enumerate(positional):
+                context = f"Invalid argument at position {k + 1}."
+                if k < len(args):
+                    frame.vars[entry.name] = validate_value(self, entry.attrs, args[k], entry.name, functions,
+                                                            context)
+                elif entry.default is not None:
+                    value = self.eval(entry.default, frame)
+                    frame.vars[entry.name] = validate_value(self, entry.attrs, value, entry.name, functions,
+                                                            context)
+                    frame.missing_inputs = frame.missing_inputs - {entry.name}
+                else:
+                    raise MatlabError(f"Invalid argument at position {k + 1}. Not enough input arguments.",
+                                      "MATLAB:minrhs")
+            if name_value:
+                group = name_value[0].name.split(".")[0]
+                fields = {e.name.split(".", 1)[1]: e for e in name_value}
+                pairs = args[n_pos:]
+                if len(pairs) % 2:
+                    raise MatlabError("Name-value arguments must come in pairs.")
+                given: dict[str, Any] = {}
+                for k in range(0, len(pairs), 2):
+                    key = to_str(pairs[k], "argument name")
+                    match = [f for f in fields if f.lower() == key.lower()]
+                    if not match:
+                        raise MatlabError(f"Invalid name-value argument '{key}'. Valid names are: "
+                                          + ", ".join(fields) + ".")
+                    given[match[0]] = pairs[k + 1]
+                opts = Struct()
+                for fname, entry in fields.items():
+                    context = f"Invalid value for '{fname}' argument."
+                    if fname in given:
+                        opts.set_field(0, fname, validate_value(self, entry.attrs, given[fname], entry.name,
+                                                                functions, context))
+                    elif entry.default is not None:
+                        opts.set_field(0, fname, validate_value(self, entry.attrs, self.eval(entry.default, frame),
+                                                                entry.name, functions, context))
+                frame.vars[group] = opts
+                frame.missing_inputs = frame.missing_inputs - {group}
+            elif len(args) > n_pos and not (fn.params and fn.params[-1] == "varargin"):
+                raise MatlabError(f"Too many input arguments for function '{fn.name}'.", "MATLAB:TooManyInputs")
+        finally:
+            self.frames.pop()
+
     def _enter(self) -> None:
         self.depth += 1
         if self.depth > self.max_depth:
@@ -1088,7 +1140,8 @@ class Interpreter:
         params = fn.params
         has_varargin = bool(params) and params[-1] == "varargin"
         fixed = params[:-1] if has_varargin else params
-        if len(args) > len(fixed) and not has_varargin:
+        takes_name_value = any("." in e.name for e in fn.arguments)
+        if len(args) > len(fixed) and not has_varargin and not takes_name_value:
             raise MatlabError(f"Too many input arguments for function '{fn.name}'.", "MATLAB:TooManyInputs")
         outputs = fn.outputs
         has_varargout = bool(outputs) and outputs[-1] == "varargout"
@@ -1109,6 +1162,8 @@ class Interpreter:
                 frame.vars[p] = args[i]
         if len(args) < len(fixed):
             frame.missing_inputs = frozenset(fixed[len(args):])
+        if fn.arguments:
+            self._apply_arguments_block(fn, args, frame, functions)
         if has_varargin:
             frame.vars["varargin"] = Cell.from_list(args[len(fixed):])
         if preset:

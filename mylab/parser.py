@@ -233,6 +233,9 @@ class Parser:
 
     def parse_property(self, block_attrs: dict) -> A.PropertyDef:
         name = self._ident_name()
+        while self.is_op(".") and self.peek().kind == "ID":  # opts.Name in arguments blocks
+            self.next()
+            name += "." + self.next().value
         attrs = dict(block_attrs)
         # Validation syntax: name (1,1) double {mustBePositive} = default
         if self.is_op("("):
@@ -332,7 +335,12 @@ class Parser:
             self.next()
         stmts: list[A.Node] = []
         nested: dict[str, A.Function] = {}
+        arguments: list[A.PropertyDef] = []
         self.skip_newlines()
+        while self._is_id("arguments") and (self.peek().kind == "NL" or
+                                            (self.peek().kind == "OP" and self.peek().value == "(")):
+            arguments += self.parse_arguments_block()
+            self.skip_newlines()
         while not (self.is_kw("end") or self.tok.kind == "EOF"):
             if self.is_kw("function"):
                 if not getattr(self, "functions_end", False):
@@ -344,9 +352,25 @@ class Parser:
             self.skip_newlines()
         if self.is_kw("end"):
             self.next()
-        fn = A.Function(name, params, outputs, stmts, nested)
+        fn = A.Function(name, params, outputs, stmts, nested, arguments)
         fn.line = start.line
         return fn
+
+    def parse_arguments_block(self) -> list[A.PropertyDef]:
+        """``arguments ... end`` input validation. Output and Repeating blocks are parsed and ignored."""
+        self.next()
+        attrs = self.parse_attributes()
+        self.skip_newlines()
+        entries: list[A.PropertyDef] = []
+        while not self.is_kw("end"):
+            if self.tok.kind == "EOF":
+                raise self.error("missing 'end' for arguments block")
+            entries.append(self.parse_property({}))
+            self.skip_newlines()
+        self.next()
+        if attrs.get("Output") or attrs.get("Repeating"):
+            return []
+        return entries
 
     def _ident_name(self) -> str:
         t = self.tok
@@ -672,6 +696,13 @@ class Parser:
                 if self.is_op(":") and self._colon_is_bare():
                     self.next()
                     args.append(A.Colon())
+                elif closer == ")" and self.tok.kind == "ID" and self.peek().kind == "OP" \
+                        and self.peek().value == "=":
+                    # Name=Value argument syntax: f(x, LineWidth=2) means f(x, 'LineWidth', 2)
+                    name = self.next().value
+                    self.next()
+                    args.append(A.String(name, False))
+                    args.append(self.parse_expr())
                 else:
                     args.append(self.parse_expr())
                 if self.is_op(","):

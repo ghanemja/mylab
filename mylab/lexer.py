@@ -31,6 +31,10 @@ OPERATORS = [
     "=", "(", ")", "[", "]", "{", "}", ",", ";", ":", ".", "@",
 ]
 
+# Octave block terminators, accepted as 'end' so Octave-flavoured files also run.
+OCTAVE_ENDS = {"endfunction", "endif", "endfor", "endwhile", "endswitch", "end_try_catch", "endparfor",
+               "endclassdef", "endmethods", "endproperties", "endevents", "endenumeration"}
+
 # Commands that are commonly typed with command syntax (``hold on``).
 COMMAND_WORDS = {
     "hold", "format", "close", "clear", "clc", "grid", "axis", "figure",
@@ -77,6 +81,7 @@ class Lexer:
         self.brackets: list[str] = []
         import re
         self.in_classdef = bool(re.search(r"^\s*classdef\b", self.text, re.MULTILINE))
+        self.in_arguments = False
 
     # -- helpers ---------------------------------------------------------------
     def peek(self, offset: int = 0) -> str:
@@ -261,7 +266,18 @@ class Lexer:
         while self.peek().isalnum() or self.peek() == "_":
             self.advance()
         word = self.text[start:self.pos]
-        if word in KEYWORDS and not (self.last and self.last.kind == "OP" and self.last.value == "."):
+        after_dot = self.last is not None and self.last.kind == "OP" and self.last.value == "."
+        at_start = len(self.tokens) == 0 or self.tokens[-1].kind == "NL" or (
+            self.tokens[-1].kind == "OP" and self.tokens[-1].value in (";", ","))
+        if word == "arguments" and at_start and not self.brackets:
+            rest = self.text[self.pos:self.text.find("\n", self.pos) if "\n" in self.text[self.pos:] else None]
+            if not rest.split("%")[0].strip() or rest.lstrip().startswith("("):
+                self.in_arguments = True
+        elif word in ("end", *OCTAVE_ENDS) and at_start and self.in_arguments and not after_dot:
+            self.in_arguments = False
+        if word in OCTAVE_ENDS and not after_dot:
+            word = "end"  # Octave's endfunction / endif / ... close blocks like 'end'
+        if word in KEYWORDS and not after_dot:
             self.add("KW", word, line, col, space)
             if word == "end" and self.brackets:
                 self.last.in_index = True  # type: ignore[attr-defined]
@@ -289,17 +305,29 @@ class Lexer:
         # ``disp (x)``, ``hold = 3`` or ``tic + 1`` are expressions, not commands.
         if first in "=(" or (first in "+-*/^<>&|" and len(rest) > 1 and rest[1] in " \t"):
             return False
-        if word in COMMAND_WORDS:
-            return first.isalnum() or first in "_-'"
-        if self.in_classdef:  # 'name string' in a properties block is a declaration, not a command
+        if word in COMMAND_WORDS and (first.isdigit() or first == "_"):
+            return True  # e.g. figure 2, pause 1
+        if (self.in_classdef or self.in_arguments) and word not in COMMAND_WORDS:
+            return False  # 'name string' in properties/arguments blocks is a declaration
+        # Any other name: ``shading interp``, ``colormap jet``, ``clearvars -except y``,
+        # ``addpath ../lib``, ``web http://example.org``, ``title 'Results'``.
+        # The first argument must look like a word, a path or quoted text, so expressions
+        # such as ``a -1``, ``x - y``, ``x ./ y`` or ``a '...`` are left alone.
+        if word in KEYWORDS:
             return False
-        # Any other name: ``shading interp``, ``colormap jet``, ``clearvars -except y``.
-        # Only plain words count, so expressions such as ``a -1`` or ``x '...`` are left alone.
-        body = rest.split("%", 1)[0].rstrip().rstrip(";,").rstrip()
-        if not body or word in KEYWORDS:
-            return False
-        import re
-        return bool(re.fullmatch(r"-?[A-Za-z][\w.]*(\s+-?[A-Za-z_][\w.]*)*", body))
+        nxt = rest[1] if len(rest) > 1 else ""
+        nxt2 = rest[2] if len(rest) > 2 else ""
+        if first.isalpha():
+            return not (nxt in " \t" and len(rest) > 2 and rest[2] in "=")  # 'a b = 1' is not a command
+        if first == "-":
+            return nxt.isalpha()
+        if first in "/\\~":
+            return nxt not in " \t=" and nxt != ""
+        if first == ".":
+            return (nxt == "/" and nxt2 not in " \t") or (nxt == "." and nxt2 in "/\\;, \t%")
+        if first == "'":
+            return "'" in rest[1:]
+        return False
 
     def _command_args(self) -> None:
         """Turn ``word arg1 arg2`` into ``word('arg1', 'arg2')``."""

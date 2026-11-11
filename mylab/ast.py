@@ -184,6 +184,7 @@ class Function(Node):
     outputs: list[str]
     body: list[Node]
     subfunctions: dict[str, "Function"] = field(default_factory=dict)
+    arguments: list = field(default_factory=list)  # PropertyDef entries from 'arguments' blocks
 
 
 @dataclass

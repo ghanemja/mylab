@@ -17,7 +17,8 @@ what mylab printed, and what you expected.
     immutable), abstract classes;
   - constructors, Static methods, inheritance (`obj@Parent`, `method@Parent`);
   - operator overloading, custom `disp`/`display`, `delete`/`isvalid`.
-- Nested functions sharing their parent's variables.
+- Nested functions sharing their parent's variables, `arguments` blocks,
+  `f(Name=Value)` syntax, and Octave-style `endfunction`/`endif` block ends.
 - `MException` objects with MATLAB-style error identifiers;
   `warning('off', id)`.
 - `containers.Map` and `table` (with `readtable`/`writetable` for delimited
@@ -58,7 +59,9 @@ what mylab printed, and what you expected.
   Processing and others are out of scope for now.
 - **Language corners:**
   - `nargin('fname')`, `inputname`, `evalin`/`assignin`, `parfor` (runs as an
-    ordinary `for` loop), the `arguments` validation block;
+    ordinary `for` loop), `Repeating` and `Output` argument blocks (ordinary
+    `arguments` blocks with sizes, classes, validators, defaults and
+    name-value options are supported);
   - command syntax (`hold on`, `shading interp`, `clearvars -except x`) works
     when the arguments are plain words. In classdef files, it works only for
     a fixed list of common commands.
