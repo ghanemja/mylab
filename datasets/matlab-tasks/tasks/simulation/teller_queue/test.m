@@ -1,0 +1,15 @@
+[w, f, q] = teller_queue([0 1 2 10], [3 3 1 2]);
+assert(isequal(w, [0 2 4 0]) && isequal(f, [3 6 7 12]) && q == 2, 'example');
+[w, f, q] = teller_queue([0 0 0], [1 1 1]);
+assert(isequal(w, [0 1 2]) && isequal(f, [1 2 3]) && q == 2, 'simultaneous arrivals');
+[w, f, q] = teller_queue([0 5], [5 1]);
+assert(isequal(w, [0 0]) && isequal(f, [5 6]) && q == 0, 'no waiting');
+[w, f, q] = teller_queue([0 1 3], [3 1 1]);
+assert(isequal(w, [0 2 1]) && q == 1, 'touching waiting intervals do not overlap');
+[w, f, q] = teller_queue([0 1 4 4.5], [2 2 1 1]);
+assert(max(abs(w - [0 1 0 0.5])) < 1e-12 && isequal(f, [2 4 5 6]) && q == 1, 'idle gap');
+[w, f, q] = teller_queue([], []);
+assert(isequal(size(w), [1 0]) && isequal(size(f), [1 0]) && q == 0, 'empty');
+[w, f, q] = teller_queue((0:9)', ones(10, 1) * 2);
+assert(isequal(w, 0:9) && isequal(f, 2:2:20) && q == 5, 'column inputs, growing queue');
+assert(isequal(size(w), [1 10]), 'row outputs');

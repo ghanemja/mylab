@@ -1,0 +1,18 @@
+{
+  "id": "maps_sets/word_counts",
+  "title": "Word counts in a containers.Map",
+  "category": "maps_sets",
+  "difficulty": "easy",
+  "function": "word_counts",
+  "signature": "m = word_counts(text)",
+  "tags": [
+    "containers.Map",
+    "regexp",
+    "counting"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

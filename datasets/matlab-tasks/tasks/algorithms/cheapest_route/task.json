@@ -1,0 +1,18 @@
+{
+  "id": "algorithms/cheapest_route",
+  "title": "Cheapest route with Dijkstra",
+  "category": "algorithms",
+  "difficulty": "hard",
+  "function": "cheapest_route",
+  "signature": "[cost, path] = cheapest_route(W, s, t)",
+  "tags": [
+    "graphs",
+    "dijkstra",
+    "shortest-path"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,18 @@
+[G, t] = settle_sandpile([0 0 0; 0 4 0; 0 0 0]);
+assert(isequal(G, [0 1 0; 1 0 1; 0 1 0]) && t == 1, 'example');
+S = zeros(5); S(3, 3) = 16;
+[G, t] = settle_sandpile(S);
+assert(isequal(G, [0 0 1 0 0; 0 2 1 2 0; 1 1 0 1 1; 0 2 1 2 0; 0 0 1 0 0]) && t == 9, 'sixteen grains');
+A = 3 * ones(3); A(2, 2) = 4;
+[G, t] = settle_sandpile(A);
+assert(isequal(G, [1 3 1; 3 0 3; 1 3 1]) && t == 10, 'avalanche');
+[G, t] = settle_sandpile([9 0 5 4]);
+assert(isequal(G, [1 3 2 1]) && t == 4, 'single row, grains lost at edges');
+[G, t] = settle_sandpile([3 2; 1 0]);
+assert(isequal(G, [3 2; 1 0]) && t == 0, 'already stable');
+[G, t] = settle_sandpile(7);
+assert(G == 3 && t == 1, 'single square loses all toppled grains');
+B = zeros(21); B(11, 11) = 600;
+[G, t] = settle_sandpile(B);
+assert(all(G(:) <= 3) && all(G(:) >= 0) && isequal(G, G.') && isequal(G, fliplr(G)), 'large pile is stable and symmetric');
+assert(sum(G(:)) == 600 && t == 6607, 'grains conserved away from the edge, topple count');

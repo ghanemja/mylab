@@ -1,0 +1,19 @@
+{
+  "id": "file_io/read_settings",
+  "title": "Parse an INI-style settings file",
+  "category": "file_io",
+  "difficulty": "medium",
+  "function": "read_settings",
+  "signature": "s = read_settings(filename)",
+  "tags": [
+    "fgetl",
+    "parsing",
+    "struct",
+    "dynamic-fieldnames"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

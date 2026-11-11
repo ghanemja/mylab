@@ -1,0 +1,18 @@
+{
+  "id": "simulation/life_on_torus",
+  "title": "Game of Life on a torus",
+  "category": "simulation",
+  "difficulty": "medium",
+  "function": "life_on_torus",
+  "signature": "B = life_on_torus(A, k)",
+  "tags": [
+    "cellular-automata",
+    "circshift",
+    "logical"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,11 @@
+[c, e] = scan_log('example.log');
+assert(isequal(c, [2 0 1]), 'example counts');
+assert(strcmp(e, 'cannot open cache'), 'example first error');
+[c, e] = scan_log('mixed.log');
+assert(isequal(c, [1 2 3]), 'mixed counts ignore DEBUG, FATAL and malformed lines');
+assert(strcmp(e, 'boom: code=7 [retry]'), 'message with brackets, trimmed');
+[c, e] = scan_log('quiet.log');
+assert(isequal(c, [0 1 1]) && ischar(e) && isempty(e), 'no errors');
+[c, e] = scan_log('emptymsg.log');
+assert(isequal(c, [2 0 0]) && isempty(e), 'empty first error message');
+assert(isequal(size(c), [1 3]), 'row vector');

@@ -1,0 +1,19 @@
+{
+  "id": "file_io/column_ranges",
+  "title": "Column ranges with readmatrix and writematrix",
+  "category": "file_io",
+  "difficulty": "medium",
+  "function": "column_ranges",
+  "signature": "R = column_ranges(infile, outfile)",
+  "tags": [
+    "readmatrix",
+    "writematrix",
+    "csv",
+    "nan"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

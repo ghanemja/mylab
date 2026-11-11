@@ -1,0 +1,18 @@
+{
+  "id": "data_tables/order_costs",
+  "title": "Look up prices for orders",
+  "category": "data_tables",
+  "difficulty": "medium",
+  "function": "order_costs",
+  "signature": "T = order_costs(orders, prices)",
+  "tags": [
+    "table",
+    "join",
+    "ismember"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

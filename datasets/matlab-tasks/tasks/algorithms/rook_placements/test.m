@@ -1,0 +1,12 @@
+assert(rook_placements(true(3)) == 6, 'full 3x3');
+assert(rook_placements(~eye(4)) == 9, 'no diagonal');
+assert(rook_placements(logical([1 1; 0 0])) == 0, 'blocked row');
+assert(rook_placements(logical(eye(5))) == 1, 'only the diagonal');
+assert(rook_placements(true(1)) == 1, 'single square');
+assert(rook_placements(false(0, 0)) == 1, 'empty board');
+assert(rook_placements(true(6)) == 720, 'full 6x6');
+[i, j] = ndgrid(1:7, 1:7);
+B = mod(i + 2 * j, 5) ~= 0;
+assert(rook_placements(B) == 1092, 'patterned 7x7');
+U = triu(true(5));
+assert(rook_placements(U) == 1, 'upper triangle');

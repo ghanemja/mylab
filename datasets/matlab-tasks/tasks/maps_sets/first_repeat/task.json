@@ -1,0 +1,17 @@
+{
+  "id": "maps_sets/first_repeat",
+  "title": "First repeated value",
+  "category": "maps_sets",
+  "difficulty": "easy",
+  "function": "first_repeat",
+  "signature": "[val, idx] = first_repeat(v)",
+  "tags": [
+    "containers.Map",
+    "loops"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

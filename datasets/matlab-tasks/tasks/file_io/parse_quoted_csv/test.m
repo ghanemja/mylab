@@ -1,0 +1,13 @@
+C = parse_quoted_csv('example.csv');
+assert(iscell(C) && isequal(size(C), [1 4]), 'example size');
+assert(strcmp(C{1}, '7') && strcmp(C{2}, 'Smith, Jo') && strcmp(C{3}, 'said "hi"'), 'example fields');
+assert(ischar(C{4}) && isempty(C{4}), 'trailing empty field');
+C = parse_quoted_csv('people.csv');
+assert(isequal(size(C), [4 3]), 'blank lines skipped');
+assert(isequal(C(1, :), {'name', 'city', 'note'}), 'header row');
+assert(strcmp(C{2, 1}, ' Ada ') && strcmp(C{2, 2}, 'London, UK'), 'untrimmed and quoted comma');
+assert(ischar(C{3, 1}) && isempty(C{3, 1}) && ischar(C{3, 3}) && isempty(C{3, 3}), 'empty fields');
+assert(strcmp(C{3, 2}, '"'), 'field that is a single escaped quote');
+assert(strcmp(C{4, 3}, 'a,"b",c') && strcmp(C{4, 1}, 'x"y'), 'quotes inside fields');
+C = parse_quoted_csv('blank.csv');
+assert(iscell(C) && isempty(C), 'no records');

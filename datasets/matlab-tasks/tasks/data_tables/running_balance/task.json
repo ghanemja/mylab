@@ -1,0 +1,18 @@
+{
+  "id": "data_tables/running_balance",
+  "title": "Running balance per account",
+  "category": "data_tables",
+  "difficulty": "medium",
+  "function": "running_balance",
+  "signature": "T = running_balance(T)",
+  "tags": [
+    "table",
+    "grouping",
+    "cumulative-sum"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

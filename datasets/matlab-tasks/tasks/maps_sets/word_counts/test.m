@@ -1,0 +1,13 @@
+m = word_counts('The cat saw the other cat.');
+assert(isa(m, 'containers.Map') && strcmp(m.KeyType, 'char'), 'map with char keys');
+assert(m.Count == 4 && m('the') == 2 && m('cat') == 2 && m('saw') == 1, 'example');
+assert(~isKey(m, 'The'), 'keys are lower case');
+m = word_counts('don''t STOP, stop-stop! x2y 42');
+assert(isequal(sort(keys(m)), {'don', 'stop', 't', 'x', 'y'}), 'separators split words');
+assert(m('stop') == 3 && m('x') == 1, 'counts across case');
+e = word_counts('123 ... !!');
+assert(isa(e, 'containers.Map') && e.Count == 0, 'no words');
+e = word_counts('');
+assert(e.Count == 0, 'empty text');
+v = values(word_counts('a b a'));
+assert(isa(v{1}, 'double') && v{1} == 2, 'double counts');

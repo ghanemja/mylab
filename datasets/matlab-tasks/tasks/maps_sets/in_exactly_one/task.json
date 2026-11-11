@@ -1,0 +1,18 @@
+{
+  "id": "maps_sets/in_exactly_one",
+  "title": "Values in exactly one of two sets",
+  "category": "maps_sets",
+  "difficulty": "easy",
+  "function": "in_exactly_one",
+  "signature": "c = in_exactly_one(a, b)",
+  "tags": [
+    "sets",
+    "setxor",
+    "unique"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

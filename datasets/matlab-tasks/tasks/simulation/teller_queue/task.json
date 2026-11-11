@@ -1,0 +1,18 @@
+{
+  "id": "simulation/teller_queue",
+  "title": "Single-teller queue simulation",
+  "category": "simulation",
+  "difficulty": "hard",
+  "function": "teller_queue",
+  "signature": "[wait, finish, maxQueue] = teller_queue(arrive, service)",
+  "tags": [
+    "queueing",
+    "event-simulation",
+    "sorting"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

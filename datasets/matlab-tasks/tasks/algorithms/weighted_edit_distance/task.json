@@ -1,0 +1,17 @@
+{
+  "id": "algorithms/weighted_edit_distance",
+  "title": "Edit distance with custom costs",
+  "category": "algorithms",
+  "difficulty": "medium",
+  "function": "weighted_edit_distance",
+  "signature": "d = weighted_edit_distance(a, b, costIns, costDel, costSub)",
+  "tags": [
+    "dynamic-programming",
+    "strings"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

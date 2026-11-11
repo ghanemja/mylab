@@ -1,0 +1,15 @@
+[v, i] = first_repeat([4 7 1 7 4]);
+assert(v == 7 && i == 4, 'example 1');
+[v, i] = first_repeat([1 2 3]);
+assert(isnan(v) && i == 0, 'example 2');
+[v, i] = first_repeat([]);
+assert(isnan(v) && i == 0, 'empty');
+[v, i] = first_repeat([9; 9]);
+assert(v == 9 && i == 2, 'adjacent, column');
+[v, i] = first_repeat([-1 0 2.5 -3 0 -1]);
+assert(v == 0 && i == 5, 'zero and negatives');
+[v, i] = first_repeat(8);
+assert(isnan(v) && i == 0, 'scalar');
+w = [1:500, 250];
+[v, i] = first_repeat(w);
+assert(v == 250 && i == 501, 'long vector');

@@ -1,0 +1,10 @@
+assert(isequal(task_order(4, [3 1; 2 1]), [2 3 1 4]), 'example 1');
+r = task_order(3, [1 2; 2 3; 3 1]);
+assert(isempty(r) && isequal(size(r), [1 0]), 'cycle gives 1x0');
+assert(isequal(task_order(5, zeros(0, 2)), 1:5), 'no rules');
+assert(isequal(task_order(1, zeros(0, 2)), 1), 'single task');
+assert(isempty(task_order(2, [2 2])), 'self rule');
+assert(isequal(task_order(5, [5 4; 4 3; 3 2; 2 1]), [5 4 3 2 1]), 'reverse chain');
+assert(isequal(task_order(6, [4 2; 4 2; 6 1; 5 3; 1 3]), [4 2 5 6 1 3]), 'repeated rule');
+assert(isequal(task_order(6, [6 1; 1 2; 2 3; 4 5]), [4 5 6 1 2 3]), 'smallest-first choice');
+assert(isempty(task_order(6, [1 2; 3 4; 4 5; 5 3])), 'cycle not involving task 1');

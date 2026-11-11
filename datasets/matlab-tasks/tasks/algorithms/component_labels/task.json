@@ -1,0 +1,18 @@
+{
+  "id": "algorithms/component_labels",
+  "title": "Connected component labels from an edge list",
+  "category": "algorithms",
+  "difficulty": "medium",
+  "function": "component_labels",
+  "signature": "labels = component_labels(n, edges)",
+  "tags": [
+    "graphs",
+    "connected-components",
+    "union-find"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

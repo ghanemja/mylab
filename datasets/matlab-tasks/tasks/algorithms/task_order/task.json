@@ -1,0 +1,17 @@
+{
+  "id": "algorithms/task_order",
+  "title": "Smallest valid task order",
+  "category": "algorithms",
+  "difficulty": "hard",
+  "function": "task_order",
+  "signature": "order = task_order(n, deps)",
+  "tags": [
+    "graphs",
+    "topological-sort"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

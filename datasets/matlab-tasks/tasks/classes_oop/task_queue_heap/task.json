@@ -1,0 +1,19 @@
+{
+  "id": "classes_oop/task_queue_heap",
+  "title": "Priority task queue with FIFO ties",
+  "category": "classes_oop",
+  "difficulty": "hard",
+  "function": "TaskQueue",
+  "signature": "q = TaskQueue()",
+  "tags": [
+    "classdef",
+    "handle",
+    "heap",
+    "priority-queue"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

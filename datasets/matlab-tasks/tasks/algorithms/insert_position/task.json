@@ -1,0 +1,17 @@
+{
+  "id": "algorithms/insert_position",
+  "title": "Leftmost insertion point by binary search",
+  "category": "algorithms",
+  "difficulty": "easy",
+  "function": "insert_position",
+  "signature": "idx = insert_position(v, x)",
+  "tags": [
+    "binary-search",
+    "while"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

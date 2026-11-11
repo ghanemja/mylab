@@ -1,0 +1,12 @@
+g = anagram_groups({'listen', 'Stone', 'silent', 'notes', 'cat', 'Tinsel'});
+assert(iscell(g) && isequal(size(g), [1 3]), 'three groups in a row');
+assert(isequal(g{1}, {'listen', 'silent', 'Tinsel'}), 'first group, original case');
+assert(isequal(g{2}, {'Stone', 'notes'}) && isequal(g{3}, {'cat'}), 'other groups');
+g = anagram_groups({});
+assert(iscell(g) && isequal(size(g), [1 0]), 'empty input');
+g = anagram_groups({'a', 'A', 'a', 'b'});
+assert(numel(g) == 2 && isequal(g{1}, {'a', 'A', 'a'}) && isequal(g{2}, {'b'}), 'duplicates kept');
+g = anagram_groups({'aab', 'abb', 'bab', 'aba'});
+assert(isequal(g, {{'aab', 'aba'}, {'abb', 'bab'}}), 'letter multiplicities matter');
+g = anagram_groups({'x'});
+assert(isequal(g, {{'x'}}), 'single word');

@@ -1,0 +1,18 @@
+{
+  "id": "classes_oop/rect_value_class",
+  "title": "Rectangle value class with dependent properties",
+  "category": "classes_oop",
+  "difficulty": "easy",
+  "function": "Rect",
+  "signature": "r = Rect(width, height)",
+  "tags": [
+    "classdef",
+    "value-class",
+    "dependent-properties"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

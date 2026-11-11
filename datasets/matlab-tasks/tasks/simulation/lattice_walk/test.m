@@ -1,0 +1,17 @@
+P = lattice_walk(0);
+assert(isequal(P, [0 0]), 'zero steps');
+P = lattice_walk(1);
+assert(isequal(size(P), [2 2]) && sum(abs(P(2, :))) == 1, 'one step');
+n = 2000;
+P = lattice_walk(n);
+assert(isequal(size(P), [n + 1 2]) && isa(P, 'double'), 'size and class');
+assert(isequal(P(1, :), [0 0]), 'starts at origin');
+D = diff(P, 1, 1);
+assert(all(sum(abs(D), 2) == 1), 'unit steps along one axis');
+assert(all(P(:) == round(P(:))), 'integer positions');
+dirs = [any(D(:, 1) == 1), any(D(:, 1) == -1), any(D(:, 2) == 1), any(D(:, 2) == -1)];
+assert(all(dirs), 'all four directions occur');
+Q = lattice_walk(n);
+assert(~isequal(P, Q), 'walks are random');
+frac = mean(D(:, 1) ~= 0);
+assert(frac > 0.4 && frac < 0.6, 'horizontal and vertical moves roughly balanced');

@@ -1,0 +1,19 @@
+{
+  "id": "data_tables/region_totals",
+  "title": "Sales totals per region",
+  "category": "data_tables",
+  "difficulty": "medium",
+  "function": "region_totals",
+  "signature": "S = region_totals(T)",
+  "tags": [
+    "table",
+    "grouping",
+    "accumarray",
+    "unique"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": false
+  }
+}

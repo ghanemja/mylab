@@ -1,0 +1,11 @@
+v = [1 3 3 5];
+assert(insert_position(v, 3) == 2, 'leftmost of duplicates');
+assert(insert_position(v, 4) == 4, 'between values');
+assert(insert_position(v, 9) == 5, 'after the end');
+assert(insert_position(v, -2) == 1, 'before the start');
+assert(insert_position([], 7) == 1, 'empty vector');
+assert(insert_position([2; 2; 2], 2) == 1, 'all equal, column');
+w = 1:2:999999;
+assert(insert_position(w, 500000) == 250001, 'large vector');
+assert(insert_position(w, 999999) == 500000, 'last element');
+assert(insert_position([0.1 0.2 0.3], 0.25) == 3, 'non-integers');

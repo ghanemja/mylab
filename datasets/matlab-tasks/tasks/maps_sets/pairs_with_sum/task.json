@@ -1,0 +1,18 @@
+{
+  "id": "maps_sets/pairs_with_sum",
+  "title": "All index pairs with a given sum",
+  "category": "maps_sets",
+  "difficulty": "medium",
+  "function": "pairs_with_sum",
+  "signature": "P = pairs_with_sum(v, target)",
+  "tags": [
+    "containers.Map",
+    "hashing",
+    "sortrows"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "classes_oop/poly_class",
+  "title": "Polynomial value class",
+  "category": "classes_oop",
+  "difficulty": "hard",
+  "function": "Poly",
+  "signature": "p = Poly(coeffs)",
+  "tags": [
+    "classdef",
+    "operator-overloading",
+    "polynomials",
+    "long-division"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

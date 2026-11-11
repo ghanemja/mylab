@@ -1,0 +1,19 @@
+{
+  "id": "maps_sets/jaccard_matrix",
+  "title": "Pairwise Jaccard similarity",
+  "category": "maps_sets",
+  "difficulty": "medium",
+  "function": "jaccard_matrix",
+  "signature": "J = jaccard_matrix(sets)",
+  "tags": [
+    "sets",
+    "intersect",
+    "union",
+    "matrices"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

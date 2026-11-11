@@ -1,0 +1,11 @@
+[m, s] = merge_inventories({'bolt', 'nut'}, [5 2], {'nut', 'gear', 'bolt'}, [-2 -1 1]);
+assert(isa(m, 'containers.Map') && m.Count == 2, 'zero total removed');
+assert(m('bolt') == 6 && m('gear') == -1 && ~isKey(m, 'nut'), 'example totals');
+assert(isequal(s, {'gear'}), 'example shortage');
+[m, s] = merge_inventories({}, [], {}, []);
+assert(m.Count == 0 && iscell(s) && isequal(size(s), [1 0]), 'all empty');
+[m, s] = merge_inventories({'z'; 'Z'; 'z'}, [1; 1; 1], {}, []);
+assert(m('z') == 2 && m('Z') == 1 && isequal(size(s), [1 0]), 'repeats in one list, case-sensitive');
+[m, s] = merge_inventories({'pin', 'cog', 'axle'}, [-1 -3 0.5], {'cog', 'axle', 'belt'}, [3 -2 -4]);
+assert(isequal(s, {'axle', 'belt', 'pin'}), 'sorted shortages');
+assert(~isKey(m, 'cog') && m('axle') == -1.5 && m.Count == 3, 'mixed totals');

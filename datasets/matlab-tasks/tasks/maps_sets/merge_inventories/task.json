@@ -1,0 +1,18 @@
+{
+  "id": "maps_sets/merge_inventories",
+  "title": "Merge two inventories",
+  "category": "maps_sets",
+  "difficulty": "medium",
+  "function": "merge_inventories",
+  "signature": "[m, short] = merge_inventories(names1, qty1, names2, qty2)",
+  "tags": [
+    "containers.Map",
+    "aggregation",
+    "cell-arrays"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

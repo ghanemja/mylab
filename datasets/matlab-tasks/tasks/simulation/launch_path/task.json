@@ -1,0 +1,18 @@
+{
+  "id": "simulation/launch_path",
+  "title": "Projectile flight by Euler stepping",
+  "category": "simulation",
+  "difficulty": "medium",
+  "function": "launch_path",
+  "signature": "[x, y, range] = launch_path(v0, angleDeg, dt)",
+  "tags": [
+    "euler-method",
+    "physics",
+    "while"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

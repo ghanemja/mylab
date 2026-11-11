@@ -1,0 +1,18 @@
+{
+  "id": "algorithms/rook_placements",
+  "title": "Counting rook placements on a holey board",
+  "category": "algorithms",
+  "difficulty": "hard",
+  "function": "rook_placements",
+  "signature": "count = rook_placements(board)",
+  "tags": [
+    "backtracking",
+    "recursion",
+    "combinatorics"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

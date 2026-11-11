@@ -1,0 +1,19 @@
+{
+  "id": "classes_oop/ledger_account",
+  "title": "Bank ledger with transfers",
+  "category": "classes_oop",
+  "difficulty": "medium",
+  "function": "Ledger",
+  "signature": "acct = Ledger(owner)",
+  "tags": [
+    "classdef",
+    "handle",
+    "dependent-properties",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

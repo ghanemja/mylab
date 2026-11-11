@@ -1,0 +1,19 @@
+{
+  "id": "file_io/write_report",
+  "title": "Write an aligned text report",
+  "category": "file_io",
+  "difficulty": "medium",
+  "function": "write_report",
+  "signature": "total = write_report(filename, names, values)",
+  "tags": [
+    "fprintf",
+    "sprintf",
+    "formatting",
+    "text-files"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

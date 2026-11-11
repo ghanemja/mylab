@@ -1,0 +1,10 @@
+assert(weighted_edit_distance('kitten', 'sitting', 1, 1, 1) == 3, 'example 1');
+assert(weighted_edit_distance('ab', 'ba', 1, 1, 5) == 2, 'example 2');
+assert(weighted_edit_distance('abc', '', 1, 2, 1) == 6, 'delete all');
+assert(weighted_edit_distance('', 'ab', 3, 1, 1) == 6, 'insert all');
+assert(weighted_edit_distance('', '', 1, 1, 1) == 0, 'both empty');
+assert(weighted_edit_distance('matlab', 'matlab', 1, 1, 1) == 0, 'identical');
+assert(weighted_edit_distance('abc', 'abd', 1, 1, 3) == 2, 'del+ins cheaper than sub');
+assert(weighted_edit_distance('abc', 'abd', 1, 1, 1.5) == 1.5, 'sub cheaper');
+assert(weighted_edit_distance('Case', 'case', 1, 1, 1) == 1, 'case-sensitive');
+assert(abs(weighted_edit_distance('sunday', 'saturday', 0.5, 2, 1) - 2) < 1e-12, 'mixed costs');

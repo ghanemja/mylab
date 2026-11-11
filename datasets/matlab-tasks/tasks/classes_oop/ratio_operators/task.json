@@ -1,0 +1,18 @@
+{
+  "id": "classes_oop/ratio_operators",
+  "title": "Exact fractions with operator overloading",
+  "category": "classes_oop",
+  "difficulty": "medium",
+  "function": "Ratio",
+  "signature": "q = Ratio(num, den)",
+  "tags": [
+    "classdef",
+    "operator-overloading",
+    "gcd"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}
