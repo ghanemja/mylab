@@ -1,0 +1,62 @@
+name: Datasets
+
+# Weekly: re-index the MATLAB Corpus and verify the MATLAB Tasks benchmark on
+# mylab and GNU Octave. Results appear in the job summary and as artifacts.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Fetch pinned repositories
+        run: python datasets/matlab-corpus/tools/fetch.py --cache "$RUNNER_TEMP/corpus" --jobs 16
+      - name: Index
+        run: python datasets/matlab-corpus/tools/index.py --cache "$RUNNER_TEMP/corpus"
+      - name: Summary
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          s = json.load(open("datasets/matlab-corpus/stats.json"))
+          print("## MATLAB Corpus")
+          print(f"- repositories: {s['repositories']}, files: {s['files']}, lines: {s['lines']}")
+          print(f"- mylab parse rate: **{100 * s['mylab_parse_rate']:.2f}%**")
+          print("\n### Top parse errors\n")
+          for k, v in list(s["top_parse_errors"].items())[:10]:
+              print(f"- {v} x `{k}`")
+          PY
+          head -40 datasets/matlab-corpus/GAPS.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corpus-index
+          path: |
+            datasets/matlab-corpus/stats.json
+            datasets/matlab-corpus/GAPS.md
+            datasets/matlab-corpus/files.jsonl.gz
+
+  tasks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends octave
+      - name: Verify tasks on mylab and Octave
+        working-directory: datasets/matlab-tasks
+        run: |
+          python tools/run_tasks.py --verify --json results.json > summary.txt || true
+          { echo "## MATLAB Tasks"; echo '```'; cat summary.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tasks-results
+          path: datasets/matlab-tasks/results.json
