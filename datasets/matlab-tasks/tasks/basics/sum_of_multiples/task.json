@@ -1,0 +1,18 @@
+{
+  "id": "basics/sum_of_multiples",
+  "title": "Sum of multiples below a limit",
+  "category": "basics",
+  "difficulty": "easy",
+  "function": "sum_of_multiples",
+  "signature": "s = sum_of_multiples(factors, limit)",
+  "tags": [
+    "loops",
+    "logical-indexing",
+    "mod"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}
