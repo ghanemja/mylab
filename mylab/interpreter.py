@@ -349,7 +349,9 @@ class Interpreter:
             obj = frame.get(node.name)
             if not isinstance(obj, UserObject):
                 raise MatlabError(f"'{node.name}@{node.parent}' must be called on the object being constructed.")
-            return [parent.run_constructor(self, obj, args)]
+            result = parent.run_constructor(self, obj, args)
+            frame.set(node.name, result)  # obj@Parent(...) as a statement updates obj in place
+            return [] if nargout == 0 else [result]
         if node.name not in parent.methods:
             raise MatlabError(f"No method '{node.name}' in superclass '{node.parent}'.")
         return parent.call(self, node.name, args, nargout)

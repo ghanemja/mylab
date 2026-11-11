@@ -582,16 +582,31 @@ def _tail(interp, args, nargout):
 def _sortrows(interp, args, nargout):
     t = args[0]
     keys = t.names[:1]
-    descend = False
-    for a in args[1:]:
-        if is_text(a) and text(a).lower() in ("ascend", "descend"):
-            descend = text(a).lower() == "descend"
-        elif is_text(a) or isinstance(a, (Cell, StringArray)):
-            keys = _names_from(a)
+    directions: list[bool] = []  # True = descending, one per key (or one for all)
+    rest = list(args[1:])
+    if rest and not (is_text(rest[0]) and text(rest[0]).lower() in ("ascend", "descend")):
+        spec = rest.pop(0)
+        if is_text(spec) or isinstance(spec, (Cell, StringArray)):
+            keys = _names_from(spec)
         else:
-            keys = [t.names[int(k) - 1] for k in num(a).flatten()]
+            nums = [int(k) for k in num(spec).flatten()]
+            keys = [t.names[abs(k) - 1] for k in nums]
+            directions = [k < 0 for k in nums]
+    if rest:
+        d = rest.pop(0)
+        words = _names_from(d) if isinstance(d, (Cell, StringArray)) else [text(d)]
+        for w in words:
+            if w.lower() not in ("ascend", "descend"):
+                raise MatlabError(f"sortrows: unknown sort direction '{w}'.")
+        directions = [w.lower() == "descend" for w in words]
+    if not directions:
+        directions = [False] * len(keys)
+    elif len(directions) == 1:
+        directions = directions * len(keys)
+    elif len(directions) != len(keys):
+        raise MatlabError("sortrows: give one sort direction, or one per sorting variable.")
     order = np.arange(t.nrows)
-    for key in reversed(keys):
+    for key, descend in reversed(list(zip(keys, directions))):
         col = t.columns[t.var_index(key)]
         if isinstance(col, (Cell, StringArray)):
             vals = [to_str(x) if isinstance(col, Cell) else (x or "") for x in col.data[order, 0]]

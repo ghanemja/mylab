@@ -259,3 +259,31 @@ def test_empty_array_concatenation_keeps_dimensions(m):
     m.run("x = []; for k = 1:3, x = [x; k k^2]; end")
     assert m.num("size(x)").tolist() == [[3, 2]]
     assert m.str("['' 'ab']") == "ab"
+
+
+def test_bit_functions_and_table_sort_directions(m):
+    assert m.num("bitget(6, 1:3)").tolist() == [[0, 1, 1]]
+    assert m.num("bitset(8, 1)").item() == 9 and m.num("bitset(9, 1, 0)").item() == 8
+    assert m.num("bitcmp(uint8(5))").item() == 250
+    m.run("T = table([2;1;3], {'b';'a';'c'}, 'VariableNames', {'A', 'B'});")
+    m.run("S = sortrows(T, {'A'}, {'descend'}); S2 = sortrows(T, -1);")
+    assert m.num("S.A").tolist() == [[3], [2], [1]] and m.num("S2.A").tolist() == [[3], [2], [1]]
+    m.run("U = table([1;1;2], {'x';'y';'z'}, 'VariableNames', {'Q', 'N'});")
+    m.run("V = sortrows(U, {'Q', 'N'}, {'descend', 'ascend'});")
+    assert m.str("V.N{1}") == "z" and m.str("V.N{2}") == "x"
+
+
+def test_value_class_super_constructor_statement(m, tmp_path):
+    (tmp_path / "Base1.m").write_text("classdef Base1\n properties, Name = '', end\n methods\n"
+                                      "  function obj = Base1(name), if nargin > 0, obj.Name = name; end, end\n"
+                                      " end\nend\n")
+    (tmp_path / "Sub1.m").write_text("classdef Sub1 < Base1\n properties, R, end\n methods\n"
+                                     "  function obj = Sub1(r), obj@Base1('sub'); obj.R = r; end\n end\nend\n")
+    m.interp.path.insert(0, str(tmp_path))
+    m.run("s = Sub1(3);")
+    assert m.str("s.Name") == "sub" and m.num("s.R").item() == 3
+
+
+def test_empties_dropped_next_to_nonempty(m):
+    assert m.num("size([zeros(1,0); 5])").tolist() == [[1, 1]]
+    assert m.num("size([zeros(1,0), [1;2]])").tolist() == [[2, 1]]

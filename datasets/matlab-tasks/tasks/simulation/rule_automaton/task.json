@@ -12,7 +12,7 @@
   ],
   "license": "MIT",
   "verified": {
-    "mylab": false,
+    "mylab": true,
     "octave": true
   }
 }

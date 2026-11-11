@@ -2209,3 +2209,13 @@ HELP["ode23s"] = HELP["ode23t"] = HELP["ode23tb"] = HELP["ode15s"]
 HELP["import"] = (["import pkg.*", "import pkg.name"],
                   "Accepted for compatibility so that code importing packages still runs. mylab has no "
                   "package namespaces, so the statement has no effect.")
+HELP.update({
+    "bitget": ("b = bitget(a, bit)",
+               "Value (0 or 1) of bit number bit (1 = least significant) of each non-negative integer in a. "
+               "Example: bitget(6, 1:3) is [0 1 1]."),
+    "bitset": (["c = bitset(a, bit)", "c = bitset(a, bit, value)"],
+               "Sets bit number bit of a to 1 (or to value, 0 or 1). Example: bitset(8, 1) is 9."),
+    "bitcmp": (["c = bitcmp(a)", "c = bitcmp(a, 'uint8')"],
+               "Bitwise complement of non-negative integers within the width of the integer class "
+               "(8, 16, 32 or 64 bits)."),
+})

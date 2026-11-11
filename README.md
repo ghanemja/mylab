@@ -87,6 +87,17 @@ r.figures              # PNG bytes of any plots
 
 ---
 
+## Open datasets
+
+mylab also publishes two datasets for the community (see [datasets/](datasets/)):
+
+- **[MATLAB Tasks](datasets/matlab-tasks/):** 157 original programming tasks
+  with reference solutions and tests. Use them to benchmark AI code models on
+  MATLAB, for graded teaching exercises, or to check MATLAB-language engines.
+- **[MATLAB Corpus](datasets/matlab-corpus/):** 29,114 real-world `.m` files
+  (4.1M lines) from 200 permissively licensed repositories, pinned and
+  annotated.
+
 ## What's supported
 
 | Area | Supported |

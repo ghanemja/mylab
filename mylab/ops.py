@@ -342,10 +342,13 @@ def _concat_arrays(items: list[np.ndarray], axis: int) -> np.ndarray:
     if not items:
         return np.zeros((0, 0))
     any_char = any(i.dtype.kind == "U" for i in items)
-    # Only [] (0x0) is skipped; other empties (0x1, 1x0, ...) take part and add to the size.
-    nonempty = [i for i in items if i.shape != (0, 0)]
+    # Empty operands are dropped when anything non-empty is present ([zeros(1,0); 5] is 5).
+    # When everything is empty, all but [] (0x0) take part, so [zeros(0,1) zeros(0,1)] is 0x2.
+    nonempty = [i for i in items if i.size > 0]
     if not nonempty:
-        return np.zeros((0, 0), dtype="<U1") if any_char else items[0]
+        nonempty = [i for i in items if i.shape != (0, 0)]
+        if not nonempty:
+            return np.zeros((0, 0), dtype="<U1") if any_char else items[0]
     nd = max([axis + 1] + [i.ndim for i in nonempty])
     nonempty = [i.reshape(i.shape + (1,) * (nd - i.ndim)) if i.ndim < nd else i for i in nonempty]
     if any_char:

@@ -1305,3 +1305,31 @@ def _bitshift(interp, args, nargout):
     return (a << n if n >= 0 else a >> -n).astype(float)
 
 
+
+
+@builtin("bitget")
+def _bitget(interp, args, nargout):
+    a, b = np.broadcast_arrays(fnum(args[0]).astype(np.uint64), fnum(args[1]).astype(np.int64))
+    if np.any(b < 1) or np.any(b > 64):
+        raise MatlabError("bitget: bit positions must be between 1 and 64.")
+    return ((a >> (b - 1).astype(np.uint64)) & np.uint64(1)).astype(float)
+
+
+@builtin("bitset")
+def _bitset(interp, args, nargout):
+    a, b = np.broadcast_arrays(fnum(args[0]).astype(np.uint64), fnum(args[1]).astype(np.int64))
+    v = fnum(args[2]) if len(args) > 2 else np.ones((1, 1))
+    v = np.broadcast_to(v, a.shape) != 0
+    mask = np.left_shift(np.uint64(1), (b - 1).astype(np.uint64))
+    return np.where(v, a | mask, a & ~mask).astype(float)
+
+
+@builtin("bitcmp")
+def _bitcmp(interp, args, nargout):
+    a = num(args[0])
+    bits = {np.dtype(np.uint8): 8, np.dtype(np.uint16): 16, np.dtype(np.uint32): 32}.get(a.dtype, 53)
+    if len(args) > 1:
+        from ..values import to_str
+        bits = {"uint8": 8, "uint16": 16, "uint32": 32, "uint64": 64}.get(to_str(args[1]), bits)
+    full = (1 << bits) - 1
+    return np.vectorize(lambda x: float(full ^ int(x)), otypes=[float])(a)
