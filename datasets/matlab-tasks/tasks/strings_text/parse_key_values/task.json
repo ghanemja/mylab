@@ -1,0 +1,19 @@
+{
+  "id": "strings_text/parse_key_values",
+  "title": "Parse a key=value settings string",
+  "category": "strings_text",
+  "difficulty": "medium",
+  "function": "parse_key_values",
+  "signature": "cfg = parse_key_values(s)",
+  "tags": [
+    "strsplit",
+    "dynamic-fields",
+    "type-conversion",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

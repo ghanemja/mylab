@@ -1,0 +1,14 @@
+M = pad_to_matrix({[1 2 3], [4; 5], [], 6}, 0);
+assert(isequal(M, [1 2 3; 4 5 0; 0 0 0; 6 0 0]), 'example with zero fill');
+M = pad_to_matrix({[1 2], 3});
+assert(isequal(size(M), [2 2]) && isequal(M(:, 1), [1; 3]) && M(1, 2) == 2 && isnan(M(2, 2)), 'default NaN');
+M = pad_to_matrix({[7; 8; 9]}, -1);
+assert(isequal(M, [7 8 9]), 'single column vector becomes a row');
+M = pad_to_matrix({1; [2 3]; [4 5 6]}, 0);
+assert(isequal(M, [1 0 0; 2 3 0; 4 5 6]), 'column cell');
+M = pad_to_matrix({[], []});
+assert(isequal(size(M), [2 0]), 'all empty');
+M = pad_to_matrix({});
+assert(isequal(size(M), [0 0]), 'empty cell');
+M = pad_to_matrix({[1 NaN], 5}, 9);
+assert(isnan(M(1, 2)) && isequal(M(2, :), [5 9]), 'NaN data kept, custom fill');

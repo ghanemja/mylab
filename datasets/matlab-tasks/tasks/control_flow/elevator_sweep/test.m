@@ -1,0 +1,14 @@
+[o, d] = elevator_sweep(5, [7 2 9 5 3]);
+assert(isequal(o, [5 7 9 3 2]) && d == 11, 'example up first');
+[o, d] = elevator_sweep(10, [4 12 8]);
+assert(isequal(o, [8 4 12]) && d == 14, 'example down first');
+[o, d] = elevator_sweep(0, [3; 3; 1; 3]);
+assert(isequal(o, [1 3]) && d == 3, 'duplicates, column input, one direction');
+[o, d] = elevator_sweep(2, []);
+assert(isempty(o) && size(o, 1) == 1 && d == 0, 'no requests');
+[o, d] = elevator_sweep(4, [4 4]);
+assert(isequal(o, 4) && d == 0, 'only the current floor');
+[o, d] = elevator_sweep(0, [-2 5 -1]);
+assert(isequal(o, [-1 -2 5]) && d == 9, 'basement first');
+[o, d] = elevator_sweep(3, [3 1 6 2]);
+assert(isequal(o, [3 2 1 6]) && d == 7, 'current floor plus both directions');

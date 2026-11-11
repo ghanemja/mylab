@@ -1,0 +1,10 @@
+assert(integer_sqrt(0) == 0, 'zero');
+assert(integer_sqrt(1) == 1, 'one');
+assert(integer_sqrt(15) == 3, 'just below a square');
+assert(integer_sqrt(16) == 4, 'perfect square');
+assert(integer_sqrt(1e12 + 5) == 1e6, 'large non-square');
+k = 94906265;
+assert(integer_sqrt(k^2) == k, 'large perfect square');
+assert(integer_sqrt(k^2 - 1) == k - 1, 'sqrt rounds up here, answer must not');
+assert(integer_sqrt(2^52) == 2^26, 'power of two');
+assert(isa(integer_sqrt(10), 'double'), 'double output');

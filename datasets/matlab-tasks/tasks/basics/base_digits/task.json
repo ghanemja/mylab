@@ -1,0 +1,18 @@
+{
+  "id": "basics/base_digits",
+  "title": "Digits of an integer in another base",
+  "category": "basics",
+  "difficulty": "easy",
+  "function": "base_digits",
+  "signature": "d = base_digits(n, b)",
+  "tags": [
+    "while-loop",
+    "mod",
+    "integer-arithmetic"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

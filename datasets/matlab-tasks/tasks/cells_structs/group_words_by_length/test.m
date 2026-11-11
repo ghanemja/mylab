@@ -1,0 +1,12 @@
+g = group_words_by_length({'sun', 'moon', 'sky', 'a', 'star', 'sun'});
+assert(isequal([g.len], [1 3 4]), 'lengths');
+assert(isequal(size(g), [1 3]), 'row struct array');
+assert(isequal(g(1).words, {'a'}) && isequal(g(2).words, {'sun', 'sky', 'sun'}) && isequal(g(3).words, {'moon', 'star'}), 'groups');
+g = group_words_by_length({'longest'; 'ab'; ''; 'cd'});
+assert(isequal([g.len], [0 2 7]), 'column input with empty word');
+assert(isequal(g(2).words, {'ab', 'cd'}) && isequal(size(g(2).words), [1 2]), 'row cell of words');
+assert(isempty(g(1).words{1}), 'empty word group');
+g = group_words_by_length({});
+assert(isempty(g) && isstruct(g) && isfield(g, 'len') && isfield(g, 'words'), 'empty input');
+g = group_words_by_length({'same', 'size', 'four'});
+assert(numel(g) == 1 && g.len == 4 && numel(g.words) == 3, 'single group');

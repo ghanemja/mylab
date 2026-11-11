@@ -1,0 +1,18 @@
+{
+  "id": "control_flow/traffic_light_after",
+  "title": "State of a traffic light after a delay",
+  "category": "control_flow",
+  "difficulty": "easy",
+  "function": "traffic_light_after",
+  "signature": "[state, remaining] = traffic_light_after(state, t)",
+  "tags": [
+    "state-machine",
+    "switch",
+    "mod"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

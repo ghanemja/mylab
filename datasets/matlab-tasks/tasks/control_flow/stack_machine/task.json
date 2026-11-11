@@ -1,0 +1,19 @@
+{
+  "id": "control_flow/stack_machine",
+  "title": "A tiny stack machine interpreter",
+  "category": "control_flow",
+  "difficulty": "hard",
+  "function": "stack_machine",
+  "signature": "stack = stack_machine(program)",
+  "tags": [
+    "interpreter",
+    "switch",
+    "while-loop",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

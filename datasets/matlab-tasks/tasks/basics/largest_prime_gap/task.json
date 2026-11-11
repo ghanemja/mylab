@@ -1,0 +1,18 @@
+{
+  "id": "basics/largest_prime_gap",
+  "title": "Largest gap between consecutive primes",
+  "category": "basics",
+  "difficulty": "medium",
+  "function": "largest_prime_gap",
+  "signature": "[gap, p, q] = largest_prime_gap(n)",
+  "tags": [
+    "primes",
+    "diff",
+    "multiple-outputs"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

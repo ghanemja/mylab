@@ -1,0 +1,10 @@
+y = fill_forward([NaN 1 NaN NaN 4 NaN]);
+assert(isnan(y(1)) && isequal(y(2:end), [1 1 1 4 4]), 'example row');
+assert(isequal(size(y), [1 6]), 'row shape');
+y = fill_forward([2; NaN; 3]);
+assert(isequal(y, [2; 2; 3]), 'column');
+assert(isequal(fill_forward([1 2 3]), [1 2 3]), 'no gaps');
+y = fill_forward(NaN(1, 3));
+assert(isequal(size(y), [1 3]) && all(isnan(y)), 'all missing');
+assert(isempty(fill_forward([])), 'empty');
+assert(isequal(fill_forward([0 NaN -5 NaN]), [0 0 -5 -5]), 'zero and negative values carried');

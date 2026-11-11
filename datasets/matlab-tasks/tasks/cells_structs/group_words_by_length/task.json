@@ -1,0 +1,18 @@
+{
+  "id": "cells_structs/group_words_by_length",
+  "title": "Group words by their length",
+  "category": "cells_structs",
+  "difficulty": "medium",
+  "function": "group_words_by_length",
+  "signature": "g = group_words_by_length(words)",
+  "tags": [
+    "struct-arrays",
+    "cellfun",
+    "unique"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

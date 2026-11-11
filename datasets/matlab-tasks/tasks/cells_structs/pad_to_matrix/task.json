@@ -1,0 +1,18 @@
+{
+  "id": "cells_structs/pad_to_matrix",
+  "title": "Pad ragged vectors into a matrix",
+  "category": "cells_structs",
+  "difficulty": "easy",
+  "function": "pad_to_matrix",
+  "signature": "M = pad_to_matrix(c, fill)",
+  "tags": [
+    "cell-arrays",
+    "cellfun",
+    "nargin"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

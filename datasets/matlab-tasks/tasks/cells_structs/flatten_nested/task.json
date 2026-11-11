@@ -1,0 +1,17 @@
+{
+  "id": "cells_structs/flatten_nested",
+  "title": "Flatten nested cell arrays",
+  "category": "cells_structs",
+  "difficulty": "medium",
+  "function": "flatten_nested",
+  "signature": "out = flatten_nested(c)",
+  "tags": [
+    "cell-arrays",
+    "recursion"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": false,
+    "octave": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "arrays_indexing/block_average",
+  "title": "Average over square blocks",
+  "category": "arrays_indexing",
+  "difficulty": "medium",
+  "function": "block_average",
+  "signature": "B = block_average(A, b)",
+  "tags": [
+    "reshape",
+    "n-d-arrays",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "arrays_indexing/heaviest_page",
+  "title": "Page of a 3-D array with the largest sum",
+  "category": "arrays_indexing",
+  "difficulty": "easy",
+  "function": "heaviest_page",
+  "signature": "[k, sums] = heaviest_page(A)",
+  "tags": [
+    "n-d-arrays",
+    "sum",
+    "max"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

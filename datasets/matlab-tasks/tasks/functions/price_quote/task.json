@@ -1,0 +1,19 @@
+{
+  "id": "functions/price_quote",
+  "title": "Price quote with name-value options",
+  "category": "functions",
+  "difficulty": "medium",
+  "function": "price_quote",
+  "signature": "[total, details] = price_quote(unitPrice, varargin)",
+  "tags": [
+    "varargin",
+    "name-value",
+    "structs",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

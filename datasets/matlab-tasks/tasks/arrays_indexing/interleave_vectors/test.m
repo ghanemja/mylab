@@ -1,0 +1,10 @@
+assert(isequal(interleave_vectors([1 2 3], [10 20 30]), [1 10 2 20 3 30]), 'equal lengths');
+assert(isequal(interleave_vectors([1 2 3 4], 9), [1 9 2 3 4]), 'a longer');
+assert(isequal(interleave_vectors(7, [1 2 3]), [7 1 2 3]), 'b longer');
+v = interleave_vectors([], [5; 6]);
+assert(isequal(size(v), [1 2]) && isequal(v, [5 6]), 'empty a, column b');
+v = interleave_vectors([1; 2], [3; 4]);
+assert(isequal(size(v), [1 4]) && isequal(v, [1 3 2 4]), 'two columns give a row');
+v = interleave_vectors([], []);
+assert(isempty(v) && size(v, 1) == 1, 'both empty gives 1-by-0');
+assert(isequal(interleave_vectors([-1 0.5], [2 2 2]), [-1 2 0.5 2 2]), 'negative and fractional values');

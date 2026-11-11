@@ -1,0 +1,18 @@
+{
+  "id": "strings_text/name_initials",
+  "title": "Initials from a full name",
+  "category": "strings_text",
+  "difficulty": "easy",
+  "function": "name_initials",
+  "signature": "s = name_initials(name)",
+  "tags": [
+    "char",
+    "regexp",
+    "upper"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

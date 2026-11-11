@@ -1,0 +1,15 @@
+s = describe_vector([3 NaN 1]);
+assert(isstruct(s) && isequal(fieldnames(s), {'min'; 'max'; 'mean'; 'count'}), 'struct fields');
+assert(s.min == 1 && s.max == 3 && s.mean == 2 && s.count == 2, 'struct values');
+[lo, hi] = describe_vector([4 -2 7]);
+assert(lo == -2 && hi == 7, 'two outputs');
+[a, b, c, d] = describe_vector([2; 4; NaN; 6; 8]);
+assert(a == 2 && b == 8 && c == 5 && d == 4, 'four outputs, column');
+[a, b, c] = describe_vector(5);
+assert(a == 5 && b == 5 && c == 5, 'three outputs, scalar');
+s = describe_vector([NaN NaN]);
+assert(isnan(s.min) && isnan(s.max) && isnan(s.mean) && s.count == 0, 'all NaN');
+[a, b, c, d] = describe_vector([]);
+assert(isnan(a) && isnan(b) && isnan(c) && d == 0, 'empty, separate outputs');
+s = describe_vector([1 2]);
+assert(abs(s.mean - 1.5) < 1e-12 && s.count == 2, 'mean');

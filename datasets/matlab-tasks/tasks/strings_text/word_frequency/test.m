@@ -1,0 +1,14 @@
+[w, c] = word_frequency('The cat saw the dog; the DOG ran.');
+assert(isequal(w, {'the'; 'dog'; 'cat'; 'ran'; 'saw'}), 'example words');
+assert(isequal(c, [3; 2; 1; 1; 1]), 'example counts');
+[w, c] = word_frequency('The cat''s hat and the cat. THE END, and the nap!');
+assert(isequal(w, {'the'; 'and'; 'cat'; 'cat''s'; 'end'; 'hat'; 'nap'}), 'apostrophe word, ties alphabetical');
+assert(isequal(c, [4; 2; 1; 1; 1; 1; 1]), 'counts with apostrophes');
+[w, c] = word_frequency([char(39) 'tis 42 -- tis!']);
+assert(isequal(w, {'tis'}) && isequal(c, 2), 'leading apostrophe and digits');
+[w, c] = word_frequency('  123, ...  ');
+assert(iscell(w) && isequal(size(w), [0 1]) && isequal(size(c), [0 1]), 'no words');
+[w, c] = word_frequency('b a c');
+assert(isequal(w, {'a'; 'b'; 'c'}) && isequal(c, [1; 1; 1]), 'all ties');
+[w, c] = word_frequency('Zebra apple zebra');
+assert(isequal(w, {'zebra'; 'apple'}) && isequal(c, [2; 1]), 'count beats alphabet');

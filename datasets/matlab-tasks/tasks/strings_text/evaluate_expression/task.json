@@ -1,0 +1,19 @@
+{
+  "id": "strings_text/evaluate_expression",
+  "title": "Arithmetic expression evaluator",
+  "category": "strings_text",
+  "difficulty": "hard",
+  "function": "evaluate_expression",
+  "signature": "v = evaluate_expression(s)",
+  "tags": [
+    "parsing",
+    "recursion",
+    "tokenizer",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

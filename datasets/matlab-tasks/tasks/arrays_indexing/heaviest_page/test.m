@@ -1,0 +1,16 @@
+A = cat(3, [1 2; 3 4], [5 5; 5 5], [0 0; 0 20]);
+[k, s] = heaviest_page(A);
+assert(k == 2, 'tie goes to first page');
+assert(isequal(s, [10 20 20]), 'page sums');
+[k, s] = heaviest_page([1 2; 3 4]);
+assert(k == 1 && isequal(s, 10), '2-D input is one page');
+B = zeros(2, 3, 4);
+B(:, :, 4) = -1;
+B(1, 1, 3) = 0.5;
+[k, s] = heaviest_page(B);
+assert(k == 3 && isequal(s, [0 0 0.5 -6]), 'zeros and negatives');
+assert(isequal(size(s), [1 4]), 'row of sums');
+C = ones(1, 1, 5);
+C(:, :, 2) = 7;
+[k, s] = heaviest_page(C);
+assert(k == 2 && isequal(s, [1 7 1 1 1]), '1-by-1 pages');

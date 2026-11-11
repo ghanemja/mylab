@@ -1,0 +1,14 @@
+A = [1 2 3; 4 5 6; 7 8 9];
+assert(isequal(rotate_border(A, 1), [4 1 2; 7 5 3; 8 9 6]), 'clockwise by one');
+assert(isequal(rotate_border(A, -1), [2 3 6; 1 5 9; 4 7 8]), 'counterclockwise by one');
+assert(isequal(rotate_border(A, 8), A), 'full turn');
+assert(isequal(rotate_border(A, 9), rotate_border(A, 1)), 'more than a full turn');
+assert(isequal(rotate_border([1 2; 3 4], 1), [3 1; 4 2]), '2x2 clockwise');
+assert(isequal(rotate_border([1 2; 3 4], -1), [2 4; 1 3]), '2x2 counterclockwise');
+A = [1 2 3 4; 5 6 7 8; 9 10 11 12];
+assert(isequal(rotate_border(A, 2), [9 5 1 2; 10 6 7 3; 11 12 8 4]), '3x4 by two');
+A = magic(5);
+B = rotate_border(A, 3);
+assert(isequal(B(2:4, 2:4), A(2:4, 2:4)), 'interior untouched');
+assert(isequal(sort(B(:)), sort(A(:))), 'same elements');
+assert(isequal(rotate_border([1 2; 3 4; 5 6], 0), [1 2; 3 4; 5 6]), 'k = 0, tall matrix');

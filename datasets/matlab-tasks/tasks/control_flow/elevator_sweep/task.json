@@ -1,0 +1,18 @@
+{
+  "id": "control_flow/elevator_sweep",
+  "title": "Elevator sweep order and distance",
+  "category": "control_flow",
+  "difficulty": "medium",
+  "function": "elevator_sweep",
+  "signature": "[order, distance] = elevator_sweep(start, requests)",
+  "tags": [
+    "conditionals",
+    "sorting",
+    "simulation"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

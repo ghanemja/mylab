@@ -1,0 +1,16 @@
+[w, f] = coin_combinations(6, [1 2 3]);
+assert(w == 7 && f == 2, 'example 1');
+[w, f] = coin_combinations(7, [2 4]);
+assert(w == 0 && isinf(f), 'impossible amount');
+[w, f] = coin_combinations(0, [3 4]);
+assert(w == 1 && f == 0, 'zero amount');
+[w, f] = coin_combinations(4, []);
+assert(w == 0 && isinf(f), 'no coins');
+[w, f] = coin_combinations(12, [7; 5; 3]);
+assert(w == 2 && f == 2, 'column, unsorted coins');
+[w, f] = coin_combinations(11, [5 2]);
+assert(w == 1 && f == 4, 'single way');
+[w, f] = coin_combinations(120, [13 7 3 2]);
+assert(w == 708 && f == 10, 'medium amount');
+[w, f] = coin_combinations(250, [3 7 11 19 40]);
+assert(w == 1657 && f == 8, 'larger amount');

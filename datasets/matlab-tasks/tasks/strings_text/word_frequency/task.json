@@ -1,0 +1,19 @@
+{
+  "id": "strings_text/word_frequency",
+  "title": "Word frequency table",
+  "category": "strings_text",
+  "difficulty": "medium",
+  "function": "word_frequency",
+  "signature": "[words, counts] = word_frequency(s)",
+  "tags": [
+    "regexp",
+    "unique",
+    "sorting",
+    "cell-arrays"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

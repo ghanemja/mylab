@@ -1,0 +1,14 @@
+[s, n] = longest_rising_run([3 1 2 5 4 6 7 8 0]);
+assert(s == 5 && n == 4, 'example');
+[s, n] = longest_rising_run([1 1 1]);
+assert(s == 1 && n == 1, 'equal values do not rise');
+[s, n] = longest_rising_run([1 2 1 2]);
+assert(s == 1 && n == 2, 'tie keeps first');
+[s, n] = longest_rising_run([5; 4; 3; 4; 5; 6]);
+assert(s == 3 && n == 4, 'column, run at end');
+[s, n] = longest_rising_run(7);
+assert(s == 1 && n == 1, 'single element');
+[s, n] = longest_rising_run([]);
+assert(s == 0 && n == 0, 'empty');
+[s, n] = longest_rising_run([-3 -2 -1 0 0 1]);
+assert(s == 1 && n == 4, 'negatives');

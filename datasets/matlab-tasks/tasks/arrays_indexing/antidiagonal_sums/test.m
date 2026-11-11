@@ -1,0 +1,11 @@
+assert(isequal(antidiagonal_sums([1 2; 3 4]), [1 5 4]), '2x2');
+assert(isequal(antidiagonal_sums([1 2 3; 4 5 6]), [1 6 8 6]), '2x3');
+assert(isequal(antidiagonal_sums([1; 2; 3]), [1 2 3]), 'column');
+assert(isequal(antidiagonal_sums([1 2 3]), [1 2 3]), 'row');
+assert(isequal(antidiagonal_sums(5), 5), 'scalar');
+s = antidiagonal_sums(magic(4));
+assert(isequal(s, [16 7 23 34 28 27 1]), 'magic(4)');
+s = antidiagonal_sums(zeros(0, 3));
+assert(isempty(s) && isequal(size(s), [1 0]), 'empty');
+s = antidiagonal_sums(ones(3, 5));
+assert(isequal(s, [1 2 3 3 3 2 1]), 'wide matrix');

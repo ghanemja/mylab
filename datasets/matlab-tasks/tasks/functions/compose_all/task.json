@@ -1,0 +1,18 @@
+{
+  "id": "functions/compose_all",
+  "title": "Compose any number of functions",
+  "category": "functions",
+  "difficulty": "medium",
+  "function": "compose_all",
+  "signature": "h = compose_all(varargin)",
+  "tags": [
+    "varargin",
+    "function-handles",
+    "closures"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

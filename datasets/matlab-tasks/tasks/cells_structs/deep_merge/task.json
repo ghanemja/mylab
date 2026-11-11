@@ -1,0 +1,18 @@
+{
+  "id": "cells_structs/deep_merge",
+  "title": "Recursive merge of nested structs",
+  "category": "cells_structs",
+  "difficulty": "hard",
+  "function": "deep_merge",
+  "signature": "c = deep_merge(a, b)",
+  "tags": [
+    "structs",
+    "recursion",
+    "dynamic-fields"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

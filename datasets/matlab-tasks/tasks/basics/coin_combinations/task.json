@@ -1,0 +1,17 @@
+{
+  "id": "basics/coin_combinations",
+  "title": "Counting coin combinations",
+  "category": "basics",
+  "difficulty": "hard",
+  "function": "coin_combinations",
+  "signature": "[ways, fewest] = coin_combinations(amount, coins)",
+  "tags": [
+    "dynamic-programming",
+    "loops"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

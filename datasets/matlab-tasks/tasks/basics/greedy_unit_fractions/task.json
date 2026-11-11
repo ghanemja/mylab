@@ -1,0 +1,18 @@
+{
+  "id": "basics/greedy_unit_fractions",
+  "title": "Greedy sum of unit fractions",
+  "category": "basics",
+  "difficulty": "medium",
+  "function": "greedy_unit_fractions",
+  "signature": "dens = greedy_unit_fractions(num, den)",
+  "tags": [
+    "while-loop",
+    "gcd",
+    "ceil"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

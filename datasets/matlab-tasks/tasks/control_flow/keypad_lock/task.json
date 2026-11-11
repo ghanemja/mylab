@@ -1,0 +1,18 @@
+{
+  "id": "control_flow/keypad_lock",
+  "title": "Door keypad state machine",
+  "category": "control_flow",
+  "difficulty": "medium",
+  "function": "keypad_lock",
+  "signature": "[state, wrong] = keypad_lock(code, keys)",
+  "tags": [
+    "state-machine",
+    "loops",
+    "strings"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

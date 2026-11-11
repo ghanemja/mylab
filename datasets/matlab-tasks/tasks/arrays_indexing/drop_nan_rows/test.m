@@ -1,0 +1,14 @@
+A = [1 2; NaN 4; 5 6; 7 NaN];
+[B, r] = drop_nan_rows(A);
+assert(isequal(B, [1 2; 5 6]), 'example rows');
+assert(isequal(r, [2; 4]), 'example indices');
+[B, r] = drop_nan_rows([1 2 3; 4 5 6]);
+assert(isequal(B, [1 2 3; 4 5 6]), 'nothing removed');
+assert(isempty(r) && isequal(size(r), [0 1]), 'empty column of indices');
+[B, r] = drop_nan_rows(NaN(3, 4));
+assert(isequal(size(B), [0 4]), 'all rows removed keeps column count');
+assert(isequal(r, [1; 2; 3]), 'all indices');
+[B, r] = drop_nan_rows([NaN; 2; 3]);
+assert(isequal(B, [2; 3]) && isequal(r, 1), 'single column');
+[B, r] = drop_nan_rows([Inf -Inf 0]);
+assert(isequal(B, [Inf -Inf 0]) && isempty(r), 'Inf is not missing');

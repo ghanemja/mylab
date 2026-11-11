@@ -1,0 +1,18 @@
+{
+  "id": "cells_structs/restock_list",
+  "title": "Items that need restocking",
+  "category": "cells_structs",
+  "difficulty": "easy",
+  "function": "restock_list",
+  "signature": "[names, units] = restock_list(items)",
+  "tags": [
+    "struct-arrays",
+    "logical-indexing",
+    "sort"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

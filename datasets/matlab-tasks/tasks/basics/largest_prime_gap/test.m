@@ -1,0 +1,16 @@
+[g, p, q] = largest_prime_gap(10);
+assert(g == 2 && p == 3 && q == 5, 'n = 10, first of tied gaps');
+[g, p, q] = largest_prime_gap(30);
+assert(g == 6 && p == 23 && q == 29, 'n = 30');
+[g, p, q] = largest_prime_gap(28);
+assert(g == 4 && p == 7 && q == 11, 'n = 28 excludes 29');
+[g, p, q] = largest_prime_gap(100);
+assert(g == 8 && p == 89 && q == 97, 'n = 100');
+[g, p, q] = largest_prime_gap(3);
+assert(g == 1 && p == 2 && q == 3, 'two primes');
+[g, p, q] = largest_prime_gap(2);
+assert(g == 0 && isnan(p) && isnan(q), 'single prime');
+[g, p, q] = largest_prime_gap(1);
+assert(g == 0 && isnan(p) && isnan(q), 'no primes');
+[g, p, q] = largest_prime_gap(1000);
+assert(g == 20 && p == 887 && q == 907, 'n = 1000');

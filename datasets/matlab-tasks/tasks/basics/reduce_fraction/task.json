@@ -1,0 +1,18 @@
+{
+  "id": "basics/reduce_fraction",
+  "title": "Reduce a fraction to lowest terms",
+  "category": "basics",
+  "difficulty": "easy",
+  "function": "reduce_fraction",
+  "signature": "[n, d] = reduce_fraction(num, den)",
+  "tags": [
+    "gcd",
+    "multiple-outputs",
+    "errors"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

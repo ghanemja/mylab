@@ -1,0 +1,10 @@
+assert(isequal(no_adjacent_ones(1), {'0'; '1'}), 'n = 1');
+assert(isequal(no_adjacent_ones(2), {'00'; '01'; '10'}), 'n = 2');
+assert(isequal(no_adjacent_ones(3), {'000'; '001'; '010'; '100'; '101'}), 'n = 3');
+c = no_adjacent_ones(0);
+assert(iscell(c) && numel(c) == 1 && isempty(c{1}), 'n = 0');
+c = no_adjacent_ones(10);
+assert(isequal(size(c), [144 1]), 'count for n = 10');
+assert(all(cellfun(@(s) ischar(s) && numel(s) == 10 && isempty(strfind(s, '11')), c)), 'all valid');
+assert(isequal(c, sort(c)) && numel(unique(c)) == 144, 'sorted and distinct');
+assert(strcmp(c{1}, '0000000000') && strcmp(c{end}, '1010101010'), 'first and last');
