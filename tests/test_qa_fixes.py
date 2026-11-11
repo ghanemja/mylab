@@ -242,3 +242,10 @@ r3 = scale_data(int8([1 2]), 3, 'offset', 5);
         m.run("scale_data([1 2], 1, Bogus=3)")
     with pytest.raises(MatlabError, match="position 1"):
         m.run("scale_data([1 2; 3 4])")
+
+
+def test_empty_cell_concatenation_keeps_shape(m):
+    assert m.num("size([cell(1,0), cell(1,0)])").tolist() == [[1, 0]]
+    assert m.num("size([cell(0,1); cell(0,1)])").tolist() == [[0, 1]]
+    assert m.num("size([cell(1,0), {}])").tolist() == [[1, 0]]
+    assert m.num("size([{}, {}])").tolist() == [[0, 0]]

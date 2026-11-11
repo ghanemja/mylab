@@ -378,7 +378,12 @@ def _to_cell(v: Any) -> Cell:
 def _concat_cells(items: list[Cell], axis: int) -> Cell:
     nonempty = [c.data for c in items if c.data.size > 0]
     if not nonempty:
-        return Cell(np.empty((0, 0), dtype=object))
+        # Only empties: 0x0 ones are ignored, the rest keep their shape ([cell(1,0), cell(1,0)] is 1x0).
+        shaped = [c.data for c in items if c.data.shape != (0, 0)]
+        try:
+            return Cell(np.concatenate(shaped, axis=axis)) if shaped else Cell(np.empty((0, 0), dtype=object))
+        except ValueError:
+            return Cell(np.empty((0, 0), dtype=object))
     nd = max([axis + 1] + [d.ndim for d in nonempty])
     nonempty = [d.reshape(d.shape + (1,) * (nd - d.ndim)) if d.ndim < nd else d for d in nonempty]
     first = nonempty[0].shape[:axis] + nonempty[0].shape[axis + 1:]
