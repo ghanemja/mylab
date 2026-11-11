@@ -1,0 +1,18 @@
+lv = @(t, y) [0.8*y(1) - 0.04*y(1)*y(2); -0.5*y(2) + 0.01*y(1)*y(2)];
+[t, Y] = rk4_integrate(lv, [0 10], [60 20], 0.01);
+assert(isequal(size(t), [1001 1]) && isequal(size(Y), [1001 2]), 'output sizes');
+assert(abs(t(end) - 10) < 1e-12, 'grid ends at tf');
+assert(all(abs(Y(end, :) - [59.99583840973912 20.083390952277604]) < 1e-9), 'matches classical RK4');
+assert(all(abs(Y(end, :) - [59.99583840971977 20.083390952547553]) < 1e-5), 'close to the exact solution');
+[t2, Y2] = rk4_integrate(@(t, y) -2*y + sin(t), [0 1], 1, 0.3);
+assert(all(abs(t2 - [0; 0.3; 0.6; 0.9; 1]) < 1e-12), 'shortened last step');
+assert(all(abs(Y2 - [1; 0.5864422920716332; 0.42300556495167363; 0.38797987515958987; 0.39143199852600674]) < 1e-12), 'scalar ODE with a shortened step');
+osc = @(t, y) [y(2); -y(1)];
+[~, Ya] = rk4_integrate(osc, [0 2*pi], [1; 0], 2*pi/40);
+[~, Yb] = rk4_integrate(osc, [0 2*pi], [1; 0], 2*pi/80);
+ea = norm(Ya(end, :) - [1 0]);
+eb = norm(Yb(end, :) - [1 0]);
+assert(eb < 1e-5, 'harmonic oscillator accuracy');
+assert(ea/eb > 13 && ea/eb < 19, 'fourth-order convergence');
+[t3, Y3] = rk4_integrate(@(t, y) 3*t.^2, [1 2], 0, 0.25);
+assert(abs(Y3(end) - 7) < 1e-12, 'polynomial right-hand side integrated exactly');

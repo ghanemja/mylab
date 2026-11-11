@@ -1,0 +1,19 @@
+{
+  "id": "optimization/nelder_mead_simplex",
+  "title": "Nelder-Mead simplex search from scratch",
+  "category": "optimization",
+  "difficulty": "hard",
+  "function": "nelder_mead",
+  "signature": "[x, fx, iters] = nelder_mead(f, x0, step, tol, maxit)",
+  "tags": [
+    "nelder-mead",
+    "derivative-free",
+    "simplex",
+    "sorting"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

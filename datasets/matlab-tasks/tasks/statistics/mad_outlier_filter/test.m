@@ -1,0 +1,14 @@
+[m, c] = mad_outliers([10 11 10 12 50 11], 3);
+assert(islogical(m) && isequal(m, [false false false false true false]), 'example mask');
+assert(isequal(c, [10 11 10 12 11]), 'example cleaned');
+[m, c] = mad_outliers([101.2; 101.4; 101.1; 99; 101.3; 101.5; 108.7; 101.2; 101; 101.6; 94.2; 101.3], 3);
+assert(isequal(size(m), [12 1]) && isequal(m, [0; 0; 0; 1; 0; 0; 1; 0; 0; 0; 1; 0] == 1), 'pressure spikes, threshold 3');
+assert(isequal(c, [101.2; 101.4; 101.1; 101.3; 101.5; 101.2; 101; 101.6; 101.3]), 'cleaned column');
+[m, c] = mad_outliers([101.2 101.4 101.1 99 101.3 101.5 108.7 101.2 101 101.6 94.2 101.3], 2);
+assert(isequal(m, [0 0 0 1 0 0 1 0 0 0 1 0] == 1) && isequal(c, [101.2 101.4 101.1 101.3 101.5 101.2 101 101.6 101.3]), 'threshold 2');
+[m, c] = mad_outliers([5 5 5 5 9 5], 3);
+assert(isequal(m, [false false false false true false]) && isequal(c, [5 5 5 5 5]), 'zero MAD');
+[m, c] = mad_outliers(4, 3);
+assert(isequal(m, false) && isequal(c, 4), 'single value');
+[m, ~] = mad_outliers([1 2 3 4 5], 3);
+assert(~any(m), 'no outliers in evenly spread data');

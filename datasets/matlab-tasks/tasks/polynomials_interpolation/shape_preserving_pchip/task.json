@@ -1,0 +1,19 @@
+{
+  "id": "polynomials_interpolation/shape_preserving_pchip",
+  "title": "Shape-preserving piecewise cubic Hermite interpolation",
+  "category": "polynomials_interpolation",
+  "difficulty": "hard",
+  "function": "pchip_eval",
+  "signature": "yq = pchip_eval(x, y, xq)",
+  "tags": [
+    "interpolation",
+    "hermite",
+    "monotonicity",
+    "piecewise-polynomials"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

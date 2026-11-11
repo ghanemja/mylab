@@ -1,0 +1,19 @@
+{
+  "id": "signal_processing/dominant_frequency_fft",
+  "title": "Dominant frequency from the FFT",
+  "category": "signal_processing",
+  "difficulty": "medium",
+  "function": "dominant_frequency",
+  "signature": "[f0, A] = dominant_frequency(x, fs)",
+  "tags": [
+    "fft",
+    "spectrum",
+    "frequency-estimation",
+    "vibration"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

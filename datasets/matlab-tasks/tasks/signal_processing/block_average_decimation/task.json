@@ -1,0 +1,19 @@
+{
+  "id": "signal_processing/block_average_decimation",
+  "title": "Downsample by averaging blocks",
+  "category": "signal_processing",
+  "difficulty": "easy",
+  "function": "block_average",
+  "signature": "y = block_average(x, M)",
+  "tags": [
+    "decimation",
+    "downsampling",
+    "reshape",
+    "averaging"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

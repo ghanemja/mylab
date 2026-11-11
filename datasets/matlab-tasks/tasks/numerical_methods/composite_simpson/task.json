@@ -1,0 +1,18 @@
+{
+  "id": "numerical_methods/composite_simpson",
+  "title": "Composite Simpson's rule",
+  "category": "numerical_methods",
+  "difficulty": "easy",
+  "function": "simpson_composite",
+  "signature": "I = simpson_composite(f, a, b, n)",
+  "tags": [
+    "integration",
+    "simpson",
+    "quadrature"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

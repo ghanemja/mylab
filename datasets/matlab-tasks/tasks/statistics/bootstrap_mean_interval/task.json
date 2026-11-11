@@ -1,0 +1,19 @@
+{
+  "id": "statistics/bootstrap_mean_interval",
+  "title": "Percentile bootstrap interval for a mean",
+  "category": "statistics",
+  "difficulty": "medium",
+  "function": "bootstrap_mean_ci",
+  "signature": "[ci, bootmeans] = bootstrap_mean_ci(x, nboot, alpha)",
+  "tags": [
+    "bootstrap",
+    "resampling",
+    "randomness",
+    "confidence-interval"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

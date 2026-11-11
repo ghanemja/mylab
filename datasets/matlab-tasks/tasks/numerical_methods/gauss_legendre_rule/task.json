@@ -1,0 +1,19 @@
+{
+  "id": "numerical_methods/gauss_legendre_rule",
+  "title": "Gauss-Legendre nodes and weights",
+  "category": "numerical_methods",
+  "difficulty": "hard",
+  "function": "gauss_legendre",
+  "signature": "[x, w] = gauss_legendre(n)",
+  "tags": [
+    "integration",
+    "gaussian-quadrature",
+    "eig",
+    "orthogonal-polynomials"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

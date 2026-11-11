@@ -1,0 +1,12 @@
+assert(abs(fall_time(100, 80, 0.25) / 4.7536639359744965 - 1) < 1e-9, 'h = 100, m = 80, c = 0.25');
+assert(abs(fall_time(30, 0.06, 0.0009) / 2.6620710080786956 - 1) < 1e-9, 'h = 30, m = 0.06, c = 0.0009');
+assert(abs(fall_time(1000, 75, 0.27) / 22.843946616184546 - 1) < 1e-9, 'h = 1000, m = 75, c = 0.27');
+assert(abs(fall_time(5, 1, 0) / 1.0096375546923044 - 1) < 1e-9, 'h = 5, m = 1, c = 0');
+t1 = fall_time(50, 2, 0.01); t2 = fall_time(50, 2, 0.02);
+assert(t2 > t1 && t1 > sqrt(2*50/9.81), 'more drag means a slower fall');
+t = fall_time(2000, 70, 0.25);
+vt = sqrt(70*9.81/0.25);
+assert(abs(t - 2000/vt) < 10, 'long fall approaches terminal velocity');
+z = t*sqrt(9.81*0.25/70);
+assert(abs((70/0.25)*(z + log((1 + exp(-2*z))/2)) - 2000) < 1e-6, 'distance equation satisfied');
+assert(abs(fall_time(1e-3, 80, 0.25) / 0.014278438666062147 - 1) < 1e-9, 'tiny height');

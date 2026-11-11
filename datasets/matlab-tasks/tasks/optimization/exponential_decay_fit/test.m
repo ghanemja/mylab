@@ -1,0 +1,13 @@
+t = [0 0.5 1 1.5 2 3 4 5 6 8];
+p = fit_decay(t, 12*exp(-0.45*t));
+assert(isequal(size(p), [1 2]), '1-by-2 row');
+assert(abs(p(1) - 12) < 1e-5 && abs(p(2) - 0.45) < 1e-6, 'noise-free data');
+y = 12*exp(-0.45*t) + [0.08 -0.12 0.05 0.1 -0.07 0.04 -0.03 0.06 -0.02 0.01];
+p = fit_decay(t', y');
+assert(abs(p(1) - 12.017193443881027) < 1e-5 && abs(p(2) - 0.4497823002366285) < 1e-6, 'noisy data: least squares on y');
+c = polyfit(t, log(y), 1);
+assert(abs(p(2) + c(1)) > 1e-4, 'result differs from the plain log-linear fit');
+p = fit_decay([0 1], [5 5*exp(-2)]);
+assert(abs(p(1) - 5) < 1e-5 && abs(p(2) - 2) < 1e-5, 'two points');
+p = fit_decay(0:10, 3*exp(-0.01*(0:10)));
+assert(abs(p(1) - 3) < 1e-5 && abs(p(2) - 0.01) < 1e-6, 'slow decay');

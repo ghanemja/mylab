@@ -1,0 +1,19 @@
+{
+  "id": "optimization/drag_fall_time_fzero",
+  "title": "Fall time with quadratic air drag via fzero",
+  "category": "optimization",
+  "difficulty": "easy",
+  "function": "fall_time",
+  "signature": "t = fall_time(h, m, c)",
+  "tags": [
+    "fzero",
+    "root-finding",
+    "physics",
+    "drag"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

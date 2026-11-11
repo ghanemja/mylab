@@ -1,0 +1,15 @@
+s = nan_summary([2 NaN 4 9]);
+assert(isstruct(s) && all(isfield(s, {'count', 'mean', 'median', 'std', 'min', 'max'})), 'fields');
+assert(s.count == 3 && abs(s.mean - 5) < 1e-14 && s.median == 4, 'example count/mean/median');
+assert(abs(s.std - sqrt(13)) < 1e-14 && s.min == 2 && s.max == 9, 'example std/min/max');
+s = nan_summary([21.4; NaN; 22.1; 23.8; NaN; 20.9; 22.6; 25; 21.7]);
+assert(s.count == 7, 'logger count');
+assert(abs(s.mean - 22.499999999999996) < 1e-12 && abs(s.median - 22.1) < 1e-12, 'logger mean and median');
+assert(abs(s.std - 1.444529912001364) < 1e-12, 'logger sample std');
+assert(s.min == 20.9 && s.max == 25, 'logger extremes');
+s = nan_summary([NaN 7]);
+assert(s.count == 1 && s.mean == 7 && s.std == 0 && s.median == 7, 'single valid value');
+s = nan_summary([NaN NaN]);
+assert(s.count == 0 && isnan(s.mean) && isnan(s.median) && isnan(s.std) && isnan(s.min) && isnan(s.max), 'all NaN');
+s = nan_summary([]);
+assert(s.count == 0 && isnan(s.mean), 'empty input');

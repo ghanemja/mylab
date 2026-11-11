@@ -1,0 +1,19 @@
+{
+  "id": "linear_algebra/modified_gram_schmidt",
+  "title": "QR factorization by modified Gram-Schmidt",
+  "category": "linear_algebra",
+  "difficulty": "hard",
+  "function": "mgs_qr",
+  "signature": "[Q, R] = mgs_qr(A)",
+  "tags": [
+    "qr-decomposition",
+    "gram-schmidt",
+    "orthogonalization",
+    "numerical-stability"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

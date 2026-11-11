@@ -1,0 +1,19 @@
+{
+  "id": "polynomials_interpolation/real_roots_in_interval",
+  "title": "Real polynomial roots inside an interval",
+  "category": "polynomials_interpolation",
+  "difficulty": "medium",
+  "function": "real_roots_in",
+  "signature": "r = real_roots_in(c, a, b)",
+  "tags": [
+    "roots",
+    "polynomials",
+    "tolerances",
+    "complex-numbers"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

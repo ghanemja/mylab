@@ -1,0 +1,19 @@
+{
+  "id": "signal_processing/rc_lowpass_filter",
+  "title": "Discrete first-order RC low-pass filter",
+  "category": "signal_processing",
+  "difficulty": "easy",
+  "function": "rc_lowpass",
+  "signature": "y = rc_lowpass(x, fs, fc)",
+  "tags": [
+    "iir-filter",
+    "low-pass",
+    "recursion",
+    "circuits"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

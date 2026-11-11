@@ -1,0 +1,19 @@
+{
+  "id": "polynomials_interpolation/horner_with_derivative",
+  "title": "Horner evaluation of a polynomial and its derivative",
+  "category": "polynomials_interpolation",
+  "difficulty": "easy",
+  "function": "horner_eval",
+  "signature": "[p, dp] = horner_eval(c, x)",
+  "tags": [
+    "polynomials",
+    "horner",
+    "vectorization",
+    "derivatives"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

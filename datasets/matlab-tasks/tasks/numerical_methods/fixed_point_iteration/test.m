@@ -1,0 +1,13 @@
+[x, k, ok] = fixed_point(@cos, 1, 1e-12, 500);
+assert(ok && abs(x - 0.7390851332147726) < 1e-11, 'cosine fixed point');
+assert(k == 69, 'iteration count');
+[y, ky, oky] = fixed_point(@(x) 2*x + 1, 0, 1e-8, 25);
+assert(~oky && ky == 25, 'divergent map reports failure after maxit');
+assert(y == 2^25 - 1, 'last iterate is returned');
+g = @(v) [0.5*cos(v(2)) + 0.1; 0.5*sin(v(1)) - 0.2];
+[v, kv, okv] = fixed_point(g, [0; 0], 1e-13, 200);
+assert(okv && isequal(size(v), [2 1]), 'vector fixed point');
+assert(all(abs(v - [0.5983349090911748; 0.08163371622883342]) < 1e-12) && kv == 16, 'vector fixed point values');
+assert(all(abs(g(v) - v) < 1e-12), 'v is a fixed point');
+[z, kz, okz] = fixed_point(@(x) x/2 + 3, 6, 1e-10, 10);
+assert(okz && kz == 1 && z == 6, 'start at the fixed point');

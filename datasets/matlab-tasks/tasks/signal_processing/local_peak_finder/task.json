@@ -1,0 +1,19 @@
+{
+  "id": "signal_processing/local_peak_finder",
+  "title": "Peak finder with height and spacing rules",
+  "category": "signal_processing",
+  "difficulty": "hard",
+  "function": "find_local_peaks",
+  "signature": "[pks, locs] = find_local_peaks(x, minHeight, minDist)",
+  "tags": [
+    "peak-detection",
+    "greedy",
+    "plateaus",
+    "sorting"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": false,
+    "octave": true
+  }
+}

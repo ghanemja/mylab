@@ -1,0 +1,19 @@
+{
+  "id": "statistics/centered_moving_mean",
+  "title": "Centered moving average with gaps",
+  "category": "statistics",
+  "difficulty": "medium",
+  "function": "centered_moving_mean",
+  "signature": "y = centered_moving_mean(x, k)",
+  "tags": [
+    "moving-average",
+    "smoothing",
+    "nan",
+    "windows"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

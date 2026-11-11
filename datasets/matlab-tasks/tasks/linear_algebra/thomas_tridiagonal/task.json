@@ -1,0 +1,19 @@
+{
+  "id": "linear_algebra/thomas_tridiagonal",
+  "title": "Tridiagonal solver for a heated rod",
+  "category": "linear_algebra",
+  "difficulty": "medium",
+  "function": "thomas_solve",
+  "signature": "x = thomas_solve(a, b, c, d)",
+  "tags": [
+    "linear-systems",
+    "tridiagonal",
+    "thomas-algorithm",
+    "heat-transfer"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

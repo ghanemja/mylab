@@ -1,0 +1,15 @@
+x = box_least_squares(eye(2), [2; -3], [0; 0], [1; 1]);
+assert(isequal(size(x), [2 1]) && all(abs(x - [1; 0]) < 1e-10), 'example');
+A = [2  1  0; 1  3  1; 0  1  2; 1  0  1; 3  1  1];
+b = [4; -1; 3; 2; 7];
+x = box_least_squares(A, b, [0 0 0], [1 1 1]);
+assert(all(abs(x - [1; 0; 1]) < 1e-6), 'unit box');
+x = box_least_squares(A, b', [-Inf -0.5 0], [Inf 0.5 Inf]);
+assert(all(abs(x - [1.9125000000000008; -0.5; 1.0625]) < 1e-6), 'mixed and infinite bounds');
+x = box_least_squares(A, b, -Inf(3, 1), Inf(3, 1));
+assert(all(abs(x - [2.181415929203541; -1.3274336283185844; 1.5796460176991158]) < 1e-6), 'no bounds gives ordinary least squares');
+x = box_least_squares([12  3  25; 2  18  6; 30  10  2; 5  5  40], [15 9 14 17], 0.1*ones(3, 1), 0.6*ones(3, 1));
+assert(all(abs(x - [0.34188186818100386; 0.3333364063631548; 0.3563395141881299]) < 1e-6), 'ingredient blend with bounded fractions');
+assert(all(x >= 0.1 - 1e-12) && all(x <= 0.6 + 1e-12), 'bounds respected');
+x = box_least_squares([1; 1], [3; 5], 2, 2);
+assert(abs(x - 2) < 1e-12, 'fixed variable (lo == hi)');

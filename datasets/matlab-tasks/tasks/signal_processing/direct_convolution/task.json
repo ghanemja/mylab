@@ -1,0 +1,18 @@
+{
+  "id": "signal_processing/direct_convolution",
+  "title": "Linear convolution by direct summation",
+  "category": "signal_processing",
+  "difficulty": "easy",
+  "function": "direct_convolution",
+  "signature": "y = direct_convolution(x, h)",
+  "tags": [
+    "convolution",
+    "fir-filter",
+    "loops"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

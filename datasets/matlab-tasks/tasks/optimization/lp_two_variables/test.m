@@ -1,0 +1,12 @@
+[x, f] = lp2d_max([30 50], [1 2; 3 2; 0 1], [40; 60; 15]);
+assert(isequal(size(x), [2 1]) && all(abs(x - [10; 15]) < 1e-9) && abs(f - 1050) < 1e-9, 'example');
+[x, f] = lp2d_max([4 3], [2 1; 1 3; 1 1], [10 15 6]);
+assert(all(abs(x - [3.999999999999999; 2.0000000000000027]) < 1e-9) && abs(f - 22.000000000000004) < 1e-9, 'three resource limits');
+[x, f] = lp2d_max([-1 2], [1 1; -1 1], [8; 2]);
+assert(all(abs(x - [3; 5]) < 1e-9) && abs(f - 7) < 1e-9, 'negative objective coefficient');
+[x, f] = lp2d_max([1 1], [1 1], 5);
+assert(abs(f - 5) < 1e-9 && abs(sum(x) - 5) < 1e-9 && all(x >= -1e-9), 'tied optimum along an edge');
+[x, f] = lp2d_max([-2 -3], [1 1], 4);
+assert(all(abs(x) < 1e-12) && abs(f) < 1e-12, 'origin is optimal');
+[x, f] = lp2d_max([1 0], [1 0; 1 0; 0 1], [3; 5; 2]);
+assert(abs(x(1) - 3) < 1e-9 && abs(f - 3) < 1e-9, 'parallel constraint lines');

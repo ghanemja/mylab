@@ -1,0 +1,19 @@
+{
+  "id": "numerical_methods/colebrook_friction_secant",
+  "title": "Pipe friction factor by the secant method",
+  "category": "numerical_methods",
+  "difficulty": "medium",
+  "function": "colebrook_secant",
+  "signature": "lambda = colebrook_secant(Re, rr)",
+  "tags": [
+    "root-finding",
+    "secant",
+    "fluid-mechanics",
+    "vectorization"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

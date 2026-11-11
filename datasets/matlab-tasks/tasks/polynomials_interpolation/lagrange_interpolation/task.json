@@ -1,0 +1,19 @@
+{
+  "id": "polynomials_interpolation/lagrange_interpolation",
+  "title": "Lagrange form of the interpolating polynomial",
+  "category": "polynomials_interpolation",
+  "difficulty": "medium",
+  "function": "lagrange_interp",
+  "signature": "yq = lagrange_interp(x, y, xq)",
+  "tags": [
+    "interpolation",
+    "lagrange",
+    "polynomials",
+    "validation"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

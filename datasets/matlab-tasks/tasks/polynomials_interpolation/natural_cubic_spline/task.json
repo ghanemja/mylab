@@ -1,0 +1,19 @@
+{
+  "id": "polynomials_interpolation/natural_cubic_spline",
+  "title": "Natural cubic spline from scratch",
+  "category": "polynomials_interpolation",
+  "difficulty": "hard",
+  "function": "natural_spline",
+  "signature": "yq = natural_spline(x, y, xq)",
+  "tags": [
+    "splines",
+    "interpolation",
+    "tridiagonal",
+    "piecewise-polynomials"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

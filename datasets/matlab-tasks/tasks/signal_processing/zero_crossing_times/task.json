@@ -1,0 +1,19 @@
+{
+  "id": "signal_processing/zero_crossing_times",
+  "title": "Interpolated zero-crossing times",
+  "category": "signal_processing",
+  "difficulty": "medium",
+  "function": "zero_crossing_times",
+  "signature": "tz = zero_crossing_times(t, x)",
+  "tags": [
+    "zero-crossings",
+    "interpolation",
+    "edge-cases",
+    "events"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

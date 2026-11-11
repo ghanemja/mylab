@@ -1,0 +1,19 @@
+{
+  "id": "linear_algebra/power_method_dominant",
+  "title": "Dominant eigenpair by power iteration",
+  "category": "linear_algebra",
+  "difficulty": "medium",
+  "function": "power_iteration",
+  "signature": "[lam, v, iters] = power_iteration(A, x0, tol, maxit)",
+  "tags": [
+    "eigenvalues",
+    "power-method",
+    "iteration",
+    "normalization"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}

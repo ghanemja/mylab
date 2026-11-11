@@ -1,0 +1,13 @@
+[r, S, n] = golden_min(@(r) 2*pi*r^2 + 1000/r, 1, 10, 1e-6);
+assert(abs(r - 4.3012700691404975) <= 1e-6, 'optimal can radius');
+assert(abs(S - (2*pi*r^2 + 1000/r)) < 1e-12, 'fmin is f(xmin)');
+assert(n <= 38 && n >= 34, 'one new evaluation per iteration');
+[x, fx] = golden_min(@(x) (x - 2)^2 + 1, 0, 5, 1e-7);
+assert(abs(x - 2) <= 1e-7 && abs(fx - 1) < 1e-15, 'parabola');
+[x, ~] = golden_min(@(x) exp(-x) + x^2/4 - sin(x)/3, 0, 3, 1e-6);
+assert(abs(x - 1.0419239768985422) <= 1e-6, 'smooth non-polynomial function');
+[x, ~, n] = golden_min(@(x) abs(x + 0.3), -1, 1, 1e-6);
+assert(abs(x + 0.3) <= 1e-6, 'non-smooth minimum');
+assert(n <= 35, 'evaluation count for a [-1, 1] bracket');
+[x, ~, n] = golden_min(@(x) x^2, -1, 1, 5);
+assert(n == 3 && x == 0, 'bracket already within tolerance');

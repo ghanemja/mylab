@@ -1,0 +1,19 @@
+{
+  "id": "optimization/newton_minimizer",
+  "title": "Newton's method for unconstrained minimization",
+  "category": "optimization",
+  "difficulty": "medium",
+  "function": "newton_minimize",
+  "signature": "[x, iters] = newton_minimize(gradf, hessf, x0, tol, maxit)",
+  "tags": [
+    "newton",
+    "hessian",
+    "unconstrained-optimization",
+    "linear-systems"
+  ],
+  "license": "MIT",
+  "verified": {
+    "mylab": true,
+    "octave": true
+  }
+}
