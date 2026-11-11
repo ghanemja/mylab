@@ -719,3 +719,11 @@ def _run(interp, args, nargout):
         return None
     interp.run_program(program, interp.frame, path)
     return None
+
+
+@builtin("import")
+def _import(interp, args, nargout):
+    """Accepts package imports such as ``import pkg.*``; mylab has no packages, so this does nothing."""
+    if nargout:
+        return Cell(np.empty((1, 0), dtype=object))
+    return None

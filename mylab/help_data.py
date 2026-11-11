@@ -2206,3 +2206,6 @@ HELP.update({
                  "A unique name for a temporary file or folder (nothing is created)."),
 })
 HELP["ode23s"] = HELP["ode23t"] = HELP["ode23tb"] = HELP["ode15s"]
+HELP["import"] = (["import pkg.*", "import pkg.name"],
+                  "Accepted for compatibility so that code importing packages still runs. mylab has no "
+                  "package namespaces, so the statement has no effect.")

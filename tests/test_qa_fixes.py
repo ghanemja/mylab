@@ -191,3 +191,8 @@ def test_command_syntax_after_semicolon_and_type_headers(m):
 def test_cross_columnwise(m):
     r = m.num("cross([1 2 3; 4 5 6]', [7 8 9; 1 2 3]')")
     np.testing.assert_array_equal(r, np.cross([[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [1, 2, 3]]).T)
+
+
+def test_import_statement_is_accepted(m):
+    out = m.run("import matlab.desktop.editor.*\nx = 1;")
+    assert out == "" and m.val("x").item() == 1

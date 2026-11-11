@@ -36,7 +36,7 @@ COMMAND_WORDS = {
     "hold", "format", "close", "clear", "clc", "grid", "axis", "figure",
     "disp", "help", "more", "warning", "clf", "pkg", "load", "save", "cd",
     "type", "which", "what", "doc", "echo", "drawnow", "tic", "toc",
-    "box", "rng", "lookfor", "edit", "mkdir", "addpath", "rmpath", "ls", "dir",
+    "box", "rng", "lookfor", "edit", "mkdir", "addpath", "rmpath", "ls", "dir", "import",
 }
 
 
