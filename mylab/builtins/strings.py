@@ -28,9 +28,10 @@ def _as_cell_if_strings(v):
 
 # -- sprintf ----------------------------------------------------------------------------
 
-_SPEC = re.compile(r"%(?P<flags>[-+ 0#]*)(?P<width>\*|\d+)?(?:\.(?P<prec>\*|\d+))?(?P<conv>[diouxXfeEgGcs%])")
+_SPEC = re.compile(r"%(?P<flags>[-+ 0#]*)(?P<width>\*|\d+)?(?:\.(?P<prec>\*|\d+))?(?:hh|h|ll|l|L|j|z|t)?"
+                   r"(?P<conv>[diouxXfeEgGcs%])")
 
-_ESCAPES = {"n": "\n", "t": "\t", "\\": "\\", "r": "\r", "a": "\a", "b": "\b", "f": "\f", "v": "\v", "0": "\0"}
+_ESCAPES = {"n": "\n", "t": "\t", "\\": "\\", "r": "\r", "a": "\a", "b": "\b", "f": "\f", "v": "\v"}
 
 
 def process_escapes(s: str) -> str:
@@ -50,20 +51,30 @@ def process_escapes(s: str) -> str:
                     out.append(chr(int(m.group(0), 16)))
                     i += 2 + len(m.group(0))
                     continue
+            if nxt in "01234567":
+                m = re.match(r"[0-7]{1,3}", s[i + 1:])
+                out.append(chr(int(m.group(0), 8)))
+                i += 1 + len(m.group(0))
+                continue
         out.append(ch)
         i += 1
     return "".join(out)
+
+
+class _StringItem(str):
+    """Text from a string scalar: always printed whole (a char vector is split per character
+    when a numeric conversion consumes it)."""
 
 
 def _flatten_args(args) -> list:
     items: list = []
     for a in args:
         if isinstance(a, MString):
-            items.append(str(a))
+            items.append(_StringItem(str(a)))
         elif is_char(a):
-            items.append(to_str(a))
+            items.append("".join(a.flatten(order="F")))
         elif isinstance(a, StringArray):
-            items.extend("" if x is None else x for x in a.data.flatten(order="F"))
+            items.extend(_StringItem("" if x is None else x) for x in a.data.flatten(order="F"))
         elif isinstance(a, Cell):
             raise MatlabError("sprintf/fprintf do not accept cell arrays; use c{:} to pass contents.")
         elif isinstance(a, np.ndarray):
@@ -92,7 +103,7 @@ def _format_one(spec: re.Match, value, width, prec) -> str:
     conv = spec.group("conv")
     w = "" if width is None else str(width)
     p = "" if prec is None else f".{prec}"
-    if conv in "diouxXc" and isinstance(value, str):
+    if conv != "s" and isinstance(value, str) and not isinstance(value, _StringItem):
         if conv == "c":
             return f"%{flags}{w}s" % value
         value = float(ord(value[0])) if value else 0.0
@@ -122,11 +133,16 @@ def _format_one(spec: re.Match, value, width, prec) -> str:
         if not isinstance(value, int) and float(value) != int(value):  # an int64 prints all its digits
             # non-integer with %d: MATLAB switches to %e
             return f"%{flags}{w}{p or ''}e" % value
-        return f"%{flags}{w}d" % int(value)
+        return f"%{flags}{w}{p}d" % int(value)
     if conv in "oxX":
         if float(value) != int(value):
             return f"%{flags}{w}{p or ''}e" % value
-        return f"%{flags}{w}{conv}" % int(value)
+        if conv == "o" and "#" in flags:
+            # C style: a leading zero, not Python's 0o
+            digits = "%o" % abs(int(value))
+            body = ("-" if value < 0 else "") + ("0" + digits if digits != "0" else "0")
+            return f"%{flags.replace('#', '')}{w}s" % body
+        return f"%{flags}{w}{p}{conv}" % int(value)
     return f"%{flags}{w}{p}{conv}" % float(value)
 
 
@@ -177,7 +193,13 @@ def matlab_sprintf(fmt: str, args) -> str:
                 # no data at all: print literal text, skipping the conversion
                 continue
             value = items[pos]
-            pos += 1
+            if (m.group("conv") != "s" and isinstance(value, str) and len(value) > 1
+                    and not isinstance(value, _StringItem)):
+                # a char vector feeds a non-%s conversion one character at a time
+                items[pos] = value[1:]
+                value = value[0]
+            else:
+                pos += 1
             consumed_any = True
             out.append(_format_one(m, value, width, prec))
         out.append(fmt[last:])
@@ -235,6 +257,60 @@ def _num2str_scalar(x, fmt=None, digits=None) -> str:
     return f"{x:.{sig}g}"
 
 
+_BLANKS = " \t\n\r\f\v\0"
+
+
+def _trim_rows(rows: list[str], leading: bool = True) -> list[str]:
+    """Remove the blank columns that all rows share (strtrim / deblank of a char matrix)."""
+    if not rows:
+        return rows
+    width = max(len(r) for r in rows)
+    rows = [r.ljust(width) for r in rows]
+    trail = min(len(r) - len(r.rstrip(_BLANKS)) for r in rows)
+    lead = min(len(r) - len(r.lstrip(_BLANKS)) for r in rows) if leading else 0
+    if lead >= width:
+        return ["" for _ in rows]
+    return [r[lead:width - trail] for r in rows]
+
+
+def _rows_to_char(rows: list[str]) -> np.ndarray:
+    width = max((len(r) for r in rows), default=0)
+    return np.array([list(r.ljust(width)) for r in rows], dtype="<U1").reshape(len(rows), width)
+
+
+def _g_field(x: float, width: int, prec: int) -> str:
+    if math.isnan(x):
+        return "NaN".rjust(width)
+    if math.isinf(x):
+        return ("Inf" if x > 0 else "-Inf").rjust(width)
+    return "%*.*g" % (width, prec, x + 0.0)
+
+
+def _num2str_real(a: np.ndarray, digits) -> list[str]:
+    """Rows of text for a real 2-D array (before the common blanks are trimmed)."""
+    scalar = a.size == 1
+    if a.dtype.kind in "biu":
+        cells = [[str(int(x)) for x in row] for row in a]
+        width = 0 if scalar else max(len(c.lstrip("-")) for r in cells for c in r) + 2
+        return ["".join(c.rjust(width) for c in r) for r in cells]
+    a = a.astype(float)
+    finite = np.isfinite(a)
+    top = float(np.max(np.abs(a[finite]))) if finite.any() else 0.0
+    if digits is not None:
+        width = 0 if scalar else digits + 7
+        return ["".join(_g_field(float(x), width, digits) for x in row) for row in a]
+    if bool(np.all(a[finite] == np.round(a[finite]))) and top < 1e16:
+        ndig = len(str(int(top)))
+        if not finite.all():
+            ndig = max(ndig, 3)
+        width = 0 if scalar else ndig + 2
+        return ["".join(_g_field(float(x), width, 16) for x in row) for row in a]
+    ndig = int(math.floor(math.log10(top))) + 1 if top > 0 else 1
+    prec = min(max(ndig + 4, 5), 16)
+    width = 0 if scalar else prec + 7
+    return ["".join(_g_field(float(x), width, prec) for x in row) for row in a]
+
+
 @builtin("num2str")
 def _num2str(interp, args, nargout):
     nargs(args, 1, 2, "num2str")
@@ -249,53 +325,87 @@ def _num2str(interp, args, nargout):
             fmt = text(args[1])
         else:
             digits = to_int(args[1], "precision")
-    if a.size == 1:
-        return char(_num2str_scalar(a.flat[0], fmt, digits))
     if a.size == 0:
         return char("")
+    if a.ndim > 2:
+        a = a.reshape(a.shape[0], -1, order="F")
     if fmt is not None:
         rows = [matlab_sprintf(fmt, [row.reshape(1, -1)]) for row in a]
-    else:
+    elif a.dtype.kind == "c":
+        if a.size == 1:
+            return char(_num2str_scalar(a.flat[0], None, digits))
         cells = [[_num2str_scalar(x, None, digits) for x in row] for row in a]
-        all_int = a.dtype.kind in "biu" or bool(np.all(np.isfinite(a)) and np.all(np.real(a) == np.round(np.real(a))))
-        width = max(len(c) for r in cells for c in r)
-        sep = 2 if all_int else 4
-        rows = [(" " * sep).join(c.rjust(width) for c in r) for r in cells]
-    width = max(len(r) for r in rows)
-    return np.array([list(r.rjust(width)) for r in rows], dtype="<U1").reshape(len(rows), width)
+        width = max(len(c) for r in cells for c in r) + 2
+        rows = ["".join(c.rjust(width) for c in r) for r in cells]
+    else:
+        rows = _num2str_real(a, digits)
+    rows = _trim_rows(rows)
+    if len(rows) == 1:
+        return char(rows[0])
+    return _rows_to_char(rows)
 
 
 @builtin("int2str")
 def _int2str(interp, args, nargout):
-    a = fnum(args[0])
+    v = args[0]
+    if isinstance(v, np.ndarray) and v.dtype.kind in "biu":
+        return _num2str(interp, [v], 1)
+    a = fnum(v)
     a = np.sign(a) * np.floor(np.abs(a) + 0.5)  # round halves away from zero
     return _num2str(interp, [a], 1)
 
 
 @builtin("mat2str")
 def _mat2str(interp, args, nargout):
+    nargs(args, 1, 3, "mat2str")
     v = args[0]
-    digits = to_int(args[1], "precision") if len(args) > 1 else 15
+    digits = 15
+    with_class = False
+    for opt in args[1:]:
+        if is_text(opt):
+            if text(opt).lower() != "class":
+                raise MatlabError("mat2str: the option must be 'class'.")
+            with_class = True
+        else:
+            digits = to_int(opt, "precision")
+    if isinstance(v, MString):
+        return char('"' + str(v).replace('"', '""') + '"')
     if is_char(v):
-        return char("'" + to_str(v) + "'")
-    a = num(v) if not (isinstance(v, np.ndarray) and v.dtype == bool) else v
+        rows = ["'" + "".join(r).replace("'", "''") + "'" for r in v] if v.shape[0] != 1 else \
+            ["'" + to_str(v).replace("'", "''") + "'"]
+        return char(rows[0] if len(rows) == 1 else "[" + ";".join(rows) + "]")
+    if not isinstance(v, np.ndarray):
+        raise MatlabError("mat2str: the input must be a numeric, logical or char array.")
+    if v.ndim > 2:
+        raise MatlabError("mat2str: the input must be a 2-D array.")
+    a = v
 
     def f(x):
         if isinstance(x, (bool, np.bool_)):
             return "true" if x else "false"
         if isinstance(x, (complex, np.complexfloating)):
             return _num2str_scalar(x, None, digits)
+        if isinstance(x, np.integer):
+            return str(int(x))
         x = float(x)
         if math.isnan(x):
             return "NaN"
         if math.isinf(x):
             return "Inf" if x > 0 else "-Inf"
-        return f"{x:.{digits}g}"
+        return f"{x + 0.0:.{digits}g}"
 
-    if a.size == 1:
-        return char(f(a.flat[0]))
-    body = ";".join(" ".join(f(x) for x in row) for row in a)
-    return char(f"[{body}]")
+    if a.size == 0:
+        body = f"zeros({a.shape[0]},{a.shape[1]})"
+    elif a.size == 1:
+        body = f(a.flat[0])
+    else:
+        body = "[" + ";".join(" ".join(f(x) for x in row) for row in a) + "]"
+    cls = "logical" if a.dtype == bool else ("single" if a.dtype == np.float32 else a.dtype.name)
+    if cls == "float64" or cls.startswith("complex"):
+        cls = "single" if a.dtype == np.complex64 else "double"
+    if with_class and cls != "logical":
+        body = f"{cls}({body})"
+    return char(body)
 
 
 @builtin("str2double")
@@ -332,7 +442,11 @@ def _parse_double(v) -> float:
 
 @builtin("str2num")
 def _str2num(interp, args, nargout):
-    s = text(args[0])
+    v = args[0]
+    if is_char(v) and v.ndim == 2 and v.shape[0] > 1:
+        s = ";".join("".join(r) for r in v)
+    else:
+        s = text(v)
     try:
         val = interp.eval_expression("[" + s + "]")
         ok = True
@@ -484,32 +598,99 @@ def _case_map(fn):
     return conv
 
 
-builtin("upper")(lambda interp, args, nargout: _map_text(_case_map(str.upper), args[0]))
-builtin("lower")(lambda interp, args, nargout: _map_text(_case_map(str.lower), args[0]))
-builtin("strtrim")(lambda interp, args, nargout: _map_text(lambda s: s.strip(" \t\n\r\f\v\0"), args[0]))
-builtin("deblank")(lambda interp, args, nargout: _map_text(lambda s: s.rstrip(" \t\n\r\f\v\0"), args[0]))
+def _case_builtin(fn):
+    conv = _case_map(fn)
+
+    def f(interp, args, nargout):
+        nargs(args, 1, 1, "upper")
+        v = args[0]
+        if isinstance(v, (MString, StringArray, Cell)) or is_char(v):
+            return _map_text(conv, v)
+        return v  # numbers and other values come back unchanged
+
+    return f
+
+
+def _trim_builtin(leading: bool):
+    def one(s: str) -> str:
+        return s.strip(_BLANKS) if leading else s.rstrip(_BLANKS)
+
+    def f(interp, args, nargout):
+        nargs(args, 1, 1, "strtrim" if leading else "deblank")
+        v = args[0]
+        if is_char(v) and v.ndim == 2 and v.shape[0] > 1:
+            # a char matrix loses only the blank columns common to all rows
+            return _rows_to_char(_trim_rows(["".join(r) for r in v], leading))
+        if is_char(v) and v.size == 0:
+            return v
+        if isinstance(v, np.ndarray) and not is_char(v):
+            if leading or v.size:
+                raise MatlabError("Input should be a string, character array, or a cell array of character arrays.")
+            return v
+        return _map_text(one, v)
+
+    return f
+
+
+builtin("upper", "toupper")(_case_builtin(str.upper))
+builtin("lower", "tolower")(_case_builtin(str.lower))
+builtin("strtrim")(_trim_builtin(True))
+builtin("deblank")(_trim_builtin(False))
 builtin("reverse")(lambda interp, args, nargout: _map_text(lambda s: s[::-1], args[0]))
+
+
+def _find_all(s: str, pat: str) -> list[int]:
+    """Start offsets (0-based) of every occurrence of pat in s, overlapping ones included."""
+    out = []
+    if not pat:
+        return out
+    start = s.find(pat)
+    while start != -1:
+        out.append(start)
+        start = s.find(pat, start + 1)
+    return out
+
+
+def _replace_all(s: str, old: str, new: str) -> str:
+    """strrep: every occurrence is replaced, also the ones that overlap an earlier one."""
+    hits = _find_all(s, old)
+    if not hits:
+        return s
+    out, pos = [], 0
+    for h in hits:
+        if h > pos:
+            out.append(s[pos:h])
+        out.append(new)
+        pos = h + len(old)
+    out.append(s[pos:])
+    return "".join(out)
 
 
 @builtin("strrep")
 def _strrep(interp, args, nargout):
+    nargs(args, 3, 3, "strrep")
     old, new = text(args[1]), text(args[2])
-    return _map_text(lambda s: s.replace(old, new) if old else s, args[0])
+    return _map_text(lambda s: _replace_all(s, old, new), args[0])
 
 
 @builtin("strfind")
 def _strfind(interp, args, nargout):
+    nargs(args, 2, 4, "strfind")
     pat = text(args[1])
+    overlaps = True
+    if len(args) == 4 and text(args[2]).lower() == "overlaps":
+        overlaps = bool(num(args[3]).flat[0])
 
     def find(s):
-        if not pat:
-            return np.zeros((1, 0))
-        out = []
-        start = s.find(pat)
-        while start != -1:
-            out.append(start + 1.0)
-            start = s.find(pat, start + 1)
-        return np.array(out).reshape(1, -1) if out else np.zeros((1, 0))
+        hits = _find_all(s, pat)
+        if not overlaps:
+            kept, last = [], -1
+            for h in hits:
+                if h >= last:
+                    kept.append(h)
+                    last = h + len(pat)
+            hits = kept
+        return np.array(hits, dtype=float).reshape(1, -1) + 1.0 if hits else np.zeros((0, 0))
 
     v = args[0]
     if isinstance(v, Cell):
@@ -656,9 +837,18 @@ def _missing(interp, args, nargout):
 @builtin("strjoin")
 def _strjoin(interp, args, nargout):
     src = _as_cell_if_strings(args[0])
+    if not isinstance(src, Cell):
+        raise MatlabError("strjoin: the first input must be a cell array of character vectors.")
     items = [to_str(x) for x in src.values_f()]
-    delim = process_escapes(text(args[1])) if len(args) > 1 else " "
-    joined = delim.join(items)
+    dval = _as_cell_if_strings(args[1]) if len(args) > 1 else None
+    if isinstance(dval, Cell):
+        delims = [to_str(x) for x in dval.values_f()]
+        if len(delims) != max(len(items) - 1, 0):
+            raise MatlabError("strjoin: the number of delimiters must be one less than the number of pieces.")
+        joined = "".join(x + d for x, d in zip(items, delims + [""]))
+    else:
+        delim = process_escapes(text(dval)) if dval is not None else " "
+        joined = delim.join(items)
     return MString(joined) if isinstance(args[0], (StringArray, MString)) else char(joined)
 
 
@@ -680,7 +870,19 @@ def _strcat(interp, args, nargout):
         return Cell(c.data.reshape(shape, order="F"))
     if any(isinstance(a, MString) for a in args):
         return MString("".join(text(a) for a in args))
-    return char("".join(text(a).rstrip(" \t\n\0") if is_char(a) else text(a) for a in args))
+    if any(is_char(a) and a.ndim == 2 and a.shape[0] > 1 for a in args):
+        # char matrices are joined row by row; single rows are repeated
+        nrows = max(a.shape[0] for a in args if is_char(a))
+        blocks = []
+        for a in args:
+            rows = ["".join(r) for r in a] if is_char(a) and a.size else [text(a)]
+            if len(rows) == 1:
+                rows = rows * nrows
+            if len(rows) != nrows:
+                raise MatlabError("strcat: the inputs must have the same number of rows.")
+            blocks.append(_trim_rows(rows, leading=False))
+        return _rows_to_char(["".join(parts) for parts in zip(*blocks)])
+    return char("".join(text(a).rstrip(" \t\n\v\f\r\0") if is_char(a) else text(a) for a in args))
 
 
 @builtin("strvcat")
@@ -712,7 +914,21 @@ def _isstrprop(interp, args, nargout):
         "alpha": str.isalpha, "digit": str.isdigit, "alphanum": str.isalnum, "wspace": str.isspace,
         "upper": str.isupper, "lower": str.islower, "punct": lambda c: (not c.isalnum()) and c.isprintable()
         and not c.isspace(), "cntrl": lambda c: not c.isprintable(),
+        "xdigit": lambda c: c in "0123456789abcdefABCDEF",
+        "graphic": lambda c: c.isprintable() and not c.isspace(),
+        "print": lambda c: c.isprintable(),
+        "ascii": lambda c: ord(c) < 128,
     }
+    if isinstance(v, Cell):
+        data = np.empty(v.shape, dtype=object)
+        for idx in np.ndindex(v.shape):
+            data[idx] = _isstrprop(interp, [v.data[idx], args[1]], 1)
+        return Cell(data)
+    if isinstance(v, MString):
+        v = char(str(v))
+    if isinstance(v, np.ndarray) and not is_char(v):
+        from ..values import codes_to_char
+        v = codes_to_char(v)
     if prop not in tests:
         raise MatlabError(f"Unknown property '{prop}'.")
     if v.size == 0:
@@ -722,107 +938,508 @@ def _isstrprop(interp, args, nargout):
 
 # -- regular expressions -------------------------------------------------------------------
 
-def _translate_regex(p: str) -> str:
-    # MATLAB named tokens (?<name>...) -> Python (?P<name>...)
-    return re.sub(r"\(\?<([A-Za-z]\w*)>", r"(?P<\1>", p)
+_POSIX_CLASSES = {
+    "alpha": "a-zA-Z", "digit": "0-9", "alnum": "a-zA-Z0-9", "upper": "A-Z", "lower": "a-z",
+    "space": r"\s", "xdigit": "0-9A-Fa-f", "word": r"\w", "blank": r" \t", "cntrl": r"\x00-\x1f\x7f",
+    "punct": r"!-/:-@\[-`{-~", "graph": r"!-~", "print": r" -~",
+}
+
+_OUTPUT_KEYS = ("start", "end", "tokenextents", "match", "tokens", "names", "split")
+_REGEX_SWITCHES = {
+    "once", "ignorecase", "matchcase", "emptymatch", "noemptymatch", "dotall", "dotexceptnewline",
+    "stringanchors", "lineanchors", "literalspacing", "freespacing", "warnings", "forcecelloutput",
+    "preservecase",
+}
 
 
-def _translate_replacement(r: str) -> str:
-    r = re.sub(r"\$(\d+)", r"\\g<\1>", r)
-    r = r.replace("$0", "\\g<0>")
-    return process_escapes(r) if "\\" in r and not re.search(r"\\g<", r) else r
+def _translate_regex(p: str, multiline: bool = False) -> str:
+    """Rewrite a MATLAB regular expression in Python's dialect."""
+    out: list[str] = []
+    i, n = 0, len(p)
+    in_class = False
+    while i < n:
+        c = p[i]
+        if c == "\\" and i + 1 < n:
+            d = p[i + 1]
+            if not in_class and d == "<":
+                out.append(r"\b(?=\w)")
+                i += 2
+                continue
+            if not in_class and d == ">":
+                out.append(r"\b(?<=\w)")
+                i += 2
+                continue
+            m = re.match(r"\\k<([A-Za-z]\w*)>", p[i:]) if not in_class else None
+            if m:
+                out.append(f"(?P={m.group(1)})")
+                i += m.end()
+                continue
+            m = re.match(r"\\o\{([0-7]+)\}|\\o([0-7]{1,3})|\\x\{([0-9A-Fa-f]+)\}", p[i:])
+            if m:
+                code = int(m.group(1) or m.group(2), 8) if m.group(3) is None else int(m.group(3), 16)
+                out.append(re.escape(chr(code)))
+                i += m.end()
+                continue
+            out.append(c + d)
+            i += 2
+            continue
+        if in_class:
+            m = re.match(r"\[:([a-z]+):\]", p[i:]) if c == "[" else None
+            if m and m.group(1) in _POSIX_CLASSES:
+                out.append(_POSIX_CLASSES[m.group(1)])
+                i += m.end()
+                continue
+            if c == "[":
+                out.append("\\[")
+            else:
+                if c == "]":
+                    in_class = False
+                out.append(c)
+            i += 1
+            continue
+        if c == "[":
+            in_class = True
+            out.append(c)
+            i += 1
+            if p[i:i + 1] == "^":
+                out.append("^")
+                i += 1
+            if p[i:i + 1] == "]":
+                out.append("\\]")
+                i += 1
+            continue
+        if c == "(" and p.startswith("(?<", i) and p[i + 3:i + 4] not in ("=", "!"):
+            out.append("(?P<")
+            i += 3
+            continue
+        if c == "$" and not multiline:
+            out.append(r"\Z")  # '$' is the end of the text, also when it ends with a newline
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
-@builtin("regexprep")
-def _regexprep(interp, args, nargout):
-    pat = _translate_regex(text(args[1]))
-    rep = _translate_replacement(text(args[2]))
+def _regex_options(opts: list, name: str) -> tuple[list[str], set[str]]:
+    """Split the trailing options into the selected outputs (in order) and the switches."""
+    selected: list[str] = []
+    switches: set[str] = set()
+    for o in opts:
+        if not is_text(o):
+            raise MatlabError(f"{name}: options must be text.")
+        key = text(o).lower()
+        if key in _OUTPUT_KEYS:
+            selected.append(key)
+        elif key in _REGEX_SWITCHES:
+            switches.add(key)
+        else:
+            raise MatlabError(f"{name}: unknown option '{text(o)}'.")
+    return selected, switches
+
+
+def _compile_regex(pattern: str, switches: set[str], name: str):
+    """Compiled pattern, or None for an empty pattern (which never matches)."""
+    if pattern == "":
+        return None
     flags = 0
-    count = 0
-    for opt in args[3:]:
-        o = text(opt).lower()
-        if o == "ignorecase":
-            flags |= re.IGNORECASE
-        elif o == "once":
-            count = 1
-    rx = re.compile(pat, flags)
-    return _map_text(lambda s: rx.sub(rep, s, count=count), args[0])
+    if "ignorecase" in switches and "matchcase" not in switches:
+        flags |= re.IGNORECASE
+    if "dotexceptnewline" not in switches:
+        flags |= re.DOTALL
+    if "lineanchors" in switches:
+        flags |= re.MULTILINE
+    if "freespacing" in switches:
+        flags |= re.VERBOSE
+    try:
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return re.compile(_translate_regex(pattern, "lineanchors" in switches), flags)
+    except (re.error, RecursionError, OverflowError) as e:
+        raise MatlabError(f"{name}: invalid regular expression '{pattern}' ({e}).") from None
 
 
-@builtin("regexpi")
-def _regexpi(interp, args, nargout):
-    return _regexp(interp, [*args, char("ignorecase")], nargout)
+def _regex_matches(rx, s: str, switches: set[str]) -> list:
+    out = []
+    if rx is None:
+        return out
+    keep_empty = "emptymatch" in switches
+    pos = 0
+    while pos <= len(s):
+        m = rx.search(s, pos)
+        if m is None:
+            break
+        if m.end() == m.start():
+            # an empty match is dropped (unless asked for) and the scan moves on one character
+            pos = m.end() + 1
+            if not keep_empty:
+                continue
+        else:
+            pos = m.end()
+        out.append(m)
+        if "once" in switches:
+            break
+    return out
 
 
-@builtin("regexp")
-def _regexp(interp, args, nargout):
-    s_val, pat = args[0], _translate_regex(text(args[1]))
-    opts = [text(o).lower() for o in args[2:]]
-    flags = re.IGNORECASE if "ignorecase" in opts else 0
-    once = "once" in opts
-    rx = re.compile(pat, flags)
-    if isinstance(s_val, Cell):
-        data = np.empty(s_val.shape, dtype=object)
-        for idx in np.ndindex(s_val.shape):
-            data[idx] = _regexp(interp, [s_val.data[idx], *args[1:]], 1)
-        return Cell(data)
-    s = text(s_val)
-    matches = list(rx.finditer(s))
-    if once:
-        matches = matches[:1]
+def _row(values) -> np.ndarray:
+    return np.array(values, dtype=float).reshape(1, -1) if values else np.zeros((1, 0))
+
+
+def _regexp_one(rx, s: str, switches: set[str]) -> dict:
+    """All seven outputs of regexp for one piece of text."""
+    from ..values import Struct
+    matches = _regex_matches(rx, s, switches)
+    ngroups = rx.groups if rx is not None else 0
+    group_names = list(rx.groupindex) if rx is not None else []
 
     def tokens_of(m):
-        groups = m.groups()
-        if not groups:
+        if not ngroups:
             return Cell.from_list([char(m.group(0))])
-        return Cell.from_list([char(g or "") for g in groups])
+        return Cell.from_list([char(g or "") for g in m.groups()])
 
-    results = {
-        "start": np.array([m.start() + 1.0 for m in matches]).reshape(1, -1) if matches else np.zeros((1, 0)),
-        "end": np.array([float(m.end()) for m in matches]).reshape(1, -1) if matches else np.zeros((1, 0)),
-        "match": Cell.from_list([char(m.group(0)) for m in matches]),
-        "tokens": Cell.from_list([tokens_of(m) for m in matches]),
-        "names": None,
-        "split": None,
-    }
+    def extents_of(m):
+        if not ngroups:
+            return np.array([[m.start() + 1.0, float(m.end())]])
+        rows = []
+        for g in range(1, ngroups + 1):
+            a, b = m.span(g)
+            rows.append([a + 1.0, float(b)] if a >= 0 else [m.end() + 1.0, float(m.end())])
+        return np.array(rows, dtype=float)
+
+    def names_of(ms):
+        if not group_names:
+            return Struct()
+        if not ms:
+            return Struct(np.empty((0, 0), dtype=object), group_names)
+        sdata = np.empty((1, len(ms)), dtype=object)
+        for k, m in enumerate(ms):
+            sdata[0, k] = {name: char(m.group(name) or "") for name in group_names}
+        return Struct(sdata, group_names)
+
     pieces, last = [], 0
     for m in matches:
         pieces.append(char(s[last:m.start()]))
         last = m.end()
     pieces.append(char(s[last:]))
-    results["split"] = Cell.from_list(pieces)
-    from ..values import Struct
-    group_names = list(rx.groupindex)
-    if not group_names:
-        names = Struct()
-    elif not matches:
-        names = Struct(np.empty((0, 0), dtype=object), group_names)
-    else:
-        sdata = np.empty((1, len(matches)), dtype=object)
-        for k, m in enumerate(matches):
-            sdata[0, k] = {name: char(m.group(name) or "") for name in group_names}
-        names = Struct(sdata, group_names)
-    results["names"] = names
-    if once:
+    res = {"split": Cell.from_list(pieces), "names": names_of(matches)}
+    if "once" in switches:
         if matches:
-            results["match"] = char(matches[0].group(0))
-            results["tokens"] = tokens_of(matches[0])
-            results["start"] = matches[0].start() + 1.0
-            results["end"] = float(matches[0].end())
+            m = matches[0]
+            res.update({"start": np.array([[m.start() + 1.0]]), "end": np.array([[float(m.end())]]),
+                        "tokenextents": extents_of(m), "match": char(m.group(0)), "tokens": tokens_of(m)})
         else:
-            results["match"] = char("")
-            results["tokens"] = Cell(np.empty((1, 0), dtype=object))
-            results["start"] = np.zeros((0, 0))
-            results["end"] = np.zeros((0, 0))
-    selected = [o for o in opts if o in results]
-    order = selected or ["start", "end", "te", "match", "tokens", "names", "split"]
-    out = []
-    for key in order:
-        if key == "te":
-            out.append(Cell(np.empty((1, 0), dtype=object)))
-        else:
-            out.append(results[key])
+            res.update({"start": np.zeros((0, 0)), "end": np.zeros((0, 0)), "tokenextents": np.zeros((0, 0)),
+                        "match": char(""), "tokens": Cell(np.empty((0, 0), dtype=object))})
+    else:
+        res.update({
+            "start": _row([m.start() + 1.0 for m in matches]),
+            "end": _row([float(m.end()) for m in matches]),
+            "tokenextents": Cell.from_list([extents_of(m) for m in matches]),
+            "match": Cell.from_list([char(m.group(0)) for m in matches]),
+            "tokens": Cell.from_list([tokens_of(m) for m in matches]),
+        })
+    return res
+
+
+def _text_items(v, name: str):
+    """(list of str, shape or None): the texts of a char/string/cell argument."""
+    v = _as_cell_if_strings(v)
+    if isinstance(v, Cell):
+        return [to_str(x) for x in v.data.flatten(order="F")], v.shape
+    return [text(v)], None
+
+
+@builtin("regexp")
+def _regexp(interp, args, nargout):
+    nargs(args, 2, None, "regexp")
+    selected, switches = _regex_options(list(args[2:]), "regexp")
+    strs, s_shape = _text_items(args[0], "regexp")
+    pats, p_shape = _text_items(args[1], "regexp")
+    order = selected or list(_OUTPUT_KEYS)
     n = max(nargout, 1)
-    return tuple(out[:n]) if n > 1 else out[0]
+    if n > len(order):
+        raise MatlabError("regexp: too many output arguments.")
+    order = order[:n]
+    compiled = [_compile_regex(p, switches, "regexp") for p in pats]
+    if s_shape is None and p_shape is None and "forcecelloutput" not in switches:
+        res = _regexp_one(compiled[0], strs[0], switches)
+        out = [res[k] for k in order]
+    else:
+        if s_shape is not None and p_shape is not None and len(strs) != len(pats) \
+                and len(strs) != 1 and len(pats) != 1:
+            raise MatlabError("regexp: the cell arrays of text and of expressions must have the same size.")
+        shape = s_shape if s_shape is not None and (p_shape is None or len(strs) >= len(pats)) else p_shape
+        if shape is None:
+            shape = (1, 1)
+        count = max(len(strs), len(pats)) if strs and pats else 0
+        cols = [np.empty(count, dtype=object) for _ in order]
+        for k in range(count):
+            res = _regexp_one(compiled[k if len(pats) > 1 else 0], strs[k if len(strs) > 1 else 0], switches)
+            for col, key in zip(cols, order):
+                col[k] = res[key]
+        out = [Cell(col.reshape(shape, order="F")) for col in cols]
+    return tuple(out) if n > 1 else out[0]
 
 
+@builtin("regexpi")
+def _regexpi(interp, args, nargout):
+    opts = [text(o).lower() for o in args[2:] if is_text(o)]
+    extra = [] if "matchcase" in opts else [char("ignorecase")]
+    return _regexp(interp, [*args, *extra], nargout)
+
+
+_REPL_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "f": "\f", "v": "\v", "a": "\a", "b": "\b"}
+
+
+def _parse_replacement(r: str) -> list[tuple[str, object]]:
+    """Split a regexprep replacement into literal text, token references and ${...} expressions."""
+    parts: list[tuple[str, object]] = []
+    lit: list[str] = []
+
+    def flush():
+        if lit:
+            parts.append(("lit", "".join(lit)))
+            lit.clear()
+
+    i, n = 0, len(r)
+    while i < n:
+        c = r[i]
+        if c == "\\" and i + 1 < n:
+            d = r[i + 1]
+            m = re.match(r"\\o\{([0-7]+)\}|\\o([0-7]{1,3})|\\x\{([0-9A-Fa-f]+)\}|\\x([0-9A-Fa-f]{1,2})", r[i:])
+            if m:
+                octal = m.group(1) or m.group(2)
+                lit.append(chr(int(octal, 8) if octal else int(m.group(3) or m.group(4), 16)))
+                i += m.end()
+                continue
+            lit.append(_REPL_ESCAPES.get(d, d))
+            i += 2
+            continue
+        if c == "$" and i + 1 < n:
+            m = re.match(r"\$(\d+)", r[i:])
+            if m:
+                flush()
+                parts.append(("group", m.group(1)))
+                i += m.end()
+                continue
+            m = re.match(r"\$<([A-Za-z]\w*)>", r[i:])
+            if m:
+                flush()
+                parts.append(("name", m.group(1)))
+                i += m.end()
+                continue
+            if r[i + 1] == "{":
+                depth, j = 0, i + 1
+                while j < n:
+                    if r[j] == "{":
+                        depth += 1
+                    elif r[j] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    j += 1
+                if j < n:
+                    flush()
+                    parts.append(("expr", r[i + 2:j]))
+                    i = j + 1
+                    continue
+        lit.append(c)
+        i += 1
+    flush()
+    return parts
+
+
+def _group_text(m, digits: str) -> tuple[str, str]:
+    """Text of token $digits and the digits that are not part of the token number."""
+    ngroups = m.re.groups
+    k = len(digits)
+    while k > 1 and int(digits[:k]) > ngroups:
+        k -= 1
+    idx = int(digits[:k])
+    if idx > ngroups:
+        return "", digits[k:]
+    return m.group(idx) or "", digits[k:]
+
+
+def _render_replacement(interp, parts, m) -> str:
+    out = []
+    for kind, val in parts:
+        if kind == "lit":
+            out.append(val)
+        elif kind == "group":
+            out.extend(_group_text(m, val))
+        elif kind == "name":
+            out.append((m.groupdict().get(val) or "") if val in m.re.groupindex else f"$<{val}>")
+        else:
+            def quote(t: str) -> str:
+                return "'" + t.replace("'", "''") + "'"
+
+            code = re.sub(r"\$<([A-Za-z]\w*)>", lambda g: quote(m.groupdict().get(g.group(1)) or ""), val)
+            code = re.sub(r"\$(\d+)", lambda g: quote(_group_text(m, g.group(1))[0]) + _group_text(m, g.group(1))[1],
+                          code)
+            res = interp.eval_expression(code)
+            if is_text(res):
+                out.append(text(res))
+            elif isinstance(res, np.ndarray):
+                out.append(to_str(_num2str(interp, [res], 1)))
+            else:
+                raise MatlabError("regexprep: a ${...} expression must return text.")
+    return "".join(out)
+
+
+def _match_case(src: str, rep: str) -> str:
+    if src and src.isupper():
+        return rep.upper()
+    if src and src.islower():
+        return rep.lower()
+    if src[:1].isupper() and src[1:].islower():
+        return rep[:1].upper() + rep[1:].lower()
+    return rep
+
+
+@builtin("regexprep")
+def _regexprep(interp, args, nargout):
+    nargs(args, 3, None, "regexprep")
+    selected, switches = _regex_options(list(args[3:]), "regexprep")
+    if selected:
+        raise MatlabError(f"regexprep: unknown option '{selected[0]}'.")
+    pats, _ = _text_items(args[1], "regexprep")
+    reps, rep_shape = _text_items(args[2], "regexprep")
+    if rep_shape is not None and len(reps) != 1 and len(reps) != len(pats):
+        raise MatlabError("regexprep: the number of replacements must match the number of expressions.")
+    if len(reps) == 1:
+        reps = reps * len(pats)
+    steps = [(_compile_regex(p, switches, "regexprep"), _parse_replacement(r)) for p, r in zip(pats, reps)]
+
+    def apply(s: str) -> str:
+        for rx, parts in steps:
+            matches = _regex_matches(rx, s, switches)
+            if not matches:
+                continue
+            out, pos = [], 0
+            for m in matches:
+                out.append(s[pos:m.start()])
+                new = _render_replacement(interp, parts, m)
+                out.append(_match_case(m.group(0), new) if "preservecase" in switches else new)
+                pos = m.end()
+            out.append(s[pos:])
+            s = "".join(out)
+        return s
+
+    return _map_text(apply, args[0])
+
+
+# -- numbers in other bases ----------------------------------------------------------------
+
+_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _base_symbols(base, name: str) -> str:
+    if is_text(base):
+        symbols = text(base)
+        if len(symbols) < 2 or len(set(symbols)) != len(symbols) or " " in symbols:
+            raise MatlabError(f"{name}: the symbols must be at least two different non-blank characters.")
+        return symbols
+    b = to_int(base, "base")
+    if not 2 <= b <= 36:
+        raise MatlabError(f"{name}: the base must be an integer between 2 and 36.")
+    return _DIGITS[:b]
+
+
+def _to_base(value, symbols: str, name: str) -> str:
+    v = float(value) if not isinstance(value, (int, np.integer)) else int(value)
+    if isinstance(v, float):
+        if not math.isfinite(v) or v != math.floor(v):
+            raise MatlabError(f"{name}: the input must be a non-negative integer.")
+        v = int(v)
+    if v < 0:
+        raise MatlabError(f"{name}: the input must be a non-negative integer.")
+    base = len(symbols)
+    out = []
+    while True:
+        v, r = divmod(v, base)
+        out.append(symbols[r])
+        if v == 0:
+            break
+    return "".join(reversed(out))
+
+
+def _dec2base(value, symbols: str, min_len: int, name: str):
+    if isinstance(value, Cell):
+        items = [x.flat[0] for x in value.values_f()]
+    else:
+        a = value if isinstance(value, np.ndarray) and value.dtype.kind in "iu" else num(value)
+        if a.dtype.kind == "c":
+            raise MatlabError(f"{name}: the input must be real.")
+        items = list(a.flatten(order="F"))
+    if not items:
+        return char("")
+    rows = [_to_base(x, symbols, name) for x in items]
+    width = max(max(len(r) for r in rows), min_len)
+    return _rows_to_char([r.rjust(width, symbols[0]) for r in rows])
+
+
+def _base2dec(value, symbols: str, name: str):
+    value = _as_cell_if_strings(value)
+    if isinstance(value, Cell):
+        rows = [to_str(x) for x in value.values_f()]
+    elif isinstance(value, MString):
+        rows = [str(value)]
+    elif is_char(value):
+        rows = ["".join(r) for r in value] if value.size else []
+    else:
+        raise MatlabError(f"{name}: the input must be text.")
+    base = len(symbols)
+    lookup = {c: k for k, c in enumerate(symbols)}
+    if symbols == _DIGITS[:base]:
+        lookup.update({c.lower(): k for c, k in lookup.items()})
+    out = []
+    for r in rows:
+        r = r.replace(" ", "")
+        total = 0
+        ok = bool(r)
+        for c in r:
+            if c not in lookup:
+                ok = False
+                break
+            total = total * base + lookup[c]
+        out.append(float(total) if ok else float("nan"))
+    if not out:
+        return np.zeros((0, 0))
+    return np.array(out, dtype=float).reshape(-1, 1)
+
+
+@builtin("dec2base")
+def _dec2base_fn(interp, args, nargout):
+    nargs(args, 2, 3, "dec2base")
+    n = to_int(args[2], "length") if len(args) > 2 else 0
+    return _dec2base(args[0], _base_symbols(args[1], "dec2base"), n, "dec2base")
+
+
+@builtin("base2dec")
+def _base2dec_fn(interp, args, nargout):
+    nargs(args, 2, 2, "base2dec")
+    return _base2dec(args[0], _base_symbols(args[1], "base2dec"), "base2dec")
+
+
+def _dec2(base: int, name: str):
+    def f(interp, args, nargout):
+        nargs(args, 1, 2, name)
+        n = to_int(args[1], "length") if len(args) > 1 else 0
+        return _dec2base(args[0], _DIGITS[:base], n, name)
+    return f
+
+
+def _2dec(base: int, name: str):
+    def f(interp, args, nargout):
+        nargs(args, 1, 1, name)
+        return _base2dec(args[0], _DIGITS[:base], name)
+    return f
+
+
+builtin("dec2bin")(_dec2(2, "dec2bin"))
+builtin("dec2hex")(_dec2(16, "dec2hex"))
+builtin("bin2dec")(_2dec(2, "bin2dec"))
+builtin("hex2dec")(_2dec(16, "hex2dec"))
