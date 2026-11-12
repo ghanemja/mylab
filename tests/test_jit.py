@@ -185,7 +185,8 @@ INLINE_CASES = [
     # falls back: captured array, call of another user function, recursion
     "v = [1 2 3]; f = @(x) x + v(2); s = 0; for i = 1:50, s = s + f(i); end",
     "f = @(x) x + 1; g = @(x) f(x)*2; s = 0; for i = 1:50, s = s + g(i); end",
-    "s = 0; for i = 1:30, s = s + down(mod(i, 5)); end\nfunction y = down(n)\ny = n + (n > 0)*down(n - (n > 0)) * 0;\nend",
+    "s = 0; for i = 1:30, s = s + twice(i); end\nfunction y = twice(n)\ny = dbl(n);\nend\n"
+    "function y = dbl(n)\ny = 2*n;\nend",
     # falls back at run time: complex result, wrong argument count is an error either way
     "f = @(x) sqrt(x - 5); s = 0; for i = 1:10, s = s + f(i); end",
     # a variable named like the function shadows it inside the loop
