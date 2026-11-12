@@ -287,7 +287,7 @@ def test_syntax_error_names_the_file(tmp_path):
 
 
 def test_timeout_only_fails_those_tests(tmp_path):
-    # p1_double has a 6-second limit (long enough for a slow machine to start printing); p2_sign keeps the default limit.
+    # p1_double has a 6-second limit (enough for a slow machine to start printing); p2_sign keeps the default.
     root = make_assignment(tmp_path / "a", timeout=6)
     sub = tmp_path / "s"
     write(sub / "double_it.m",
