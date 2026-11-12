@@ -65,6 +65,15 @@ class MObject:
     def brace_set(self, interp, args: list, value: Any) -> Any:
         raise MatlabError(f"Brace indexing is not supported for variables of type '{self.class_name()}'.")
 
+    # -- operators --------------------------------------------------------------------------
+    def binary_op(self, interp, op: str, left: Any, right: Any) -> Any:
+        """``left op right`` where one operand is this object; NotImplemented = not handled."""
+        return NotImplemented
+
+    def unary_op(self, interp, op: str) -> Any:
+        """``-x``, ``+x``, ``~x``, ``x'`` (op "'") or ``x.'`` (op ".'"); NotImplemented = not handled."""
+        return NotImplemented
+
     # -- display ----------------------------------------------------------------------------
     def display_lines(self) -> list[str]:
         return [f"  {self.class_name()} object"]

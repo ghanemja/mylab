@@ -25,11 +25,20 @@ def _height(v: Any) -> int:
         return v.shape[0]
     if isinstance(v, MString):
         return 1
+    if _is_time(v):
+        return v.data.shape[0]
     raise MatlabError(f"A {type(v).__name__} cannot be a table variable.")
+
+
+def _is_time(v: Any) -> bool:
+    """A datetime or duration array (stored as one object holding a numeric ``data`` array)."""
+    return getattr(v, "kind", None) in ("datetime", "duration")
 
 
 def _as_column(v: Any) -> Any:
     """Table variables are stored with one row per table row (row vectors become columns)."""
+    if _is_time(v):
+        return v.like(v.data.T.copy()) if v.data.ndim == 2 and v.data.shape[0] == 1 and v.data.shape[1] > 1 else v
     if isinstance(v, MString):
         d = np.empty((1, 1), dtype=object)
         d[0, 0] = str(v)
@@ -363,6 +372,8 @@ class TableObject(MObject):
             return "<missing>" if x is None else f'"{x}"'
         if is_char(col):
             return "'" + "".join(col[i]) + "'"
+        if _is_time(col):
+            return "   ".join(str(x) for x in np.atleast_1d(col.element_texts()[i]).ravel())
         row = col[i]
         if col.dtype == bool:
             return " ".join("true" if x else "false" for x in row)
@@ -411,6 +422,9 @@ def _assign_rows(col: Any, rows: np.ndarray, piece: Any) -> Any:
     if isinstance(col, StringArray):
         return StringArray(ix.set_(col.data, [rows.reshape(-1, 1) + 1.0, ix.COLON], string_data(piece),
                                    lambda: None))
+    if _is_time(col):
+        return col.like(ix.set_(col.data.copy(), [rows.reshape(-1, 1) + 1.0, ix.COLON], col.coerce(piece),
+                                lambda: np.nan))
     vals = num(piece) if not isinstance(piece, np.ndarray) else piece
     return ix.set_(col, [rows.reshape(-1, 1) + 1.0, ix.COLON], vals, lambda: 0)
 
@@ -434,6 +448,8 @@ def _pad_rows(col: Any, n: int) -> Any:
     if isinstance(col, StringArray):
         pad = np.empty((extra,) + col.data.shape[1:], dtype=object)
         return StringArray(np.concatenate([col.data, pad]))
+    if _is_time(col):
+        return col.like(np.concatenate([col.data, np.full((extra,) + col.data.shape[1:], np.nan)]))
     fill = np.nan if col.dtype.kind == "f" else 0
     return np.concatenate([col, np.full((extra,) + col.shape[1:], fill, dtype=col.dtype)])
 
@@ -612,7 +628,7 @@ def _sortrows(interp, args, nargout):
             vals = [to_str(x) if isinstance(col, Cell) else (x or "") for x in col.data[order, 0]]
             o = sorted(range(len(vals)), key=lambda i: vals[i], reverse=descend)
         else:
-            v = col[order, 0].astype(float)
+            v = (col.data if _is_time(col) else col)[order, 0].astype(float)
             o = list(np.argsort(-v if descend else v, kind="stable"))
         order = order[np.array(o, dtype=int)]
     res = t.index_get(interp, [order.reshape(1, -1) + 1.0, ix.COLON])
@@ -701,7 +717,7 @@ def _col_keys(col: Any) -> list:
         return [str(col)]
     if is_char(col):
         return ["".join(r).rstrip() for r in col]
-    a = num(col)
+    a = col.data if _is_time(col) else num(col)
     if a.ndim == 1:
         a = a.reshape(-1, 1)
     keys = []

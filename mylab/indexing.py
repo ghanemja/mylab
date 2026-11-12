@@ -68,6 +68,8 @@ def _to_positions(idx: Any, extent: int, *, for_set: bool) -> tuple[np.ndarray, 
         if idx.size == 1 and idx.flat[0] == ":":
             return np.arange(extent), None
         raise MatlabError("Character arrays cannot be used as indices.")
+    if hasattr(idx, "to_dense"):  # a sparse (logical) index
+        idx = idx.to_dense()
     if not isinstance(idx, np.ndarray):
         raise MatlabError("Indices must be numeric or logical arrays.")
     if idx.dtype == bool:
@@ -178,6 +180,8 @@ def _assign_block(arr: np.ndarray, positions: list[np.ndarray], vals: np.ndarray
 
 def set_(arr: np.ndarray, args: list[Any], rhs: np.ndarray, fill: Callable[[], Any]) -> np.ndarray:
     """Return ``arr`` with ``arr(args) = rhs`` applied (may grow / reallocate)."""
+    if hasattr(rhs, "to_dense"):  # a sparse right-hand side stored into a full array
+        rhs = rhs.to_dense()
     k = len(args)
     if k == 1:
         return _set_linear(arr, args[0], rhs, fill)

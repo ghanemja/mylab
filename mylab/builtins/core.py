@@ -536,25 +536,3 @@ def _char_rows(rows: list[str]) -> np.ndarray:
 def _cast(interp, args, nargout):
     return cast_class(num(args[0]), text(args[1]))
 
-
-@builtin("full", "sparse")
-def _full(interp, args, nargout):
-    if len(args) == 1:
-        return args[0]
-    if len(args) >= 2 and all(not is_text(a) for a in args[:2]) and len(args) == 2:
-        return np.zeros((to_int(args[0]), to_int(args[1])))
-    i = fnum(args[0]).flatten().astype(int) - 1
-    j = fnum(args[1]).flatten().astype(int) - 1
-    v = fnum(args[2]).flatten()
-    m = to_int(args[3]) if len(args) > 3 else int(i.max()) + 1
-    n = to_int(args[4]) if len(args) > 4 else int(j.max()) + 1
-    out = np.zeros((m, n), dtype=v.dtype)
-    v = np.broadcast_to(v, i.shape)
-    np.add.at(out, (i, j), v)
-    return out
-
-
-@builtin("issparse")
-def _issparse(interp, args, nargout):
-    return bool_scalar(False)
-

@@ -338,6 +338,11 @@ def call_operator(interp, op: str, left: Any, right: Any) -> Any:
             if not res:
                 raise MatlabError(f"Operator method '{name}' did not return a value.")
             return res[0]
+    for obj in (left, right):
+        if isinstance(obj, MObject):
+            res = obj.binary_op(interp, op, left, right)
+            if res is not NotImplemented:
+                return res
     if op in ("==", "~=") and isinstance(left, MObject) and isinstance(right, MObject) \
             and left.is_handle and right.is_handle:
         same = left is right
@@ -356,6 +361,9 @@ def call_unary_operator(interp, op: str, operand: Any) -> Any:
             raise MatlabError(f"Operator method '{name}' did not return a value.")
         return res[0]
     if isinstance(operand, MObject):
+        res = operand.unary_op(interp, op)
+        if res is not NotImplemented:
+            return res
         raise MatlabError(f"Operator '{op}' is not supported for operands of type '{operand.class_name()}'.")
     return NotImplemented
 
