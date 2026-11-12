@@ -511,6 +511,14 @@ class _TimeArray(MObject):
     def copy(self) -> "_TimeArray":
         return self.like(self.data.copy())
 
+    def empty_like(self) -> "_TimeArray":
+        """A 0-by-0 array of the same kind, the starting point for ``x(k) = value`` on a new variable."""
+        return self.like(np.zeros((0, 0)))
+
+    def colon_range(self, start: Any, step: Any, stop: Any) -> Any:
+        """``start:step:stop`` when one of the operands is this array (hook for the range operator)."""
+        return colon_range(start, step, stop)
+
     def reshape(self, shape, order="F") -> "_TimeArray":
         return self.like(self.data.reshape(shape, order=order))
 

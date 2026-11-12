@@ -44,11 +44,9 @@ _OWN: set[str] = set()  # built-ins defined in this module: they accept sparse i
 _PASSTHROUGH = {
     "size", "numel", "length", "ndims", "isempty", "isscalar", "isvector", "isrow", "iscolumn", "ismatrix",
     "issquare", "disp", "display", "struct", "cell", "deal", "setfield", "getfield", "isfield", "rmfield",
-    "fieldnames", "feval", "cellfun", "arrayfun", "structfun", "save", "table", "validateattributes",
-    "assert", "error", "warning", "func2str", "builtin", "exist", "isvarname", "whos", "who", "clear",
+    "fieldnames", "feval", "cellfun", "arrayfun", "structfun", "save", "table", "assert", "error", "warning", "func2str", "builtin", "exist", "isvarname", "whos", "who", "clear",
     "tic", "toc", "timeit", "containers.Map", "isobject", "isvalid", "ishandle", "isgraphics", "nargin",
-    "nargout", "inputname", "num2cell_keep", "isdatetime", "isduration", "istable", "iscategorical",
-    "isMATLABReleaseOlderThan", "addvars", "array2table",
+    "nargout", "inputname", "isdatetime", "isduration", "istable", "iscategorical", "addvars",
 }
 # Type questions: answered from a 1x1 stand-in of the same class, without converting the matrix.
 _TYPE_ONLY = {
@@ -148,6 +146,10 @@ class SparseMatrix(MObject):
     @property
     def dtype(self):
         return self._m.dtype
+
+    def empty_like(self) -> "SparseMatrix":
+        """A 0-by-0 sparse matrix, the starting point for ``x(i,j) = value`` on a new variable."""
+        return SparseMatrix(sp.csc_matrix((0, 0), dtype=self._m.dtype))
 
     def astype(self, dtype) -> np.ndarray:
         return self.to_dense().astype(dtype)
