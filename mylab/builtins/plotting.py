@@ -6211,3 +6211,65 @@ def _gtext(interp, args, nargout):
     t = ax.text(x, y, label)
     _redraw(interp)
     return _wrap(interp, "text", t) if nargout > 0 else None
+
+
+@builtin("imshow")
+@_with_axes_arg
+def _imshow(interp, args, nargout):
+    """Show an image: integer and logical classes use their own value range, like MATLAB."""
+    rest, opts = _split_name_values(args, {"parent", "border", "initialmagnification", "displayrange",
+                                           "colormap", "interpolation"})
+    if not rest:
+        raise MatlabError("imshow: an image or file name is required.")
+    img = rest[0]
+    cmap = None
+    limits = None
+    if is_text(img):
+        out = interp.call_named("imread", [img], 2, interp.frame)
+        img = out[0]
+        if len(out) > 1 and isinstance(out[1], np.ndarray) and out[1].size:
+            cmap = out[1]
+    if len(rest) > 1 and isinstance(rest[1], np.ndarray):
+        second = rest[1]
+        if second.ndim == 2 and second.shape[1] == 3 and second.shape[0] > 1:
+            cmap = second                       # imshow(X, map)
+        elif second.size == 2:
+            limits = [float(v) for v in np.real(fnum(second)).flatten()]   # imshow(I, [lo hi])
+        elif second.size == 0:
+            limits = "auto"                     # imshow(I, [])
+    if "displayrange" in opts and fnum(opts["displayrange"]).size == 2:
+        limits = [float(v) for v in fnum(opts["displayrange"]).flatten()]
+    if not isinstance(img, np.ndarray) or img.dtype.kind not in "biuf":
+        raise MatlabError("imshow: the image must be a numeric or logical array.")
+    ax = _axes(interp, projection="rectilinear")
+    kw: dict = {"aspect": "equal", "origin": "upper", "interpolation": "nearest"}
+    data = img
+    if img.ndim == 3 and img.shape[2] == 3:      # truecolor
+        if img.dtype.kind == "f":
+            data = np.clip(img, 0, 1)
+        elif img.dtype != np.uint8:
+            data = img.astype(float) / float(np.iinfo(img.dtype).max)
+    elif cmap is not None:                       # indexed image
+        from matplotlib.colors import ListedColormap
+        offset = 0 if img.dtype.kind in "iu" else 1   # integer indices are 0-based, double are 1-based
+        data = np.clip(img.astype(int) - offset, 0, cmap.shape[0] - 1)
+        kw.update(cmap=ListedColormap(np.clip(fnum(cmap), 0, 1)), vmin=0, vmax=cmap.shape[0] - 1)
+    else:                                        # grayscale or logical
+        data = img.astype(float)
+        if limits == "auto":
+            lo, hi = (float(np.nanmin(data)), float(np.nanmax(data))) if data.size else (0.0, 1.0)
+        elif limits is not None:
+            lo, hi = limits
+        elif img.dtype.kind in "iu":
+            info = np.iinfo(img.dtype)
+            lo, hi = float(info.min), float(info.max)
+        else:
+            lo, hi = 0.0, 1.0
+        if hi <= lo:
+            hi = lo + 1.0
+        kw.update(cmap="gray", vmin=lo, vmax=hi)
+    im = ax.imshow(data, **kw)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    _redraw(interp)
+    return _ret(interp, "image", [im], nargout)

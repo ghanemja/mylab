@@ -936,3 +936,29 @@ def test_bwmorph(m):
     assert m.num("bwmorph([1 1 0; 1 0 0; 0 0 0], 'majority')").sum() == 0
     with pytest.raises(MatlabError, match="not supported"):
         m.run("bwmorph(sq, 'shrink')")
+
+
+def test_imshow_integer_gray_logical_and_indexed(m, tmp_path):
+    out = tmp_path / "shown.png"
+    m.run(f"""
+rgb = uint8(cat(3, 255 * ones(4, 6), zeros(4, 6), zeros(4, 6)));
+subplot(2, 2, 1); h = imshow(rgb);
+subplot(2, 2, 2); imshow(uint8([0 128; 255 64]));
+subplot(2, 2, 3); imshow([1 2; 3 4], []);
+subplot(2, 2, 4); imshow(logical([1 0; 0 1]));
+saveas(gcf, '{out}');
+""")
+    assert out.exists()
+    st = m.interp.state["plot"]
+    axes = st.figures[st.current].axes
+    rgb_data = axes[0].images[0].get_array()
+    assert rgb_data.dtype == np.uint8 and rgb_data[0, 0, 0] == 255
+    assert axes[1].images[0].get_clim() == (0.0, 255.0)
+    assert axes[2].images[0].get_clim() == (1.0, 4.0)
+    assert axes[3].images[0].get_clim() == (0.0, 1.0)
+    m.run("close all")
+
+
+def test_uint64_top_of_range(m):
+    assert int(m.val("x").item()) == 18446744073709551615 if m.run("x = uint64(18446744073709551615);") == "" else False
+    assert int(m.num("intmax('int64')").item()) == 9223372036854775807

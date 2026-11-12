@@ -441,7 +441,11 @@ def saturate_int(a: np.ndarray, dtype) -> np.ndarray:
     a = np.real(np.asarray(a, dtype=complex if np.iscomplexobj(a) else float))
     a = np.where(np.isnan(a), 0, a)
     rounded = np.sign(a) * np.floor(np.abs(a) + 0.5)  # MATLAB rounds halves away from zero
-    return np.clip(rounded, info.min, info.max).astype(dtype)
+    out = np.clip(rounded, info.min, info.max).astype(dtype)
+    if info.max > 2 ** 53:
+        # float(info.max) rounds up to 2**63 or 2**64, which overflows in the cast: fix the top end.
+        out = np.where(rounded >= float(info.max), info.max, out).astype(dtype)
+    return out
 
 
 def values_equal(a: Any, b: Any) -> bool:
