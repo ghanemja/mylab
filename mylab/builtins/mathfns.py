@@ -10,7 +10,7 @@ import numpy as np
 import scipy.special as sp
 
 from ..errors import MatlabError
-from ..ops import binop, check_integer_mix, unary
+from ..ops import binop, unary
 from ..values import Cell, MString, StringArray, char, is_char, simplify, string_result, to_int, to_str
 from ._registry import builtin
 from ._util import (
@@ -54,33 +54,72 @@ def _unary_math(fn, *, allow_int=False, scalar=None):
 def _round_half_away(a):
     if a.dtype.kind == "c":
         return _round_half_away(a.real) + 1j * _round_half_away(a.imag)
-    if a.dtype.kind != "f":
-        return a.astype(float)
-    # floor(|a| + 0.5) is wrong where the sum rounds up (0.49999999999999994, odd values near 2^53).
-    m = np.abs(a)
-    r = np.floor(m)
+    mag = np.abs(a)
     with np.errstate(invalid="ignore"):
-        r = r + (m - r >= 0.5)
-    return np.copysign(r, a)  # a zero result keeps the sign of the input, as in MATLAB
+        low = np.floor(mag)
+        r = np.where(mag - low >= 0.5, low + 1, low)  # exact, unlike floor(|a| + 0.5)
+    return np.copysign(r, a).astype(a.dtype, copy=False)
+
+
+def _per_part(fn):
+    """Apply a real rounding function to the real and imaginary parts of complex input."""
+    def f(a):
+        if a.dtype.kind == "c":
+            return fn(a.real) + 1j * fn(a.imag)
+        return fn(a)
+    return f
+
+
+def _asin(a):
+    if a.dtype.kind == "c":
+        return np.arcsin(a)
+    out = np.abs(a) > 1
+    if not np.any(out):
+        return np.arcsin(a)
+    # outside [-1, 1]: asin(x) = sign(x) * (pi/2 - i*acosh(|x|))
+    s = np.sign(a)
+    big = s * (np.pi / 2) - 1j * s * np.arccosh(np.where(out, np.abs(a), 1.0))
+    return np.where(out, big, np.arcsin(np.where(out, 0.0, a)))
+
+
+def _acos(a):
+    if a.dtype.kind == "c":
+        return np.arccos(a)
+    if not np.any(np.abs(a) > 1):
+        return np.arccos(a)
+    return np.pi / 2 - _asin(a)
+
+
+def _acosh(a):
+    if a.dtype.kind != "c" and np.any(a < 1):
+        a = a.astype(np.complex64 if a.dtype == np.float32 else complex)
+    return np.arccosh(a)
+
+
+def _gamma(a):
+    r = sp.gamma(a)
+    if a.dtype.kind == "f":
+        r = np.where((a <= 0) & (a == np.floor(a)), np.inf, r)  # poles: 0 and the negative integers
+    return r
 
 
 _ELEMENTWISE = {
     "sqrt": np.emath.sqrt, "exp": np.exp, "log": np.emath.log, "log2": np.emath.log2,
     "log10": np.emath.log10, "log1p": np.log1p, "expm1": np.expm1,
     "sin": np.sin, "cos": np.cos, "tan": np.tan,
-    "asin": np.emath.arcsin, "acos": np.emath.arccos, "atan": np.arctan,
+    "asin": _asin, "acos": _acos, "atan": np.arctan,
     "sinh": np.sinh, "cosh": np.cosh, "tanh": np.tanh,
-    "asinh": np.arcsinh, "acosh": lambda a: np.emath.log(a + np.emath.sqrt(a * a - 1)),
+    "asinh": np.arcsinh, "acosh": _acosh,
     "atanh": lambda a: 0.5 * np.emath.log((1 + a) / (1 - a)),
     "sec": lambda a: 1 / np.cos(a), "csc": lambda a: 1 / np.sin(a), "cot": lambda a: 1 / np.tan(a),
     "sind": lambda a: _sind(a), "cosd": lambda a: _sind(np.asarray(a) + 90.0),
     "tand": lambda a: _sind(a) / _sind(np.asarray(a) + 90.0),
-    "asind": lambda a: np.degrees(np.emath.arcsin(a)), "acosd": lambda a: np.degrees(np.emath.arccos(a)),
+    "asind": lambda a: np.degrees(_asin(a)), "acosd": lambda a: np.degrees(_acos(a)),
     "atand": lambda a: np.degrees(np.arctan(a)),
     "deg2rad": np.radians, "rad2deg": np.degrees,
-    "floor": np.floor, "ceil": np.ceil, "fix": np.trunc,
+    "floor": _per_part(np.floor), "ceil": _per_part(np.ceil), "fix": _per_part(np.trunc),
     "real": np.real, "imag": np.imag, "conj": np.conj, "angle": np.angle,
-    "gamma": sp.gamma, "gammaln": sp.gammaln, "erf": sp.erf, "erfc": sp.erfc,
+    "gamma": _gamma, "gammaln": sp.gammaln, "erf": sp.erf, "erfc": sp.erfc,
     "erfinv": sp.erfinv, "erfcinv": sp.erfcinv,
 }
 
@@ -102,13 +141,45 @@ _SCALAR = {
     "cos": lambda x: math.cos(x) if math.isfinite(x) else None,
     "tan": lambda x: math.tan(x) if math.isfinite(x) else None,
     "atan": math.atan,
-    "floor": lambda x: math.copysign(float(math.floor(x)), x) if math.isfinite(x) else None,
-    "ceil": lambda x: math.copysign(float(math.ceil(x)), x) if math.isfinite(x) else None,
-    "fix": lambda x: math.copysign(float(math.trunc(x)), x) if math.isfinite(x) else None,
+    "floor": lambda x: math.copysign(math.floor(x), x) if math.isfinite(x) else None,
+    "ceil": lambda x: math.copysign(math.ceil(x), x) if math.isfinite(x) else None,
+    "fix": lambda x: math.copysign(math.trunc(x), x) if math.isfinite(x) else None,
 }
 
 for _name, _fn in _ELEMENTWISE.items():
     builtin(_name)(_unary_math(_fn, scalar=_SCALAR.get(_name)))
+
+_log2_one = _unary_math(np.emath.log2, scalar=_SCALAR["log2"])
+
+
+@builtin("log2")
+def _log2(interp, args, nargout):
+    if nargout < 2:
+        return _log2_one(interp, args, nargout)
+    nargs(args, 1, 1, "log2")
+    a = fnum(args[0])
+    if a.dtype.kind == "c":
+        a = a.real
+    f, e = np.frexp(a)
+    return f, e.astype(a.dtype)
+
+
+@builtin("pow2")
+def _pow2(interp, args, nargout):
+    nargs(args, 1, 2, "pow2")
+    two = np.array([[2.0]])
+    if len(args) == 1:
+        return binop(".^", two, args[0])
+    return binop(".*", args[0], binop(".^", two, args[1]))
+
+
+@builtin("realsqrt")
+def _realsqrt(interp, args, nargout):
+    nargs(args, 1, 1, "realsqrt")
+    a = fnum(args[0])
+    if a.dtype.kind == "c" or (a.size and np.any(a < 0)):
+        raise MatlabError("realsqrt produced complex result.")
+    return np.sqrt(a)
 
 
 @builtin("abs")
@@ -126,18 +197,52 @@ def _sign(interp, args, nargout):
     if a.dtype.kind == "c":
         with np.errstate(invalid="ignore"):
             return np.where(a == 0, 0, a / np.abs(a))
-    return np.sign(a).astype(a.dtype if a.dtype.kind in "iu" else float)
+    return np.sign(a).astype(a.dtype if a.dtype.kind in "iuf" else float)
+
+
+def _round_scaled(a, n):
+    """Round to n decimal places; n is an integer array that broadcasts with a."""
+    n = np.asarray(n, dtype=float)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        up = _round_half_away(a * 10.0 ** np.maximum(n, 0)) / 10.0 ** np.maximum(n, 0)
+        down = _round_half_away(a / 10.0 ** np.maximum(-n, 0)) * 10.0 ** np.maximum(-n, 0)
+    r = np.where(n >= 0, up, down)
+    return np.where(np.isfinite(a), r, a).astype(a.dtype, copy=False)
 
 
 @builtin("round")
 def _round(interp, args, nargout):
+    nargs(args, 1, 3, "round")
     a = num(args[0])
-    if a.dtype.kind in "iu":
-        return a
     if len(args) > 1:
         n = to_int(args[1], "digits")
-        f = 10.0 ** n
-        return _round_half_away(a * f) / f
+        mode = text(args[2]).lower() if len(args) > 2 else "decimals"
+        if mode not in ("significant", "decimals"):
+            raise MatlabError("round: the rounding type must be 'significant' or 'decimals'.")
+        int_class = a.dtype if a.dtype.kind in "iu" else None
+        if int_class is not None:
+            if n >= 0 and mode == "decimals":
+                return a
+            a = a.astype(float)
+        if mode == "significant":
+            if n < 1:
+                raise MatlabError("round: the number of significant digits must be a positive integer.")
+            if a.dtype.kind == "c":
+                raise MatlabError("round: 'significant' is not supported for complex values.")
+            with np.errstate(divide="ignore", invalid="ignore"):
+                e = np.floor(np.log10(np.abs(a)))
+            e = np.where(np.isfinite(e), e, 0.0)
+            r = _round_scaled(a, n - 1 - e)
+        elif a.dtype.kind == "c":
+            r = _round_scaled(a.real, n) + 1j * _round_scaled(a.imag, n)
+        else:
+            r = _round_scaled(a, n)
+        if int_class is not None:
+            from ..values import saturate_int
+            return saturate_int(r, int_class)
+        return r
+    if a.dtype.kind in "iu":
+        return a
     return _round_half_away(a)
 
 
@@ -195,6 +300,8 @@ def _rem(a, b):
 builtin("atan2")(_binary_math(np.arctan2, math.atan2))
 builtin("atan2d")(_binary_math(lambda a, b: np.degrees(np.arctan2(a, b))))
 builtin("hypot")(_binary_math(np.hypot, math.hypot))
+
+
 def _mod_scalar(a, b):
     if b == 0:
         return a
@@ -210,8 +317,62 @@ def _rem_scalar(a, b):
     return a - math.trunc(a / b) * b
 
 
-builtin("mod")(_binary_math(_mod, _mod_scalar))
-builtin("rem")(_binary_math(_rem, _rem_scalar))
+def _pair_class(a, b, name):
+    """Result dtype of a two-operand numeric function: integer class, single, or None for double."""
+    ia, ib = a.dtype.kind in "iu", b.dtype.kind in "iu"
+    if ia and ib and a.dtype != b.dtype:
+        raise MatlabError(f"{name}: integers can only be combined with integers of the same class "
+                          "or with doubles.")
+    if ia or ib:
+        return a.dtype if ia else b.dtype
+    if a.dtype in (np.float32, np.complex64) or b.dtype in (np.float32, np.complex64):
+        return np.dtype(np.float32)
+    return None
+
+
+def _int_exact(fn):
+    """Elementwise Python-integer function for 64-bit classes (doubles would lose precision)."""
+    def g(a, b):
+        a, b = np.broadcast_arrays(a.astype(object), b.astype(object))
+        out = [fn(int(x), int(y)) for x, y in zip(a.reshape(-1), b.reshape(-1))]
+        return np.array(out, dtype=object).reshape(a.shape)
+    return g
+
+
+def _py_rem(x, y):
+    if y == 0:
+        return 0
+    return (abs(x) % abs(y)) * (1 if x >= 0 else -1)
+
+
+def _mod_rem(float_fn, scalar_fn, exact_fn, name):
+    plain = _binary_math(float_fn, scalar_fn)
+
+    def f(interp, args, nargout):
+        if len(args) == 2 and not (type(args[0]) is np.ndarray and args[0].dtype is _F64
+                                   and type(args[1]) is np.ndarray and args[1].dtype is _F64):
+            a, b = num(args[0]), num(args[1])
+            cls = _pair_class(a, b, name)
+            if cls is not None:
+                if cls.kind in "iu":
+                    from ..values import saturate_int
+                    # a double operand is converted to the integer class first
+                    a = a if a.dtype.kind in "iu" else saturate_int(a, cls)
+                    b = b if b.dtype.kind in "iu" else saturate_int(b, cls)
+                    if cls.itemsize == 8:
+                        return exact_fn(a, b).astype(cls)
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        return saturate_int(float_fn(a.astype(float), b.astype(float)), cls)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    return np.asarray(float_fn(a.astype(float), b.astype(float))).astype(np.float32)
+        return plain(interp, args, nargout)
+    return f
+
+
+builtin("mod")(_mod_rem(_mod, _mod_scalar, _int_exact(lambda x, y: x if y == 0 else x % y), "mod"))
+builtin("rem")(_mod_rem(_rem, _rem_scalar, _int_exact(_py_rem), "rem"))
+
+
 def _nthroot(a, n):
     bad = (a < 0) & ~((n == np.round(n)) & (np.mod(n, 2) == 1))
     if np.any(bad):
@@ -296,15 +457,27 @@ def _factorial(interp, args, nargout):
 
 @builtin("nchoosek")
 def _nchoosek(interp, args, nargout):
+    nargs(args, 2, 2, "nchoosek")
     n, k = args
-    nv = fnum(n)
     kk = to_int(k, "k")
-    if nv.size == 1:
-        return float(sp.comb(int(nv.flat[0]), kk, exact=True))
+    if kk < 0:
+        raise MatlabError("nchoosek: k must be a nonnegative integer.")
+    src = n if isinstance(n, np.ndarray) else num(n)
+    if src.size == 1 and not is_char(src):
+        nn = to_int(n, "n")
+        if nn < 0:
+            raise MatlabError("nchoosek: n must be a nonnegative integer.")
+        r = float(sp.comb(nn, kk, exact=True))
+        if src.dtype.kind in "iu" or src.dtype == np.float32:
+            from ..values import class_name
+            from ._util import cast_class
+            return cast_class(np.array([[r]]), class_name(src))
+        return r
     from itertools import combinations
-    items = nv.flatten()
-    combos = list(combinations(items, kk))
-    return np.array(combos, dtype=float).reshape(len(combos), kk)
+    items = src.flatten(order="F")
+    combos = list(combinations(range(items.size), kk))
+    idx = np.array(combos, dtype=int).reshape(len(combos), kk)
+    return items[idx]
 
 
 @builtin("primes")
@@ -355,182 +528,451 @@ def _factor(interp, args, nargout):
     return np.array(out, dtype=float).reshape(1, -1)
 
 
-@builtin("gcd")
-def _gcd(interp, args, nargout):
-    a, b = np.broadcast_arrays(fnum(args[0]), fnum(args[1]))
-    return np.gcd(a.astype(np.int64), b.astype(np.int64)).astype(float)
+def _gcd_lcm(fn, name):
+    def f(interp, args, nargout):
+        nargs(args, 2, 2, name)
+        a, b = num(args[0]), num(args[1])
+        if a.dtype.kind == "c" or b.dtype.kind == "c":
+            raise MatlabError(f"{name}: inputs must be real integers.")
+        cls = _pair_class(a, b, name)
+        for x in (a, b):
+            if x.dtype.kind == "f" and x.size and not np.all(np.isfinite(x) & (x == np.round(x))):
+                raise MatlabError(f"{name}: inputs must be integers.")
+        a, b = np.broadcast_arrays(a, b)
+        r = [fn(abs(int(x)), abs(int(y))) for x, y in zip(a.reshape(-1), b.reshape(-1))]
+        if cls is not None and cls.kind in "iu":
+            info = np.iinfo(cls)
+            return np.array([min(x, info.max) for x in r], dtype=cls).reshape(a.shape)
+        return np.array(r, dtype=float).reshape(a.shape).astype(np.float32 if cls is not None else float)
+    return f
 
 
-@builtin("lcm")
-def _lcm(interp, args, nargout):
-    a, b = np.broadcast_arrays(fnum(args[0]), fnum(args[1]))
-    return np.lcm(a.astype(np.int64), b.astype(np.int64)).astype(float)
+builtin("gcd")(_gcd_lcm(math.gcd, "gcd"))
+builtin("lcm")(_gcd_lcm(lambda x, y: 0 if x == 0 or y == 0 else x * y // math.gcd(x, y), "lcm"))
 
 
 # -- reductions ---------------------------------------------------------------------------
 
-def _reduce(np_fn, empty_value, name, *, nan_fn=None, int_ok=True):
+def _no_arg(v) -> bool:
+    """True for the [] placeholder argument."""
+    return isinstance(v, np.ndarray) and v.size == 0
+
+
+def _dims_arg(v):
+    """A dim or vecdim argument as a list of 0-based axes."""
+    d = np.real(num(v)).flatten()
+    if d.size == 0 or np.any(d < 1) or np.any(d != np.round(d)) or len(set(d.tolist())) != d.size:
+        raise MatlabError("Dimension argument must be a positive integer scalar or a vector of "
+                          "unique positive integers.")
+    return [int(x) - 1 for x in d]
+
+
+def _red_dims(rest, pos, a, flags=()):
+    """Axes to reduce: 'all', an explicit dim/vecdim at rest[pos], or the first non-singleton one."""
+    if "all" in flags:
+        return list(range(a.ndim))
+    if len(rest) > pos and not _no_arg(rest[pos]):
+        return _dims_arg(rest[pos])
+    if a.shape == (0, 0):
+        return [0, 1]  # sum([]) is a scalar
+    return [default_dim(a)]
+
+
+def _merge(a, dims):
+    """Move the reduced axes to one trailing axis (column-major order inside it).
+
+    Returns the rearranged array and the MATLAB shape of the reduced result. Axes beyond
+    ndims are singleton, so reducing only along them reduces slices of one element.
+    """
+    if len(dims) == 1 and a.ndim == 2:  # the common cases need no rearranging
+        if dims[0] == 1:
+            return a, [a.shape[0], 1]
+        if dims[0] == 0:
+            return a.T, [1, a.shape[1]]
+    dims = sorted({d for d in dims if d < a.ndim})
+    other = [d for d in range(a.ndim) if d not in dims]
+    count = 1
+    for d in dims:
+        count *= a.shape[d]
+    b = np.transpose(a, other + dims[::-1]).reshape([a.shape[d] for d in other] + [count])
+    return b, [1 if d in dims else a.shape[d] for d in range(a.ndim)]
+
+
+def _unmerge(r, shape):
+    from ..values import as_2d
+    return as_2d(np.asarray(r).reshape(shape))
+
+
+def _saturate(r, cls):
+    """Round and clamp a float or Python-int (object) array to an integer class."""
+    from ..values import saturate_int
+    r = np.asarray(r)
+    if r.dtype == object:
+        info = np.iinfo(cls)
+        flat = [min(max(int(x), info.min), info.max) for x in r.reshape(-1)]
+        return np.array(flat, dtype=cls).reshape(r.shape)
+    return saturate_int(r, cls)
+
+
+def _wide(a):
+    """Integers as a type that cannot overflow: float64, or Python ints for 64-bit classes."""
+    if a.dtype.kind in "iu":
+        return a.astype(object) if a.dtype.itemsize == 8 else a.astype(float)
+    return a
+
+
+def _sum_like(name, np_fn, identity):
+    def f(interp, args, nargout):
+        nargs(args, 1, 5, name)
+        rest, flags = flag_present(args, "omitnan", "includenan", "all", "double", "native", "default")
+        if len(rest) > 2:
+            raise MatlabError(f"Too many input arguments for {name}.")
+        src = rest[0]
+        a = num(src)
+        if "native" in flags:
+            out = bool if (isinstance(src, np.ndarray) and src.dtype == bool) else a.dtype
+        elif "double" in flags:
+            out = np.dtype(complex if a.dtype.kind == "c" else float)
+        else:
+            out = a.dtype
+        out = np.dtype(out)
+        dims = _red_dims(rest, 1, a, flags)
+        work = _wide(a)
+        if out.kind in "fc" and work.dtype != object and work.dtype.itemsize < out.itemsize:
+            work = work.astype(out)
+        if "omitnan" in flags and work.dtype.kind in "fc":
+            work = np.where(np.isnan(work), identity, work)
+        b, shape = _merge(work, dims)
+        with np.errstate(over="ignore", invalid="ignore"):
+            r = np_fn(b, axis=-1)
+        if out.kind == "b":
+            r = np.asarray(r) != 0
+        elif out.kind in "iu":
+            r = _saturate(r, out)
+        else:
+            r = np.asarray(r).astype(out, copy=False) if np.asarray(r).dtype == object else np.asarray(r)
+        return _unmerge(r, shape)
+    return f
+
+
+builtin("sum")(_sum_like("sum", np.sum, 0.0))
+builtin("prod")(_sum_like("prod", np.prod, 1.0))
+
+
+def _float_out(a, flags):
+    """Result dtype of mean-like functions: single stays single, everything else is double."""
+    if "native" in flags:
+        return a.dtype
+    if "double" in flags:
+        return np.dtype(complex if a.dtype.kind == "c" else float)
+    if a.dtype in (np.float32, np.complex64):
+        return a.dtype
+    return np.dtype(complex if a.dtype.kind == "c" else float)
+
+
+@builtin("mean")
+def _mean(interp, args, nargout):
+    nargs(args, 1, 5, "mean")
+    rest, flags = flag_present(args, "omitnan", "includenan", "all", "double", "native", "default")
+    if len(rest) > 2:
+        raise MatlabError("Too many input arguments for mean.")
+    src = rest[0]
+    a = num(src)
+    if "native" in flags and isinstance(src, np.ndarray) and src.dtype == bool:
+        raise MatlabError("mean: the 'native' option is not supported for logical input.")
+    out = _float_out(a, flags)
+    dims = _red_dims(rest, 1, a, flags)
+    work = a.astype(float) if a.dtype.kind in "iu" else a
+    if work.dtype == np.float32 or work.dtype == np.complex64:
+        work = work.astype(complex if work.dtype.kind == "c" else float)
+    b, shape = _merge(work, dims)
+    if "omitnan" in flags and b.dtype.kind in "fc":
+        keep = ~np.isnan(b)
+        total = np.where(keep, b, 0.0).sum(axis=-1)
+        count = keep.sum(axis=-1)
+    else:
+        total = b.sum(axis=-1)
+        count = b.shape[-1]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = np.asarray(total / count)
+    if out.kind in "iu":
+        r = _saturate(r, out)
+    else:
+        r = r.astype(out, copy=False)
+    return _unmerge(r, shape)
+
+
+@builtin("median")
+def _median(interp, args, nargout):
+    nargs(args, 1, 4, "median")
+    rest, flags = flag_present(args, "omitnan", "includenan", "all")
+    if len(rest) > 2:
+        raise MatlabError("Too many input arguments for median.")
+    a = num(rest[0])
+    if a.dtype.kind == "c":
+        raise MatlabError("median: complex input is not supported.")
+    out = a.dtype
+    dims = _red_dims(rest, 1, a, flags)
+    b, shape = _merge(a.astype(float) if a.dtype.kind in "iu" and a.dtype.itemsize < 8 else a, dims)
+    b = np.sort(b, axis=-1)  # NaNs go last
+    n = b.shape[-1]
+    lead = b.shape[:-1]
+    if b.dtype.kind == "f":
+        nans = np.isnan(b).sum(axis=-1)
+        count = n - nans if "omitnan" in flags else np.where(nans > 0, 0, n)
+    else:
+        count = np.full(lead, n)
+    count = np.asarray(count)
+    safe = np.maximum(count, 1)
+    if n == 0:
+        r = np.full(lead, np.nan)
+    else:
+        lo = np.take_along_axis(b, np.expand_dims((safe - 1) // 2, -1), -1)[..., 0]
+        hi = np.take_along_axis(b, np.expand_dims(safe // 2, -1), -1)[..., 0]
+        if b.dtype.kind in "iu":  # 64-bit integers: exact midpoint, halves away from zero
+            mid = [(int(x) + int(y)) for x, y in zip(lo.reshape(-1), hi.reshape(-1))]
+            r = np.array([int(math.copysign((abs(m) + 1) // 2, m)) for m in mid], dtype=object).reshape(lo.shape)
+        else:
+            with np.errstate(invalid="ignore", over="ignore"):
+                r = np.where(lo == hi, lo, lo + (hi - lo) / 2)
+            r = np.where(count == 0, np.nan, r)
+    if out.kind in "iu":
+        r = _saturate(r, out)
+    else:
+        r = np.asarray(r).astype(np.float32 if out == np.float32 else float)
+    return _unmerge(r, shape)
+
+
+def _anyall(np_fn, name):
+    def f(interp, args, nargout):
+        nargs(args, 1, 2, name)
+        rest, flags = flag_present(args, "all")
+        if len(rest) > 2:
+            raise MatlabError(f"Too many input arguments for {name}.")
+        a = num(rest[0]) != 0
+        b, shape = _merge(a, _red_dims(rest, 1, a, flags))
+        return _unmerge(np_fn(b, axis=-1), shape)
+    return f
+
+
+builtin("any")(_anyall(np.any, "any"))
+builtin("all")(_anyall(np.all, "all"))
+
+
+def _std_var(power, name):
     def f(interp, args, nargout):
         nargs(args, 1, 4, name)
-        rest, flags = flag_present(args, "omitnan", "includenan", "all", "double", "native", "default")
-        a = num(rest[0])
-        if a.dtype == bool or (a.dtype.kind in "iu" and not int_ok):
-            a = a.astype(float)
-        fn = nan_fn if ("omitnan" in flags and nan_fn is not None) else np_fn
-        int_class = a.dtype if (a.dtype.kind in "iu" and "double" not in flags) else None
-        if int_class is not None:
-            a = a.astype(float)  # integer sums keep their class and saturate, as in MATLAB
-
-        def finish(r):
-            if int_class is None:
-                return r
-            from ..values import saturate_int
-            return saturate_int(np.asarray(r, dtype=float), int_class)
-
-        if "all" in flags:
-            return finish(fn(a.flatten())) if a.size else empty_value
-        if a.shape == (0, 0) and len(rest) < 2:
-            return empty_value
-        axis = get_dim(rest, 1, a)
-        if axis >= a.ndim:
-            return finish(a)
-        return finish(keep2d(np.asarray(fn(a, axis=axis)), axis, a.ndim))
-    return f
-
-
-builtin("sum")(_reduce(np.sum, 0.0, "sum", nan_fn=np.nansum))
-builtin("prod")(_reduce(np.prod, 1.0, "prod", nan_fn=np.nanprod))
-builtin("mean")(_reduce(np.mean, np.nan, "mean", nan_fn=np.nanmean, int_ok=False))
-builtin("median")(_reduce(np.median, np.nan, "median", nan_fn=np.nanmedian, int_ok=False))
-
-
-def _anyall(np_fn, empty_value):
-    def f(interp, args, nargout):
-        rest, flags = flag_present(args, "all")
-        a = num(rest[0]) != 0
-        if "all" in flags:
-            return bool(np_fn(a))
-        if a.shape == (0, 0) and len(rest) < 2:
-            return np.array([[empty_value]])
-        axis = get_dim(rest, 1, a)
-        return keep2d(np_fn(a, axis=axis), axis, a.ndim)
-    return f
-
-
-builtin("any")(_anyall(np.any, False))
-builtin("all")(_anyall(np.all, True))
-
-
-def _std_var(power):
-    def f(interp, args, nargout):
-        rest, flags = flag_present(args, "omitnan", "includenan")
+        rest, flags = flag_present(args, "omitnan", "includenan", "all")
+        if len(rest) > 3:
+            raise MatlabError(f"Too many input arguments for {name}.")
         a = fnum(rest[0])
+        single = a.dtype in (np.float32, np.complex64)
+        a = a.astype(complex if a.dtype.kind == "c" else float)
         w = 0
-        if len(rest) > 1 and not (isinstance(rest[1], np.ndarray) and rest[1].size == 0):
-            w = to_int(rest[1], "weight")
-        if a.size == 0:
-            return np.nan
-        axis = get_dim(rest, 2, a)
-        n = a.shape[axis]
-        ddof = 0 if (w == 1 or n == 1) else 1
-        fn = np.nanvar if "omitnan" in flags else np.var
-        v = keep2d(np.asarray(fn(a, axis=axis, ddof=ddof)), axis, a.ndim)
-        return np.sqrt(v) if power == 0.5 else v
+        weights = None
+        if len(rest) > 1 and not _no_arg(rest[1]):
+            wv = np.real(fnum(rest[1])).astype(float)
+            if wv.size == 1:
+                w = wv.flat[0]
+                if w not in (0, 1):
+                    raise MatlabError(f"{name}: the weight must be 0, 1 or a vector of nonnegative weights.")
+            else:
+                weights = wv.flatten()
+                if np.any(weights < 0) or not np.all(np.isfinite(weights)):
+                    raise MatlabError(f"{name}: weights must be nonnegative and finite.")
+        dims = _red_dims(rest, 2, a, flags)
+        b, shape = _merge(a, dims)
+        n = b.shape[-1]
+        if weights is not None:
+            if len(dims) != 1 or "all" in flags:
+                raise MatlabError(f"{name}: a weight vector needs a single operating dimension.")
+            if weights.size != n:
+                raise MatlabError(f"{name}: the weight vector must have one element per element "
+                                  "along the operating dimension.")
+        keep = ~np.isnan(b) if "omitnan" in flags else np.ones(b.shape, dtype=bool)
+        x = np.where(keep, b, 0.0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            if weights is not None:
+                wk = np.where(keep, weights, 0.0)
+                tot = wk.sum(axis=-1, keepdims=True)
+                mu = (wk * x).sum(axis=-1, keepdims=True) / tot
+                v = (wk * np.abs(np.where(keep, b - mu, 0.0)) ** 2).sum(axis=-1) / tot[..., 0]
+            else:
+                cnt = keep.sum(axis=-1, keepdims=True)
+                mu = x.sum(axis=-1, keepdims=True) / cnt
+                ss = (np.abs(np.where(keep, b - mu, 0.0)) ** 2).sum(axis=-1)
+                c = cnt[..., 0].astype(float)
+                den = np.where((c > 1) & (w == 0), c - 1, c)
+                v = np.where(c == 0, np.nan, ss / np.where(den == 0, 1, den))
+            r = np.sqrt(v) if power == 0.5 else v
+        r = np.asarray(r, dtype=float)
+        return _unmerge(r.astype(np.float32) if single else r, shape)
     return f
 
 
-builtin("std")(_std_var(0.5))
-builtin("var")(_std_var(1))
+builtin("std")(_std_var(0.5, "std"))
+builtin("var")(_std_var(1, "var"))
 
 
 @builtin("mode")
 def _mode(interp, args, nargout):
-    a = fnum(args[0])
-    if a.size == 0:
-        return np.nan
-    axis = get_dim(args, 1, a)
+    nargs(args, 1, 2, "mode")
+    rest, flags = flag_present(args, "all")
+    src = rest[0]
+    a = src if isinstance(src, np.ndarray) and src.dtype.kind in "bU" else num(src)
+    if a.dtype.kind == "c":
+        raise MatlabError("mode: complex input is not supported.")
+    dims = _red_dims(rest, 1, a, flags)
+    b, shape = _merge(a, dims)
+    rows = b.reshape(int(np.prod(b.shape[:-1])), b.shape[-1])
+    is_float = a.dtype.kind == "f"
+    vals = np.full(rows.shape[0], np.nan) if is_float or rows.shape[1] == 0 else np.zeros(rows.shape[0], a.dtype)
+    freq = np.zeros(rows.shape[0])
+    ties = np.empty(rows.shape[0], dtype=object)
+    for k, row in enumerate(rows):
+        row = row[~np.isnan(row)] if is_float else row
+        if row.size == 0:
+            ties[k] = (np.full((1, 1), np.nan) if rows.shape[1] else np.zeros((0, 1))).astype(vals.dtype)
+            continue
+        u, c = np.unique(row, return_counts=True)
+        top = c.max()
+        vals[k] = u[np.argmax(c)]
+        freq[k] = top
+        ties[k] = u[c == top].reshape(-1, 1)
+    out = _unmerge(vals, shape)
+    if nargout <= 1:
+        return out
+    outs = [out, _unmerge(freq, shape)]
+    if nargout > 2:
+        outs.append(Cell(_unmerge(ties, shape)))
+    return tuple(outs)
 
-    def mode1(v):
-        vals, counts = np.unique(v[~np.isnan(v)], return_counts=True)
-        if vals.size == 0:
-            return np.nan
-        return vals[np.argmax(counts)]
 
-    r = np.apply_along_axis(mode1, axis, a)
-    return keep2d(np.asarray(r), axis, a.ndim)
+def _running_int(a, axis, op, cls):
+    """Cumulative sum/product of an integer class, saturating at every step."""
+    info = np.iinfo(cls)
+    m = np.moveaxis(a.astype(object), axis, 0)
+    out = np.empty(m.shape, dtype=object)
+    acc = None
+    for k in range(m.shape[0]):
+        acc = m[k] if acc is None else np.clip(op(acc, m[k]), info.min, info.max)
+        out[k] = acc
+    return np.moveaxis(out, 0, axis).astype(cls)
 
 
-def _cumulative(np_fn):
+def _cumulative(name, np_fn, identity=None, nan_fn=None, op=None):
     def f(interp, args, nargout):
+        nargs(args, 1, 4, name)
         rest, flags = flag_present(args, "reverse", "forward", "omitnan", "includenan")
+        if len(rest) > 2:
+            raise MatlabError(f"Too many input arguments for {name}.")
         a = num(rest[0])
-        if a.dtype == bool:
-            a = a.astype(float)
-        int_class = a.dtype if a.dtype.kind in "iu" else None
-        if int_class is not None:
-            a = a.astype(float)
-        axis = get_dim(rest, 1, a)
-        if "reverse" in flags:
-            r = np.flip(np_fn(np.flip(a, axis), axis=axis), axis)
+        if len(rest) > 1 and not _no_arg(rest[1]):
+            axis = to_int(rest[1], "dimension") - 1
+            if axis < 0:
+                raise MatlabError("Dimension argument must be a positive integer.")
         else:
-            r = np_fn(a, axis=axis)
-        if int_class is not None:
-            from ..values import saturate_int
-            r = saturate_int(r, int_class)
-        return r
+            axis = default_dim(a)
+        if a.size == 0:
+            return a
+        fn = np_fn
+        if a.dtype.kind in "fc":
+            if identity is not None and "omitnan" in flags:
+                a = np.where(np.isnan(a), np.asarray(identity, dtype=a.dtype), a)
+            elif nan_fn is not None and "includenan" in flags:
+                fn = nan_fn
+        if axis >= a.ndim:
+            return a
+        if "reverse" in flags:
+            a = np.flip(a, axis)
+        if a.dtype.kind in "iu" and op is not None:
+            r = _running_int(a, axis, op, a.dtype)
+        else:
+            with np.errstate(over="ignore", invalid="ignore"):
+                r = fn(a, axis=axis)
+        return np.flip(r, axis) if "reverse" in flags else r
     return f
 
 
-builtin("cumsum")(_cumulative(np.cumsum))
-builtin("cumprod")(_cumulative(np.cumprod))
-builtin("cummax")(_cumulative(np.maximum.accumulate))
-builtin("cummin")(_cumulative(np.minimum.accumulate))
+builtin("cumsum")(_cumulative("cumsum", np.cumsum, identity=0, op=lambda x, y: x + y))
+builtin("cumprod")(_cumulative("cumprod", np.cumprod, identity=1, op=lambda x, y: x * y))
+builtin("cummax")(_cumulative("cummax", np.fmax.accumulate, nan_fn=np.maximum.accumulate))
+builtin("cummin")(_cumulative("cummin", np.fmin.accumulate, nan_fn=np.minimum.accumulate))
 
 
 def _minmax(is_max):
-    np_arg = np.nanargmax if is_max else np.nanargmin
-    np_pair = np.fmax if is_max else np.fmin
+    name = "max" if is_max else "min"
+
+    def pair(src_a, src_b, flags):
+        a, b = num(src_a), num(src_b)
+        both_logical = all(isinstance(s, np.ndarray) and s.dtype == bool for s in (src_a, src_b))
+        cls = _pair_class(a, b, name)
+        if cls is not None and cls.kind in "iu":
+            a = a if a.dtype.kind in "iu" else _saturate(np.real(a), cls)
+            b = b if b.dtype.kind in "iu" else _saturate(np.real(b), cls)
+            return (np.maximum if is_max else np.minimum)(a, b)
+        if a.dtype.kind == "c" or b.dtype.kind == "c":
+            ka, kb = np.abs(a), np.abs(b)
+            a, b = np.broadcast_arrays(a.astype(complex), b.astype(complex))
+            ka, kb = np.broadcast_arrays(ka, kb)
+            pick_a = (ka >= kb) if is_max else (ka <= kb)
+            if "includenan" in flags:
+                r = np.where(np.isnan(ka), a, np.where(np.isnan(kb), b, np.where(pick_a, a, b)))
+            else:
+                r = np.where(np.isnan(kb), a, np.where(np.isnan(ka), b, np.where(pick_a, a, b)))
+        elif "includenan" in flags:
+            r = (np.maximum if is_max else np.minimum)(a, b)
+        else:
+            r = (np.fmax if is_max else np.fmin)(a, b)
+        if cls is not None:
+            r = r.astype(np.complex64 if r.dtype.kind == "c" else np.float32)
+        return r.astype(bool) if both_logical else r
 
     def f(interp, args, nargout):
-        nargs(args, 1, 4, "max" if is_max else "min")
+        nargs(args, 1, 5, name)
         rest, flags = flag_present(args, "omitnan", "includenan", "all")
-        a = num(rest[0])
-        if len(rest) >= 2 and not (isinstance(rest[1], np.ndarray) and rest[1].size == 0):
-            b = num(rest[1])
-            check_integer_mix(a, b)
-            int_class = a.dtype if a.dtype.kind in "iu" else (b.dtype if b.dtype.kind in "iu" else None)
-            r = np_pair(a.astype(float) if a.dtype.kind in "iu" else a,
-                        b.astype(float) if b.dtype.kind in "iu" else b)
-            if int_class is not None:
-                from ..values import saturate_int
-                r = saturate_int(r, int_class)
-            return r
-        if a.size == 0:
-            return (np.zeros((0, 0)), np.zeros((0, 0))) if nargout > 1 else np.zeros((0, 0))
-        cmp = np.real(a) if a.dtype.kind != "c" else np.abs(a)
-        if "all" in flags:
-            flat = cmp.flatten(order="F")
-            if np.all(np.isnan(flat)) if flat.dtype.kind == "f" else False:
-                return (np.nan, 1.0) if nargout > 1 else np.nan
-            k = int(np_arg(flat))
-            v = a.flatten(order="F")[k]
-            return (v, float(k + 1)) if nargout > 1 else v
-        axis = get_dim(rest, 2, a)
-        if axis >= a.ndim:
-            return (a, np.ones(a.shape)) if nargout > 1 else a
-        with np.errstate(invalid="ignore"):
-            if cmp.dtype.kind == "f":
-                allnan = np.all(np.isnan(cmp), axis=axis)
-                safe = np.where(np.isnan(cmp), -np.inf if is_max else np.inf, cmp)
-                idx = (np.argmax if is_max else np.argmin)(safe, axis=axis)
-                idx = np.where(allnan, 0, idx)
+        if len(rest) >= 2 and not _no_arg(rest[1]):
+            if len(rest) > 2 or "all" in flags:
+                raise MatlabError(f"{name} with two arrays to compare does not take a dimension.")
+            if nargout > 1:
+                raise MatlabError(f"{name} with two arrays to compare returns only one output.")
+            return pair(rest[0], rest[1], flags)
+        src = rest[0]
+        a = src if isinstance(src, np.ndarray) and src.dtype == bool else num(src)
+        if a.shape == (0, 0) and len(rest) < 3 and "all" not in flags:
+            return (a, np.zeros((0, 0))) if nargout > 1 else a
+        dims = _red_dims(rest, 2, a, flags)
+        b, shape = _merge(a, dims)
+        if b.shape[-1] == 0:
+            # nothing to compare along the operating dimension: the result stays empty
+            if "all" in flags or len(dims) > 1:
+                empty = np.zeros((0, 0), dtype=a.dtype)
             else:
-                idx = (np.argmax if is_max else np.argmin)(cmp, axis=axis)
-        vals = np.take_along_axis(a, np.expand_dims(idx, axis), axis)
-        if cmp.dtype.kind == "f":
-            vals = np.where(np.expand_dims(allnan, axis), np.nan, vals)
+                empty = np.zeros(shape if 0 in shape else a.shape, dtype=a.dtype)
+            return (empty, np.zeros(empty.shape)) if nargout > 1 else empty
+        key = np.abs(b) if b.dtype.kind == "c" else b
+        nan = np.isnan(key) if key.dtype.kind == "f" else None
+        if nan is not None and not nan.any():
+            nan = None
+        if nan is None and nargout <= 1 and b.dtype.kind != "c":
+            return _unmerge((np.max if is_max else np.min)(b, axis=-1), shape)
+        if nan is not None:
+            if "includenan" in flags:
+                safe = np.where(nan, np.inf if is_max else -np.inf, key)
+                first_nan = np.argmax(nan, axis=-1)
+                idx = np.where(nan.any(axis=-1), first_nan, (np.argmax if is_max else np.argmin)(safe, axis=-1))
+            else:
+                safe = np.where(nan, -np.inf if is_max else np.inf, key)
+                idx = (np.argmax if is_max else np.argmin)(safe, axis=-1)
+                # among the non-NaN elements; an all-NaN slice gives its first element
+                masked = np.where(nan, False, safe == np.take_along_axis(safe, idx[..., None], -1))
+                idx = np.where(nan.all(axis=-1), 0, np.argmax(masked, axis=-1))
+        else:
+            idx = (np.argmax if is_max else np.argmin)(key, axis=-1)
+        vals = np.take_along_axis(b, np.expand_dims(idx, -1), -1)[..., 0]
+        vals = _unmerge(vals, shape)
         if nargout > 1:
-            return vals, keep2d(idx.astype(float) + 1, axis, a.ndim)
+            return vals, _unmerge(idx.astype(float) + 1, shape)
         return vals
     return f
 
@@ -541,65 +983,139 @@ builtin("min")(_minmax(False))
 
 @builtin("bounds")
 def _bounds(interp, args, nargout):
-    a = fnum(args[0])
-    return (np.nanmin(a), np.nanmax(a))
+    from ._registry import BUILTINS
+    full = [args[0], np.zeros((0, 0)), *args[1:]]
+    lo = BUILTINS["min"](interp, full, 1)
+    hi = BUILTINS["max"](interp, full, 1)
+    return lo, hi
 
 
 @builtin("range")
 def _range(interp, args, nargout):
     a = fnum(args[0])
-    axis = get_dim(args, 1, a)
-    return keep2d(np.ptp(a, axis=axis), axis, a.ndim)
+    if a.size == 0:
+        return np.zeros((0, 0))
+    b, shape = _merge(a, _red_dims(args, 1, a))
+    return _unmerge(np.ptp(b, axis=-1), shape)
 
 
 @builtin("diff")
 def _diff(interp, args, nargout):
+    nargs(args, 1, 3, "diff")
     a = num(args[0])
-    n = to_int(args[1], "n") if len(args) > 1 else 1
-    if a.size == 0:
-        return np.zeros((0, 0))
-    axis = get_dim(args, 2, a)
-    if a.shape[axis] <= n:
-        shape = list(a.shape)
-        shape[axis] = 0
-        return np.zeros(shape)
-    return np.diff(a.astype(float) if a.dtype == bool else a, n=n, axis=axis)
+    n = to_int(args[1], "n") if len(args) > 1 and not _no_arg(args[1]) else 1
+    if n < 0:
+        raise MatlabError("diff: the order must be a nonnegative integer.")
+    fixed = None
+    if len(args) > 2 and not _no_arg(args[2]):
+        fixed = to_int(args[2], "dimension") - 1
+        if fixed < 0:
+            raise MatlabError("Dimension argument must be a positive integer.")
+    for _ in range(n):
+        if a.size <= 1 and fixed is None and a.shape in ((0, 0), (1, 1)):
+            return np.zeros((0, 0), dtype=a.dtype)
+        axis = fixed if fixed is not None else default_dim(a)
+        if axis >= a.ndim:
+            return np.zeros(a.shape[:2] + (0,) * (axis - 1) if axis > 1 else a.shape, dtype=a.dtype)
+        if a.shape[axis] == 0:
+            return a
+        if a.dtype.kind in "iu":
+            a = _saturate(np.diff(_wide(a), axis=axis), a.dtype)
+        else:
+            a = np.diff(a, axis=axis)
+    return a
+
+
+def _trapz_args(args, name):
+    """(x, y, axis): x is None (unit spacing), a scalar, a vector or an array shaped like y."""
+    nargs(args, 1, 3, name)
+    if len(args) == 1:
+        x, y, dim = None, fnum(args[0]), None
+    elif len(args) == 2:
+        first, second = fnum(args[0]), fnum(args[1])
+        if second.size == 1 and first.size != 1:
+            x, y, dim = None, first, to_int(args[1], "dimension")  # (Y, dim)
+        else:
+            x, y, dim = first, second, None
+    else:
+        x, y, dim = fnum(args[0]), fnum(args[1]), to_int(args[2], "dimension")
+    if dim is not None and dim < 1:
+        raise MatlabError("Dimension argument must be a positive integer.")
+    if dim is not None:
+        axis = dim - 1
+    elif x is not None and x.size > 1 and x.size == y.shape[0] and y.ndim == 2 and y.shape[0] != 1:
+        axis = 0
+    else:
+        axis = default_dim(y)
+    return x, y, axis
+
+
+def _trapz_pieces(x, y, axis, name):
+    """Areas of the individual trapezoids along the last axis of the rearranged y."""
+    ym = np.moveaxis(y, axis, -1)
+    n = ym.shape[-1]
+    if x is None:
+        dx = 1.0
+    elif x.size == 1:
+        dx = x.flat[0]
+    elif x.shape == y.shape and not (x.ndim == 2 and 1 in x.shape):
+        dx = np.diff(np.moveaxis(x, axis, -1), axis=-1)
+    else:
+        if x.size != n:
+            raise MatlabError(f"{name}: the length of X must match the size of Y along the "
+                              "operating dimension.")
+        dx = np.diff(x.flatten(order="F"))
+    return dx * (ym[..., 1:] + ym[..., :-1]) / 2
 
 
 @builtin("trapz")
 def _trapz(interp, args, nargout):
-    if len(args) == 1:
-        y = fnum(args[0])
-        x = None
-    else:
-        x, y = fnum(args[0]).flatten(), fnum(args[1])
-    axis = default_dim(y)
-    trap = getattr(np, "trapezoid", None) or np.trapz
-    r = trap(y, x=x, axis=axis) if x is not None else trap(y, axis=axis)
+    x, y, axis = _trapz_args(args, "trapz")
+    if y.shape == (0, 0):
+        return 0.0
+    if axis >= y.ndim:
+        return np.zeros(y.shape)
+    r = _trapz_pieces(x, y, axis, "trapz").sum(axis=-1)
     return keep2d(np.asarray(r), axis, y.ndim)
 
 
 @builtin("cumtrapz")
 def _cumtrapz(interp, args, nargout):
-    from scipy.integrate import cumulative_trapezoid
-    if len(args) == 1:
-        y = fnum(args[0])
-        x = None
-    else:
-        x, y = fnum(args[0]).flatten(), fnum(args[1])
-    axis = default_dim(y)
-    r = cumulative_trapezoid(y, x=x, axis=axis, initial=0)
-    return r
+    x, y, axis = _trapz_args(args, "cumtrapz")
+    if y.size == 0 or axis >= y.ndim:
+        return np.zeros(y.shape)
+    pieces = _trapz_pieces(x, y, axis, "cumtrapz")
+    zero = np.zeros(pieces.shape[:-1] + (1,), dtype=pieces.dtype)
+    r = np.concatenate([zero, np.cumsum(pieces, axis=-1)], axis=-1)
+    return np.moveaxis(r, -1, axis)
 
 
 @builtin("dot")
 def _dot(interp, args, nargout):
+    nargs(args, 2, 3, "dot")
     a, b = num(args[0]), num(args[1])
-    if a.size != b.size:
-        raise MatlabError("A and B must be the same size.")
-    if (a.shape[0] == 1 or a.shape[1] == 1) and (b.shape[0] == 1 or b.shape[1] == 1):
-        return simplify(np.asarray(np.vdot(a.flatten(), b.flatten())))
-    return keep2d(np.sum(np.conj(a) * b, axis=0), 0)
+    single = _pair_class(fnum(a), fnum(b), "dot") is not None
+    a, b = fnum(a), fnum(b)
+
+    def vec(x):
+        return x.ndim == 2 and 1 in x.shape
+
+    if len(args) < 3 and vec(a) and vec(b):
+        if a.size != b.size:
+            raise MatlabError("A and B must be the same size.")
+        r = simplify(np.asarray(np.vdot(a.flatten(), b.flatten())).reshape(1, 1))
+    else:
+        if a.shape != b.shape:
+            raise MatlabError("A and B must be the same size.")
+        axis = to_int(args[2], "dimension") - 1 if len(args) > 2 else default_dim(a)
+        if axis < 0:
+            raise MatlabError("Dimension argument must be a positive integer.")
+        prod = np.conj(a) * b
+        r = prod if axis >= prod.ndim else keep2d(np.sum(prod, axis=axis), axis, prod.ndim)
+        r = simplify(r)
+    if single:
+        r = r.astype(np.complex64 if r.dtype.kind == "c" else np.float32)
+    return r
 
 
 @builtin("cross")
@@ -630,20 +1146,29 @@ def _kron(interp, args, nargout):
 
 @builtin("find")
 def _find(interp, args, nargout):
-    a = num(args[0])
+    nargs(args, 1, 3, "find")
+    src = args[0]
+    a = src if isinstance(src, np.ndarray) and src.dtype == bool else num(src)
     flat = a.flatten(order="F")
     idx = np.nonzero(flat)[0]
     if len(args) > 1:
         k = to_int(args[1], "n")
-        direction = text(args[2]) if len(args) > 2 else "first"
+        if k < 1:
+            raise MatlabError("find: the number of indices must be a positive integer.")
+        direction = text(args[2]).lower() if len(args) > 2 else "first"
+        if direction not in ("first", "last"):
+            raise MatlabError("find: the direction must be 'first' or 'last'.")
         idx = idx[-k:] if direction == "last" else idx[:k]
+    if idx.size == 0 and (a.shape == (0, 0) or a.shape == (1, 1)):
+        shape = (0, 0)
+    elif a.ndim == 2 and a.shape[0] == 1 and a.shape[1] != 1:
+        shape = (1, -1)
+    else:
+        shape = (-1, 1)
     if nargout <= 1:
-        if a.shape[0] == 1 and a.ndim == 2 and a.shape != (1, 1) or (a.shape == (1, 1)):
-            return (idx + 1.0).reshape(1, -1)
-        return (idx + 1.0).reshape(-1, 1)
+        return (idx + 1.0).reshape(shape)
     rows = idx % a.shape[0] if a.shape[0] else idx
     cols = idx // a.shape[0] if a.shape[0] else idx
-    shape = (1, -1) if a.shape[0] == 1 else (-1, 1)
     outs = [(rows + 1.0).reshape(shape), (cols + 1.0).reshape(shape)]
     if nargout > 2:
         outs.append(flat[idx].reshape(shape))
@@ -653,43 +1178,6 @@ def _find(interp, args, nargout):
 @builtin("nnz")
 def _nnz(interp, args, nargout):
     return float(np.count_nonzero(num(args[0])))
-
-
-@builtin("sort")
-def _sort(interp, args, nargout):
-    rest, flags = flag_present(args, "ascend", "descend")
-    v = rest[0]
-    if isinstance(v, StringArray):
-        from .strings import _as_cell_if_strings
-        res = _sort(interp, [_as_cell_if_strings(v), *rest[1:], *(char(f) for f in flags)], nargout)
-        cell = res[0] if isinstance(res, tuple) else res
-        out = string_result(np.vectorize(to_str, otypes=[object])(cell.data))
-        return (out, res[1]) if isinstance(res, tuple) else out
-    if isinstance(v, Cell):
-        strs = [to_str(x) for x in v.values_f()]
-        order = sorted(range(len(strs)), key=lambda k: strs[k], reverse="descend" in flags)
-        data = np.empty(v.shape, dtype=object)
-        flat = [char(strs[k]) for k in order]
-        for k, s in enumerate(flat):
-            data[k % v.shape[0], k // v.shape[0]] = s
-        idx = np.array(order, dtype=float).reshape(v.shape, order="F") + 1
-        return (Cell(data), idx) if nargout > 1 else Cell(data)
-    a = v if is_char(v) else num(v)
-    work = num(a) if is_char(a) else a
-    if work.size == 0:
-        return (a, np.zeros(a.shape)) if nargout > 1 else a
-    axis = get_dim(rest, 1, work)
-    key = np.abs(work) if work.dtype.kind == "c" else work
-    if "descend" in flags:
-        # stable descending sort; NaNs first, as in MATLAB
-        fkey = key.astype(float) if key.dtype.kind in "iub" else key
-        idx = np.argsort(-np.where(np.isnan(fkey), np.inf, fkey), axis=axis, kind="stable")
-    else:
-        idx = np.argsort(key, axis=axis, kind="stable")
-    out = np.take_along_axis(a, idx, axis)
-    if nargout > 1:
-        return out, idx.astype(float) + 1
-    return out
 
 
 @builtin("sortrows")
@@ -749,9 +1237,118 @@ def _neg_key(k):
     return -k
 
 
+def _sort_index(work, descend):
+    """Stable sort permutation along the last axis, with MATLAB's NaN and complex ordering."""
+    kind = work.dtype.kind
+    if kind in "biu":
+        return np.argsort(~work if descend else work, axis=-1, kind="stable")
+    if kind == "c":
+        mag, ang = np.abs(work), np.angle(work)
+        nan = np.isnan(mag)
+        if descend:
+            return np.lexsort((-ang, -mag, ~nan), axis=-1)
+        return np.lexsort((ang, mag, nan), axis=-1)
+    if descend:
+        return np.lexsort((-work, ~np.isnan(work)), axis=-1)  # NaNs first, then large to small
+    return np.argsort(work, axis=-1, kind="stable")  # NaNs last
+
+
+@builtin("sort")
+def _sort(interp, args, nargout):
+    rest, flags = flag_present(args, "ascend", "descend")
+    nargs(rest, 1, 2, "sort")
+    v = rest[0]
+    if isinstance(v, StringArray):
+        from .strings import _as_cell_if_strings
+        res = _sort(interp, [_as_cell_if_strings(v), *rest[1:], *(char(f) for f in flags)], nargout)
+        cell = res[0] if isinstance(res, tuple) else res
+        out = string_result(np.vectorize(to_str, otypes=[object])(cell.data))
+        return (out, res[1]) if isinstance(res, tuple) else out
+    if isinstance(v, Cell):
+        strs = [to_str(x) for x in v.values_f()]
+        order = sorted(range(len(strs)), key=lambda k: strs[k], reverse="descend" in flags)
+        data = np.empty(v.shape, dtype=object)
+        flat = [char(strs[k]) for k in order]
+        for k, s in enumerate(flat):
+            data[k % v.shape[0], k // v.shape[0]] = s
+        idx = np.array(order, dtype=float).reshape(v.shape, order="F") + 1
+        return (Cell(data), idx) if nargout > 1 else Cell(data)
+    a = v if isinstance(v, np.ndarray) and v.dtype.kind in "bU" else num(v)
+    work = num(a) if is_char(a) else a
+    if len(rest) > 1 and not _no_arg(rest[1]):
+        axis = to_int(rest[1], "dimension") - 1
+        if axis < 0:
+            raise MatlabError("Dimension argument must be a positive integer.")
+    else:
+        axis = default_dim(work)
+    if work.size == 0 or axis >= work.ndim:
+        return (a, np.ones(a.shape)) if nargout > 1 else a
+    if axis == work.ndim - 1:
+        idx = _sort_index(work, "descend" in flags)
+    else:
+        idx = np.moveaxis(_sort_index(np.moveaxis(work, axis, -1), "descend" in flags), -1, axis)
+    out = np.take_along_axis(a, idx, axis)
+    if nargout > 1:
+        return out, idx.astype(float) + 1
+    return out
+
+
+def _row_groups(m):
+    """Group equal rows of a 2-D numeric array.
+
+    Returns (order, group): ``order`` sorts the rows (stable, NaN last, complex by magnitude
+    then angle) and ``group[k]`` is the group number of the sorted row k. NaN never equals NaN,
+    so every row with a NaN is a group of its own.
+    """
+    n = m.shape[0]
+    if n == 0:
+        return np.zeros(0, dtype=int), np.zeros(0, dtype=int)
+    keys = []
+    for c in range(m.shape[1] - 1, -1, -1):  # lexsort: the last key is the most significant
+        col = m[:, c]
+        if col.dtype.kind == "c":
+            keys += [np.angle(col), np.abs(col)]
+        else:
+            keys.append(col)
+    order = np.lexsort(tuple(keys)) if keys else np.arange(n)
+    ms = m[order]
+    new = np.any(ms[1:] != ms[:-1], axis=1) if m.shape[1] else np.zeros(n - 1, dtype=bool)
+    return order, np.concatenate([[0], np.cumsum(new)]).astype(int)
+
+
+def _set_matrix(v, rows):
+    """A set argument as (2-D array of numeric keys with one item per row, original array)."""
+    a = v if isinstance(v, np.ndarray) and v.dtype.kind in "bU" else num(v)
+    work = num(a) if a.dtype.kind in "bU" else a
+    if rows:
+        if work.ndim != 2:
+            raise MatlabError("The 'rows' option needs 2-D inputs.")
+        return work, a
+    return work.reshape(-1, 1, order="F"), a
+
+
+def _set_restore(m, like, rows, as_row):
+    """Turn selected key rows back into the class of ``like`` and the right orientation."""
+    if like.dtype.kind == "U":
+        from ..values import codes_to_char
+        out = codes_to_char(m) if m.size else np.zeros(m.shape, dtype="<U1")
+    elif like.dtype == bool:
+        out = m != 0
+    else:
+        out = m.astype(like.dtype, copy=False) if like.dtype.kind in "iuf" and m.dtype.kind != "c" else m
+    if rows:
+        return out
+    return out.reshape(1, -1) if as_row else out.reshape(-1, 1)
+
+
+def _is_row(a):
+    return a.ndim == 2 and a.shape[0] == 1
+
+
 @builtin("unique")
 def _unique(interp, args, nargout):
-    rest, flags = flag_present(args, "stable", "sorted", "rows", "first", "last")
+    rest, flags = flag_present(args, "stable", "sorted", "rows", "first", "last", "legacy")
+    nargs(rest, 1, 1, "unique")
     v = rest[0]
     if isinstance(v, StringArray):
         from .strings import _as_cell_if_strings
@@ -775,78 +1372,159 @@ def _unique(interp, args, nargout):
         if nargout > 1:
             return out, np.array(ia, float).reshape(-1, 1) + 1, np.array(ic, float).reshape(-1, 1) + 1
         return out
-    a = num(v) if not is_char(v) else v
-    if "rows" in flags:
-        uniq, ia, ic = np.unique(a, axis=0, return_index=True, return_inverse=True)
-        if nargout > 1:
-            return uniq, ia.reshape(-1, 1) + 1.0, ic.reshape(-1, 1) + 1.0
-        return uniq
-    flat = a.flatten(order="F")
-    uniq, ia, ic = np.unique(flat, return_index=True, return_inverse=True)
-    if "stable" in flags:
-        order = np.argsort(ia)
-        uniq = uniq[order]
-        ia = ia[order]
-        remap = np.empty_like(order)
-        remap[order] = np.arange(order.size)
-        ic = remap[ic]
+    rows = "rows" in flags
+    m, a = _set_matrix(v, rows)
+    order, group = _row_groups(m)
+    n = m.shape[0]
+    ngroups = int(group[-1]) + 1 if n else 0
+    starts = np.concatenate([[True], group[1:] != group[:-1]]) if n else np.zeros(0, dtype=bool)
     if "last" in flags:
-        ia = np.array([np.nonzero(flat == u)[0][-1] for u in uniq])
-    is_row = a.shape[0] == 1 and a.size > 0
-    out = uniq.reshape(1, -1) if is_row else uniq.reshape(-1, 1)
-    if a.size == 0:
-        out = a.reshape(0, 0) if a.shape == (0, 0) else out
+        ends = np.concatenate([group[1:] != group[:-1], [True]])
+        ia = order[ends]
+    else:
+        ia = order[starts]
+    ic = np.empty(n, dtype=int)
+    ic[order] = group
+    if "stable" in flags:
+        pos = np.argsort(ia, kind="stable")
+        ia = ia[pos]
+        remap = np.empty(ngroups, dtype=int)
+        remap[pos] = np.arange(ngroups)
+        ic = remap[ic]
+    if a.shape == (0, 0):
+        out = a
+    else:
+        out = _set_restore(m[ia], a, rows, _is_row(a) and a.size > 0)
     if nargout > 1:
         return out, ia.reshape(-1, 1) + 1.0, ic.reshape(-1, 1) + 1.0
     return out
 
 
 def _set_values(v):
-    if isinstance(v, Cell):
-        return [to_str(x) for x in v.values_f()], True
-    return list(num(v).flatten(order="F")), False
+    return [to_str(x) for x in v.values_f()]
 
 
-def _set_result(vals, is_cell, like_row=True):
-    if is_cell:
-        return Cell.from_list([char(s) for s in vals])
-    arr = np.array(vals, dtype=float)
-    return arr.reshape(1, -1) if like_row else arr.reshape(-1, 1)
+def _cell_set_op(kind, rest, flags, nargout):
+    a, b = _set_values(rest[0]), _set_values(rest[1])
+    sb = set(b)
+    sa = set(a)
+    if kind == "intersect":
+        vals = [x for x in a if x in sb]
+    elif kind == "union":
+        vals = a + b
+    elif kind == "setdiff":
+        vals = [x for x in a if x not in sb]
+    else:  # setxor
+        vals = [x for x in a if x not in sb] + [x for x in b if x not in sa]
+    if "stable" in flags:
+        vals = list(dict.fromkeys(vals))
+    else:
+        vals = sorted(set(vals))
+    out = Cell.from_list([char(s) for s in vals])
+    if nargout > 1:
+        ia = [a.index(x) + 1.0 for x in vals if x in sa]
+        outs = [out, np.array(ia).reshape(-1, 1)]
+        if nargout > 2:
+            if kind == "intersect":
+                ib = [b.index(x) + 1.0 for x in vals]
+            else:
+                ib = [b.index(x) + 1.0 for x in vals if x not in sa]
+            outs.append(np.array(ib).reshape(-1, 1))
+        return tuple(outs)
+    return out
 
 
 def _set_op(kind):
     def f(interp, args, nargout):
-        rest, flags = flag_present(args, "stable", "sorted", "rows")
-        a, ca = _set_values(rest[0])
-        b, cb = _set_values(rest[1])
-        sb = set(b)
-        sa = set(a)
-        if kind == "intersect":
-            vals = [x for x in a if x in sb]
-        elif kind == "union":
-            vals = a + b
-        elif kind == "setdiff":
-            vals = [x for x in a if x not in sb]
-        else:  # setxor
-            vals = [x for x in a if x not in sb] + [x for x in b if x not in sa]
-        if "stable" in flags:
-            seen = []
-            for x in vals:
-                if x not in seen:
-                    seen.append(x)
-            vals = seen
+        from .strings import _as_cell_if_strings
+        rest, flags = flag_present(args, "stable", "sorted", "rows", "legacy")
+        nargs(rest, 2, 2, kind)
+        va, vb = _as_cell_if_strings(rest[0]), _as_cell_if_strings(rest[1])
+        if isinstance(va, Cell) or isinstance(vb, Cell):
+            va = va if isinstance(va, Cell) else Cell.from_list([va] if is_text(va) else [])
+            vb = vb if isinstance(vb, Cell) else Cell.from_list([vb] if is_text(vb) else [])
+            out = _cell_set_op(kind, [va, vb], flags, nargout)
+            if isinstance(rest[0], (MString, StringArray)) or isinstance(rest[1], (MString, StringArray)):
+                first = out[0] if isinstance(out, tuple) else out
+                first = string_result(np.vectorize(to_str, otypes=[object])(first.data)) \
+                    if first.data.size else first
+                out = (first, *out[1:]) if isinstance(out, tuple) else first
+            return out
+        rows = "rows" in flags
+        ma, a = _set_matrix(va, rows)
+        mb, b = _set_matrix(vb, rows)
+        if rows and ma.shape[1] != mb.shape[1]:
+            if ma.size and mb.size:
+                raise MatlabError(f"{kind}: with 'rows', A and B must have the same number of columns.")
+            width = ma.shape[1] if ma.size else mb.shape[1]
+            ma = ma.reshape(ma.shape[0] if ma.size else 0, width)
+            mb = mb.reshape(mb.shape[0] if mb.size else 0, width)
+        # one class for the keys: an integer class wins, as in concatenation
+        like = a
+        for x, other in ((a, b), (b, a)):
+            if x.dtype.kind in "iu":
+                like = x
+                if other.dtype.kind in "iu" and other.dtype != x.dtype:
+                    raise MatlabError(f"{kind}: integer inputs must have the same class.")
+                break
         else:
-            vals = sorted(set(vals))
-        row = not (isinstance(rest[0], np.ndarray) and rest[0].shape[1] == 1 and rest[0].shape[0] > 1)
-        out = _set_result(vals, ca or cb, row)
-        if nargout > 1:
-            ia = [a.index(x) + 1.0 for x in vals if x in a]
-            outs = [out, np.array(ia).reshape(-1, 1)]
-            if nargout > 2:
-                ib = [b.index(x) + 1.0 for x in vals if x in b]
-                outs.append(np.array(ib).reshape(-1, 1))
-            return tuple(outs)
-        return out
+            if a.dtype.kind == "U" or b.dtype.kind == "U":
+                like = a if a.dtype.kind == "U" else b
+            elif a.dtype == bool and b.dtype != bool:
+                like = b
+            elif np.float32 in (a.dtype, b.dtype):
+                like = a if a.dtype == np.float32 else b
+        if kind == "setdiff":
+            like = a if like.dtype.kind not in "iu" else like
+        if like.dtype.kind in "iu":
+            ma = ma if ma.dtype == like.dtype else _saturate(np.real(ma), like.dtype)
+            mb = mb if mb.dtype == like.dtype else _saturate(np.real(mb), like.dtype)
+        na = ma.shape[0]
+        m = np.concatenate([ma, mb], axis=0)
+        order, group = _row_groups(m)
+        ngroups = int(group[-1]) + 1 if m.shape[0] else 0
+        gid = np.empty(m.shape[0], dtype=int)
+        gid[order] = group
+        big = m.shape[0] + 1
+        first_a = np.full(ngroups, big)
+        first_b = np.full(ngroups, big)
+        np.minimum.at(first_a, gid[:na], np.arange(na))
+        np.minimum.at(first_b, gid[na:], np.arange(m.shape[0] - na))
+        in_a, in_b = first_a < big, first_b < big
+        if kind == "intersect":
+            keep = in_a & in_b
+        elif kind == "union":
+            keep = in_a | in_b
+        elif kind == "setdiff":
+            keep = in_a & ~in_b
+        else:
+            keep = in_a ^ in_b
+        groups = np.nonzero(keep)[0]
+        rep = np.where(in_a[groups], first_a[groups], na + first_b[groups])
+        if "stable" in flags:
+            pos = np.argsort(rep, kind="stable")
+            groups, rep = groups[pos], rep[pos]
+        if kind == "setdiff":
+            as_row = _is_row(a)
+        else:
+            as_row = (_is_row(a) or a.shape == (0, 0)) and (_is_row(b) or b.shape == (0, 0)) \
+                and not (a.shape == (0, 0) and b.shape == (0, 0))
+        if a.shape == (0, 0) and (b.shape == (0, 0) or kind == "setdiff") and not rows:
+            out = np.zeros((0, 0), dtype=like.dtype)
+        else:
+            out = _set_restore(m[rep], like, rows, as_row)
+        if nargout <= 1:
+            return out
+        from_a = in_a[groups]
+        outs = [out, (first_a[groups][from_a] + 1.0).reshape(-1, 1)]
+        if nargout > 2:
+            if kind == "intersect":
+                outs.append((first_b[groups] + 1.0).reshape(-1, 1))
+            elif kind == "setdiff":
+                raise MatlabError("setdiff returns at most two outputs.")
+            else:
+                outs.append((first_b[groups][~from_a] + 1.0).reshape(-1, 1))
+        return tuple(outs)
     return f
 
 
@@ -1294,50 +1972,113 @@ def _hex2dec(interp, args, nargout):
     return float(int(text(args[0]), 16))
 
 
-def _bit(fn):
+def _bit_class(a, b, name):
+    """Result dtype of a bit function: the integer class of the inputs, or None for double."""
+    ia, ib = a.dtype.kind in "iu", b.dtype.kind in "iu"
+    if ia and ib and a.dtype != b.dtype:
+        raise MatlabError(f"{name}: integer inputs must have the same class.")
+    return a.dtype if ia else (b.dtype if ib else None)
+
+
+def _bit_ints(a):
+    """Object array of Python ints (two's complement handled by the caller)."""
+    if a.dtype.kind in "iu":
+        return a.astype(object)
+    a = np.real(a)
+    if a.size and not np.all(np.isfinite(a)):
+        raise MatlabError("Bit functions need finite integer inputs.")
+    if a.size and np.all(np.abs(a) < 2.0 ** 62):
+        return a.astype(np.int64).astype(object)
+    return np.vectorize(int, otypes=[object])(a) if a.size else np.zeros(a.shape, dtype=object)
+
+
+def _bit_finish(r, cls, shape):
+    """Wrap an object array of Python ints into the result class."""
+    if cls is None:
+        return np.array(r, dtype=float).reshape(shape)
+    bits = cls.itemsize * 8
+    mask = (1 << bits) - 1
+
+    def wrap(x):
+        x = int(x) & mask
+        if cls.kind == "i" and x >= 1 << (bits - 1):
+            x -= 1 << bits
+        return x
+
+    flat = [wrap(x) for x in np.asarray(r, dtype=object).reshape(-1)]
+    return np.array(flat, dtype=cls).reshape(shape)
+
+
+def _bit(fn, name):
     def f(interp, args, nargout):
-        a, b = np.broadcast_arrays(fnum(args[0]).astype(np.uint64), fnum(args[1]).astype(np.uint64))
-        return fn(a, b).astype(float)
+        nargs(args, 2, 3, name)
+        a, b = num(args[0]), num(args[1])
+        cls = _bit_class(a, b, name)
+        a, b = np.broadcast_arrays(_bit_ints(a), _bit_ints(b))
+        r = [fn(int(x), int(y)) for x, y in zip(a.reshape(-1), b.reshape(-1))]
+        return _bit_finish(r, cls, a.shape)
     return f
 
 
-builtin("bitand")(_bit(np.bitwise_and))
-builtin("bitor")(_bit(np.bitwise_or))
-builtin("bitxor")(_bit(np.bitwise_xor))
+builtin("bitand")(_bit(lambda x, y: x & y, "bitand"))
+builtin("bitor")(_bit(lambda x, y: x | y, "bitor"))
+builtin("bitxor")(_bit(lambda x, y: x ^ y, "bitxor"))
 
 
 @builtin("bitshift")
 def _bitshift(interp, args, nargout):
-    a = fnum(args[0]).astype(np.int64)
-    n = int(fnum(args[1]).flat[0])
-    return (a << n if n >= 0 else a >> -n).astype(float)
-
-
+    nargs(args, 2, 3, "bitshift")
+    a0 = num(args[0])
+    cls = a0.dtype if a0.dtype.kind in "iu" else None
+    a, n = np.broadcast_arrays(_bit_ints(a0), _bit_ints(num(args[1])))
+    r = [(int(x) << int(k)) if k >= 0 else (int(x) >> -int(k)) for x, k in zip(a.reshape(-1), n.reshape(-1))]
+    if cls is None:
+        r = [x & ((1 << 53) - 1) for x in r]
+    return _bit_finish(r, cls, a.shape)
 
 
 @builtin("bitget")
 def _bitget(interp, args, nargout):
-    a, b = np.broadcast_arrays(fnum(args[0]).astype(np.uint64), fnum(args[1]).astype(np.int64))
-    if np.any(b < 1) or np.any(b > 64):
-        raise MatlabError("bitget: bit positions must be between 1 and 64.")
-    return ((a >> (b - 1).astype(np.uint64)) & np.uint64(1)).astype(float)
+    a0 = num(args[0])
+    cls = a0.dtype if a0.dtype.kind in "iu" else None
+    a, b = np.broadcast_arrays(_bit_ints(a0), _bit_ints(num(args[1])))
+    top = cls.itemsize * 8 if cls is not None else 53
+    if any(k < 1 or k > top for k in b.reshape(-1)):
+        raise MatlabError(f"bitget: bit positions must be between 1 and {top}.")
+    r = [(int(x) >> (int(k) - 1)) & 1 for x, k in zip(a.reshape(-1), b.reshape(-1))]
+    return _bit_finish(r, cls, a.shape)
 
 
 @builtin("bitset")
 def _bitset(interp, args, nargout):
-    a, b = np.broadcast_arrays(fnum(args[0]).astype(np.uint64), fnum(args[1]).astype(np.int64))
-    v = fnum(args[2]) if len(args) > 2 else np.ones((1, 1))
-    v = np.broadcast_to(v, a.shape) != 0
-    mask = np.left_shift(np.uint64(1), (b - 1).astype(np.uint64))
-    return np.where(v, a | mask, a & ~mask).astype(float)
+    a0 = num(args[0])
+    cls = a0.dtype if a0.dtype.kind in "iu" else None
+    v = num(args[2]) if len(args) > 2 else np.ones((1, 1))
+    a, b, v = np.broadcast_arrays(_bit_ints(a0), _bit_ints(num(args[1])), v != 0)
+    top = cls.itemsize * 8 if cls is not None else 53
+    if any(k < 1 or k > top for k in b.reshape(-1)):
+        raise MatlabError(f"bitset: bit positions must be between 1 and {top}.")
+    r = [(int(x) | (1 << (int(k) - 1))) if on else (int(x) & ~(1 << (int(k) - 1)))
+         for x, k, on in zip(a.reshape(-1), b.reshape(-1), v.reshape(-1))]
+    return _bit_finish(r, cls, a.shape)
 
 
 @builtin("bitcmp")
 def _bitcmp(interp, args, nargout):
     a = num(args[0])
-    bits = {np.dtype(np.uint8): 8, np.dtype(np.uint16): 16, np.dtype(np.uint32): 32}.get(a.dtype, 53)
-    if len(args) > 1:
-        from ..values import to_str
+    cls = a.dtype if a.dtype.kind in "iu" else None
+    bits = cls.itemsize * 8 if cls is not None else 53
+    if len(args) > 1 and cls is None:
         bits = {"uint8": 8, "uint16": 16, "uint32": 32, "uint64": 64}.get(to_str(args[1]), bits)
     full = (1 << bits) - 1
-    return np.vectorize(lambda x: float(full ^ int(x)), otypes=[float])(a)
+    r = [full ^ (int(x) & full) for x in _bit_ints(a).reshape(-1)]
+    return _bit_finish(r, cls, a.shape)
+
+
+@builtin("swapbytes")
+def _swapbytes(interp, args, nargout):
+    nargs(args, 1, 1, "swapbytes")
+    a = args[0]
+    if not (isinstance(a, np.ndarray) and a.dtype.kind in "iu"):
+        raise MatlabError("swapbytes: the input must be an integer array (for example uint16).")
+    return a.byteswap()

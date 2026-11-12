@@ -24,7 +24,7 @@ what mylab printed, and what you expected.
 - `containers.Map`, `table` (joins, grouping, `readtable`/`writetable`),
   sparse matrices, `datetime` and `duration`.
 - Image reading, writing and processing; binary file I/O; animations.
-- About 1,090 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
+- About 1,100 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
 
 ## Not supported yet
 

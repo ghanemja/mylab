@@ -19,7 +19,7 @@ First public release.
 - Command-window display and error messages with line numbers.
 
 ### Library
-- About 1,090 built-in functions: math, linear algebra, statistics and
+- About 1,100 built-in functions: math, linear algebra, statistics and
   probability distributions, signal processing, optimization, ODE solvers,
   interpolation, polynomials, strings and regular expressions, cells and
   structs, file input/output, and plotting through Matplotlib.
@@ -67,7 +67,11 @@ First public release.
   step-through panel, assignments with "Check my answers".
 - **VS Code extension** (`editors/vscode`), conda recipe, release workflow.
 - **Datasets:** MATLAB Tasks (157 tasks) and MATLAB Corpus (29,114 files).
-- **Conformance suite** comparing results with GNU Octave.
+- **Conformance suite:** 257 scripts with 5,377 checks compared against GNU
+  Octave; all pass. About 40 behaviour differences found this way were fixed
+  (integer and single classes, exact 64-bit integers, set functions,
+  `num2str`, `regexp`, reductions on N-D arrays, hex literals and more).
+- Appending to cell and struct arrays in a loop is no longer quadratic.
 - The PyPI package is named `mylab-lang` (the name `mylab` was taken).
 
 ### Ways to run it

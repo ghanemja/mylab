@@ -1498,7 +1498,21 @@ _TABLE_FUNCS = {
     "movevars": _movevars,
 }
 
-for _name in ("height", "width", "table2array", "table2struct", "removevars", "addvars", "renamevars",
+def _size_or_table(fn, axis):
+    def f(interp, args, nargout):
+        if len(args) != 1:
+            raise MatlabError("height and width take one input.")
+        if isinstance(args[0], TableObject):
+            return fn(interp, args, nargout)
+        from ..values import shape_of
+        return float(shape_of(args[0])[axis])  # plain arrays: number of rows / columns
+    return f
+
+
+builtin("height")(_size_or_table(_height_fn, 0))
+builtin("width")(_size_or_table(_width_fn, 1))
+
+for _name in ("table2array", "table2struct", "removevars", "addvars", "renamevars",
               "varfun", "rows2vars", "innerjoin", "outerjoin", "table2cell", "movevars"):
     builtin(_name)(lambda interp, args, nargout, _f=_TABLE_FUNCS[_name]: _f(interp, args, nargout))
 builtin("istable")(_istable)

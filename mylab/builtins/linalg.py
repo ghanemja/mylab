@@ -61,6 +61,9 @@ def _trace(interp, args, nargout):
 @builtin("norm")
 def _norm(interp, args, nargout):
     a = fnum(args[0])
+    if a.dtype in (np.float32, np.complex64):
+        r = _norm(interp, [a.astype(complex if a.dtype.kind == "c" else float), *args[1:]], nargout)
+        return np.array([[r]], dtype=np.float32)
     p = args[1] if len(args) > 1 else None
     if a.size == 0:
         return 0.0

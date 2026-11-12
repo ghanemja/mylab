@@ -104,15 +104,25 @@ def _rngf(interp, args, nargout):
 @builtin("linspace")
 def _linspace(interp, args, nargout):
     nargs(args, 2, 3, "linspace")
-    a, b = num(args[0]).flat[0], num(args[1]).flat[0]
-    single = any(isinstance(v, np.ndarray) and v.dtype in (np.float32, np.complex64) for v in args[:2])
-    a, b = (complex(a) if np.iscomplexobj(a) else float(a)), (complex(b) if np.iscomplexobj(b) else float(b))
-    n = int(np.floor(np.real(num(args[2]).flat[0]))) if len(args) > 2 else 100  # a fractional count is floored
+    va, vb = num(args[0]), num(args[1])
+    if va.size != 1 or vb.size != 1:
+        raise MatlabError("linspace: the end points must be scalars.")
+    single = np.float32 in (va.dtype, vb.dtype) or np.complex64 in (va.dtype, vb.dtype)
+    a = complex(va.flat[0]) if va.dtype.kind == "c" else float(va.flat[0])
+    b = complex(vb.flat[0]) if vb.dtype.kind == "c" else float(vb.flat[0])
+    n = 100
+    if len(args) > 2:
+        nv = np.real(num(args[2]))
+        if nv.size != 1 or np.isnan(nv.flat[0]):
+            raise MatlabError("linspace: the number of points must be a scalar.")
+        n = int(np.floor(min(float(nv.flat[0]), 2.0 ** 53)))  # a fractional count is rounded down
     if n == 1:
-        out = np.array([[b]], dtype=complex if np.iscomplexobj(b) else float)
+        r = np.array([[b]], dtype=complex if isinstance(b, complex) else float)
     else:
-        out = np.linspace(a, b, max(n, 0)).reshape(1, -1)
-    return out.astype(np.complex64 if out.dtype.kind == "c" else np.float32) if single else out
+        r = np.linspace(a, b, max(n, 0)).reshape(1, -1)
+    if single:
+        r = r.astype(np.complex64 if r.dtype.kind == "c" else np.float32)
+    return r
 
 
 @builtin("logspace")
@@ -205,7 +215,7 @@ def _reshape(interp, args, nargout):
         for k, a in enumerate(args[1:]):
             if isinstance(a, np.ndarray) and a.size == 0:
                 if unknown is not None:
-                    raise MatlabError("Size can only have one unknown dimension.", "MATLAB:getReshapeDims:unknownDim")
+                    raise MatlabError("reshape: only one size may be [] (the one to be calculated).")
                 unknown = k
                 dims.append(1)
             else:
@@ -270,6 +280,9 @@ def _ndgrid(interp, args, nargout):
 def _diag(interp, args, nargout):
     a = args[0]
     k = to_int(args[1], "k") if len(args) > 1 else 0
+    if isinstance(a, np.ndarray) and a.shape == (0, 0):
+        n = abs(k)
+        return np.zeros((n, n), dtype=a.dtype)
     if a.shape[0] == 1 or a.shape[1] == 1:
         return np.diag(a.flatten(), k)
     return np.diag(a, k).reshape(-1, 1)
@@ -332,17 +345,16 @@ def _size(interp, args, nargout):
     nargs(args, 1, None, "size")
     dims = shape_of(args[0])
     if len(args) >= 2:
-        # size(A, d), size(A, [d1 d2 ...]) and size(A, d1, d2, ...)
-        want = [to_int(a, "dimension") for a in args[1:]] if len(args) > 2 \
-            else [int(d) for d in num(args[1]).flatten()]
-        if any(d < 1 for d in want):
-            raise MatlabError("Dimension argument must be a positive integer scalar or a vector of "
-                              "positive integers.", "MATLAB:getdimarg:dimensionMustBePositiveInteger")
+        if len(args) == 2:
+            want = [to_int(np.array([[d]]), "dimension") for d in np.real(num(args[1])).flatten()]
+        else:
+            want = [to_int(a, "dimension") for a in args[1:]]
+        if not want or any(d < 1 for d in want):
+            raise MatlabError("size: dimensions must be positive integers.")
         vals = [float(dims[d - 1]) if d <= len(dims) else 1.0 for d in want]
         if nargout > 1:
             if nargout != len(vals):
-                raise MatlabError("Incorrect number of output arguments. Number of output arguments must "
-                                  "equal the number of input dimension arguments.")
+                raise MatlabError("size: the number of outputs must match the number of dimensions asked for.")
             return tuple(vals)
         return vals[0] if len(vals) == 1 else np.array([vals])
     if nargout <= 1:

@@ -101,8 +101,8 @@ Review each new entry before you commit it.
 |---|---|
 | Cases | 257 in 24 areas |
 | Checks | 5,377 (5,120 variables + 257 error states) |
-| Overrides (MATLAB differs from Octave, or Octave lacks the feature) | 272, of which 154 are in `matlab_only/` |
-| Passing on mylab | 5,018 (93.3%) |
-| Known failures | 362 entries in 113 cases (3 of them flaky) |
+| Overrides (MATLAB differs from Octave, or Octave lacks the feature) | 271, of which 154 are in `matlab_only/` |
+| Passing on mylab | 5,377 (100%) |
+| Known failures | none |
 
 Golden values were recorded with GNU Octave 8.4.0.

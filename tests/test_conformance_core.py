@@ -259,7 +259,7 @@ end
     "int8(1):int16(3)",
 ])
 def test_mixed_integer_classes_are_an_error(m, expr):
-    with pytest.raises(MatlabError, match="Integers can only be combined|Colon operands"):
+    with pytest.raises(MatlabError, match="(?i)integers can only be combined|Colon operands"):
         m.run(f"x = {expr};")
 
 

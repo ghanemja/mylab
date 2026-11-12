@@ -15,7 +15,7 @@ students, researchers and engineers who can't afford a MATLAB license.
   browser or on Gradescope.
 - **Covers a lot of the language:** matrices, N-D arrays, cells, structs,
   strings, tables, sparse matrices, dates, `containers.Map`, `classdef`
-  classes and about 1,090 functions, from linear algebra to `fft`, `ode45`,
+  classes and about 1,100 functions, from linear algebra to `fft`, `ode45`,
   `fminsearch`, `imread` and plotting.
 
 ![mylab running in the browser](docs/images/demo.gif)
@@ -122,7 +122,7 @@ mylab also publishes two datasets for the community (see [datasets/](datasets/))
 | Functions | Script-local functions, `.m` files on the path, multiple outputs, `nargin`/`nargout`, `varargin`/`varargout`, anonymous functions with captured variables, `global`, `eval`/`feval` |
 | Data types | double, single, logical, char, int8–uint64 (saturating), complex numbers, N-D arrays, cell arrays, structs and struct arrays, string arrays, function handles, `containers.Map`, `table`, sparse matrices, `datetime`/`duration` |
 | Classes | `classdef` value and handle classes, properties with defaults, `Constant`/`Dependent` properties, `get.`/`set.` methods, constructors, `Static` methods, inheritance with `obj@Parent`, operator overloading, custom `disp` |
-| Library | About 1,090 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations |
+| Library | About 1,100 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations |
 
 The full list is in [docs/FUNCTIONS.md](docs/FUNCTIONS.md). Type `help name` in
 mylab for any function. Known differences and gaps (for example Simulink,
@@ -159,9 +159,22 @@ web/              the browser app (Pyodide + CodeMirror, no build step)
 editors/vscode/   VS Code extension
 datasets/         MATLAB Tasks benchmark and MATLAB Corpus index
 examples/         runnable example scripts and a sample assignment
-tests/            pytest suite, including conformance checks against GNU Octave
+tests/            pytest suite, including 5,377 conformance checks against GNU Octave
 docs/             guides, function list, compatibility notes
 ```
+
+## How it is tested
+
+- **2,600+ unit tests** on Linux, Windows and macOS.
+- **Conformance suite:** 257 scripts with 5,377 checks. Each result is
+  compared with GNU Octave, an independent implementation of the same
+  language, with corrections where MATLAB is documented to differ. All
+  checks pass. See [tests/conformance](tests/conformance/README.md).
+- **MATLAB Tasks:** 157 programming tasks with checked answers; all pass.
+- **MATLAB Corpus:** mylab parses 99.1% of 29,114 real-world files.
+
+mylab has not been run side by side with MATLAB itself. If you find a
+difference, please [open an issue](../../issues).
 
 ## Contributing
 

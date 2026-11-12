@@ -7,7 +7,7 @@ import numpy as np
 from ..errors import MatlabError
 from ..ops import build_matrix
 from ..values import (
-    Cell, FunctionHandle, MString, StringArray, Struct, as_2d, char, class_name, empty_double, is_char, to_str,
+    Cell, FunctionHandle, MString, StringArray, Struct, char, class_name, empty_double, is_char, to_str,
 )
 from ._registry import builtin
 from ._util import bool_scalar, dims_from_args, is_text, nargs, num, text
@@ -95,24 +95,21 @@ def _num2cell(interp, args, nargout):
             data[idx] = Cell(inner)
         return Cell(data)
     if not isinstance(v, np.ndarray):
-        inner = np.empty((1, 1), dtype=object)
-        inner[0, 0] = v
-        return Cell(inner)
+        v = num(v)
     if len(args) > 1:
-        # num2cell(A, dims): the listed dimensions stay together inside each cell
-        dims = sorted({int(d) - 1 for d in num(args[1]).flatten()})
-        if any(d < 0 for d in dims):
+        # num2cell(A, dims): each cell holds a slice that spans the listed dimensions
+        dims = sorted({int(d) - 1 for d in np.real(num(args[1])).flatten()})
+        if not dims or dims[0] < 0:
             raise MatlabError("num2cell: dimensions must be positive integers.")
-        nd = max(v.ndim, max(dims) + 1 if dims else 0)
-        a = v.reshape(v.shape + (1,) * (nd - v.ndim))
-        out_shape = tuple(1 if d in dims else a.shape[d] for d in range(nd))
+        from ..values import as_2d
+        nd = max(v.ndim, dims[-1] + 1)
+        full = v.reshape(v.shape + (1,) * (nd - v.ndim))
+        out_shape = tuple(1 if d in dims else full.shape[d] for d in range(nd))
         data = np.empty(out_shape, dtype=object)
         for idx in np.ndindex(out_shape):
             sel = tuple(slice(None) if d in dims else slice(idx[d], idx[d] + 1) for d in range(nd))
-            data[idx] = as_2d(a[sel].copy())
-        while data.ndim > 2 and data.shape[-1] == 1:
-            data = data.reshape(data.shape[:-1])
-        return Cell(data)
+            data[idx] = as_2d(full[sel].copy())
+        return Cell(as_2d(data))
     data = np.empty(v.shape, dtype=object)
     for idx in np.ndindex(v.shape):
         data[idx] = v[idx].reshape(1, 1).copy()
