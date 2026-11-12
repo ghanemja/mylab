@@ -1,0 +1,42 @@
+{
+  "comments": {
+    "lineComment": "%",
+    "blockComment": ["%{", "%}"]
+  },
+  "brackets": [
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"]
+  ],
+  "autoClosingPairs": [
+    { "open": "(", "close": ")" },
+    { "open": "[", "close": "]" },
+    { "open": "{", "close": "}" },
+    { "open": "\"", "close": "\"", "notIn": ["string", "comment"] }
+  ],
+  "surroundingPairs": [
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"],
+    ["'", "'"],
+    ["\"", "\""]
+  ],
+  "autoCloseBefore": ";:.,=}])> \n\t",
+  "wordPattern": "[A-Za-z_][A-Za-z0-9_]*|\\d+\\.?\\d*(?:[eE][-+]?\\d+)?",
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*(?:(?:if|elseif|else|for|parfor|while|switch|case|otherwise|try|catch|function|classdef)\\b|(?:properties|methods|events|enumeration)\\b\\s*(?:\\(.*\\))?\\s*(?:%.*)?$)(?!.*[\\s;,]end\\s*[;,]?\\s*(?:%.*)?$).*$",
+    "decreaseIndentPattern": "^\\s*(?:end|elseif|else|case|otherwise|catch)\\b(?![.'\\w]|\\s*=[^=]).*$"
+  },
+  "folding": {
+    "markers": {
+      "start": "^\\s*%\\s*#?region\\b",
+      "end": "^\\s*%\\s*#?endregion\\b"
+    }
+  },
+  "onEnterRules": [
+    {
+      "beforeText": "^\\s*%%\\s.*$",
+      "action": { "indent": "none" }
+    }
+  ]
+}

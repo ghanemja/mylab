@@ -1,0 +1,10 @@
+# Files that are not needed to run the extension stay out of the .vsix package.
+test/**
+test-support/**
+tools/**
+node_modules/**
+.vscode/**
+.vscode-test/**
+*.vsix
+.gitignore
+**/*.map

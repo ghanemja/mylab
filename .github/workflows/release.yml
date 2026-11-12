@@ -1,15 +1,66 @@
 name: Release
 
-# Push a tag such as v1.0.0 to build the package and create a GitHub release.
-# To also publish to PyPI, configure trusted publishing for this repository on
-# pypi.org and set the repository variable PUBLISH_TO_PYPI to "true".
+# Push a tag such as v1.0.0 to make a release. The full checklist for the
+# repository owner is in docs/RELEASING.md. In short, this workflow:
+#
+#   1. runs the tests (and checks that the tag matches the version in the code);
+#   2. builds the Python package, the VS Code extension (.vsix), the dataset
+#      exports and a filled-in conda recipe;
+#   3. creates the GitHub release and attaches all of those files;
+#   4. publishes to PyPI           - only if the repository variable PUBLISH_TO_PYPI is "true";
+#   5. publishes the extension to the VS Code Marketplace - only if the secret VSCE_PAT exists;
+#   6. publishes the extension to Open VSX               - only if the secret OVSX_PAT exists.
+#
+# Steps 4-6 are skipped (not failed) until they are set up.
+#
+# "Run workflow" on the Actions page does a dry run: steps 1-2 only. The files
+# it builds can be downloaded from the run's page; nothing is published.
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: The tag must match the version in pyproject.toml and mylab/__init__.py
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+
+          import mylab
+
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          with open("pyproject.toml", "rb") as fh:
+              project = tomllib.load(fh)["project"]["version"]
+          print(f"tag {tag}, pyproject.toml {project}, mylab/__init__.py {mylab.__version__}")
+          if not (tag == project == mylab.__version__):
+              raise SystemExit(
+                  "The three versions differ. Fix the version in the code, commit, "
+                  "then delete and re-create the tag (see docs/RELEASING.md)."
+              )
+          PY
+      - run: ruff check .
+      - run: pytest -q
+        env:
+          MPLBACKEND: Agg
+      - name: The editor function reference must be up to date
+        run: python scripts/gen_editor_data.py --check
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,13 +70,97 @@ jobs:
       - run: pip install build twine
       - run: python -m build
       - run: twine check dist/*
+      - name: Fill in the conda recipe (version and checksum of the source package)
+        run: |
+          sdist=$(ls dist/*.tar.gz)
+          sha=$(sha256sum "$sdist" | cut -d' ' -f1)
+          version=$(basename "$sdist" .tar.gz | sed 's/^.*-//')
+          sed -e "s/^{% set version = .* %}/{% set version = \"$version\" %}/" \
+              -e "s/^  sha256: .*/  sha256: $sha/" \
+              packaging/conda/meta.yaml > conda-meta.yaml
+          grep -q "sha256: $sha" conda-meta.yaml
+          grep -q "set version = \"$version\"" conda-meta.yaml
+          {
+            echo "### Python package"
+            echo "- version: \`$version\`"
+            echo "- sha256 of $(basename "$sdist"): \`$sha\`"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conda-recipe
+          path: conda-meta.yaml
+
+  vsix:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --test
+      - name: Use the tag as the extension's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            npm version "$version" --no-git-tag-version --allow-same-version
+          else
+            echo "Tag $GITHUB_REF_NAME is not a plain X.Y.Z version; keeping the version in package.json."
+          fi
+      - name: Use the publisher id from the repository variable VSCODE_PUBLISHER, if set
+        if: vars.VSCODE_PUBLISHER != ''
+        run: npm pkg set publisher="$PUBLISHER"
+        env:
+          PUBLISHER: ${{ vars.VSCODE_PUBLISHER }}
+      - name: Package the extension
+        run: |
+          npx --yes @vscode/vsce package --no-dependencies
+          ls -l *.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: editors/vscode/*.vsix
+          if-no-files-found: error
+
+  datasets:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Export the MATLAB Tasks benchmark as JSON Lines
+        working-directory: datasets/matlab-tasks
+        run: |
+          rm -rf dist
+          # The full export: prompts, reference solutions and tests.
+          python tools/export_jsonl.py --full
+          # If that wrote a single file, name it "..._full" and also write the
+          # prompts-only export, so that the release has both.
+          if [ "$(ls dist/*.jsonl | wc -l)" = "1" ]; then
+            mv dist/matlab_tasks.jsonl dist/matlab_tasks_full.jsonl
+            python tools/export_jsonl.py
+          fi
+          ls -l dist
+          test "$(ls dist/*.jsonl | wc -l)" -ge 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: datasets
+          path: datasets/matlab-tasks/dist/*.jsonl
+          if-no-files-found: error
 
   github-release:
-    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, vsix, datasets]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -34,14 +169,30 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/download-artifact@v4
+        with:
+          name: conda-recipe
+          path: extra/
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: extra/
+      - uses: actions/download-artifact@v4
+        with:
+          name: datasets
+          path: extra/
+      - run: ls -l dist extra
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*
+            extra/*
+          fail_on_unmatched_files: true
           generate_release_notes: true
 
   pypi:
+    if: startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_TO_PYPI == 'true'
     needs: build
-    if: vars.PUBLISH_TO_PYPI == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -52,3 +203,29 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  marketplace:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: vsix
+    runs-on: ubuntu-latest
+    env:
+      # Empty when the secret has not been created; the steps below are then skipped.
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: vsix/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Publish to the VS Code Marketplace
+        if: env.VSCE_PAT != ''
+        run: npx --yes @vscode/vsce publish --packagePath vsix/*.vsix
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        run: npx --yes ovsx publish vsix/*.vsix --pat "$OVSX_PAT"
+      - name: Nothing to do
+        if: env.VSCE_PAT == '' && env.OVSX_PAT == ''
+        run: echo "No VSCE_PAT or OVSX_PAT secret - the extension is attached to the GitHub release only."

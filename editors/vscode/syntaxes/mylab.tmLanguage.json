@@ -1,0 +1,194 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "MATLAB (mylab)",
+  "scopeName": "source.mylab-matlab",
+  "comment": "Written from scratch for mylab (MIT). Rules are listed in order: comments, definitions, text, numbers, words, brackets, operators.",
+  "patterns": [
+    { "include": "#block-comment" },
+    { "include": "#section" },
+    { "include": "#line-comment" },
+    { "include": "#continuation" },
+    { "include": "#function-definition" },
+    { "include": "#class-definition" },
+    { "include": "#class-block" },
+    { "include": "#double-string" },
+    { "include": "#transpose" },
+    { "include": "#single-string" },
+    { "include": "#number" },
+    { "include": "#keyword" },
+    { "include": "#constant" },
+    { "include": "#function-handle" },
+    { "include": "#identifier" },
+    { "include": "#round-brackets" },
+    { "include": "#curly-brackets" },
+    { "include": "#operator" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "block-comment": {
+      "name": "comment.block.percentage.mylab",
+      "begin": "^\\s*(%\\{)\\s*$",
+      "end": "^\\s*(%\\})\\s*$",
+      "beginCaptures": { "1": { "name": "punctuation.definition.comment.begin.mylab" } },
+      "endCaptures": { "1": { "name": "punctuation.definition.comment.end.mylab" } },
+      "patterns": [{ "include": "#block-comment" }]
+    },
+    "section": {
+      "name": "comment.line.double-percentage.mylab",
+      "match": "^\\s*(%%)(?:\\s+(.*))?$",
+      "captures": {
+        "1": { "name": "punctuation.definition.comment.mylab" },
+        "2": { "name": "markup.heading.section.mylab entity.name.section.mylab" }
+      }
+    },
+    "line-comment": {
+      "name": "comment.line.percentage.mylab",
+      "match": "(%).*$",
+      "captures": { "1": { "name": "punctuation.definition.comment.mylab" } }
+    },
+    "continuation": {
+      "match": "(\\.\\.\\.)(.*)$",
+      "captures": {
+        "1": { "name": "punctuation.separator.continuation.mylab" },
+        "2": { "name": "comment.line.continuation.mylab" }
+      }
+    },
+    "function-definition": {
+      "match": "^\\s*(function)\\b[ \\t]*(?:(\\[[^\\]%]*\\]|[A-Za-z_]\\w*)[ \\t]*(=)[ \\t]*)?([A-Za-z_][\\w.]*)?",
+      "captures": {
+        "1": { "name": "keyword.control.function.mylab storage.type.function.mylab" },
+        "2": {
+          "patterns": [
+            { "name": "variable.parameter.output.mylab", "match": "[A-Za-z_]\\w*" },
+            { "name": "punctuation.separator.mylab", "match": "," }
+          ]
+        },
+        "3": { "name": "keyword.operator.assignment.mylab" },
+        "4": { "name": "entity.name.function.mylab" }
+      }
+    },
+    "class-definition": {
+      "match": "^\\s*(classdef)\\b[ \\t]*(?:\\([^)]*\\)[ \\t]*)?([A-Za-z_]\\w*)?",
+      "captures": {
+        "1": { "name": "keyword.other.classdef.mylab storage.type.class.mylab" },
+        "2": { "name": "entity.name.type.class.mylab" }
+      }
+    },
+    "class-block": {
+      "match": "^\\s*(properties|methods|events|enumeration)\\b(?=\\s*(?:\\(|%|$))",
+      "captures": { "1": { "name": "keyword.other.class-block.mylab" } }
+    },
+    "double-string": {
+      "name": "string.quoted.double.mylab",
+      "begin": "\"",
+      "end": "\"(?!\")|$",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.mylab" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.mylab" } },
+      "patterns": [
+        { "name": "constant.character.escape.quote.mylab", "match": "\"\"" },
+        { "include": "#format-codes" }
+      ]
+    },
+    "transpose": {
+      "comment": "A quote right after a name, a number, a closing bracket, a dot or another quote is the transpose operator, not the start of text.",
+      "name": "keyword.operator.transpose.mylab",
+      "match": "(?<=[\\w)\\]}.'])'+"
+    },
+    "single-string": {
+      "name": "string.quoted.single.mylab",
+      "begin": "'",
+      "end": "'(?!')|$",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.mylab" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.mylab" } },
+      "patterns": [
+        { "name": "constant.character.escape.quote.mylab", "match": "''" },
+        { "include": "#format-codes" }
+      ]
+    },
+    "format-codes": {
+      "patterns": [
+        { "name": "constant.character.escape.mylab", "match": "\\\\[abfnrtv\\\\]|%%" },
+        { "name": "constant.other.placeholder.mylab", "match": "%[-+ 0#]*(?:\\d+|\\*)?(?:\\.(?:\\d+|\\*))?[cdeEfgGiosuxX]" }
+      ]
+    },
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.mylab",
+          "match": "(?<![\\w.])0[xX][0-9A-Fa-f]+(?:[su](?:8|16|32|64))?\\b"
+        },
+        {
+          "name": "constant.numeric.binary.mylab",
+          "match": "(?<![\\w.])0[bB][01]+(?:[su](?:8|16|32|64))?\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.mylab",
+          "match": "(?<![\\w.])(?:\\d+(?:\\.(?![*/\\\\^'])\\d*)?|\\.\\d+)(?:[eEdD][-+]?\\d+)?([ij])?(?![\\w])",
+          "captures": { "1": { "name": "constant.numeric.imaginary-unit.mylab" } }
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "name": "keyword.control.mylab",
+          "match": "(?<![\\w.])(?:if|elseif|else|end|for|parfor|while|switch|case|otherwise|try|catch|break|continue|return|function)\\b"
+        },
+        {
+          "name": "storage.modifier.mylab",
+          "match": "(?<![\\w.])(?:global|persistent)\\b"
+        }
+      ]
+    },
+    "constant": {
+      "name": "constant.language.mylab",
+      "match": "(?<![\\w.])(?:true|false|pi|Inf|inf|NaN|nan|eps)\\b"
+    },
+    "function-handle": {
+      "match": "(@)[ \\t]*([A-Za-z_][\\w.]*)?",
+      "captures": {
+        "1": { "name": "keyword.operator.function-handle.mylab" },
+        "2": { "name": "entity.name.function.handle.mylab" }
+      }
+    },
+    "identifier": {
+      "comment": "Consume whole names so that later rules never start in the middle of one. Field names after a dot stay plain.",
+      "match": "(?:(?<=\\.)[A-Za-z_]\\w*|[A-Za-z_]\\w*)"
+    },
+    "round-brackets": {
+      "begin": "\\(",
+      "end": "\\)|$",
+      "beginCaptures": { "0": { "name": "punctuation.section.parens.begin.mylab" } },
+      "endCaptures": { "0": { "name": "punctuation.section.parens.end.mylab" } },
+      "patterns": [{ "include": "#end-as-index" }, { "include": "$self" }]
+    },
+    "curly-brackets": {
+      "begin": "\\{",
+      "end": "\\}|$",
+      "beginCaptures": { "0": { "name": "punctuation.section.braces.begin.mylab" } },
+      "endCaptures": { "0": { "name": "punctuation.section.braces.end.mylab" } },
+      "patterns": [{ "include": "#end-as-index" }, { "include": "$self" }]
+    },
+    "end-as-index": {
+      "comment": "Inside brackets, end means the last index, not the end of a block.",
+      "name": "constant.language.end-index.mylab",
+      "match": "(?<![\\w.])end\\b"
+    },
+    "operator": {
+      "patterns": [
+        { "name": "keyword.operator.comparison.mylab", "match": "==|~=|<=|>=|<|>" },
+        { "name": "keyword.operator.logical.mylab", "match": "&&|\\|\\||&|\\||~" },
+        { "name": "keyword.operator.arithmetic.mylab", "match": "\\.\\*|\\./|\\.\\\\|\\.\\^|\\.'|[-+*/\\\\^]" },
+        { "name": "keyword.operator.assignment.mylab", "match": "=" },
+        { "name": "keyword.operator.range.mylab", "match": ":" }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.mylab", "match": "," },
+        { "name": "punctuation.terminator.semicolon.mylab", "match": ";" },
+        { "name": "punctuation.accessor.dot.mylab", "match": "\\.(?=[A-Za-z_(])" }
+      ]
+    }
+  }
+}
