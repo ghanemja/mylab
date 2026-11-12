@@ -33,6 +33,7 @@ class RunResult:
     output: str = ""
     error: str | None = None
     error_line: int | None = None
+    error_file: str | None = None  # file the error line refers to; None for the code passed to run()
     figures: list[bytes] = field(default_factory=list)
     # Animated GIFs: one per figure that was redrawn at least twice with drawnow, pause or getframe.
     animations: list[bytes] = field(default_factory=list)
@@ -52,6 +53,7 @@ class RunResult:
             "output": self.output,
             "error": self.error,
             "error_line": self.error_line,
+            "error_file": self.error_file,
             "figures": self.figures_base64(),
             "animations": self.animations_base64(),
         }
@@ -109,6 +111,7 @@ class Session:
         except MatlabError as e:
             result.error = e.message
             result.error_line = getattr(e, "line", None)
+            result.error_file = getattr(e, "file", None)
         except SystemExit:
             result.error = "exit/quit is not available in this environment."
         except RecursionError:

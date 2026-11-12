@@ -66,6 +66,7 @@ class TraceResult:
     output: str = ""
     error: str | None = None
     error_line: int | None = None
+    error_file: str | None = None
     truncated: bool = False
     figures: list[bytes] = field(default_factory=list)
 
@@ -86,7 +87,7 @@ class TraceResult:
     def to_dict(self) -> dict:
         import base64
         return {"steps": self.steps, "output": self.output, "error": self.error, "error_line": self.error_line,
-                "truncated": self.truncated,
+                "error_file": self.error_file, "truncated": self.truncated,
                 "figures": [base64.b64encode(f).decode("ascii") for f in self.figures]}
 
 
@@ -124,6 +125,7 @@ def trace(session, code: str, max_steps: int = 5000, max_vars: int = 60) -> Trac
         result.steps.append({
             "line": getattr(stmt, "line", 0) or 0,
             "file": os.path.basename(frame.file) if frame.file else None,
+            "path": os.path.abspath(frame.file) if frame.file else None,
             "function": frame.name,
             "depth": len(interp.frames),
             "frame": key,
@@ -141,6 +143,7 @@ def trace(session, code: str, max_steps: int = 5000, max_vars: int = 60) -> Trac
     result.output = run.output
     result.error = run.error
     result.error_line = run.error_line
+    result.error_file = run.error_file
     result.figures = run.figures
     # A final step showing the base workspace after the last statement.
     if not result.truncated:
