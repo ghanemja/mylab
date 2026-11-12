@@ -157,3 +157,76 @@ def test_in_place_temporaries_do_not_change_variables():
     np.testing.assert_allclose(ev("z"), (2 + (a + b)).reshape(1, -1))
     np.testing.assert_allclose(ev("q"), (a + 1).reshape(1, -1))
     assert ev("isequal(a, a0)").item()
+
+
+# -- inlining of simple user functions ---------------------------------------------------------
+
+INLINE_CASES = [
+    # anonymous function
+    "f = @(x) x*2 + 1; s = 0; for i = 1:300, s = s + f(i); end",
+    # anonymous function with captured scalars
+    "a = 3; b = -0.5; t = true; f = @(x, y) a*x + b*y + t; s = 0; for i = 1:300, s = s + f(i, s); end",
+    # captured NaN/Inf and constants
+    "c = Inf; f = @(x) min(x, c) + pi; s = 0; for i = 1:50, s = s + f(i); end",
+    # local function with one expression
+    "s = 0; for i = 1:300, s = s + sq(i) - half(s); end\nfunction y = sq(x)\ny = x*x;\nend\n"
+    "function y = half(x)\ny = x/2;\nend",
+    # two arguments, logical result used in a condition
+    "n = 0; for i = 1:200, if big(i, 50), n = n + 1; end, end\nfunction r = big(a, b)\nr = a > b;\nend",
+    # function reassigned between two runs of the same loop
+    "s = 0; for k = 1:2, if k == 1, f = @(x) x + 1; else, f = @(x) x*10; end\n"
+    "for i = 1:40, s = s + f(i); end, end",
+    # captured value changes between runs
+    "s = 0; for a = 1:3, f = @(x) a*x; for i = 1:30, s = s + f(i); end, end",
+    # while loop
+    "g = @(x) x/2 + 1; x = 100; n = 0; while x > 2.01, x = g(x); n = n + 1; end",
+    # falls back: function body is not a single expression
+    "s = 0; for i = 1:50, s = s + clip(i); end\nfunction y = clip(x)\nif x > 10\ny = 10;\nelse\ny = x;\nend\nend",
+    # falls back: captured array, call of another user function, recursion
+    "v = [1 2 3]; f = @(x) x + v(2); s = 0; for i = 1:50, s = s + f(i); end",
+    "f = @(x) x + 1; g = @(x) f(x)*2; s = 0; for i = 1:50, s = s + g(i); end",
+    "s = 0; for i = 1:30, s = s + down(mod(i, 5)); end\nfunction y = down(n)\ny = n + (n > 0)*down(n - (n > 0)) * 0;\nend",
+    # falls back at run time: complex result, wrong argument count is an error either way
+    "f = @(x) sqrt(x - 5); s = 0; for i = 1:10, s = s + f(i); end",
+    # a variable named like the function shadows it inside the loop
+    "f = @(x) x + 1; s = 0; for i = 1:20, s = s + f(1); if i == 10, f = [7 8 9]; end, end",
+]
+
+
+@pytest.mark.parametrize("code", INLINE_CASES)
+def test_inlined_calls_match_interpreter(code):
+    from mylab.api import Session
+    results = []
+    for on in (False, True):
+        s = Session()
+        s.interp.jit_enabled = on
+        r = s.run(code)
+        results.append((r.error, {k: v for k, v in s.interp.frame.vars.items() if isinstance(v, np.ndarray)}))
+    (e0, v0), (e1, v1) = results
+    assert e0 == e1
+    assert v0.keys() == v1.keys()
+    for k in v0:
+        assert v0[k].dtype == v1[k].dtype and v0[k].shape == v1[k].shape, k
+        np.testing.assert_allclose(v1[k], v0[k], rtol=1e-12, err_msg=k)
+
+
+def test_inlined_call_error_is_reported_like_the_interpreter():
+    from mylab.api import Session
+    out = []
+    for on in (False, True):
+        s = Session()
+        s.interp.jit_enabled = on
+        r = s.run("f = @(x) x + 1; s = 0; for i = 1:20, s = s + f(i, 2); end")
+        out.append((r.error, r.error_line))
+    assert out[0] == out[1] and out[0][0]
+
+
+def test_inlining_is_fast():
+    import time
+
+    from mylab.api import Session
+    s = Session()
+    t = time.perf_counter()
+    r = s.run("f = @(x) x*2 + 1; s = 0; for i = 1:200000, s = s + f(i); end")
+    assert r.error is None and s.interp.frame.vars["s"].item() == 200000 * 200001 + 200000
+    assert time.perf_counter() - t < 1.0  # about 0.05 s compiled, 2 s interpreted

@@ -37,6 +37,7 @@ import numpy as np
 
 from . import ast as A
 from .errors import BreakSignal, ContinueSignal
+from .values import FunctionHandle
 
 _F64 = np.dtype(float)
 _UNSET = object()
@@ -251,6 +252,9 @@ class _Gen:
         self.final: dict[str, str] = {}
         self.lines: list[str] = []
         self.paths: list[tuple] = []
+        self.inline = None          # callable(name, args, ctx, gen) -> (code, type) or None
+        self.consts: dict[str, tuple] = {}   # captured scalar values inside an inlined function
+        self.blocked: frozenset = frozenset()
 
     def var_type(self, name: str) -> str:
         if name in self.final:
@@ -275,7 +279,9 @@ class _Gen:
             return repr(v), "d"
         if t is A.Ident:
             name = node.name
-            if name in self.arrays:
+            if name in self.consts:
+                return self.consts[name]
+            if name in self.arrays or name in self.blocked:
                 raise Reject  # whole-array use
             if self.kinds.get(name, "-") in ("d", "b") or name in self.writes:
                 return f"v_{name}", self.var_type(name)
@@ -315,7 +321,12 @@ class _Gen:
                 if name in ("numel", "length", "size"):
                     raise Reject
                 return f"a_{name}.item({self.index(name, node.args)})", "d"
-            if self.kinds.get(name, "-") != "-" or name in self.writes:
+            if self.inline is not None and name not in self.writes and name not in self.consts:
+                inlined = self.inline(name, node.args, ctx, self)
+                if inlined is not None:
+                    return inlined
+            if self.kinds.get(name, "-") != "-" or name in self.writes or name in self.consts \
+                    or name in self.blocked:
                 raise Reject  # indexing into a scalar variable
             if name in ("numel", "length", "size") and node.args and type(node.args[0]) is A.Ident \
                     and node.args[0].name in self.arrays and self.funcs_ok(name):
@@ -398,6 +409,13 @@ class _Gen:
 def _kind(value: Any) -> str:
     if value is None:
         return "-"
+    if type(value) is FunctionHandle:
+        if not value.is_anonymous:
+            return "x"
+        # anonymous function: identified by its body and the scalar values it captured
+        caught = tuple(sorted((k, v.item()) for k, v in value.closure.items()
+                              if type(v) is np.ndarray and v.shape == (1, 1) and v.dtype.kind in "fb"))
+        return f"h:{id(value.body)}:{caught!r}"
     if type(value) is not np.ndarray or value.ndim != 2:
         return "x"
     if value.shape == (1, 1):
@@ -433,9 +451,66 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
             shadow_cache[name] = ok
         return ok
 
+    def inline_source(name: str):
+        """(parameter names, body expression, captured values) of a function simple enough to inline."""
+        kind = kinds.get(name, "-")
+        if kind.startswith("h:"):
+            handle = frame.vars.get(name)
+            if type(handle) is not FunctionHandle or not handle.is_anonymous:
+                return None
+            return list(handle.params), handle.body, handle.closure
+        if not kind.startswith("f:"):
+            return None
+        fn = frame.functions.get(name)
+        if type(fn) is not A.Function or fn.subfunctions or fn.arguments or len(fn.outputs) != 1 \
+                or len(fn.body) != 1:
+            return None
+        stmt0 = fn.body[0]
+        if type(stmt0) is not A.Assign or stmt0.show or len(stmt0.targets) != 1 \
+                or type(stmt0.targets[0]) is not A.Ident or stmt0.targets[0].name != fn.outputs[0]:
+            return None
+        return list(fn.params), stmt0.value, {}
+
+    def make_inline(depth: int):
+        def inline(name, args, ctx, outer):
+            if depth > 0:
+                return None  # calls inside an inlined body must be built-in math functions
+            src = inline_source(name)
+            if src is None:
+                return None
+            params, body, closure = src
+            if len(params) != len(args) or "varargin" in params or "~" in params \
+                    or len(set(params)) != len(params):
+                raise Reject
+            child = _Gen({p: "d" for p in params}, set(params), set(), funcs_ok, set())
+            consts, blocked = {}, set()
+            for k, v in closure.items():
+                if k in params:
+                    continue
+                if type(v) is np.ndarray and v.shape == (1, 1) and v.dtype.kind in "fb":
+                    x = v.item()
+                    if v.dtype.kind == "b":
+                        consts[k] = (repr(bool(x)), "b")
+                    elif x != x:
+                        consts[k] = ("_nan", "d")
+                    elif x in (math.inf, -math.inf):
+                        consts[k] = ("_inf" if x > 0 else "(-_inf)", "d")
+                    else:
+                        consts[k] = (f"({float(x)!r})", "d")
+                else:
+                    blocked.add(k)
+            child.consts, child.blocked = consts, frozenset(blocked)
+            child.inline = make_inline(depth + 1)
+            code, typ = child.expr(body)
+            actual = ", ".join(outer.as_float(*outer.expr(a, ctx)) for a in args)
+            return f"(lambda {', '.join('v_' + p for p in params)}: {code})({actual})", typ
+        return inline
+
     for name, _n in info["calls"]:
-        if name not in arrays and (kinds.get(name, "-") != "-" or name in writes or (
-                name not in _FUNCS and name not in ("numel", "length", "size"))):
+        if name in arrays or (name not in writes and inline_source(name) is not None):
+            continue
+        if kinds.get(name, "-") != "-" or name in writes or (
+                name not in _FUNCS and name not in ("numel", "length", "size")):
             raise Reject
 
     gen = None
@@ -443,6 +518,7 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
     for _attempt in range(3):  # iterate until the inferred variable types are stable
         gen = _Gen(kinds, scalars, arrays, funcs_ok, writes)
         gen.final = dict(final)
+        gen.inline = make_inline(0)
         is_for = loop_var is not None
         if is_for:
             gen.types.setdefault(loop_var, set()).add("d")
@@ -499,6 +575,15 @@ def _prepare(interp, stmt, frame, loop_var):
         return None
     fvars = frame.vars
     kinds = {n: _kind(fvars.get(n)) for n in names}
+    for n, _nargs in info["calls"]:  # local functions are part of the signature too
+        if kinds[n] == "-":
+            fn = frame.functions.get(n)
+            if type(fn) is A.Function:
+                kinds[n] = f"f:{id(fn)}"
+                info.setdefault("keep", {})[id(fn)] = fn
+        elif kinds[n].startswith("h:"):
+            body = fvars[n].body  # keep the body alive so its id() is never reused
+            info.setdefault("keep", {})[id(body)] = body
     if loop_var:
         kinds[loop_var] = "d" if kinds[loop_var] in "-db" else kinds[loop_var]
     sig = tuple(sorted(kinds.items()))

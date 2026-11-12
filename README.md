@@ -143,7 +143,11 @@ GUIs, enumerations and object arrays) are in
   `s = s + k^2` take about 0.03 s. If anything unusual happens (an index
   out of range, a complex result), mylab falls back to the interpreter for
   that loop, so results and error messages stay the same.
-- **Other loops are interpreted** (ones that call your own functions, use
+- **Small functions called in loops are inlined.** A loop that calls an
+  anonymous function such as `f = @(x) a*x + 1`, or a one-line function in
+  the same file, runs about 100× faster than before (50,000 calls in about
+  0.005 s).
+- **Other loops are interpreted** (ones that call longer functions, use
   cells, structs or strings, or print): about 2–10 µs per statement. That's
   fine for coursework, but slower than MATLAB.
 

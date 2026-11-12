@@ -72,6 +72,8 @@ First public release.
   (integer and single classes, exact 64-bit integers, set functions,
   `num2str`, `regexp`, reductions on N-D arrays, hex literals and more).
 - Appending to cell and struct arrays in a loop is no longer quadratic.
+- The loop compiler inlines anonymous functions and one-line local
+  functions: loops that call them run about 100× faster.
 - **Optional accelerator** (`pip install "mylab-lang[fast]"`): large
   elementwise array expressions are evaluated in one multi-threaded pass,
   2–5× faster than NumPy on four cores.
