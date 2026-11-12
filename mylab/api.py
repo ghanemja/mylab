@@ -8,6 +8,7 @@ Example::
     r.output      # text printed to the command window
     r.error       # None, or an error message
     r.figures     # list of PNG images (bytes) produced by this run
+    r.animations  # list of animated GIFs (bytes), one per figure redrawn with drawnow/pause
     s.variables() # summary of the workspace
 """
 
@@ -33,6 +34,8 @@ class RunResult:
     error: str | None = None
     error_line: int | None = None
     figures: list[bytes] = field(default_factory=list)
+    # Animated GIFs: one per figure that was redrawn at least twice with drawnow, pause or getframe.
+    animations: list[bytes] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -41,12 +44,16 @@ class RunResult:
     def figures_base64(self) -> list[str]:
         return [base64.b64encode(f).decode("ascii") for f in self.figures]
 
+    def animations_base64(self) -> list[str]:
+        return [base64.b64encode(a).decode("ascii") for a in self.animations]
+
     def to_dict(self) -> dict:
         return {
             "output": self.output,
             "error": self.error,
             "error_line": self.error_line,
             "figures": self.figures_base64(),
+            "animations": self.animations_base64(),
         }
 
 
@@ -96,6 +103,7 @@ class Session:
     def run(self, code: str, capture_figures: bool = True, close_figures: bool = True) -> RunResult:
         self._buffer.clear()
         result = RunResult()
+        self.interp.state.pop("animation", None)  # frames captured by drawnow/pause belong to one run
         try:
             self.interp.execute(code)
         except MatlabError as e:
@@ -112,8 +120,16 @@ class Session:
         result.output = "".join(self._buffer)
         self._buffer.clear()
         if capture_figures:
+            result.animations = self.render_animations()
             result.figures = self.render_figures(close=close_figures)
         return result
+
+    def render_animations(self) -> list[bytes]:
+        """Animated GIFs of the frames captured since the run started (and forget those frames)."""
+        if "animation" not in self.interp.state:
+            return []
+        from .builtins.plotting import render_animations
+        return render_animations(self.interp)
 
     def render_figures(self, close: bool = True) -> list[bytes]:
         st = self.interp.state.get("plot")
