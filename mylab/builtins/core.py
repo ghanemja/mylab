@@ -432,7 +432,8 @@ builtin("ischar")(_type_pred(is_char))
 builtin("isstring")(_type_pred(lambda v: isinstance(v, (MString, StringArray))))
 builtin("iscell")(_type_pred(lambda v: isinstance(v, Cell)))
 builtin("isstruct")(_type_pred(lambda v: isinstance(v, Struct)))
-builtin("isreal")(_type_pred(lambda v: not (isinstance(v, np.ndarray) and v.dtype.kind == "c")))
+# only numeric, logical and char arrays can be real: cells, structs, strings and handles are not
+builtin("isreal")(_type_pred(lambda v: isinstance(v, np.ndarray) and v.dtype.kind != "c"))
 builtin("is_function_handle")(_type_pred(lambda v: isinstance(v, FunctionHandle)))
 builtin("istext")(_type_pred(lambda v: isinstance(v, (MString, StringArray)) or is_char(v)))
 
@@ -522,7 +523,32 @@ def _char(interp, args, nargout):
             return _char_rows([to_str(x) for x in v.values_f()])
         if isinstance(v, np.ndarray):
             return codes_to_char(v)
-    return _char_rows([to_str(a) if is_text(a) else to_str(codes_to_char(a)) for a in args])
+    rows: list[str] = []
+    for a in args:
+        if isinstance(a, MString):
+            rows.append(str(a))
+        elif isinstance(a, StringArray):
+            rows.extend("" if x is None else x for x in a.data.flatten(order="F"))
+        elif isinstance(a, Cell):
+            for x in a.values_f():
+                rows.extend(_text_rows(x))
+        else:
+            rows.extend(_text_rows(a))
+    return _char_rows(rows)
+
+
+def _text_rows(a) -> list[str]:
+    """Rows of one char() argument: a char matrix gives one row per line, an empty gives a blank row."""
+    if isinstance(a, MString):
+        return [str(a)]
+    if not isinstance(a, np.ndarray):
+        raise MatlabError("char: inputs must be text, numbers or cell arrays of them.")
+    c = codes_to_char(a)
+    if c.size == 0:
+        return [""]
+    if c.ndim == 2 and c.shape[0] > 1:
+        return ["".join(r) for r in c]
+    return ["".join(c.flatten(order="F"))]
 
 
 def _char_rows(rows: list[str]) -> np.ndarray:
@@ -534,5 +560,24 @@ def _char_rows(rows: list[str]) -> np.ndarray:
 
 @builtin("cast")
 def _cast(interp, args, nargout):
-    return cast_class(num(args[0]), text(args[1]))
+    nargs(args, 2, 3, "cast")
+    v = args[0]
+    if len(args) == 3:
+        if text(args[1]).lower() != "like":
+            raise MatlabError("cast: the second input must be a class name or 'like'.")
+        like = args[2]
+        if not isinstance(like, np.ndarray):
+            raise MatlabError("cast: the prototype must be a numeric, logical or char array.")
+        cls = class_name(like)
+        out = _cast_to(v, cls)
+        if like.dtype.kind == "c" and out.dtype.kind == "f":
+            out = out.astype(np.complex64 if out.dtype == np.float32 else complex)
+        return out
+    return _cast_to(v, text(args[1]))
+
+
+def _cast_to(v, cls: str):
+    if cls == "char":
+        return codes_to_char(num(v))
+    return cast_class(num(v), cls)
 

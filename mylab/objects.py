@@ -161,7 +161,7 @@ class MapObject(MObject):
 
     def get_field(self, interp, name: str) -> Any:
         if name == "Count":
-            return np.array([[float(len(self.store))]])
+            return np.array([[len(self.store)]], dtype=np.uint64)
         if name == "KeyType":
             from .values import char
             return char(self.key_type)
@@ -194,7 +194,9 @@ class MapObject(MObject):
                     raise MatlabError("The specified key is not present in this container.")
                 del self.store[k]
             return [self]
-        if name in ("length", "Count"):
+        if name == "Count":
+            return [np.array([[len(self.store)]], dtype=np.uint64)]
+        if name == "length":
             return [np.array([[float(len(self.store))]])]
         if name in ("KeyType", "ValueType"):
             return [self.get_field(interp, name)]

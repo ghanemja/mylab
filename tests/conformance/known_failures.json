@@ -48,21 +48,8 @@
   "c8": "bit functions return double for integer inputs and do not wrap to the type",
   "t3": "bitand of two different integer classes is accepted"
  },
- "cells/arrayfun_forms": {
-  "a18": "uniform output of cellfun/arrayfun loses an integer class",
-  "c18": "uniform output of cellfun/arrayfun loses an integer class"
- },
- "cells/cellfun_uniform": {
-  "u14": "uniform output of cellfun/arrayfun loses an integer class",
-  "u15": "uniform output of cellfun/arrayfun loses an integer class"
- },
  "cells/deal_forms": {
   "q": "[q{1:2}] = deal(a, b) fails when q does not exist yet"
- },
- "cells/num2cell_cell2mat": {
-  "e1": "cell2mat of mixed classes does not raise an error",
-  "n11": "num2cell(A, dim) ignores dim",
-  "n12": "num2cell(A, dim) ignores dim"
  },
  "concat/empties": {
   "e20": "class of an empty operand is ignored in concatenation"
@@ -73,12 +60,6 @@
   "c6": "class of an empty operand is ignored in concatenation",
   "c7": "class of an empty operand is ignored in concatenation",
   "v6": "class of an empty operand is ignored in concatenation"
- },
- "concat/strings_vertical": {
-  "__error__": "char(cell, char) raises a Python TypeError",
-  "f": "char(cell, char) raises a Python TypeError",
-  "g": "char(cell, char) raises a Python TypeError",
-  "sf": "char(cell, char) raises a Python TypeError"
  },
  "control/anonymous_capture": {
   "r22": "nargin(function_handle) is not supported",
@@ -94,9 +75,6 @@
   "na3": "nargin('name') is not supported",
   "no": "nargout('name') returns 0",
   "no2": "nargout('name') returns 0"
- },
- "control/rethrow_mexception": {
-  "le": "function is missing: lasterr"
  },
  "control/switch_forms": {
   "r": "switch on a non-scalar numeric value does not raise an error"
@@ -159,35 +137,8 @@
   "e25": "isequal of two handles to the same function is false",
   "e26": "isequaln of structs with NaN fields is false"
  },
- "maps/basic_char_keys": {
-  "n1": "containers.Map Count is double (expected uint64)",
-  "n4": "containers.Map Count is double (expected uint64)"
- },
- "maps/constructors": {
-  "n4": "containers.Map Count is double (expected uint64)",
-  "n8": "containers.Map Count is double (expected uint64)"
- },
- "maps/handle_semantics_and_loops": {
-  "n1": "containers.Map Count is double (expected uint64)"
- },
- "maps/numeric_keys": {
-  "n5": "containers.Map Count is double (expected uint64)"
- },
  "matlab_only/builtin_error_identifiers": {
   "id14": "assignment size mismatch error has no identifier"
- },
- "matlab_only/char_text_functions": {
-  "r24": "function is missing: isStringScalar",
-  "r25": "function is missing: convertStringsToChars"
- },
- "matlab_only/newer_functions": {
-  "v26": "function is missing: isoutlier",
-  "v27": "function is missing: standardizeMissing",
-  "v28": "function is missing: anynan",
-  "v29": "function is missing: allfinite",
-  "v30": "height/width do not accept plain arrays",
-  "v31": "height/width do not accept plain arrays",
-  "v34": "function is missing: uniquetol"
  },
  "misc/all_option_forms": {
   "o10": "std/var ignore the 'all' option",
@@ -414,155 +365,8 @@
   "c7": "sort of logical returns double",
   "s7": "sort of logical returns double"
  },
- "strings/blanks_repmat_misc": {
-  "b20": "strcat with a char matrix flattens it"
- },
- "strings/cellfun_on_strings": {
-  "n13": "legacy cellfun names 'prodofsize' and 'isclass' are not supported",
-  "n14": "legacy cellfun names 'prodofsize' and 'isclass' are not supported"
- },
- "strings/character_classes": {
-  "k10": "isstrprop category 'xdigit' is not supported"
- },
- "strings/dec_bin_hex": {
-  "b11": "dec2bin/dec2hex/bin2dec handle only one value of an array input",
-  "b14": "hex2dec of a cell array fails",
-  "b15": "function is missing: dec2base",
-  "b16": "function is missing: base2dec",
-  "b17": "function is missing: dec2base",
-  "b22": "dec2bin/dec2hex/bin2dec handle only one value of an array input",
-  "b23": "dec2bin/dec2hex/bin2dec handle only one value of an array input",
-  "b24": "function is missing: dec2base",
-  "b4": "dec2bin/dec2hex/bin2dec handle only one value of an array input"
- },
- "strings/int2str_forms": {
-  "i14": "int2str of a matrix keeps a leading blank column",
-  "i6": "int2str of a matrix keeps a leading blank column"
- },
- "strings/mat2str_classes": {
-  "k2": "mat2str(x, 'class') is not supported",
-  "k6": "mat2str(x, 'class') is not supported"
- },
- "strings/mat2str_forms": {
-  "m16": "mat2str of an empty is not written as zeros(m,n)",
-  "m17": "mat2str of an empty is not written as zeros(m,n)",
-  "m5": "mat2str of an empty is not written as zeros(m,n)"
- },
- "strings/num2str_arrays": {
-  "a10": "num2str of a non-integer matrix uses the wrong column spacing",
-  "a14": "num2str of an integer matrix has wrong widths or a leading blank",
-  "a15": "num2str of an integer matrix has wrong widths or a leading blank",
-  "a16": "num2str of a non-integer matrix uses the wrong column spacing",
-  "a17": "num2str of an integer matrix has wrong widths or a leading blank",
-  "a19": "num2str of a non-integer matrix uses the wrong column spacing",
-  "a21": "num2str of an integer matrix has wrong widths or a leading blank",
-  "a22": "num2str of a non-integer matrix uses the wrong column spacing",
-  "a4": "num2str of an integer matrix has wrong widths or a leading blank",
-  "a5": "num2str of a non-integer matrix uses the wrong column spacing",
-  "a6": "num2str of an integer matrix has wrong widths or a leading blank",
-  "a7": "num2str of a non-integer matrix uses the wrong column spacing",
-  "a8": "num2str of a non-integer matrix uses the wrong column spacing",
-  "a9": "num2str of a non-integer matrix uses the wrong column spacing"
- },
- "strings/num2str_precision_format": {
-  "p10": "num2str(x, format) does not trim blanks",
-  "p15": "num2str(x, format) does not trim blanks",
-  "p6": "num2str(x, format) does not trim blanks",
-  "p8": "num2str(x, format) does not trim blanks"
- },
- "strings/num2str_scalars": {
-  "n22": "num2str(1e16) prints all digits (expected 1e+16)"
- },
- "strings/regexp_match_tokens": {
-  "m27": "an empty pattern matches at every position (expected no match)",
-  "st13": "tokens of a failed 'once' match are 1x0 (expected 0x0)",
-  "t13": "tokens of a failed 'once' match are 1x0 (expected 0x0)"
- },
- "strings/regexp_names_cells": {
-  "c6": "regexp(cellstr, pat, 'once') returns a raw Python float",
-  "c7": "a cell array of patterns is not supported"
- },
- "strings/regexp_output_order": {
-  "te4": "token extents are not returned",
-  "te8": "token extents are not returned",
-  "te9": "token extents are not returned"
- },
- "strings/regexp_syntax": {
-  "p13": "the word-start anchor (backslash <) is not supported",
-  "p21": "'.' does not match a newline"
- },
- "strings/regexprep_forms": {
-  "r11": "an empty pattern matches at every position (expected no match)",
-  "r12": "named token $<name> in the replacement is not supported",
-  "r13": "dynamic expression ${...} in the replacement is not supported",
-  "r14": "a replacement of two backslashes raises an internal error",
-  "r8": "a cell array of patterns is not supported",
-  "r9": "a cell array of patterns is not supported"
- },
- "strings/sprintf_escapes": {
-  "e11": "octal escapes (backslash 101) are not processed"
- },
  "strings/sprintf_integers": {
-  "s21": "integer precision (%.3d) is ignored",
-  "s22": "sprintf of intmax('int64') goes through double",
-  "s26": "%#o prints Python's 0o prefix",
-  "s27": "%ld is not recognized",
-  "s28": "integer precision (%.3d) is ignored"
- },
- "strings/sprintf_strings": {
-  "s14": "a char array given to %d is not expanded per character"
- },
- "strings/str2num_str2double": {
-  "a13": "str2num of a char matrix joins the rows"
- },
- "strings/strfind_forms": {
-  "f11": "strfind without a match returns 1x0 (expected 0x0)",
-  "f3": "strfind without a match returns 1x0 (expected 0x0)",
-  "f4": "strfind without a match returns 1x0 (expected 0x0)",
-  "f5": "strfind without a match returns 1x0 (expected 0x0)",
-  "f6": "strfind without a match returns 1x0 (expected 0x0)",
-  "f7": "strfind without a match returns 1x0 (expected 0x0)",
-  "sf3": "strfind without a match returns 1x0 (expected 0x0)",
-  "sf4": "strfind without a match returns 1x0 (expected 0x0)"
- },
- "strings/strjoin_forms": {
-  "j11": "strjoin with a cell array of delimiters is not supported"
- },
- "strings/strrep_strtrim": {
-  "r2": "strrep does not replace overlapping matches",
-  "t13": "strtrim of a char matrix trims each row separately",
-  "t7": "strtrim of a char matrix trims each row separately"
- },
- "strings/upper_lower_flip": {
-  "u14": "upper of a number raises an error (MATLAB returns it unchanged)"
- },
- "structs/create_and_fields": {
-  "s11": "struct([]) raises an error",
-  "z11": "struct([]) raises an error"
- },
- "structs/rmfield_orderfields": {
-  "f4": "orderfields ignores its order argument",
-  "f5": "orderfields ignores its order argument",
-  "o2": "[s, p] = orderfields(s) is not supported",
-  "o3": "orderfields ignores its order argument",
-  "o4": "orderfields ignores its order argument",
-  "p2": "[s, p] = orderfields(s) is not supported"
- },
- "structs/struct_functions": {
-  "c5": "struct2cell of a struct array returns only the first element",
-  "nf": "function is missing: numfields",
-  "s4": "cell2struct of a 2-D cell along dimension 2 fails",
-  "v4": "cell2struct of a 2-D cell along dimension 2 fails",
-  "z4": "cell2struct of a 2-D cell along dimension 2 fails",
-  "z5": "struct2cell of a struct array returns only the first element"
- },
- "types/cast_conversions": {
-  "c6": "cast(x, 'char') is not supported",
-  "c9": "cast(x, 'like', p) is not supported",
-  "k9": "cast(x, 'like', p) is not supported"
- },
- "types/is_functions": {
-  "q8": "isreal of a cell, struct or function handle is true (expected false)"
+  "s22": "sprintf of intmax('int64') goes through double"
  },
  "types/mixed_class_operations": {
   "c30": "single class is not propagated (result is double)",
