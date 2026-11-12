@@ -10,6 +10,7 @@ import numpy as np
 
 from . import ast as A
 from . import indexing as ix
+from . import fuse
 from . import jit
 from . import ops
 from .display import format_display, function_handle_text, unparse
@@ -134,6 +135,7 @@ class Interpreter:
     def __init__(self, out: Callable[[str], None] | None = None, path: list[str] | None = None):
         from .builtins import BUILTINS
         self.builtins = BUILTINS
+        self.fuse_enabled = fuse.ENABLED_BY_DEFAULT
         self.out = out or (lambda s: (sys.stdout.write(s), sys.stdout.flush()))
         self.global_vars: dict[str, Any] = {}
         self.persistent_vars: dict[int, dict[str, Any]] = {}
@@ -804,29 +806,45 @@ class Interpreter:
                 if op == "||" and lv:
                     return np.array([[True]])
                 return np.array([[self._short_circuit_operand(self.eval(node.right, frame), op)]])
-            left, right = self.eval(node.left, frame), self.eval(node.right, frame)
-            if isinstance(left, MObject) or isinstance(right, MObject):
-                from .classdef import call_operator
-                return call_operator(self, op, left, right)
-            if type(left) is np.ndarray and type(right) is np.ndarray and (left.size >= 100000 or right.size >= 100000):
-                # Large arrays: when an operand is a temporary (nothing else refers to it), write the
-                # result into it instead of allocating a new array, e.g. the a.*b in  a.*b + c.
-                ufunc = _INPLACE.get(op)
-                if ufunc is not None and left.dtype is _F64 and right.dtype is _F64:
-                    if left.base is None and left.flags.writeable and sys.getrefcount(left) == 2 \
-                            and (right.shape == left.shape or right.shape == (1, 1)):
-                        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-                            return ufunc(left, right, out=left)
-                    if op in ("+", ".*") and right.base is None and right.flags.writeable \
-                            and sys.getrefcount(right) == 2 and left.shape == (1, 1) and right.size > 1:
-                        return ufunc(left, right, out=right)
-            return ops.binop(op, left, right)
+            if self.fuse_enabled:
+                fplan = node.__dict__.get("_fuse", 0)
+                if fplan == 0:
+                    fplan = node._fuse = fuse.plan(node)
+                if fplan is not None:
+                    fused = fuse.run(self, fplan, frame)
+                    if fused is not fuse.NOT_FUSED:
+                        return fused
+            return self.binop_values(op, self.eval(node.left, frame), self.eval(node.right, frame))
         if t is A.UnaryOp:
-            operand = self.eval(node.operand, frame)
-            if isinstance(operand, MObject):
-                from .classdef import call_unary_operator
-                return call_unary_operator(self, node.op, operand)
-            return ops.unary(node.op, operand)
+            return self.unary_values(node.op, self.eval(node.operand, frame))
+        return self._eval_rest(node, frame, t)
+
+    def unary_values(self, op: str, operand: Any) -> Any:
+        if isinstance(operand, MObject):
+            from .classdef import call_unary_operator
+            return call_unary_operator(self, op, operand)
+        return ops.unary(op, operand)
+
+    def binop_values(self, op: str, left: Any, right: Any) -> Any:
+        """Apply a (non short-circuit) binary operator to two values."""
+        if isinstance(left, MObject) or isinstance(right, MObject):
+            from .classdef import call_operator
+            return call_operator(self, op, left, right)
+        if type(left) is np.ndarray and type(right) is np.ndarray and (left.size >= 100000 or right.size >= 100000):
+            # Large arrays: when an operand is a temporary (nothing else refers to it), write the
+            # result into it instead of allocating a new array, e.g. the a.*b in  a.*b + c.
+            ufunc = _INPLACE.get(op)
+            if ufunc is not None and left.dtype is _F64 and right.dtype is _F64:
+                if left.base is None and left.flags.writeable and sys.getrefcount(left) == 2 \
+                        and (right.shape == left.shape or right.shape == (1, 1)):
+                    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                        return ufunc(left, right, out=left)
+                if op in ("+", ".*") and right.base is None and right.flags.writeable \
+                        and sys.getrefcount(right) == 2 and left.shape == (1, 1) and right.size > 1:
+                    return ufunc(left, right, out=right)
+        return ops.binop(op, left, right)
+
+    def _eval_rest(self, node: A.Node, frame: Frame, t: type) -> Any:
         if t is A.Postfix:
             operand = self.eval(node.operand, frame)
             if isinstance(operand, MObject):

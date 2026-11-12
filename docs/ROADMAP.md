@@ -23,6 +23,7 @@ well with AI assistants.
   - a Jupyter kernel (`mylab-kernel`).
 - **Speed:**
   - a loop compiler for simple numeric loops (15–55× faster);
+  - optional multi-threaded evaluation of large array expressions;
   - cached literals and parsed files, fast paths for scalar code;
   - in-place updates of arrays that aren't shared.
 - **Data:** sparse matrices, dates and times, images, binary files,

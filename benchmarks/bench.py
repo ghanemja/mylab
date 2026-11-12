@@ -14,6 +14,8 @@ CASES = {
     ),
     "matrix 2D index (40k)": "A = zeros(200); for i = 1:200, for j = 1:200, A(i, j) = i + j; end, end",
     "vectorized (1e6)": "x = linspace(0, 1, 1e6); y = sum(sin(x).^2 + cos(x).^2);",
+    "array expression (1e7)": "x = linspace(0, 1, 1e7); y = sin(x).^2 + cos(x).^2 + x.*x - 2*x;",
+    "cell append (20k)": "c = {}; for k = 1:20000, c{end+1} = k; end",
 }
 
 

@@ -132,6 +132,11 @@ GUIs, enumerations and object arrays) are in
 ## Speed
 
 - **Vectorized code** runs at NumPy speed (compiled BLAS/LAPACK underneath).
+- **Large array expressions can go faster than NumPy.** Install the optional
+  accelerator with `pip install "mylab-lang[fast]"`. An expression such as
+  `sin(x).^2 + 3*x - x./z` on arrays of 100,000 elements or more is then
+  evaluated in one pass on all CPU cores, with no temporary arrays: about
+  2–5× faster on a 4-core machine. Not available in the browser app.
 - **Simple numeric loops are compiled.** Loops that do scalar arithmetic and
   read or write array elements are translated to fast code automatically,
   about 20–50× faster than interpreting them: 200,000 iterations of
