@@ -110,6 +110,13 @@ function helpers(page) {
         await page.waitForTimeout(50);
       }
     },
+    /** Start an assignment check and wait until that very check has finished and been drawn. */
+    async checkAnswers(selector) {
+      const before = await page.locator("#asg-score").getAttribute("data-when");
+      await page.click(selector);
+      await page.waitForFunction((b) => { const s = document.querySelector("#asg-score"); return s && s.dataset.state === "idle" && s.dataset.when !== b; }, before, { timeout: 240000 });
+      await h.waitIdle();
+    },
     markedLine: (cls) =>
       page.evaluate((c) => {
         const cm = window.mylab.editor;
@@ -1475,9 +1482,8 @@ async function main() {
     check(/hidden tests/.test(await page.locator(".asg-hint").innerText()), "the panel must mention hidden tests");
     ok("an assignment link creates a project with one folder per problem and shows the prompts");
 
-    await page.click("#asg-check");
-    await page.waitForFunction(() => document.querySelectorAll(".asg-test.fail").length === 4, null, { timeout: 120000 });
-    await waitIdle();
+    await h.checkAnswers("#asg-check");
+    check((await page.locator(".asg-test.fail").count()) === 4, "the starter files should fail all 4 visible tests");
     const failMsg = await page.locator("[data-problem='p1_rect_area'] .asg-test.fail").first().innerText();
     check(/rect_area\(3, 4\) should be 12/.test(failMsg) && /line 3 of the test/.test(failMsg), "failure message: " + failMsg);
     check((await page.locator("#asg-score").getAttribute("data-earned")) === "0", "score should be 0 at first");
@@ -1485,16 +1491,13 @@ async function main() {
 
     // exit/quit in student code is a failure, never a pass.
     await cm("function a = rect_area(w, h)\nexit\nend\n");
-    await page.click("[data-check='p1_rect_area']");
-    await page.waitForFunction(() => !document.querySelector("#asg-check").disabled && document.querySelectorAll("[data-problem='p1_rect_area'] .asg-test.fail").length === 2, null, { timeout: 60000 });
+    await h.checkAnswers("[data-check='p1_rect_area']");
+    check((await page.locator("[data-problem='p1_rect_area'] .asg-test.fail").count()) === 2, "exit in student code should fail both tests");
     ok("exit in student code counts as a failed test");
 
     await cm("function a = rect_area(w, h)\n% RECT_AREA  Area of a rectangle with width w and height h.\n\na = w .* h;\n\nend\n");
-    await page.click("[data-check='p1_rect_area']");
-    await page.waitForFunction(() => document.querySelectorAll("[data-problem='p1_rect_area'] .asg-test.pass").length === 2, null, { timeout: 60000 });
-    await waitIdle();
-    // The score line is redrawn after the last result arrives; wait for it rather than read it at once.
-    await page.waitForFunction(() => document.querySelector("#asg-score").dataset.earned === "4", null, { timeout: 30000 }).catch(() => {});
+    await h.checkAnswers("[data-check='p1_rect_area']");
+    check((await page.locator("[data-problem='p1_rect_area'] .asg-test.pass").count()) === 2, "the fixed answer should pass both tests");
     const score1 = await page.evaluate(() => ({ ...document.querySelector("#asg-score").dataset, text: document.querySelector("#asg-score").innerText, pill: document.querySelector("[data-problem='p1_rect_area'] .asg-points").innerText }));
     check(score1.earned === "4" && score1.visible === "10" && /Visible tests: 4 of 10 points/.test(score1.text), "score after fixing problem 1: " + JSON.stringify(score1));
     check(/visible tests: 4 of 4 points/.test(score1.pill), "problem pill: " + score1.pill);

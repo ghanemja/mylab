@@ -329,7 +329,7 @@ export function initAssignments(app) {
       el("h3", { class: "asg-title" }, b.title),
       el(
         "div",
-        { class: "asg-score", id: "asg-score", "data-earned": fmtPoints(earned), "data-visible": fmtPoints(visible), "data-total": fmtPoints(total) },
+        { class: "asg-score", id: "asg-score", "data-state": checking ? "checking" : "idle", "data-when": String(res.when || ""), "data-earned": fmtPoints(earned), "data-visible": fmtPoints(visible), "data-total": fmtPoints(total) },
         el("strong", {}, checked ? `Visible tests: ${fmtPoints(earned)} of ${fmtPoints(visible)} ${unit}` : `Visible tests: ${fmtPoints(visible)} ${unit}`),
         el(
           "span",
@@ -384,7 +384,6 @@ export function initAssignments(app) {
     if (!b || checking || !app.canRun()) return;
     app.exitStep && app.exitStep();
     const run = (checking = { cancelled: false });
-    await app.flushAll();
     const projectId = state.project.id;
     const res = results();
     const todo = b.problems.filter((p) => p.tests.length && (!onlyIds || onlyIds.includes(p.id)));
@@ -396,8 +395,10 @@ export function initAssignments(app) {
     for (const p of todo) res.problems[p.id] = { tests: p.tests.map(() => ({ status: "pending" })) };
     app.printEcho("", onlyIds ? `check problem ${todo.map((p) => p.title).join(", ")}` : "check my answers");
     app.setRunning(true, "Checking");
+    // Show "checking" at once (before anything is awaited), so old results are never taken for new ones.
     renderPanel();
     try {
+      await app.flushAll();
       for (const p of todo) {
         const files = problemFiles(p);
         for (let i = 0; i < p.tests.length; i++) {
@@ -444,14 +445,23 @@ export function initAssignments(app) {
         }
       }
     } finally {
-      checking = null;
-      if (state.project.id === projectId) {
+      const same = state.project.id === projectId;
+      if (same) {
         res.when = Date.now();
         for (const p of todo) {
           // Never keep a "running" marker around.
           res.problems[p.id].tests = res.problems[p.id].tests.map((t) => (t.status === "running" ? { status: "pending" } : t));
         }
-        await app.saveProjectRecord();
+        try {
+          await app.saveProjectRecord();
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+      // Only now may the next check start: releasing earlier would let it begin while this one
+      // is still saving, and this one would then mark the app as idle in the middle of it.
+      if (checking === run) checking = null;
+      if (same && state.project.id === projectId) {
         renderPanel();
         const passed = todo.reduce((s, p) => s + res.problems[p.id].tests.filter((t) => t.status === "pass").length, 0);
         const count = todo.reduce((s, p) => s + p.tests.length, 0);
