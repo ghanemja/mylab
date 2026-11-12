@@ -1,0 +1,77 @@
+{% set name = "mylab-lang" %}
+{% set version = "1.0.0" %}
+{% set python_min = "3.10" %}
+
+# conda-forge recipe for mylab. See packaging/conda/README.md and
+# docs/RELEASING.md ("conda-forge") for how to submit it.
+#
+# FILL IN AT RELEASE: `version` above and `sha256` below. Every GitHub release
+# of mylab has a ready-made copy of this file (conda-meta.yaml) with both
+# already filled in. To get the checksum by hand:
+#   curl -sL https://pypi.org/packages/source/m/mylab-lang/mylab_lang-<version>.tar.gz | sha256sum
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  url: https://pypi.org/packages/source/{{ name[0] }}/{{ name }}/{{ name|replace("-", "_") }}-{{ version }}.tar.gz
+  sha256: 0000000000000000000000000000000000000000000000000000000000000000  # PLACEHOLDER - replace with the sdist's sha256
+
+build:
+  number: 0
+  noarch: python
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  entry_points:
+    - mylab = mylab.cli:main
+    - mylab-mcp = mylab.mcp_server:main
+    - mylab-kernel = mylab.kernel:main
+    - mylab-grade = mylab.grader:main
+    # Keep this list the same as [project.scripts] in pyproject.toml. If that
+    # table has more commands (for example mylab-grade), copy them here.
+
+requirements:
+  host:
+    - python {{ python_min }}
+    - pip
+    - setuptools >=68
+  run:
+    - python >={{ python_min }}
+    - numpy >=1.24
+    - scipy >=1.10
+    - matplotlib-base >=3.7
+    - pillow
+
+test:
+  requires:
+    - python {{ python_min }}
+    - pip
+  imports:
+    - mylab
+  commands:
+    - pip check
+    - mylab --version
+    - python -c "import mylab"
+    - mylab -e "disp(sum(1:10))" --no-plots
+    # mylab-kernel and mylab-mcp need the optional packages ipykernel and mcp,
+    # which are not requirements, so they are not run here.
+
+about:
+  home: https://github.com/ghanemja/mylab
+  summary: A free, open-source environment for running MATLAB-language code, built on NumPy, SciPy and Matplotlib.
+  description: |
+    mylab is an interpreter for MATLAB-language code, written in Python. It
+    runs .m scripts and functions, has an interactive prompt, a debugger, a
+    Jupyter kernel and an MCP server, and draws plots with Matplotlib.
+    The PyPI and conda package is called mylab-lang; the command and the
+    Python module are called mylab. mylab is an independent project and is
+    not affiliated with MathWorks.
+  license: MIT
+  license_family: MIT
+  license_file: LICENSE
+  doc_url: https://github.com/ghanemja/mylab/tree/main/docs
+  dev_url: https://github.com/ghanemja/mylab
+
+extra:
+  recipe-maintainers:
+    - ghanemja

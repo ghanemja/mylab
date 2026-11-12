@@ -55,6 +55,11 @@ class MylabKernel(Kernel):
         if not silent:
             if result.output:
                 self.send_response(self.iopub_socket, "stream", {"name": "stdout", "text": result.output})
+            for gif in getattr(result, "animations", []):
+                self.send_response(self.iopub_socket, "display_data", {
+                    "data": {"image/gif": base64.b64encode(gif).decode("ascii"), "text/plain": "<Animation>"},
+                    "metadata": {},
+                })
             for png in result.figures:
                 self.send_response(self.iopub_socket, "display_data", {
                     "data": {"image/png": base64.b64encode(png).decode("ascii"), "text/plain": "<Figure>"},

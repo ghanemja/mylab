@@ -133,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if "not found" not in text else 1
 
     interp = Interpreter()
+    interp.state["animation_capture"] = False  # nothing collects captured frames on the command line
     if args.eval is None and args.script is None:
         return repl(interp)
     if args.debug:

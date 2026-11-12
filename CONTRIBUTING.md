@@ -45,8 +45,9 @@ Open an issue with:
    Values are 2-D or N-D numpy arrays (char arrays use dtype `<U1`),
    `MString`/`StringArray`, `Cell`, `Struct`, `FunctionHandle`, or objects
    (see `mylab/values.py`). Raise `MatlabError("...")` for user errors.
-3. Add a help entry in `mylab/help_data.py`, written in your own words. A test
-   checks that every built-in has one.
+3. Add a help entry, written in your own words, in `mylab/helpdocs/<module>.py`
+   (a `HELP = {name: (usage, description)}` dict; one file per built-in module).
+   A test checks that every built-in has one.
 4. Add tests in `tests/` (`m.run(...)`, `m.num(...)`, `m.str(...)` from
    `tests/conftest.py`).
 5. Regenerate the function list: `python scripts/gen_function_list.py`.

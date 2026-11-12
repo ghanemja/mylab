@@ -40,10 +40,12 @@ def _format_result(result, image_cls) -> list[Any]:
     if result.error:
         where = f" (line {result.error_line})" if result.error_line else ""
         text = (text + "\n" if text else "") + f"Error{where}: {result.error}"
-    if not text and not result.figures:
+    if not text and not result.figures and not getattr(result, "animations", []):
         text = "(no output)"
     if text:
         parts.append(text)
+    for gif in getattr(result, "animations", []):
+        parts.append(image_cls(data=gif, format="gif"))
     for png in result.figures:
         parts.append(image_cls(data=png, format="png"))
     return parts
