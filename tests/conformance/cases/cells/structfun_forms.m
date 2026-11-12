@@ -1,0 +1,14 @@
+s = struct('a', 1, 'b', [2 3], 'c', 4);
+t.x = 1;
+t.y = 2;
+t.z = 3;
+f1 = structfun(@(v) v * 2, t);
+sf1 = size(f1);
+f2 = structfun(@numel, s);
+f3 = structfun(@(v) v * 2, s, 'UniformOutput', false);
+f4 = fieldnames(f3);
+f5 = structfun(@(v) v > 1, t);
+c5 = class(f5);
+f6 = structfun(@(v) v, struct());
+sf6 = size(f6);
+[f7, f8] = structfun(@(v) deal(v, -v), t);

@@ -1,0 +1,17 @@
+A = [1 2 3; 4 5 6];
+p1 = prod(A);
+p2 = prod(A, 2);
+p3 = prod([]);
+p4 = prod(zeros(0, 3));
+p5 = prod(zeros(3, 0));
+p6 = prod(5);
+p7 = prod([1 2 3 4]);
+p8 = prod([2 NaN]);
+p9 = prod([0 Inf]);
+p10 = prod(A, 3);
+p11 = prod([1+1i 1-1i]);
+p12 = size(prod(zeros(0, 3), 2));
+p13 = prod(single([2 3]));
+p14 = class(p13);
+p15 = prod([true true]);
+p16 = prod(A(:));

@@ -1,0 +1,13 @@
+v = [5 8 2 9 1];
+m1 = v(v > 4);
+m2 = v(logical([1 0 1 0 1]));
+m3 = v(v > 100);
+A = [1 2; 3 4];
+m4 = A(A > 1);
+m5 = A(logical([1 0; 0 1]));
+m6 = A(logical([0 1]), :);
+m7 = A(:, logical([1 0]));
+m8 = v(true);
+c = v';
+m10 = c(c < 6);
+m11 = A(logical([1 1 0]));

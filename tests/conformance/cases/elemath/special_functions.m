@@ -1,0 +1,17 @@
+g1 = gamma([1 2 3 4 5 0.5]);
+g2 = gamma(0);
+g3 = gamma(-1);
+g4 = gamma(171);
+g5 = gamma(172);
+g6 = gammaln([1 10 100]);
+g7 = beta(2, 3);
+g8 = erf([0 0.5 1 Inf -Inf]);
+g9 = erfc([0 0.5 1 Inf]);
+g10 = erfinv([0 0.5 -0.5 1]);
+g11 = factorial(5);
+g12 = gamma(-0.5);
+g14 = gamma(Inf);
+g15 = gamma(NaN);
+g17 = gammainc(1, 2);
+g18 = betainc(0.5, 2, 3);
+g19 = besselj(0, 1);

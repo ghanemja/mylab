@@ -1,0 +1,16 @@
+i1 = int2str(5);
+i2 = int2str(2.5);
+i3 = int2str(3.5);
+i4 = int2str(-2.5);
+i5 = int2str(2.4);
+i6 = int2str([1.2 2.7; -3.5 4]);
+i7 = int2str(1e10);
+i8 = int2str(NaN);
+i9 = int2str(Inf);
+i10 = int2str([]);
+si10 = size(i10);
+i11 = int2str(true);
+i13 = int2str(int8(5));
+i14 = int2str([10 200]);
+i16 = int2str(1e15);
+i17 = int2str([1; 20; 300]);

@@ -1,0 +1,16 @@
+[a1, i1] = max([NaN 2 1]);
+[a2, i2] = min([NaN 2 1]);
+[a3, i3] = max([NaN NaN]);
+a4 = max(NaN, 1);
+a5 = max([1 NaN], [NaN NaN]);
+a6 = min([Inf -Inf NaN]);
+[a7, i7] = max([1+1i, -3, 2i]);
+[a8, i8] = min([1+1i, -3, 2i]);
+a9 = max([3 -4]);
+a10 = max([3+0i -4]);
+a11 = max(-Inf, -Inf);
+[a12, i12] = max([-Inf -Inf]);
+a13 = max([1 2; NaN 0]);
+a14 = min([NaN 1; NaN NaN]);
+[a15, i15] = max([NaN 1 NaN 3]);
+a16 = max([2 NaN 5], 3);

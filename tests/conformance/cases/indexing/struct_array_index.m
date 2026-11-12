@@ -1,0 +1,15 @@
+s = struct('a', {10, 20, 30});
+i1 = s(2).a;
+i2 = [s.a];
+i3 = {s.a};
+i4 = size(s);
+t = s([1 3]);
+i5 = [t.a];
+i6 = numel(s(2:end));
+s(2) = [];
+i7 = [s.a];
+s(4).a = 99;
+i8 = size(s);
+i9 = isempty(s(3).a);
+u = s(end);
+i10 = u.a;

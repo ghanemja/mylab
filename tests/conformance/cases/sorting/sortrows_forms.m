@@ -1,0 +1,14 @@
+A = [3 1; 1 2; 3 0; 1 1];
+[b1, i1] = sortrows(A);
+[b2, i2] = sortrows(A, 2);
+[b3, i3] = sortrows(A, -1);
+[b4, i4] = sortrows(A, [1 -2]);
+[b5, i5] = sortrows(A, [-1 2]);
+b6 = sortrows([2; 1; 3]);
+b7 = sortrows([2 1 3]);
+b8 = sortrows(['cab'; 'abc'; 'bca']);
+b9 = sortrows(A, [2 1]);
+[b10, i10] = sortrows([1 2; 1 2; 0 5]);
+b11 = sortrows([1 NaN; 1 0; NaN 0]);
+b12 = sortrows(A, -2);
+b13 = size(sortrows(zeros(0, 2)));

@@ -1,0 +1,18 @@
+a = single(0.1);
+b = 0.1;
+m1 = class(a + b);
+m2 = double(a) == b;
+m3 = a == b;
+m4 = single(1) / 3;
+m5 = class(m4);
+m6 = double(single(1) / 3);
+m7 = single(16777216) + single(1);
+m8 = single(1e38) * single(10);
+m9 = class(single(1):3);
+m10 = eps('single');
+m11 = eps(single(1));
+m12 = realmax('single');
+m13 = class(sqrt(single(2)));
+m14 = single(pi) - pi;
+m17 = class([single(1) 2] * 2);
+m18 = isa(single(1) + 1i, 'single');

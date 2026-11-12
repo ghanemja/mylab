@@ -1,0 +1,17 @@
+[c1, a1, b1] = intersect([5 1 3 3], [3 5 7]);
+[c2, a2, b2] = union([5 1 3], [3 5 7]);
+c3 = intersect([1 2], [3 4]);
+sc3 = size(c3);
+c6 = intersect([1; 2; 3], [2; 3; 4]);
+sc6 = size(c6);
+c7 = union([1; 2], [2; 3]);
+sc7 = size(c7);
+c8 = union([1 2], [2; 3]);
+sc8 = size(c8);
+c9 = intersect([1 2 3], [3; 2]);
+sc9 = size(c9);
+c10 = intersect({'a', 'b', 'c'}, {'c', 'a', 'x'});
+c11 = union({'b', 'a'}, {'c', 'a'});
+[c12, a12, b12] = intersect([1 2; 3 4; 5 6], [3 4; 1 2; 7 8], 'rows');
+c14 = intersect([1 2 3 4], [4 2], 'stable');
+c15 = union([3 1], [2 1], 'stable');

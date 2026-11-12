@@ -1,0 +1,30 @@
+s = struct();
+name = 'alpha';
+s.(name) = 1;
+s.('beta') = 2;
+k = 3;
+s.(['f' num2str(k)]) = 3;
+d1 = s.alpha;
+d2 = s.(name) + s.('beta');
+d3 = fieldnames(s);
+names = {'x', 'y'};
+t = struct();
+for i = 1:numel(names)
+    t.(names{i}) = i * 10;
+end
+d4 = t;
+d5 = t.(names{2});
+u.a.b = 5;
+fld = 'a';
+d6 = u.(fld).b;
+u.(fld).c = 6;
+d7 = fieldnames(u.a);
+w = struct('v', {1, 2});
+d8 = w(2).('v');
+w(2).('v') = 20;
+d9 = [w.v];
+d10 = getfield(s, 'alpha');
+s = setfield(s, 'gamma', 4);
+d11 = s.gamma;
+try, d12 = getfield(u, 'a', 'b'); catch, end
+try, tmpu = setfield(u, 'a', 'b', 50); d13 = tmpu.a.b; catch, end

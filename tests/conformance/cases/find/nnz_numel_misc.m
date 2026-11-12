@@ -1,0 +1,13 @@
+n1 = nnz([0 1 2 0]);
+n2 = nnz([]);
+n3 = nnz([NaN 0 Inf]);
+n4 = nnz(true(3));
+n5 = nnz('a b');
+n6 = nnz([0 0; 0 0]);
+n7 = numel(find([1 0 1]));
+n8 = nnz([1 2; 0 4] > 1);
+n9 = any(find([0 0]));
+n10 = isempty(find([0 0], 1));
+n11 = nnz(-0);
+n12 = nnz(1e-300);
+n13 = nnz(0 * NaN);

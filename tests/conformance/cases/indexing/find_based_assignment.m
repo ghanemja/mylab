@@ -1,0 +1,12 @@
+A = [3 0 5; 0 7 0];
+idx = find(A);
+A(idx) = -A(idx);
+[r, c] = find(A < 0);
+B = zeros(size(A));
+B(sub2ind(size(A), r, c)) = 1;
+[ri, ci] = ind2sub(size(A), 5);
+li = sub2ind([2 3], 2, 3);
+li2 = sub2ind([2 3 4], 2, 3, 4);
+[a1, a2, a3] = ind2sub([2 3 4], 24);
+[b1, b2] = ind2sub([2 3 4], 24);
+li3 = sub2ind([3 4], [1 2 3], [4 3 2]);

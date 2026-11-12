@@ -1,0 +1,10 @@
+[u1, i1, j1] = unique([5 5 7 7 5]);
+si1 = size(i1);
+sj1 = size(j1);
+[u2, i2, j2] = unique([5; 5; 7]);
+si2 = size(i2);
+sj2 = size(j2);
+[u3, i3, j3] = unique([4 2; 2 4]);
+si3 = size(i3);
+sj3 = size(j3);
+[u5, i5, j5] = unique(9);

@@ -1,0 +1,11 @@
+z1 = [1 2i];
+z2 = [1+2i; 3];
+z3 = [NaN Inf -Inf];
+z4 = [1 NaN];
+z5 = [int8(1) NaN];
+z6 = [int8(1) Inf -Inf];
+z7 = [true NaN];
+z9 = [single(1) 1+2i];
+c9 = class(z9);
+z10 = [-0 0];
+z11 = 1 ./ [-0 0];

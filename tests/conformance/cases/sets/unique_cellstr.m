@@ -1,0 +1,10 @@
+c = {'b', 'a', 'b', 'c', 'a'};
+[u1, i1, j1] = unique(c);
+su1 = size(u1);
+[u2, i2, j2] = unique(c');
+su2 = size(u2);
+u3 = unique(c, 'stable');
+u4 = unique({'x'});
+u5 = unique({'B', 'a', 'A', 'b'});
+u6 = unique({'', 'a', ''});
+u8 = unique({'ab', 'a', 'abc'});

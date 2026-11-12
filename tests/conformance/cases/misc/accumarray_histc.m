@@ -1,0 +1,14 @@
+a1 = accumarray([1; 2; 1; 3], [10; 20; 30; 40]);
+a2 = accumarray([1; 2; 1; 3], 1);
+a3 = accumarray([1 1; 2 2; 1 1], [1; 2; 3]);
+a4 = accumarray([1; 3], [5; 6], [4 1]);
+a5 = accumarray([1; 2; 1], [1; 2; 3], [], @max);
+a6 = accumarray([1; 2; 1], [1; 2; 3], [], @(v) {sort(v)});
+c6 = class(a6);
+a7 = accumarray([2; 2; 4], [1; 1; 1])';
+a8 = accumarray([1; 2; 1], [1; 2; 3], [3 1], @prod);
+a9 = accumarray([1; 2; 1], [1; 2; 3], [3 1], @mean, -1);
+a10 = accumarray([1 2; 1 2; 2 1], 5);
+h1 = histc([1 2 2 3 5 5 5], 1:5);
+[h2, i2] = histc([0.5 1.5 2.5 9], [0 1 2 3]);
+c1 = cumsum(accumarray([1; 2; 2; 3], 1))';

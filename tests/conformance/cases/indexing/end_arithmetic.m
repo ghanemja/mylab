@@ -1,0 +1,13 @@
+v = 10:10:100;
+e1 = v(end);
+e2 = v(end-2);
+e3 = v(end/2);
+e4 = v(round(end/3));
+e5 = v([1 end]);
+e6 = v(end:-1:end-2);
+A = magic(4);
+e7 = A(end, end-1);
+e8 = A(end);
+e9 = A(end-1, :);
+e10 = v(min(end, 20));
+e11 = A(end+1-2, 1);

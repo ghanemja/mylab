@@ -1,0 +1,9 @@
+[s1, i1] = sort([2 1 2 1 2]);
+[s2, i2] = sort([2 1 2 1 2], 'descend');
+[s3, i3] = sort([1 1 1]);
+[s4, i4] = sort([1 1 1], 'descend');
+[s5, i5] = sort([0 -0 0]);
+[s6, i6] = sort([5 3 5 3; 1 1 1 1], 2);
+[s7, i7] = sort([true false true]);
+c7 = class(s7);
+[s8, i8] = sort([2 2 1 1 3 3], 'descend');

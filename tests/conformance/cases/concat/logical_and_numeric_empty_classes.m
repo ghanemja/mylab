@@ -1,0 +1,11 @@
+c1 = class([zeros(1, 0), true]);
+c2 = class([true, zeros(1, 0)]);
+c3 = class(['', 5]);
+c4 = class([5, '']);
+c5 = class([{}, 5]);
+c6 = class([int8([]), 5.5]);
+c7 = class([single([]), 5.5]);
+c8 = class([[], []]);
+c9 = class([true(0, 0), 5]);
+v3 = ['', 65];
+v6 = [int8([]), 5.5];

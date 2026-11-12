@@ -1,0 +1,29 @@
+n1 = num2cell([1 2 3]);
+n2 = num2cell([1 2; 3 4]);
+n3 = num2cell('ab');
+n4 = num2cell([]);
+sn4 = size(n4);
+n5 = num2cell(5);
+n6 = size(num2cell(zeros(2, 0)));
+n7 = num2cell([true false]);
+n8 = class(n7{1});
+n9 = num2cell(int8([1 2]));
+n10 = class(n9{2});
+m1 = cell2mat({1 2; 3 4});
+m2 = cell2mat({[1 2], [3]; [4 5], [6]});
+m3 = cell2mat({'ab', 'cd'});
+m4 = cell2mat({});
+sm4 = size(m4);
+m5 = cell2mat({[1; 2], [3; 4]});
+m6 = cell2mat({[1 2]; [3 4]});
+m7 = cell2mat({5});
+m8 = cell2mat({[] 1});
+m9 = cell2mat({int8(1), int8(2)});
+c9 = class(m9);
+m10 = cell2mat({true, false});
+c10 = class(m10);
+m11 = cell2mat(num2cell([1 2; 3 4]));
+e1 = 0; try, tmp = cell2mat({1, 'a'}); catch, e1 = 1; end
+e2 = 0; try, tmp = cell2mat({[1 2], [3; 4]}); catch, e2 = 1; end
+n11 = num2cell([1 2; 3 4], 1);
+n12 = num2cell([1 2; 3 4], 2);

@@ -1,0 +1,17 @@
+c = {[3 1 2], [9 8], 5};
+n1 = cellfun(@sort, c, 'UniformOutput', false);
+[m2, i2] = cellfun(@max, c);
+[m3, i3] = cellfun(@max, c, 'UniformOutput', false);
+n4 = cellfun(@(x) x * 2, c, 'UniformOutput', false);
+n5 = cellfun(@(x) {x}, c, 'UniformOutput', false);
+n6 = cellfun(@numel, c, 'UniformOutput', true);
+n7 = cellfun(@(x, y) [x y], {1, 2}, {'a', 'b'}, 'UniformOutput', false);
+n8 = cellfun(@(x) x, {}, 'UniformOutput', false);
+sn8 = size(n8);
+n9 = cellfun(@(x) error('cfh:boom', 'bad'), {1, 2}, 'ErrorHandler', @(s, varargin) -1);
+n10 = cellfun(@(x) x, {1, 'a'}, 'ErrorHandler', @(s, varargin) 0, 'UniformOutput', false);
+[q1, q2] = cellfun(@(x) deal(x, x * 2), {1, 2, 3});
+n11 = cellfun(@upper, {'a', 'b'}, 'UniformOutput', 0);
+n12 = cellfun(@(x) x(1), {'abc', 'de'}, 'UniformOutput', false);
+n13 = cellfun(@size, c, 'UniformOutput', false);
+[r14, c14] = cellfun(@size, c);

@@ -1,0 +1,25 @@
+a1 = arrayfun(@(x) x^2, [1 2 3]);
+a2 = arrayfun(@(x) x^2, [1 2; 3 4]);
+a3 = arrayfun(@(x) x * [1 1], [1 2], 'UniformOutput', false);
+a4 = arrayfun(@(x, y) x + y, [1 2], [10 20]);
+[a5, a6] = arrayfun(@(x) deal(x, -x), [1 2 3]);
+a7 = arrayfun(@(x) x > 1, [1 2 3]);
+c7 = class(a7);
+a8 = arrayfun(@(x) x, []);
+sa8 = size(a8);
+s = struct('v', {1, 2, 3});
+a10 = arrayfun(@(e) e.v * 2, s);
+a11 = arrayfun(@(k) numel(num2str(k)), [1 10 100]);
+a12 = arrayfun(@(x) char(x + 64), 1:3);
+c12 = class(a12);
+a13 = arrayfun(@(x) x, 'abc');
+c13 = class(a13);
+a14 = arrayfun(@(x) sum(1:x), 1:5);
+a15 = arrayfun(@(x) x, zeros(0, 3));
+sa15 = size(a15);
+a16 = arrayfun(@(x) error('cfh:x', 'no'), [1 2], 'ErrorHandler', @(s, varargin) NaN);
+a17 = arrayfun(@(x) x * 2, [1; 2; 3]);
+sa17 = size(a17);
+e1 = 0; try, tmp = arrayfun(@(x) [x x], [1 2]); catch, e1 = 1; end
+a18 = arrayfun(@(x) int8(x), [1 2]);
+c18 = class(a18);

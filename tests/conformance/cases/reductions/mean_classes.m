@@ -1,0 +1,16 @@
+c1 = class(mean(int8([1 2 4])));
+v1 = mean(int8([1 2 4]));
+c2 = class(mean(single([1 2])));
+c3 = class(mean([true false]));
+c4 = class(mean(uint8([255 255])));
+v4 = mean(uint8([255 255]));
+try, c5 = class(mean('ab')); catch, end
+c6 = class(mean(int8([1 2]), 'native'));
+v6 = mean(int8([1 2]), 'native');
+c7 = class(mean(single([1 2]), 'double'));
+c8 = class(median(int8([1 2 4])));
+v8 = median(int8([1 2 4 5]));
+c9 = class(median(single([1 2])));
+v10 = mean(int8([100 100 100]));
+v11 = mean(int32([1 2]));
+c11 = class(v11);

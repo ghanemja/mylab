@@ -1,0 +1,15 @@
+u1 = upper('Hello World 123');
+u2 = lower('Hello World 123');
+u3 = upper({'ab', 'Cd'});
+u4 = lower({'AB'; 'Cd'});
+u6 = upper('');
+u7 = size(upper(''));
+u8 = fliplr('hello');
+u9 = flipud('hello');
+u10 = fliplr(['ab'; 'cd']);
+u11 = flipud(['ab'; 'cd']);
+u12 = upper(['ab'; 'cd']);
+u13 = class(upper('a'));
+try, u14 = upper(5); catch, end
+u17 = flip('abc');
+u18 = rot90('ab');

@@ -1,0 +1,9 @@
+[s1, i1] = sort([3 NaN 1 NaN 2]);
+[s2, i2] = sort([3 NaN 1 NaN 2], 'descend');
+[s3, i3] = sort([Inf -Inf NaN 0]);
+[s4, i4] = sort([Inf -Inf NaN 0], 'descend');
+s5 = sort([NaN NaN]);
+s6 = sort([NaN; 1; NaN; 0]);
+A = [NaN 1; 2 NaN; 0 5];
+[s7, i7] = sort(A);
+[s8, i8] = sort(A, 2, 'descend');

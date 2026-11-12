@@ -1,0 +1,16 @@
+a = int32([7 -7 7 -7]);
+b = int32([2 2 -2 -2]);
+d1 = idivide(a, b);
+d2 = idivide(a, b, 'fix');
+d3 = idivide(a, b, 'floor');
+d4 = idivide(a, b, 'ceil');
+d5 = idivide(a, b, 'round');
+d6 = idivide(int32(7), int32(0));
+d7 = idivide(int32(-7), int32(0));
+d8 = idivide(int32(0), int32(0));
+d9 = idivide(int8(10), int8(3));
+c9 = class(d9);
+d10 = idivide(int32(10), 4);
+d11 = idivide(uint8(250), uint8(7), 'ceil');
+d12 = idivide(int32([5 15 25]), int32(10), 'round');
+d13 = idivide(int8(-128), int8(-1));

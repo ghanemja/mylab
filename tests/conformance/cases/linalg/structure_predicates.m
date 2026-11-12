@@ -1,0 +1,12 @@
+A = [1 2; 2 1];
+q1 = issymmetric(A);
+q2 = issymmetric([1 2; 3 4]);
+q3 = isdiag(eye(3));
+q4 = isdiag([1 2; 0 1]);
+q5 = istril([1 0; 2 3]);
+q6 = istriu([1 2; 0 3]);
+q7 = issymmetric(5);
+q8 = isdiag([]);
+q9 = ishermitian([1 1i; -1i 1]);
+q10 = issymmetric([1 2 3]);
+try, q11 = isbanded([1 2 0; 3 4 5; 0 6 7], 1, 1); catch, end

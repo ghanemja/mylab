@@ -1,0 +1,20 @@
+s = struct('c', 3, 'a', 1, 'b', 2);
+r1 = rmfield(s, 'a');
+f1 = fieldnames(r1);
+r2 = rmfield(s, {'a', 'b'});
+f2 = fieldnames(r2);
+t1 = 0; try, tmp = rmfield(s, 'zzz'); catch, t1 = 1; end
+o1 = orderfields(s);
+f3 = fieldnames(o1);
+try, [o2, p2] = orderfields(s); catch, end
+o3 = orderfields(s, {'b', 'c', 'a'});
+f4 = fieldnames(o3);
+o4 = orderfields(s, [3 1 2]);
+f5 = fieldnames(o4);
+arr = struct('z', {1, 2}, 'y', {3, 4});
+o5 = orderfields(arr);
+f6 = fieldnames(o5);
+v6 = [o5.y];
+r3 = rmfield(arr, 'z');
+f7 = fieldnames(r3);
+z7 = size(r3);

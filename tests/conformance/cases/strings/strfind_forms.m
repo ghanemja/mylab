@@ -1,0 +1,15 @@
+f1 = strfind('abcabc', 'bc');
+f2 = strfind('aaa', 'aa');
+f3 = strfind('abc', 'x');
+sf3 = size(f3);
+f4 = strfind('abc', '');
+sf4 = size(f4);
+f5 = strfind('', 'a');
+f6 = strfind('abc', 'abcd');
+f7 = strfind({'abc', 'bcd', 'x'}, 'bc');
+f8 = strfind('a.b.c', '.');
+f10 = strfind('abc', 'c');
+f11 = strfind('ABC', 'b');
+f12 = numel(strfind('mississippi', 'ss'));
+f13 = strfind('mississippi', 'issi');
+f14 = strfind('abc', 'abc');

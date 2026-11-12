@@ -1,0 +1,10 @@
+v = [3 9];
+n1 = 1:v;
+n2 = v:5;
+n3 = 1:[];
+s3 = size(1:[]);
+n4 = size([]:3);
+k = 1:3;
+n5 = k(1):k(end);
+n6 = numel(1:numel(k));
+n7 = size(1:numel([]));

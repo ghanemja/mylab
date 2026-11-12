@@ -1,0 +1,13 @@
+n1 = regexp('john 25', '(?<name>\w+)\s(?<age>\d+)', 'names');
+f1 = fieldnames(n1);
+v1 = n1.name;
+v2 = n1.age;
+n2 = regexp('x', '(?<a>y)', 'names');
+sn2 = size(n2);
+c3 = regexp({'a1', 'b22', 'c'}, '\d+', 'match');
+c4 = regexp({'a1', 'b22', 'c'}, '\d+', 'match', 'once');
+c5 = regexp({'a1', 'b22', 'c'}, '\d+');
+c6 = regexp({'a1', 'b22', 'c'}, '\d+', 'once');
+try, c7 = regexp('a1', {'\d', '[a-z]'}, 'match'); catch, end
+c8 = regexp({'ab'; 'cd'}, 'b', 'start');
+sc8 = size(c8);

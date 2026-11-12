@@ -1,0 +1,10 @@
+c = {'pear', 'apple', 'fig', 'Apple', 'banana'};
+[s1, i1] = sort(c);
+s2 = sort(c');
+ss2 = size(s2);
+s3 = sort({'b'; 'a'});
+s4 = sort({'abc', 'ab', 'abcd', ''});
+s5 = sort({'a10', 'a2', 'a1'});
+s6 = sort({'Z', 'a', 'A', 'z'});
+[s7, i7] = sort({'x', 'x', 'a'});
+s8 = size(sort({}));

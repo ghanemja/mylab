@@ -1,0 +1,15 @@
+k1 = isletter('a1 B_');
+k2 = isspace(sprintf('a b\tc\n'));
+k3 = isstrprop('a1 B_', 'alpha');
+k4 = isstrprop('a1 B_', 'digit');
+k5 = isstrprop('a1 B_', 'alphanum');
+k6 = isstrprop('a1 B_', 'upper');
+k7 = isstrprop('a1 B_', 'lower');
+k8 = isstrprop('a1 B_', 'wspace');
+k9 = isstrprop('a1 B_!', 'punct');
+try, k10 = isstrprop('1aF g', 'xdigit'); catch, end
+k11 = isletter('');
+k12 = size(isspace(''));
+k13 = isspace(5);
+k15 = ischar('a') && ~ischar(65);
+k16 = isspace(['a b'; ' c ']);

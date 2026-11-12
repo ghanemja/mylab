@@ -1,0 +1,16 @@
+m1 = double(intmax('int8'));
+m2 = double(intmin('int8'));
+m3 = double(intmax('uint8'));
+m4 = double(intmin('uint8'));
+m5 = double(intmax('int16'));
+m6 = double(intmax('uint16'));
+m7 = double(intmax('int32'));
+m8 = double(intmax('uint32'));
+m9 = intmax('int64') == int64(9223372036854775807);
+m10 = intmin('int64') == -int64(9223372036854775807) - 1;
+m11 = class(intmax('uint16'));
+m12 = intmax('int8') + 1 == intmax('int8');
+m13 = intmin('int8') - 1 == intmin('int8');
+m14 = intmax == 2147483647;
+m15 = realmax('single') > 3e38;
+m16 = double(intmax('uint64')) == 2^64;
