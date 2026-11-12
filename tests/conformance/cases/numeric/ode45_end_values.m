@@ -1,0 +1,24 @@
+% tol: 1e-3
+[tmpt1, tmpy1] = ode45(@(t, y) -y, [0 1], 1);
+e1 = tmpy1(end);
+te1 = tmpt1(end);
+c1 = size(tmpy1, 2);
+r1 = size(tmpt1, 2);
+m1 = tmpt1(1);
+[tmpt2, tmpy2] = ode45(@(t, y) [y(2); -y(1)], [0 pi], [0; 1]);
+e2 = tmpy2(end, :);
+c2 = size(tmpy2, 2);
+[tmpt3, tmpy3] = ode45(@(t, y) 2 * t, [0 0.5 1 2], 0);
+e3 = tmpy3';
+n3 = numel(tmpt3);
+t3v = tmpt3';
+tmpsol = ode45(@(t, y) -2 * y, [0 1], 3);
+e4 = tmpsol.y(end);
+i4 = isstruct(tmpsol);
+[tmpt5, tmpy5] = ode23(@(t, y) -y, [0 1], 1);
+e5 = tmpy5(end);
+[tmpt6, tmpy6] = ode45(@(t, y) 1, [1 0], 0);
+e6 = tmpy6(end);
+tmpopts = odeset('RelTol', 1e-8, 'AbsTol', 1e-10);
+[tmpt7, tmpy7] = ode45(@(t, y) y, [0 1], 1, tmpopts);
+e7 = tmpy7(end);

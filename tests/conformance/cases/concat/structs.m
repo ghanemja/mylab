@@ -1,0 +1,17 @@
+s1 = struct('a', 1, 'b', 'x');
+s2 = struct('a', 2, 'b', 'y');
+t = [s1 s2];
+st = size(t);
+u = [s1; s2];
+su = size(u);
+ta = [t.a];
+tb = [t.b];
+w = [t, s1];
+sw = size(w);
+x = [t; t];
+sx = size(x);
+y = [s1, struct('a', {}, 'b', {})];
+sy = size(y);
+z = repmat(s1, 2, 3);
+sz = size(z);
+z23 = z(2, 3).b;

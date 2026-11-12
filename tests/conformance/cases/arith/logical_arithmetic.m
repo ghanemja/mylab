@@ -1,0 +1,21 @@
+l1 = true + true;
+l2 = true * false;
+l3 = true / 2;
+l4 = class(true + true);
+l5 = class(true & 1);
+l6 = sum([true true false]);
+l7 = class(sum([true true false]));
+l8 = true - true;
+l9 = [true false] * 5;
+l10 = true ^ 2;
+l11 = class(true ^ 2);
+l12 = -true;
+try, l13 = true:3; catch, end
+try, l14 = class(true:3); catch, end
+l15 = true == 1;
+l16 = cumsum([true true true]);
+l17 = class(cumsum([true true]));
+l18 = prod([true false]);
+l19 = class(max([true false]));
+l20 = class([true false] + int8(1));
+l21 = mean([true false true true]);

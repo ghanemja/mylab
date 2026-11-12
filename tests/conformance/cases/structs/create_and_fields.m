@@ -1,0 +1,36 @@
+s1 = struct('a', 1, 'b', 'text');
+f1 = fieldnames(s1);
+s2 = struct();
+f2 = fieldnames(s2);
+sf2 = size(f2);
+s3 = struct('a', {{1, 2}});
+c3 = class(s3.a);
+z3 = size(s3);
+s4 = struct('a', {1, 2, 3});
+z4 = size(s4);
+s5 = struct('a', {});
+z5 = size(s5);
+s6 = struct('a', {1; 2});
+z6 = size(s6);
+s7 = struct('a', {1, 2}, 'b', 'same');
+b7 = {s7.b};
+s8 = struct('a', []);
+z8 = size(s8);
+e8 = isempty(s8.a);
+s9 = struct('m', magic(3));
+z9 = size(s9.m);
+s10 = struct('a', {{}});
+z10 = size(s10);
+c10 = class(s10.a);
+try, s11 = struct([]); catch, end
+try, z11 = size(s11); catch, end
+i1 = isstruct(s1);
+i2 = isstruct({});
+i3 = isfield(s1, 'a');
+i4 = isfield(s1, 'z');
+i5 = isfield(s1, {'a', 'z', 'b'});
+i6 = isfield(5, 'a');
+i7 = numel(fieldnames(s1));
+i8 = isfield(s1, 'A');
+t1 = 0; try, tmp = struct('a', {1, 2}, 'b', {1, 2, 3}); catch, t1 = 1; end
+t2 = 0; try, tmp = struct('a'); catch, t2 = 1; end

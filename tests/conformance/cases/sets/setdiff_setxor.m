@@ -1,0 +1,15 @@
+[d1, i1] = setdiff([5 1 3 3 9], [3 7]);
+d2 = setdiff([1 2 3], []);
+d4 = setdiff([1; 2; 3], [2]);
+sd4 = size(d4);
+d5 = setdiff({'a', 'b', 'c'}, {'b'});
+d6 = setdiff([1 2; 3 4; 5 6], [3 4], 'rows');
+d7 = setdiff([4 3 2 1 3], [2], 'stable');
+d8 = setdiff([1 2 3], [1 2 3]);
+sd8 = size(d8);
+[x1, ia1, ib1] = setxor([1 2 3 4], [3 4 5]);
+x2 = setxor([1 2], [1 2]);
+sx2 = size(x2);
+x3 = setxor([5 1], []);
+x4 = setxor({'a', 'b'}, {'b', 'c'});
+d9 = setdiff('hello', 'l');

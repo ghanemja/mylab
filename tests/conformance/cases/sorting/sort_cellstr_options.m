@@ -1,0 +1,14 @@
+c = {'pear', 'Apple', 'fig', 'apple'};
+[s1, i1] = sort(c);
+s2 = sort(c, 'descend');
+[s3, i3] = sort(c, 'ascend');
+s4 = sort({'b'; 'c'; 'a'}, 'descend');
+z4 = size(s4);
+s5 = sortrows({'b', 2; 'a', 1; 'c', 3});
+s6 = sortrows(['zeta '; 'alpha'; 'gamma']);
+[s7, i7] = sortrows([3 1; 1 2; 2 0], -2);
+[u8, i8, j8] = unique({'x', 'y', 'x'}, 'stable');
+[s9, i9] = sort([3 1 2; 9 8 7], 2, 'descend');
+s10 = sort([1 3 2]', 1, 'descend')';
+s11 = issorted({'a', 'b', 'c'});
+[s12, i12] = sort({'b', 'a', 'b', 'a'});

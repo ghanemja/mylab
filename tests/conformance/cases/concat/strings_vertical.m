@@ -1,0 +1,10 @@
+a = char('one', 'three');
+sa = size(a);
+b = ['ab '; 'cde'];
+c = [a; 'four '];
+d = strvcat('x', 'yz');
+e = char('a', '', 'bcd');
+se = size(e);
+f = char({'p', 'qr'}, 'stu');
+sf = size(f);
+g = ['ab', 'cd'; 'efgh'];

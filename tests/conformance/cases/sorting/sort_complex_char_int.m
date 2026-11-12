@@ -1,0 +1,14 @@
+[s1, i1] = sort([1+1i, -2, 1i, 0.5]);
+s2 = sort('hello');
+c2 = class(s2);
+[s3, i3] = sort('banana');
+s4 = sort(int8([5 -3 0 127 -128]));
+c4 = class(s4);
+s5 = sort(uint8([200 5 100]), 'descend');
+s6 = sort(single([2.5 1.5]));
+c6 = class(s6);
+s7 = sort([1+2i 1-2i]);
+s8 = sort([3 -4 2], 'descend');
+s9 = sort(['b' 'a'; 'd' 'c']);
+s10 = sort(['b' 'a'; 'd' 'c'], 2);
+[s11, i11] = sort([2+0i, -3, 1]);

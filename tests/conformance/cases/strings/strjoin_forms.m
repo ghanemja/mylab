@@ -1,0 +1,13 @@
+j1 = strjoin({'a', 'b', 'c'});
+j2 = strjoin({'a', 'b', 'c'}, ',');
+j3 = strjoin({'a', 'b', 'c'}, ', ');
+j4 = strjoin({'a'}, ',');
+j6 = strjoin({'a', 'b'}, '');
+j7 = strjoin({'a', '', 'c'}, '-');
+j8 = strjoin({'a', 'b'}, '\n');
+j9 = double(strjoin({'a', 'b'}, '\n'));
+j10 = strjoin({'a'; 'b'}, '+');
+try, j11 = strjoin({'x', 'y', 'z'}, {'1', '2'}); catch, end
+j12 = strjoin(strsplit('a b c'), '_');
+j13 = strjoin({'a', 'b'}, '%d');
+j14 = strjoin({'a', 'b'}, '\\');

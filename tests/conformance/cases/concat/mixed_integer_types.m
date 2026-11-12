@@ -1,0 +1,12 @@
+m1 = [int8(1) int16(1000)];
+c1 = class(m1);
+m2 = [int16(1000) int8(1)];
+c2 = class(m2);
+m3 = [uint8(200) int8(-5)];
+c3 = class(m3);
+m4 = [int8(-5) uint8(200)];
+c4 = class(m4);
+m5 = [int32(70000); uint16(5)];
+c5 = class(m5);
+m6 = [uint16(5); int32(70000)];
+c6 = class(m6);

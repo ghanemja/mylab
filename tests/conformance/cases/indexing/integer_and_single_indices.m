@@ -1,0 +1,11 @@
+v = 10:10:50;
+i1 = v(int8(2));
+i2 = v(uint16([1 3]));
+i3 = v(single(4));
+i4 = v(true);
+i5 = class(v(int8(2)));
+k = int32(3);
+i6 = v(k:end);
+i7 = v(end:-1:k);
+i8 = class(k:5);
+i9 = v(int8([1 2; 3 4]));

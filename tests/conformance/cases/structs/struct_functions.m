@@ -1,0 +1,19 @@
+s = struct('a', 1, 'b', [1 2 3], 'c', 'str');
+c1 = struct2cell(s);
+sc1 = size(c1);
+f = {'x', 'y'};
+v = {1, 'two'};
+s2 = cell2struct(v, f, 2);
+try, s3 = cell2struct({1; 2}, {'p'; 'q'}, 1); catch, end
+try, k3 = fieldnames(s3); catch, end
+try, s4 = cell2struct({1 2; 3 4}, {'a', 'b'}, 2); catch, end
+try, z4 = size(s4); v4 = [s4.a]; catch, end
+n1 = numel(struct2cell(s));
+i1 = isstruct(s2);
+arr = struct('a', {1, 2});
+c5 = struct2cell(arr);
+z5 = size(c5);
+i2 = isrow(arr);
+i3 = isempty(struct('a', {}));
+i4 = isequal(struct('a', 1), struct('a', 1));
+try, nf = numfields(s); catch, end

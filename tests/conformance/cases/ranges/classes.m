@@ -1,0 +1,15 @@
+c1 = class(1:3);
+c2 = class(int8(1):int8(3));
+c3 = int8(1):int8(3);
+c4 = class(int8(1):3);
+c5 = class(1:int8(3));
+c6 = class(single(1):3);
+c7 = uint8(250):uint8(255);
+c8 = int8(5):-2:int8(-5);
+c9 = class('a':'c');
+c10 = 'a':'c';
+c12 = uint8(3):-1:uint8(0);
+c13 = size(uint8(3):uint8(1));
+c14 = class(1:3 == 2);
+c15 = int16(1):int16(2):int16(8);
+c16 = single(0):single(0.5):single(2);

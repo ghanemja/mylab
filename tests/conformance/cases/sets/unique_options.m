@@ -1,0 +1,11 @@
+x = [3 1 1 2 3 1];
+[u1, i1, j1] = unique(x, 'stable');
+[u2, i2, j2] = unique(x, 'first');
+[u3, i3, j3] = unique(x, 'last');
+[u4, i4, j4] = unique(x, 'sorted');
+A = [1 2; 3 4; 1 2; 0 9];
+[u5, i5, j5] = unique(A, 'rows');
+[u6, i6, j6] = unique(A, 'rows', 'stable');
+u7 = unique(x', 'stable');
+[u8, i8] = unique([NaN 1 NaN], 'stable');
+u9 = unique(A, 'rows', 'last');

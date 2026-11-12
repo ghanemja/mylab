@@ -1,0 +1,17 @@
+n = 10;
+i1 = sum(1:n) == n * (n + 1) / 2;
+i2 = sum((1:n).^2) == n * (n + 1) * (2 * n + 1) / 6;
+i3 = prod(1:n) == factorial(n);
+i4 = cumsum(ones(1, 5));
+i5 = cumprod(2 * ones(1, 5));
+i6 = diff(cumsum([3 1 4 1 5]));
+i7 = sum(diag(magic(4))) == sum(diag(fliplr(magic(4))));
+i8 = all(sum(magic(4)) == sum(magic(4), 2)');
+i10 = trace(magic(5));
+i11 = norm([3 4]) == 5;
+i13 = round(det(magic(3)));
+i14 = rank(magic(4));
+i16 = dot(1:3, 4:6) == sum((1:3) .* (4:6));
+i17 = all(all(inv(eye(3)) == eye(3)));
+i18 = isequal(kron(eye(2), 1), eye(2));
+i19 = max(max(magic(4))) == 16;

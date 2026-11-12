@@ -1,0 +1,10 @@
+p1 = perms([1 2 3]);
+p2 = perms(1);
+p3 = size(perms([]));
+p4 = perms([5 7]);
+p5 = size(perms(1:4));
+p6 = perms('ab');
+p7 = perms([1 1 2]);
+c1 = cumsum([1 2 3; 4 5 6], 2);
+c2 = cumsum(1:5);
+c3 = cumprod(1:5);

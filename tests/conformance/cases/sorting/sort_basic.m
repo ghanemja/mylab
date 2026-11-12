@@ -1,0 +1,17 @@
+[s1, i1] = sort([3 1 2]);
+[s2, i2] = sort([3 1 2], 'descend');
+[s3, i3] = sort([3; 1; 2]);
+s4 = sort([3 1 2], 'ascend');
+A = [3 1 2; 9 7 8; 4 6 5];
+[s5, i5] = sort(A);
+[s6, i6] = sort(A, 2);
+[s7, i7] = sort(A, 1, 'descend');
+s8 = sort(A, 2, 'descend');
+s9 = sort([]);
+[s10, i10] = sort([]);
+s11 = sort(5);
+[s12, i12] = sort(zeros(1, 0));
+ss12 = size(s12);
+si12 = size(i12);
+s13 = sort(A(:))';
+try, s14 = sort(A, 3); catch, end

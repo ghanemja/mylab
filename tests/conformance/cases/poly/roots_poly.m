@@ -1,0 +1,25 @@
+% tol: 1e-8
+r1 = sort(roots([1 -3 2]));
+r2 = sort(roots([1 0 -1]));
+r3 = roots([2 -4]);
+r4 = roots([1 0 1]);
+r4s = sort(imag(r4));
+r4r = max(abs(real(r4)));
+r5 = roots(5);
+s5 = size(r5);
+r6 = roots([]);
+s6 = size(r6);
+r7 = sort(roots([1 -6 11 -6]));
+r8 = sort(roots([0 0 1 -3 2]));
+r9 = sort(roots([1 -3 2 0 0]));
+r10 = size(roots([1 2 3]));
+p1 = poly([1 2]);
+p2 = poly([1 2 3]);
+try, p3 = poly([]); catch, end
+p4 = poly(5);
+p5 = poly([2 0; 0 3]);
+p6 = poly([1i -1i]);
+p7 = isreal(poly([1i -1i]));
+r11 = roots([0 0]);
+s11 = size(r11);
+r12 = roots([1 0 0]);

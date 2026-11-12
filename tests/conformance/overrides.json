@@ -1,0 +1,1176 @@
+{
+ "arith/char_arithmetic": {
+  "c14": {
+   "matlab": "97.5",
+   "why": "MATLAB mean accepts char input; Octave 8 rejects it"
+  },
+  "c15": {
+   "matlab": "'double'",
+   "why": "MATLAB mean accepts char input; Octave 8 rejects it"
+  }
+ },
+ "arith/comparisons": {
+  "c13": {
+   "matlab": "true",
+   "why": "MATLAB compares complex numbers by real part for < and >; Octave compares by magnitude"
+  },
+  "c14": {
+   "matlab": "false",
+   "why": "MATLAB compares complex numbers by real part for < and >; Octave compares by magnitude"
+  }
+ },
+ "arith/integer_mixing_rules": {
+  "t3": {
+   "matlab": "1",
+   "why": "MATLAB refuses to combine an integer with a single; Octave allows it"
+  }
+ },
+ "arith/logical_arithmetic": {
+  "l13": {
+   "matlab": "[1 2 3]",
+   "why": "MATLAB colon accepts logical operands; Octave 8 rejects them"
+  },
+  "l14": {
+   "matlab": "'double'",
+   "why": "MATLAB colon accepts logical operands; Octave 8 rejects them"
+  }
+ },
+ "arith/short_circuit": {
+  "t1": {
+   "matlab": "1",
+   "why": "MATLAB requires scalar operands for || and &&; Octave accepts arrays and empties"
+  },
+  "t2": {
+   "matlab": "1",
+   "why": "MATLAB requires scalar operands for || and &&; Octave accepts arrays and empties"
+  }
+ },
+ "bits/bit_operations": {
+  "b15": {
+   "matlab": "[1 0 1 0]",
+   "why": "MATLAB bitget returns the class of its input, not logical"
+  },
+  "b22": {
+   "matlab": "uint8(1)",
+   "why": "MATLAB bitget returns the class of its input, not logical"
+  }
+ },
+ "cells/cell_compare_search": {
+  "loc5": {
+   "matlab": "[1 0]",
+   "why": "MATLAB ismember returns the lowest matching index; Octave 8 returned the highest"
+  }
+ },
+ "cells/cellfun_uniform": {
+  "e2": {
+   "matlab": "1",
+   "why": "MATLAB requires all cell inputs of cellfun to have the same size"
+  }
+ },
+ "concat/dimension_errors": {
+  "t4": {
+   "matlab": "1",
+   "why": "Octave pads char rows of unequal length; MATLAB raises a dimension error"
+  }
+ },
+ "control/error_message_formats": {
+  "m15": {
+   "matlab": "[double('fmt newline') 10]",
+   "why": "MATLAB keeps a trailing newline in the message; Octave strips it"
+  }
+ },
+ "control/switch_forms": {
+  "r": {
+   "matlab": "{'num1', 'str1', 'num23', 'str23', 'error', 'other'}",
+   "why": "MATLAB raises an error for a non-scalar numeric switch expression; Octave falls to otherwise"
+  }
+ },
+ "control/try_catch_errors": {
+  "c1": {
+   "matlab": "'MException'",
+   "why": "a caught error is an MException object in MATLAB"
+  }
+ },
+ "indexing/grow_vectors": {
+  "g": {
+   "matlab": "[0; 4]",
+   "why": "MATLAB keeps a 0x1 empty as a column when it grows by linear index; Octave makes a row"
+  }
+ },
+ "maps/basic_char_keys": {
+  "e2": {
+   "matlab": "1",
+   "why": "MATLAB raises an error when the key to remove is absent"
+  }
+ },
+ "matlab_only/builtin_error_identifiers": {
+  "id1": {
+   "matlab": "'MATLAB:UndefinedFunction'",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id11": {
+   "matlab": "''",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id12": {
+   "matlab": "'MATLAB:innerdim'",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id14": {
+   "matlab": "'MATLAB:subsassigndimmismatch'",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id15": {
+   "matlab": "true",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id2": {
+   "matlab": "'MATLAB:badsubscript'",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id3": {
+   "matlab": "'MATLAB:innerdim'",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id4": {
+   "matlab": "'MATLAB:nonExistentField'",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id5": {
+   "matlab": "'MATLAB:badsubscript'",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id8": {
+   "matlab": "'MATLAB:badsubscript'",
+   "why": "MATLAB error identifiers of common built-in errors"
+  },
+  "id9": {
+   "matlab": "'MATLAB:badsubscript'",
+   "why": "MATLAB error identifiers of common built-in errors"
+  }
+ },
+ "matlab_only/char_text_functions": {
+  "c21": {
+   "matlab": "'cell'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "c22": {
+   "matlab": "'cell'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "c8": {
+   "matlab": "'cell'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "d14": {
+   "matlab": "10",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "d15": {
+   "matlab": "[97 10 98]",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "q1": {
+   "matlab": "true",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "q2": {
+   "matlab": "false",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "q3": {
+   "matlab": "[true false true]",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "q4": {
+   "matlab": "true",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "q5": {
+   "matlab": "true",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "q6": {
+   "matlab": "[true false]",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "q7": {
+   "matlab": "true",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r1": {
+   "matlab": "'hell0 w0rld'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r10": {
+   "matlab": "2",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r11": {
+   "matlab": "'ab   '",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r12": {
+   "matlab": "'   ab'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r14": {
+   "matlab": "char(10)",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r16": {
+   "matlab": "false",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r17": {
+   "matlab": "5",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r18": {
+   "matlab": "[1 3 0]",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r19": {
+   "matlab": "'aXbc'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r2": {
+   "matlab": "'padded'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r20": {
+   "matlab": "'abXc'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r21": {
+   "matlab": "{'a'; 'b'; 'c'}",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r22": {
+   "matlab": "{'a+b+c'}",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r23": {
+   "matlab": "{'ab', 'cd'}",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r24": {
+   "matlab": "false",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r25": {
+   "matlab": "'abc'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r3": {
+   "matlab": "'hi'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r4": {
+   "matlab": "'left'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r5": {
+   "matlab": "'heo word'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r6": {
+   "matlab": "'key'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r7": {
+   "matlab": "'value'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r8": {
+   "matlab": "{'bc'}",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "r9": {
+   "matlab": "'cba'",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "z11": {
+   "matlab": "[1 5]",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  },
+  "z21": {
+   "matlab": "[3 1]",
+   "why": "documented behaviour of text functions on char input (missing in Octave 8)"
+  }
+ },
+ "matlab_only/mexception_objects": {
+  "c10": {
+   "matlab": "true",
+   "why": "documented MException behaviour"
+  },
+  "c2": {
+   "matlab": "'MException'",
+   "why": "documented MException behaviour"
+  },
+  "c8": {
+   "matlab": "'MException'",
+   "why": "documented MException behaviour"
+  },
+  "id2": {
+   "matlab": "'my:id'",
+   "why": "documented MException behaviour"
+  },
+  "id3": {
+   "matlab": "'my:id'",
+   "why": "documented MException behaviour"
+  },
+  "m2": {
+   "matlab": "'Count 2 of 5'",
+   "why": "documented MException behaviour"
+  },
+  "m3": {
+   "matlab": "'Count 2 of 5'",
+   "why": "documented MException behaviour"
+  },
+  "m4": {
+   "matlab": "'Count 2 of 5'",
+   "why": "documented MException behaviour"
+  },
+  "m9": {
+   "matlab": "'no format args'",
+   "why": "documented MException behaviour"
+  },
+  "s7": {
+   "matlab": "true",
+   "why": "documented MException behaviour"
+  },
+  "st8": {
+   "matlab": "true",
+   "why": "documented MException behaviour"
+  }
+ },
+ "matlab_only/newer_functions": {
+  "hi": {
+   "matlab": "3",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "i22": {
+   "matlab": "[1 3]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "lo": {
+   "matlab": "1",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v1": {
+   "matlab": "[0 0.5 1]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v10": {
+   "matlab": "[1 0 3]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v11": {
+   "matlab": "[1 2 3]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v12": {
+   "matlab": "[1 1 1 4]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v13": {
+   "matlab": "[false true false]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v14": {
+   "matlab": "true",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v15": {
+   "matlab": "[sqrt(45) sqrt(80)]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v16": {
+   "matlab": "[5; 10]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v17": {
+   "matlab": "pi/2",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v18": {
+   "matlab": "true",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v19": {
+   "matlab": "[3 2 1]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v2": {
+   "matlab": "[-1 0 1]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v20": {
+   "matlab": "[1 2]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v21": {
+   "matlab": "[5 4]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v22": {
+   "matlab": "[5 4]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v26": {
+   "matlab": "1",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v27": {
+   "matlab": "[1 NaN 3]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v28": {
+   "matlab": "true",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v29": {
+   "matlab": "true",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v3": {
+   "matlab": "[-1 0 1]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v30": {
+   "matlab": "3",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v31": {
+   "matlab": "2",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v32": {
+   "matlab": "true",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v33": {
+   "matlab": "10",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v34": {
+   "matlab": "[1 2]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v35": {
+   "matlab": "[6 5 3]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v37": {
+   "matlab": "3.142",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v38": {
+   "matlab": "int32(3)",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v39": {
+   "matlab": "false",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v40": {
+   "matlab": "false",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v41": {
+   "matlab": "4",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v42": {
+   "matlab": "'3.1415927'",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v5": {
+   "matlab": "[1.5 2 3 4 4.5]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v6": {
+   "matlab": "[1 3 5 7 9]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v7": {
+   "matlab": "[3 3 5 5 5]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v8": {
+   "matlab": "[5 5 5 5 4]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  },
+  "v9": {
+   "matlab": "[1 3]",
+   "why": "documented behaviour of functions that Octave 8 lacks"
+  }
+ },
+ "matlab_only/string_basics": {
+  "c1": {
+   "matlab": "'string'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "c2": {
+   "matlab": "'hello'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "d1": {
+   "matlab": "3.5",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "d2": {
+   "matlab": "NaN",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "e1": {
+   "matlab": "true",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "e2": {
+   "matlab": "true",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "e3": {
+   "matlab": "[true false]",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "j1": {
+   "matlab": "'abcdef'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "j2": {
+   "matlab": "'n=5'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "j3": {
+   "matlab": "'ab'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "k1": {
+   "matlab": "'string'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "k2": {
+   "matlab": "'string'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "l1": {
+   "matlab": "1",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "l2": {
+   "matlab": "1",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "n1": {
+   "matlab": "5",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "n2": {
+   "matlab": "[1 2 3]",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p1": {
+   "matlab": "{'a'; 'b'; 'c'}",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p10": {
+   "matlab": "2.5",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p11": {
+   "matlab": "'3 items'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p12": {
+   "matlab": "'ab   '",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p13": {
+   "matlab": "true",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p14": {
+   "matlab": "false",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p15": {
+   "matlab": "0",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p16": {
+   "matlab": "true",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p17": {
+   "matlab": "'5x'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p18": {
+   "matlab": "true",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p19": {
+   "matlab": "'1-2'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p2": {
+   "matlab": "'a-b-c'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p3": {
+   "matlab": "'x'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p4": {
+   "matlab": "'x'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p5": {
+   "matlab": "'hello'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p6": {
+   "matlab": "'world'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p7": {
+   "matlab": "'cba'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p8": {
+   "matlab": "'abc'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "p9": {
+   "matlab": "'hell wrld'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "q1": {
+   "matlab": "true",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "q2": {
+   "matlab": "[true false]",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "q3": {
+   "matlab": "true",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "q4": {
+   "matlab": "true",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "r1": {
+   "matlab": "'hell0 w0rld'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "r2": {
+   "matlab": "'heLLo'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "t1": {
+   "matlab": "true",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "t2": {
+   "matlab": "false",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "t3": {
+   "matlab": "false",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "u1": {
+   "matlab": "'ABC'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "x1": {
+   "matlab": "'42'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "x2": {
+   "matlab": "'3.5'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "x3": {
+   "matlab": "'true'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "x4": {
+   "matlab": "{'a', 'bc'}",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "x5": {
+   "matlab": "'text'",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "x6": {
+   "matlab": "[2 2]",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "z1": {
+   "matlab": "[1 1]",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "z2": {
+   "matlab": "[1 3]",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "z3": {
+   "matlab": "[2 3]",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  },
+  "zp1": {
+   "matlab": "[3 1]",
+   "why": "documented string-array behaviour (strings do not exist in Octave)"
+  }
+ },
+ "misc/all_option_forms": {
+  "o1": {
+   "matlab": "21",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o10": {
+   "matlab": "sqrt(3.5)",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o11": {
+   "matlab": "3.5",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o12": {
+   "matlab": "0",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o13": {
+   "matlab": "[6 5 3]",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o14": {
+   "matlab": "[6 6 3]",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o15": {
+   "matlab": "3",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o16": {
+   "matlab": "NaN",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o17": {
+   "matlab": "4",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o18": {
+   "matlab": "2",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o19": {
+   "matlab": "2",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o2": {
+   "matlab": "720",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o20": {
+   "matlab": "[4 4]",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o21": {
+   "matlab": "3",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o22": {
+   "matlab": "sqrt(2)",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o23": {
+   "matlab": "6",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o24": {
+   "matlab": "[1 1 4]",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o25": {
+   "matlab": "NaN",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o26": {
+   "matlab": "0",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o27": {
+   "matlab": "NaN",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o28": {
+   "matlab": "2",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o29": {
+   "matlab": "4",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o3": {
+   "matlab": "6",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o30": {
+   "matlab": "6",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o31": {
+   "matlab": "4",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o4": {
+   "matlab": "1",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o5": {
+   "matlab": "3.5",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o6": {
+   "matlab": "true",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o7": {
+   "matlab": "true",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o8": {
+   "matlab": "3.5",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  },
+  "o9": {
+   "matlab": "21",
+   "why": "'all', vecdim, 'reverse' and NaN-flag options (hand-derived; most are missing in Octave 8)"
+  }
+ },
+ "numeric/statistics_extras": {
+  "c1": {
+   "matlab": "[32/7 32/7; 32/7 32/7]",
+   "why": "MATLAB cov(x, y) of two vectors is the 2x2 covariance matrix; Octave 8 returned the scalar covariance"
+  },
+  "c2": {
+   "matlab": "[1 1.5; 1.5 7/3]",
+   "why": "MATLAB cov(x, y) of two vectors is the 2x2 covariance matrix; Octave 8 returned the scalar covariance"
+  },
+  "c7": {
+   "matlab": "[2/3 1; 1 14/9]",
+   "why": "MATLAB cov(x, y) of two vectors is the 2x2 covariance matrix; Octave 8 returned the scalar covariance"
+  }
+ },
+ "poly/interp1_extrapolation": {
+  "e14": {
+   "matlab": "[-10 -8.3333333333333357]",
+   "why": "MATLAB extrapolates by default for 'pchip', 'cubic' and 'spline'; Octave returns NA outside the data"
+  },
+  "e7": {
+   "matlab": "[-10 -8.3333333333333357]",
+   "why": "MATLAB extrapolates by default for 'pchip', 'cubic' and 'spline'; Octave returns NA outside the data"
+  },
+  "e8": {
+   "matlab": "[-25 0]",
+   "why": "MATLAB extrapolates by default for 'pchip', 'cubic' and 'spline'; Octave returns NA outside the data"
+  }
+ },
+ "poly/polyval_polyfit": {
+  "mu": {
+   "matlab": "[1.5; sqrt(5/3)]",
+   "why": "MATLAB returns mu as the column [mean; std]"
+  },
+  "mu1": {
+   "matlab": "[1.5 sqrt(5/3)]",
+   "why": "MATLAB returns mu as the column [mean; std]"
+  }
+ },
+ "reductions/any_all_forms": {
+  "a16": {
+   "matlab": "true",
+   "why": "MATLAB any treats NaN as nonzero"
+  }
+ },
+ "reductions/mean_classes": {
+  "c5": {
+   "matlab": "'double'",
+   "why": "MATLAB mean accepts char input; Octave 8 rejects it"
+  }
+ },
+ "reductions/median_forms": {
+  "d12": {
+   "matlab": "[NaN NaN NaN]",
+   "why": "MATLAB median of an empty input is NaN (per column); Octave 8 raises an error"
+  },
+  "d18": {
+   "matlab": "NaN",
+   "why": "MATLAB median of an empty input is NaN (per column); Octave 8 raises an error"
+  },
+  "d4": {
+   "matlab": "NaN",
+   "why": "MATLAB median of an empty input is NaN (per column); Octave 8 raises an error"
+  }
+ },
+ "reductions/mode_forms": {
+  "m3": {
+   "matlab": "NaN",
+   "why": "MATLAB mode([]) is NaN; Octave returns an empty"
+  }
+ },
+ "reductions/sum_classes": {
+  "c1": {
+   "matlab": "'int8'",
+   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+  },
+  "c10": {
+   "matlab": "'int8'",
+   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+  },
+  "c11": {
+   "matlab": "'int8'",
+   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+  },
+  "c12": {
+   "matlab": "'int8'",
+   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+  },
+  "c9": {
+   "matlab": "'uint8'",
+   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+  },
+  "v1": {
+   "matlab": "int8(127)",
+   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+  },
+  "v10": {
+   "matlab": "int8(127)",
+   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+  },
+  "v11": {
+   "matlab": "int8([100 127])",
+   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+  },
+  "v9": {
+   "matlab": "uint8(255)",
+   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+  }
+ },
+ "rounding/idivide_forms": {
+  "d1": {
+   "matlab": "int32([3 -3 -3 3])",
+   "why": "idivide default/'fix' rounds toward zero; Octave 8 gave other values here"
+  },
+  "d2": {
+   "matlab": "int32([3 -3 -3 3])",
+   "why": "idivide default/'fix' rounds toward zero; Octave 8 gave other values here"
+  },
+  "d7": {
+   "matlab": "intmin('int32')",
+   "why": "a negative integer divided by zero saturates to intmin in MATLAB"
+  }
+ },
+ "rounding/round_digits": {
+  "d1": {
+   "matlab": "3.14",
+   "why": "round(x, n) is not available in Octave 8; values follow from the definition"
+  },
+  "d10": {
+   "matlab": "30",
+   "why": "round(x, n) is not available in Octave 8; values follow from the definition"
+  },
+  "d2": {
+   "matlab": "1200",
+   "why": "round(x, n) is not available in Octave 8; values follow from the definition"
+  },
+  "d5": {
+   "matlab": "[1.3 1.4; -1.3 -1.4]",
+   "why": "round(x, n) is not available in Octave 8; values follow from the definition"
+  },
+  "d6": {
+   "matlab": "1235",
+   "why": "round(x, n) is not available in Octave 8; values follow from the definition"
+  },
+  "d7": {
+   "matlab": "0.000123",
+   "why": "round(x, n) is not available in Octave 8; values follow from the definition"
+  },
+  "d8": {
+   "matlab": "120000",
+   "why": "round(x, n) is not available in Octave 8; values follow from the definition"
+  },
+  "d9": {
+   "matlab": "20",
+   "why": "round(x, n) is not available in Octave 8; values follow from the definition"
+  }
+ },
+ "sets/ismember_forms": {
+  "l1": {
+   "matlab": "[2 0 1]",
+   "why": "MATLAB ismember returns the lowest matching index; Octave 8 returned the highest"
+  },
+  "l14": {
+   "matlab": "[2 2 2]",
+   "why": "MATLAB ismember returns the lowest matching index; Octave 8 returned the highest"
+  },
+  "l5": {
+   "matlab": "2",
+   "why": "MATLAB ismember returns the lowest matching index; Octave 8 returned the highest"
+  },
+  "l7": {
+   "matlab": "2",
+   "why": "MATLAB ismember returns the lowest matching index; Octave 8 returned the highest"
+  }
+ },
+ "sets/unique_options": {
+  "j1": {
+   "matlab": "[1; 2; 2; 3; 1; 2]",
+   "why": "Octave leaves the third output empty with 'stable'; MATLAB returns the index column"
+  },
+  "j6": {
+   "matlab": "[1; 2; 1; 3]",
+   "why": "Octave leaves the third output empty with 'stable'; MATLAB returns the index column"
+  }
+ },
+ "sorting/sort_cellstr_options": {
+  "j8": {
+   "matlab": "[1; 2; 1]",
+   "why": "Octave leaves the third output empty with 'stable'; MATLAB returns the index column"
+  }
+ },
+ "strings/char_padding_conversion": {
+  "c7": {
+   "matlab": "'A'",
+   "why": "MATLAB char() truncates a fractional code; Octave rounds"
+  }
+ },
+ "strings/mat2str_forms": {
+  "m16": {
+   "matlab": "'zeros(2,0)'",
+   "why": "MATLAB writes an empty matrix as zeros(m,n)"
+  },
+  "m17": {
+   "matlab": "'zeros(0,3)'",
+   "why": "MATLAB writes an empty matrix as zeros(m,n)"
+  },
+  "m5": {
+   "matlab": "'zeros(0,0)'",
+   "why": "MATLAB writes an empty matrix as zeros(m,n)"
+  }
+ },
+ "strings/regexp_match_tokens": {
+  "t5": {
+   "matlab": "{'key', 'val'}",
+   "why": "MATLAB returns the tokens of a 'once' match as a 1xN row cell; Octave gives a column"
+  }
+ },
+ "strings/regexp_output_order": {
+  "t5": {
+   "matlab": "{'a', 'b'}",
+   "why": "MATLAB returns the tokens of a 'once' match as a 1xN row cell; Octave gives a column"
+  }
+ },
+ "strings/regexprep_forms": {
+  "r12": {
+   "matlab": "'a[b]c'",
+   "why": "MATLAB supports named-token ($<name>) and dynamic (${...}) replacements; Octave does not"
+  },
+  "r13": {
+   "matlab": "'Hello'",
+   "why": "MATLAB supports named-token ($<name>) and dynamic (${...}) replacements; Octave does not"
+  },
+  "r14": {
+   "matlab": "'a\\b'",
+   "why": "a doubled backslash in the replacement text is one literal backslash in MATLAB"
+  }
+ },
+ "strings/sprintf_d_with_nonintegers": {
+  "d1": {
+   "matlab": "'1.500000e+00'",
+   "why": "MATLAB prints a non-integer value given to %d/%i/%x in %e format; Octave switches to a shorter format"
+  },
+  "d13": {
+   "matlab": "'1.234568e+08'",
+   "why": "MATLAB prints a non-integer value given to %d/%i/%x in %e format; Octave switches to a shorter format"
+  },
+  "d2": {
+   "matlab": "'3.141593e+00'",
+   "why": "MATLAB prints a non-integer value given to %d/%i/%x in %e format; Octave switches to a shorter format"
+  },
+  "d3": {
+   "matlab": "'1.000000e-01'",
+   "why": "MATLAB prints a non-integer value given to %d/%i/%x in %e format; Octave switches to a shorter format"
+  },
+  "d4": {
+   "matlab": "'-2.500000e+00'",
+   "why": "MATLAB prints a non-integer value given to %d/%i/%x in %e format; Octave switches to a shorter format"
+  },
+  "d5": {
+   "matlab": "'100000000000000000000'",
+   "why": "MATLAB prints a non-integer value given to %d/%i/%x in %e format; Octave switches to a shorter format"
+  },
+  "d6": {
+   "matlab": "'1 2.500000e+00'",
+   "why": "MATLAB prints a non-integer value given to %d/%i/%x in %e format; Octave switches to a shorter format"
+  },
+  "d7": {
+   "matlab": "'2.500000e+00'",
+   "why": "MATLAB prints a non-integer value given to %d/%i/%x in %e format; Octave switches to a shorter format"
+  },
+  "d8": {
+   "matlab": "'1.500000e+00|'",
+   "why": "MATLAB prints a non-integer value given to %d/%i/%x in %e format; Octave switches to a shorter format"
+  }
+ },
+ "strings/sprintf_s_with_numbers": {
+  "n1": {
+   "matlab": "'3.500000e+00'",
+   "why": "MATLAB prints a non-integer number given to %s in %e format (an integer value that is no valid text prints as %d)"
+  },
+  "n2": {
+   "matlab": "'3.141593e+00'",
+   "why": "MATLAB prints a non-integer number given to %s in %e format (an integer value that is no valid text prints as %d)"
+  },
+  "n3": {
+   "matlab": "'10000000000'",
+   "why": "MATLAB prints a non-integer number given to %s in %e format (an integer value that is no valid text prints as %d)"
+  },
+  "n4": {
+   "matlab": "'-1'",
+   "why": "MATLAB prints a non-integer number given to %s in %e format (an integer value that is no valid text prints as %d)"
+  },
+  "n6": {
+   "matlab": "'5.000000e-01'",
+   "why": "MATLAB prints a non-integer number given to %s in %e format (an integer value that is no valid text prints as %d)"
+  },
+  "n7": {
+   "matlab": "'x and 2.500000e+00'",
+   "why": "MATLAB prints a non-integer number given to %s in %e format (an integer value that is no valid text prints as %d)"
+  }
+ },
+ "strings/str2double_forms": {
+  "d25": {
+   "matlab": "NaN",
+   "why": "MATLAB str2double rejects a doubled sign"
+  }
+ },
+ "strings/textual_utilities": {
+  "t21": {
+   "matlab": "'@(x)x+1'",
+   "why": "MATLAB func2str drops the spaces of an anonymous function's text; Octave reformats it"
+  }
+ },
+ "types/mixed_class_operations": {
+  "c12": {
+   "matlab": "'int8'",
+   "why": "MATLAB cumsum of an integer array keeps the integer class; Octave 8 returned double"
+  }
+ }
+}

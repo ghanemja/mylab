@@ -1,0 +1,39 @@
+% Text functions on char input that Octave 8 lacks.
+try, q1 = contains('hello world', 'wor'); catch, end
+try, q2 = contains('hello', 'xyz'); catch, end
+try, q3 = contains({'apple', 'pear', 'grape'}, 'ap'); catch, end
+try, q4 = contains('Hello', 'hello', 'IgnoreCase', true); catch, end
+try, q5 = startsWith('hello', 'he'); catch, end
+try, q6 = startsWith({'abc', 'xbc'}, 'a'); catch, end
+try, q7 = endsWith('hello', {'lo', 'zz'}); catch, end
+try, r1 = replace('hello world', 'o', '0'); catch, end
+try, r2 = strip('  padded  '); catch, end
+try, r3 = strip('xxhixx', 'x'); catch, end
+try, r4 = strip('  left', 'left'); catch, end
+try, r5 = erase('hello world', 'l'); catch, end
+try, r6 = extractBefore('key=value', '='); catch, end
+try, r7 = extractAfter('key=value', '='); catch, end
+try, r8 = extractBetween('a[bc]d', '[', ']'); catch, end
+try, c8 = class(r8); catch, end
+try, r9 = reverse('abc'); catch, end
+try, r10 = count('abcabc', 'bc'); catch, end
+try, r11 = pad('ab', 5); catch, end
+try, z11 = size(r11); catch, end
+try, r12 = pad('ab', 5, 'left'); catch, end
+try, r14 = newline; catch, end
+try, d14 = double(newline); catch, end
+try, r15 = strjoin({'a', 'b'}, newline); catch, end
+try, d15 = double(r15); catch, end
+try, r16 = isstring('abc'); catch, end
+try, r17 = strlength('hello'); catch, end
+try, r18 = strlength({'a', 'bcd', ''}); catch, end
+try, r19 = insertAfter('abc', 'a', 'X'); catch, end
+try, r20 = insertBefore('abc', 'c', 'X'); catch, end
+try, r21 = split('a b c'); catch, end
+try, c21 = class(r21); catch, end
+try, z21 = size(r21); catch, end
+try, r22 = join({'a', 'b', 'c'}, '+'); catch, end
+try, c22 = class(r22); catch, end
+try, r23 = lower({'AB', 'Cd'}); catch, end
+try, r24 = isStringScalar('a'); catch, end
+try, r25 = convertStringsToChars('abc'); catch, end

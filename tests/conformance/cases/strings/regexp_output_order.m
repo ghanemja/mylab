@@ -1,0 +1,12 @@
+str = 'ab12cd345';
+[t, m, s, e] = regexp(str, '(\d)(\d)', 'tokens', 'match', 'start', 'end');
+[m2, s2] = regexp(str, '\d+', 'match', 'start');
+[s3, m3] = regexp(str, '\d+', 'start', 'match');
+[s4, e4, te4, m4, t4, tmpn4, sp4] = regexp(str, '(\d)\d');
+[m5, t5] = regexp(str, '([a-z])([a-z])', 'match', 'tokens', 'once');
+[tok6, rest6] = strtok('one two three');
+[a7, b7] = regexp('k1=v1;k2=v2', '(\w+)=(\w+)', 'tokens', 'match');
+n7 = numel(a7);
+first7 = a7{1}{2};
+te8 = regexp(str, '(\d)(\d)', 'tokenExtents');
+te9 = regexp(str, '(\d)(\d)', 'tokenExtents', 'once');

@@ -1,0 +1,17 @@
+i1 = mod(int8(-7), int8(3));
+i2 = rem(int8(-7), int8(3));
+i3 = mod(int8(7), int8(-3));
+i4 = mod(uint8(7), uint8(3));
+i5 = mod(int8(7), 3);
+c5 = class(i5);
+i6 = mod(7, int8(3));
+c6 = class(i6);
+i7 = mod(int8(7), int8(0));
+i8 = rem(int8(7), int8(0));
+i9 = mod(int8(-128), int8(-1));
+i10 = mod(uint8(200), uint8(7));
+i11 = mod(int16([10 -10]), int16(4));
+i12 = rem(int16([10 -10]), int16(4));
+i13 = mod(single(7.5), 2);
+c13 = class(i13);
+i16 = mod(int32(10), 2.5);

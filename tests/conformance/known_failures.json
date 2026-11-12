@@ -1,0 +1,590 @@
+{
+ "arith/comparisons": {
+  "c26": "single vs double comparison is done in double precision"
+ },
+ "arith/hex_binary_literals": {
+  "__error__": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
+  "h1": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
+  "h2": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
+  "h3": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
+  "h4": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
+  "h5": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
+  "h6": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
+  "h7": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
+  "h8": "hexadecimal/binary literals (0x1F, 0b101) are a parse error"
+ },
+ "arith/integer_mixing_rules": {
+  "t3": "integer + single is accepted (MATLAB raises an error)"
+ },
+ "arith/integer_saturation": {
+  "s13": "int64/uint64 values go through double: no saturation and precision loss above 2^53",
+  "s18": "int64/uint64 values go through double: no saturation and precision loss above 2^53"
+ },
+ "arith/logical_arithmetic": {
+  "l19": "max of logical returns double (expected logical)"
+ },
+ "arith/single_double_mixing": {
+  "m10": "single class is not propagated (result is double)",
+  "m12": "single class is not propagated (result is double)",
+  "m3": "single vs double comparison is done in double precision",
+  "m9": "single class is not propagated (result is double)"
+ },
+ "bits/bit_operations": {
+  "b10": "bit functions return double for integer inputs and do not wrap to the type",
+  "b11": "bit functions return double for integer inputs and do not wrap to the type",
+  "b12": "bit functions return double for integer inputs and do not wrap to the type",
+  "b18": "bit functions return double for integer inputs and do not wrap to the type",
+  "b21": "bitshift with an array of shifts uses the wrong shift per element",
+  "b22": "bit functions return double for integer inputs and do not wrap to the type",
+  "b23": "bit functions return double for integer inputs and do not wrap to the type",
+  "b24": "bit functions return double for integer inputs and do not wrap to the type",
+  "b28": "bit functions return double for integer inputs and do not wrap to the type",
+  "b29": "bit functions return double for integer inputs and do not wrap to the type",
+  "b31": "function is missing: swapbytes",
+  "b32": "bit functions return double for integer inputs and do not wrap to the type",
+  "b33": "bit functions return double for integer inputs and do not wrap to the type",
+  "b7": "bit functions return double for integer inputs and do not wrap to the type",
+  "b8": "bit functions return double for integer inputs and do not wrap to the type",
+  "b9": "bit functions return double for integer inputs and do not wrap to the type",
+  "c7": "bit functions return double for integer inputs and do not wrap to the type",
+  "c8": "bit functions return double for integer inputs and do not wrap to the type",
+  "t3": "bitand of two different integer classes is accepted"
+ },
+ "cells/arrayfun_forms": {
+  "a18": "uniform output of cellfun/arrayfun loses an integer class",
+  "c18": "uniform output of cellfun/arrayfun loses an integer class"
+ },
+ "cells/cellfun_uniform": {
+  "u14": "uniform output of cellfun/arrayfun loses an integer class",
+  "u15": "uniform output of cellfun/arrayfun loses an integer class"
+ },
+ "cells/deal_forms": {
+  "q": "[q{1:2}] = deal(a, b) fails when q does not exist yet"
+ },
+ "cells/num2cell_cell2mat": {
+  "e1": "cell2mat of mixed classes does not raise an error",
+  "n11": "num2cell(A, dim) ignores dim",
+  "n12": "num2cell(A, dim) ignores dim"
+ },
+ "concat/empties": {
+  "e20": "class of an empty operand is ignored in concatenation"
+ },
+ "concat/logical_and_numeric_empty_classes": {
+  "c1": "class of an empty operand is ignored in concatenation",
+  "c2": "class of an empty operand is ignored in concatenation",
+  "c6": "class of an empty operand is ignored in concatenation",
+  "c7": "class of an empty operand is ignored in concatenation",
+  "v6": "class of an empty operand is ignored in concatenation"
+ },
+ "concat/strings_vertical": {
+  "__error__": "char(cell, char) raises a Python TypeError",
+  "f": "char(cell, char) raises a Python TypeError",
+  "g": "char(cell, char) raises a Python TypeError",
+  "sf": "char(cell, char) raises a Python TypeError"
+ },
+ "control/anonymous_capture": {
+  "r22": "nargin(function_handle) is not supported",
+  "r23": "nargin(function_handle) is not supported"
+ },
+ "control/global_persistent": {
+  "cfh_other_global": "who does not list global variables declared in the workspace",
+  "cfh_shared": "who does not list global variables declared in the workspace"
+ },
+ "control/nargin_nargout": {
+  "na": "nargin('name') is not supported",
+  "na2": "nargin('name') is not supported",
+  "na3": "nargin('name') is not supported",
+  "no": "nargout('name') returns 0",
+  "no2": "nargout('name') returns 0"
+ },
+ "control/rethrow_mexception": {
+  "le": "function is missing: lasterr"
+ },
+ "control/switch_forms": {
+  "r": "switch on a non-scalar numeric value does not raise an error"
+ },
+ "control/varargin_varargout": {
+  "r3": "[varargout{1:nargout}] = f(...) does not forward nargout to f",
+  "r5": "[varargout{1:nargout}] = f(...) does not forward nargout to f",
+  "r6": "[varargout{1:nargout}] = f(...) does not forward nargout to f"
+ },
+ "elemath/complex_domain": {
+  "c1": "asin/acos/acosh of a real argument outside the domain take the wrong branch",
+  "c19": "asin/acos/acosh of a real argument outside the domain take the wrong branch",
+  "c2": "asin/acos/acosh of a real argument outside the domain take the wrong branch"
+ },
+ "elemath/complex_functions": {
+  "f35": "fix of a complex number raises a Python error"
+ },
+ "elemath/exp_log": {
+  "e19": "function is missing: realsqrt",
+  "e25": "[f, e] = log2(x) is not supported",
+  "e26": "[f, e] = log2(x) is not supported",
+  "e27": "function is missing: pow2",
+  "f25": "[f, e] = log2(x) is not supported",
+  "f26": "[f, e] = log2(x) is not supported"
+ },
+ "elemath/special_functions": {
+  "g3": "gamma of a negative integer is NaN (expected Inf)"
+ },
+ "find/find_forms": {
+  "f11": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
+  "f14": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
+  "s11": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
+  "s14": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)"
+ },
+ "find/find_nd_and_logical": {
+  "c9": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
+  "cv10": "third output of find for logical input is double (expected logical)",
+  "r9": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
+  "sr9": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
+  "v10": "third output of find for logical input is double (expected logical)"
+ },
+ "indexing/assign_shape_rules": {
+  "t3": "A(1:2,1:2) = 1x4 vector is accepted (shape mismatch must raise an error)"
+ },
+ "indexing/delete_all_shapes": {
+  "d": "deleting all columns with A(:, 1:n) = [] gives 0xn (expected mx0)",
+  "sd": "deleting all columns with A(:, 1:n) = [] gives 0xn (expected mx0)"
+ },
+ "indexing/grow_vectors": {
+  "g": "a 0x1 empty grows into a row by linear index (MATLAB keeps a column)"
+ },
+ "linalg/kron_tril_triu_diag": {
+  "d9": "diag([]) is 0x1 (expected 0x0)"
+ },
+ "linalg/norm_forms": {
+  "c22": "single class is not propagated (result is double)",
+  "n22": "single class is not propagated (result is double)"
+ },
+ "linalg/structure_predicates": {
+  "q11": "function is missing: isbanded"
+ },
+ "logic/isequal_forms": {
+  "e25": "isequal of two handles to the same function is false",
+  "e26": "isequaln of structs with NaN fields is false"
+ },
+ "maps/basic_char_keys": {
+  "n1": "containers.Map Count is double (expected uint64)",
+  "n4": "containers.Map Count is double (expected uint64)"
+ },
+ "maps/constructors": {
+  "n4": "containers.Map Count is double (expected uint64)",
+  "n8": "containers.Map Count is double (expected uint64)"
+ },
+ "maps/handle_semantics_and_loops": {
+  "n1": "containers.Map Count is double (expected uint64)"
+ },
+ "maps/numeric_keys": {
+  "n5": "containers.Map Count is double (expected uint64)"
+ },
+ "matlab_only/builtin_error_identifiers": {
+  "id14": "assignment size mismatch error has no identifier"
+ },
+ "matlab_only/char_text_functions": {
+  "r24": "function is missing: isStringScalar",
+  "r25": "function is missing: convertStringsToChars"
+ },
+ "matlab_only/newer_functions": {
+  "v26": "function is missing: isoutlier",
+  "v27": "function is missing: standardizeMissing",
+  "v28": "function is missing: anynan",
+  "v29": "function is missing: allfinite",
+  "v30": "height/width do not accept plain arrays",
+  "v31": "height/width do not accept plain arrays",
+  "v34": "function is missing: uniquetol"
+ },
+ "misc/all_option_forms": {
+  "o10": "std/var ignore the 'all' option",
+  "o11": "std/var ignore the 'all' option",
+  "o16": "max ignores 'includenan'",
+  "o24": "cumsum ignores 'omitnan'",
+  "o27": "max ignores 'includenan'",
+  "o28": "max ignores 'includenan'",
+  "o30": "vecdim ([1 2]) is not supported in sum/max",
+  "o9": "vecdim ([1 2]) is not supported in sum/max"
+ },
+ "misc/utility_numbers": {
+  "d25": "function is missing: rat",
+  "d26": "function is missing: rat",
+  "n25": "function is missing: rat",
+  "n26": "function is missing: rat",
+  "u15": "lcm of integers returns double"
+ },
+ "numeric/cumulative_and_differences": {
+  "d3": "function is missing: del2"
+ },
+ "numeric/integral_quad": {
+  "q12": "integral with 'ArrayValued' returns only the first component"
+ },
+ "numeric/trapz_cumtrapz": {
+  "c4": "trapz/cumtrapz mishandle the dim argument",
+  "t11": "trapz/cumtrapz mishandle the dim argument",
+  "t12": "trapz/cumtrapz mishandle the dim argument",
+  "t13": "trapz with a scalar spacing fails",
+  "t4": "trapz/cumtrapz mishandle the dim argument",
+  "t7": "trapz([]) is 1x0 (expected 0)"
+ },
+ "poly/polyder_polyint": {
+  "d2": "polyder of a constant is empty (expected 0)",
+  "d4": "polyder(a, b) (product and quotient forms) is not supported",
+  "dd5": "polyder(a, b) (product and quotient forms) is not supported",
+  "n5": "polyder(a, b) (product and quotient forms) is not supported"
+ },
+ "poly/roots_poly": {
+  "p3": "poly([]) raises an internal error",
+  "r11": "roots of an empty or all-zero polynomial is 0x1 (expected 0x0)",
+  "r6": "roots of an empty or all-zero polynomial is 0x1 (expected 0x0)",
+  "s11": "roots of an empty or all-zero polynomial is 0x1 (expected 0x0)",
+  "s6": "roots of an empty or all-zero polynomial is 0x1 (expected 0x0)"
+ },
+ "poly/spline_pchip_interp2": {
+  "z5": "interp2 'nearest' rounds a tie down (expected up)"
+ },
+ "ranges/classes": {
+  "c16": "single class is not propagated (result is double) by the colon operator",
+  "c6": "single class is not propagated (result is double) by the colon operator"
+ },
+ "ranges/in_loops": {
+  "e1": "the loop variable stays undefined after a loop over an empty range",
+  "se1": "the loop variable stays undefined after a loop over an empty range"
+ },
+ "ranges/linspace_logspace": {
+  "l13": "linspace rejects a non-integer point count (MATLAB floors it)",
+  "l15": "single class is not propagated (result is double)"
+ },
+ "reductions/any_all_forms": {
+  "a20": "reduction along a dimension beyond ndims raises a Python error"
+ },
+ "reductions/cumsum_cumprod": {
+  "c14": "reduction along a dimension beyond ndims raises a Python error"
+ },
+ "reductions/diff_forms": {
+  "d7": "diff of a scalar or an empty returns the wrong empty size",
+  "s7": "diff of a scalar or an empty returns the wrong empty size",
+  "s9": "diff of a scalar or an empty returns the wrong empty size"
+ },
+ "reductions/dot_cross_norm": {
+  "d5": "dot(A, B, dim) ignores dim"
+ },
+ "reductions/first_nonsingleton": {
+  "f9": "sum does not skip leading singleton dimensions of an N-D array"
+ },
+ "reductions/mean_classes": {
+  "c6": "mean ignores 'native'",
+  "c7": "mean ignores 'double'",
+  "c8": "median of integers returns double (expected the integer class)",
+  "v6": "mean ignores 'native'",
+  "v8": "median of integers returns double (expected the integer class)"
+ },
+ "reductions/min_max_classes": {
+  "c10": "max of logical returns double (expected logical)",
+  "c12": "single class is not propagated (result is double)",
+  "c4": "single class is not propagated (result is double)",
+  "c5": "max of logical returns double (expected logical)",
+  "t9": "min of two different integer classes is accepted"
+ },
+ "reductions/min_max_forms": {
+  "m10": "max of a non-0x0 empty returns 0x0",
+  "m11": "max of a non-0x0 empty returns 0x0",
+  "m18": "max of a non-0x0 empty returns 0x0"
+ },
+ "reductions/mode_forms": {
+  "c6": "mode with more than one output is not supported",
+  "f15": "mode with more than one output is not supported",
+  "f5": "mode with more than one output is not supported",
+  "f6": "mode with more than one output is not supported",
+  "m15": "mode with more than one output is not supported",
+  "m5": "mode with more than one output is not supported",
+  "m6": "mode with more than one output is not supported"
+ },
+ "reductions/nd_dims": {
+  "n15": "sum does not skip leading singleton dimensions of an N-D array"
+ },
+ "reductions/std_var_forms": {
+  "s10": "std/var of a 0x3 empty return a scalar (expected 1x3 NaN)",
+  "s9": "std/var reject a weight vector",
+  "v10": "std/var reject a weight vector",
+  "v11": "std/var reject a weight vector",
+  "v16": "std/var of a 0x3 empty return a scalar (expected 1x3 NaN)",
+  "v17": "reduction along a dimension beyond ndims raises a Python error"
+ },
+ "reductions/sum_classes": {
+  "c12": "sum of an empty integer array returns double",
+  "c5": "sum ignores or mishandles the 'double'/'native' option",
+  "c7": "sum ignores or mishandles the 'double'/'native' option",
+  "c8": "sum ignores or mishandles the 'double'/'native' option",
+  "v5": "sum ignores or mishandles the 'double'/'native' option",
+  "v7": "sum ignores or mishandles the 'double'/'native' option"
+ },
+ "rounding/gcd_lcm_factor_primes": {
+  "c5": "gcd/lcm of integers return double",
+  "g5": "gcd/lcm of integers return double",
+  "l3": "gcd/lcm of integers return double",
+  "n10": "nchoosek of a char vector returns double"
+ },
+ "rounding/mod_rem_integers": {
+  "c13": "single class is not propagated (result is double) by mod",
+  "c5": "mod/rem of integers return double (expected the integer class)",
+  "c6": "mod/rem of integers return double (expected the integer class)",
+  "i1": "mod/rem of integers return double (expected the integer class)",
+  "i10": "mod/rem of integers return double (expected the integer class)",
+  "i11": "mod/rem of integers return double (expected the integer class)",
+  "i12": "mod/rem of integers return double (expected the integer class)",
+  "i13": "single class is not propagated (result is double) by mod",
+  "i16": "mod/rem of integers return double (expected the integer class)",
+  "i2": "mod/rem of integers return double (expected the integer class)",
+  "i3": "mod/rem of integers return double (expected the integer class)",
+  "i4": "mod/rem of integers return double (expected the integer class)",
+  "i5": "mod/rem of integers return double (expected the integer class)",
+  "i6": "mod/rem of integers return double (expected the integer class)",
+  "i7": "mod/rem of integers return double (expected the integer class)",
+  "i8": "mod/rem of integers return double (expected the integer class)",
+  "i9": "mod/rem of integers return double (expected the integer class)"
+ },
+ "rounding/round_digits": {
+  "d7": "round(x, n, 'significant') ignores 'significant'",
+  "d8": "round(x, n, 'significant') ignores 'significant'"
+ },
+ "rounding/round_family": {
+  "r1": "round/ceil/fix lose the sign of a negative zero result",
+  "r14": "fix of a complex number raises a Python error",
+  "r18": "round(0.49999999999999994) is 1 (expected 0)",
+  "r19": "round/ceil/fix lose the sign of a negative zero result",
+  "r8": "round/ceil/fix lose the sign of a negative zero result",
+  "r9": "round/ceil/fix lose the sign of a negative zero result"
+ },
+ "sets/intersect_union": {
+  "a12": "intersect ignores 'rows'",
+  "b12": "intersect ignores 'rows'",
+  "b2": "third output of union lists all of B (expected only the elements taken from B)",
+  "c12": "intersect ignores 'rows'",
+  "c8": "union/intersect of a row and a column return a row (expected a column)",
+  "c9": "union/intersect of a row and a column return a row (expected a column)",
+  "sc8": "union/intersect of a row and a column return a row (expected a column)",
+  "sc9": "union/intersect of a row and a column return a row (expected a column)"
+ },
+ "sets/nan_in_set_operations": {
+  "n1": "FLAKY: set functions give a nondeterministic order when the inputs contain NaN (expected NaNs last)",
+  "n2": "FLAKY: set functions give a nondeterministic order when the inputs contain NaN (expected NaNs last)",
+  "n7": "FLAKY: set functions give a nondeterministic order when the inputs contain NaN (expected NaNs last)",
+  "n8": "unique merges NaNs (each NaN is distinct in MATLAB)"
+ },
+ "sets/setdiff_setxor": {
+  "d6": "setdiff ignores 'rows'",
+  "d9": "setdiff of char returns double"
+ },
+ "sets/unique_basic": {
+  "c13": "unique of logical returns double",
+  "u13": "unique of logical returns double",
+  "u6": "unique merges NaNs (each NaN is distinct in MATLAB)"
+ },
+ "sets/unique_options": {
+  "i6": "unique(A, 'rows', 'stable') ignores 'stable'",
+  "i8": "unique merges NaNs (each NaN is distinct in MATLAB)",
+  "j6": "unique(A, 'rows', 'stable') ignores 'stable'",
+  "u6": "unique(A, 'rows', 'stable') ignores 'stable'",
+  "u8": "unique merges NaNs (each NaN is distinct in MATLAB)"
+ },
+ "sizes/cat_kron_misc": {
+  "b1": "function is missing: blkdiag",
+  "b2": "function is missing: blkdiag",
+  "cp1": "function is missing: compan",
+  "iv1": "function is missing: invhilb"
+ },
+ "sizes/repmat_forms": {
+  "r18": "repmat with a negative count raises an error (expected an empty)",
+  "s18": "repmat with a negative count raises an error (expected an empty)"
+ },
+ "sizes/reshape_forms": {
+  "t3": "reshape with two [] placeholders is accepted"
+ },
+ "sizes/shape_predicates": {
+  "p2": "isvector of 1x0 and 0x1 is false (expected true)"
+ },
+ "sizes/size_forms": {
+  "c22": "[a, b] = size(A, [d1 d2]) is not supported",
+  "r22": "[a, b] = size(A, [d1 d2]) is not supported",
+  "s23": "size(A, d1, d2) is not supported"
+ },
+ "sorting/sort_basic": {
+  "s14": "reduction along a dimension beyond ndims raises a Python error"
+ },
+ "sorting/sort_complex_char_int": {
+  "s7": "sort of complex values with equal magnitude does not order by angle"
+ },
+ "sorting/sort_nan_inf": {
+  "i4": "descending sort does not put NaN first when Inf is present",
+  "s4": "descending sort does not put NaN first when Inf is present"
+ },
+ "sorting/sort_ties_stability": {
+  "c7": "sort of logical returns double",
+  "s7": "sort of logical returns double"
+ },
+ "strings/blanks_repmat_misc": {
+  "b20": "strcat with a char matrix flattens it"
+ },
+ "strings/cellfun_on_strings": {
+  "n13": "legacy cellfun names 'prodofsize' and 'isclass' are not supported",
+  "n14": "legacy cellfun names 'prodofsize' and 'isclass' are not supported"
+ },
+ "strings/character_classes": {
+  "k10": "isstrprop category 'xdigit' is not supported"
+ },
+ "strings/dec_bin_hex": {
+  "b11": "dec2bin/dec2hex/bin2dec handle only one value of an array input",
+  "b14": "hex2dec of a cell array fails",
+  "b15": "function is missing: dec2base",
+  "b16": "function is missing: base2dec",
+  "b17": "function is missing: dec2base",
+  "b22": "dec2bin/dec2hex/bin2dec handle only one value of an array input",
+  "b23": "dec2bin/dec2hex/bin2dec handle only one value of an array input",
+  "b24": "function is missing: dec2base",
+  "b4": "dec2bin/dec2hex/bin2dec handle only one value of an array input"
+ },
+ "strings/int2str_forms": {
+  "i14": "int2str of a matrix keeps a leading blank column",
+  "i6": "int2str of a matrix keeps a leading blank column"
+ },
+ "strings/mat2str_classes": {
+  "k2": "mat2str(x, 'class') is not supported",
+  "k6": "mat2str(x, 'class') is not supported"
+ },
+ "strings/mat2str_forms": {
+  "m16": "mat2str of an empty is not written as zeros(m,n)",
+  "m17": "mat2str of an empty is not written as zeros(m,n)",
+  "m5": "mat2str of an empty is not written as zeros(m,n)"
+ },
+ "strings/num2str_arrays": {
+  "a10": "num2str of a non-integer matrix uses the wrong column spacing",
+  "a14": "num2str of an integer matrix has wrong widths or a leading blank",
+  "a15": "num2str of an integer matrix has wrong widths or a leading blank",
+  "a16": "num2str of a non-integer matrix uses the wrong column spacing",
+  "a17": "num2str of an integer matrix has wrong widths or a leading blank",
+  "a19": "num2str of a non-integer matrix uses the wrong column spacing",
+  "a21": "num2str of an integer matrix has wrong widths or a leading blank",
+  "a22": "num2str of a non-integer matrix uses the wrong column spacing",
+  "a4": "num2str of an integer matrix has wrong widths or a leading blank",
+  "a5": "num2str of a non-integer matrix uses the wrong column spacing",
+  "a6": "num2str of an integer matrix has wrong widths or a leading blank",
+  "a7": "num2str of a non-integer matrix uses the wrong column spacing",
+  "a8": "num2str of a non-integer matrix uses the wrong column spacing",
+  "a9": "num2str of a non-integer matrix uses the wrong column spacing"
+ },
+ "strings/num2str_precision_format": {
+  "p10": "num2str(x, format) does not trim blanks",
+  "p15": "num2str(x, format) does not trim blanks",
+  "p6": "num2str(x, format) does not trim blanks",
+  "p8": "num2str(x, format) does not trim blanks"
+ },
+ "strings/num2str_scalars": {
+  "n22": "num2str(1e16) prints all digits (expected 1e+16)"
+ },
+ "strings/regexp_match_tokens": {
+  "m27": "an empty pattern matches at every position (expected no match)",
+  "st13": "tokens of a failed 'once' match are 1x0 (expected 0x0)",
+  "t13": "tokens of a failed 'once' match are 1x0 (expected 0x0)"
+ },
+ "strings/regexp_names_cells": {
+  "c6": "regexp(cellstr, pat, 'once') returns a raw Python float",
+  "c7": "a cell array of patterns is not supported"
+ },
+ "strings/regexp_output_order": {
+  "te4": "token extents are not returned",
+  "te8": "token extents are not returned",
+  "te9": "token extents are not returned"
+ },
+ "strings/regexp_syntax": {
+  "p13": "the word-start anchor (backslash <) is not supported",
+  "p21": "'.' does not match a newline"
+ },
+ "strings/regexprep_forms": {
+  "r11": "an empty pattern matches at every position (expected no match)",
+  "r12": "named token $<name> in the replacement is not supported",
+  "r13": "dynamic expression ${...} in the replacement is not supported",
+  "r14": "a replacement of two backslashes raises an internal error",
+  "r8": "a cell array of patterns is not supported",
+  "r9": "a cell array of patterns is not supported"
+ },
+ "strings/sprintf_escapes": {
+  "e11": "octal escapes (backslash 101) are not processed"
+ },
+ "strings/sprintf_integers": {
+  "s21": "integer precision (%.3d) is ignored",
+  "s22": "sprintf of intmax('int64') goes through double",
+  "s26": "%#o prints Python's 0o prefix",
+  "s27": "%ld is not recognized",
+  "s28": "integer precision (%.3d) is ignored"
+ },
+ "strings/sprintf_strings": {
+  "s14": "a char array given to %d is not expanded per character"
+ },
+ "strings/str2num_str2double": {
+  "a13": "str2num of a char matrix joins the rows"
+ },
+ "strings/strfind_forms": {
+  "f11": "strfind without a match returns 1x0 (expected 0x0)",
+  "f3": "strfind without a match returns 1x0 (expected 0x0)",
+  "f4": "strfind without a match returns 1x0 (expected 0x0)",
+  "f5": "strfind without a match returns 1x0 (expected 0x0)",
+  "f6": "strfind without a match returns 1x0 (expected 0x0)",
+  "f7": "strfind without a match returns 1x0 (expected 0x0)",
+  "sf3": "strfind without a match returns 1x0 (expected 0x0)",
+  "sf4": "strfind without a match returns 1x0 (expected 0x0)"
+ },
+ "strings/strjoin_forms": {
+  "j11": "strjoin with a cell array of delimiters is not supported"
+ },
+ "strings/strrep_strtrim": {
+  "r2": "strrep does not replace overlapping matches",
+  "t13": "strtrim of a char matrix trims each row separately",
+  "t7": "strtrim of a char matrix trims each row separately"
+ },
+ "strings/upper_lower_flip": {
+  "u14": "upper of a number raises an error (MATLAB returns it unchanged)"
+ },
+ "structs/create_and_fields": {
+  "s11": "struct([]) raises an error",
+  "z11": "struct([]) raises an error"
+ },
+ "structs/dynamic_fields": {
+  "d12": "getfield/setfield ignore nested field arguments",
+  "d13": "getfield/setfield ignore nested field arguments"
+ },
+ "structs/rmfield_orderfields": {
+  "f4": "orderfields ignores its order argument",
+  "f5": "orderfields ignores its order argument",
+  "o2": "[s, p] = orderfields(s) is not supported",
+  "o3": "orderfields ignores its order argument",
+  "o4": "orderfields ignores its order argument",
+  "p2": "[s, p] = orderfields(s) is not supported"
+ },
+ "structs/struct_functions": {
+  "c5": "struct2cell of a struct array returns only the first element",
+  "nf": "function is missing: numfields",
+  "s4": "cell2struct of a 2-D cell along dimension 2 fails",
+  "v4": "cell2struct of a 2-D cell along dimension 2 fails",
+  "z4": "cell2struct of a 2-D cell along dimension 2 fails",
+  "z5": "struct2cell of a struct array returns only the first element"
+ },
+ "types/cast_conversions": {
+  "c6": "cast(x, 'char') is not supported",
+  "c9": "cast(x, 'like', p) is not supported",
+  "k9": "cast(x, 'like', p) is not supported"
+ },
+ "types/int_conversions": {
+  "i7": "int64/uint64 values go through double: no saturation and precision loss above 2^53"
+ },
+ "types/intmax_intmin_ranges": {
+  "m9": "int64/uint64 values go through double: no saturation and precision loss above 2^53"
+ },
+ "types/is_functions": {
+  "q8": "isreal of a cell, struct or function handle is true (expected false)"
+ },
+ "types/mixed_class_operations": {
+  "c30": "single class is not propagated (result is double)",
+  "c32": "single class is not propagated (result is double)",
+  "c33": "single class is not propagated (result is double)",
+  "c42": "single class is not propagated (result is double)"
+ }
+}

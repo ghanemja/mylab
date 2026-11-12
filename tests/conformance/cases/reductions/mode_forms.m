@@ -1,0 +1,14 @@
+m1 = mode([1 2 2 3 3]);
+m2 = mode([3 3 1 1 2]);
+m3 = mode([]);
+m4 = mode(5);
+try, [m5, f5] = mode([1 2 2 3 3 3]); catch, end
+try, [m6, f6, c6] = mode([1 1 2 2]); catch, end
+A = [1 2; 1 3; 2 3];
+m7 = mode(A);
+m8 = mode(A, 2);
+m9 = mode([1 NaN NaN]);
+m10 = mode([4 4 -1 -1]);
+m11 = mode([1.5 1.5 2]);
+m14 = mode([1; 1; 2]);
+try, [m15, f15] = mode([7 8 9]); catch, end

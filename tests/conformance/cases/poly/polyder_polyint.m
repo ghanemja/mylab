@@ -1,0 +1,12 @@
+d1 = polyder([1 2 3]);
+d2 = polyder([5]);
+d3 = polyder([1 0 0 0]);
+d4 = polyder([1 2], [1 3]);
+try, [n5, dd5] = polyder([1], [1 2]); catch, end
+i1 = polyint([3 2 1]);
+i2 = polyint([3 2 1], 5);
+i3 = polyint(6);
+d6 = polyder([2 1]);
+d7 = polyder([0 0 3 2]);
+i4 = polyint([1 0]);
+d8 = polyder(polyint([4 3 2 1]));

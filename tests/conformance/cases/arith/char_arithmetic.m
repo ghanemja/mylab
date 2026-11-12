@@ -1,0 +1,20 @@
+c1 = 'a' + 1;
+c2 = char('a' + 1);
+c3 = 'abc' - 'a';
+c4 = 'abc' * 2;
+c5 = 'a':'e';
+c6 = class('a':'e');
+c7 = double('a':2:'i');
+c8 = '9' - '0';
+c9 = ['a' 'b'] + [1; 2];
+c10 = sum('abc');
+c11 = 'a' * 'b';
+c12 = 'abc' == 'abd';
+c13 = upper('a') - 'A';
+try, c14 = mean('ab'); catch, end
+try, c15 = class(mean('ab')); catch, end
+c16 = 'abc' .^ 1;
+c17 = -'abc';
+c18 = 'a' / 2;
+c19 = class(char(65):char(70));
+c20 = abs('A');

@@ -1,0 +1,17 @@
+c1 = class([1 single(2)]);
+c2 = class([single(1) int8(2)]);
+c3 = class([1 int8(2)]);
+c4 = class([int8(1) 2.7]);
+c5 = class([true 2]);
+c6 = class([true int8(2)]);
+c7 = class([true single(2)]);
+c8 = class([true false]);
+c9 = class([uint8(1) uint8(2)]);
+v1 = [int8(1) 2.7];
+v2 = [uint8(200) 300];
+v3 = [int8(1) -200.5];
+v4 = [single(1) 0.1];
+v5 = [true 2 3];
+v6 = [int16(5) true];
+v7 = [uint8(5) -1];
+v8 = [int8(100) 3.5; 2.5 -1.5];

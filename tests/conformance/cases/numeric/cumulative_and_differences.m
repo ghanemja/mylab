@@ -1,0 +1,16 @@
+x = [1 4 9 16 25];
+d1 = diff(x);
+d2 = diff(x, 2);
+g1 = gradient(x);
+g2 = gradient(x, 2);
+g3 = gradient([1 4 9; 2 5 10]);
+[gx, gy] = gradient([1 4 9; 2 5 10]);
+g4 = gradient([1 2]);
+g5 = gradient(5);
+c1 = cumsum(x);
+c2 = cumprod([1 2 3 4]);
+c3 = cumsum(x) ./ (1:5);
+p1 = prod(x);
+g6 = gradient([1; 4; 9]);
+g7 = gradient(x, [0 1 3 6 10]);
+try, d3 = del2([1 4 9 16 25]); catch, end

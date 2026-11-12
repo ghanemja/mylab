@@ -1,0 +1,14 @@
+c1 = class(['a' 66]);
+v1 = ['a' 66];
+c2 = class([65 'b']);
+v2 = [65 'b' 67];
+c3 = class(['a' true]);
+c4 = class(['a' single(66)]);
+c5 = class(['a' int8(66)]);
+v5 = ['a' int8(66)];
+v6 = ['abc'; 100 101 102];
+v7 = ['x', 'yz'];
+v8 = ['ab'; 'cd'];
+s8 = size(v8);
+v9 = ['a', 32, 'b'];
+v10 = double(['a' 66.7]);
