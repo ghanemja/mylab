@@ -58,7 +58,7 @@ New to all this? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 ### 3. In Jupyter notebooks
 
 ```bash
-pip install "mylab[jupyter] @ git+https://github.com/ghanemja/mylab"
+pip install "mylab-lang[jupyter] @ git+https://github.com/ghanemja/mylab"
 mylab-kernel install --user
 ```
 
@@ -67,7 +67,7 @@ See [docs/JUPYTER.md](docs/JUPYTER.md).
 ### 4. From AI assistants (Claude Desktop, Cursor, …)
 
 ```bash
-pip install "mylab[mcp] @ git+https://github.com/ghanemja/mylab"
+pip install "mylab-lang[mcp] @ git+https://github.com/ghanemja/mylab"
 ```
 
 Add `{"mcpServers": {"mylab": {"command": "mylab-mcp"}}}` to your client's

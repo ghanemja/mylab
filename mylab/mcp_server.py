@@ -57,7 +57,7 @@ def build_server():
         try:
             from mcp.server.fastmcp import FastMCP as Server, Image
         except ImportError as e:  # pragma: no cover
-            raise SystemExit("The MCP server needs the 'mcp' package: pip install 'mylab[mcp]'") from e
+            raise SystemExit("The MCP server needs the 'mcp' package: pip install 'mylab-lang[mcp]'") from e
 
     server = Server(name="mylab", instructions=INSTRUCTIONS)
 

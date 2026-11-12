@@ -36,7 +36,7 @@ def build_wheel() -> Path:
         cmd = [sys.executable, "-m", "pip", "wheel", str(ROOT), "--no-deps", "-q", "-w", tmp]
         print("Building wheel:", " ".join(cmd))
         subprocess.run(cmd, check=True, cwd=tmp)
-        built = sorted(Path(tmp).glob("mylab-*.whl"))
+        built = sorted(Path(tmp).glob("mylab*.whl"))
         if not built:
             raise SystemExit("No mylab wheel was produced.")
         if WHEELS.exists():

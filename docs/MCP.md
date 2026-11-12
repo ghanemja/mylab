@@ -8,7 +8,7 @@ images.
 ## Install
 
 ```bash
-pip install "mylab[mcp]"
+pip install "mylab-lang[mcp]"
 ```
 
 This installs the `mylab-mcp` command, which talks to the client over stdio.

@@ -12,6 +12,21 @@ from . import table, io  # noqa: F401,E402
 from . import objfuncs  # noqa: F401,E402
 
 
+def _import_remaining() -> None:
+    """Import every other module in this package, so new function groups register themselves."""
+    import importlib
+    import pkgutil
+    import sys
+
+    for info in sorted(pkgutil.iter_modules(__path__), key=lambda i: i.name):
+        full = f"{__name__}.{info.name}"
+        if not info.name.startswith("_") and full not in sys.modules:
+            importlib.import_module(full)
+
+
+_import_remaining()
+
+
 def _make_string_aware(names):
     """Let text functions written for char/cell inputs also take string arrays.
 

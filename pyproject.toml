@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mylab"
+name = "mylab-lang"
 version = "1.0.0"
 description = "A free, open-source environment for running MATLAB-language code, built on NumPy, SciPy and Matplotlib."
 readme = "README.md"

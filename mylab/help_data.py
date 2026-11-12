@@ -2219,3 +2219,15 @@ HELP.update({
                "Bitwise complement of non-negative integers within the width of the integer class "
                "(8, 16, 32 or 64 bits)."),
 })
+
+
+def _load_helpdocs() -> None:
+    import importlib
+    import pkgutil
+
+    from . import helpdocs
+    for info in sorted(pkgutil.iter_modules(helpdocs.__path__), key=lambda i: i.name):
+        HELP.update(importlib.import_module(f"{helpdocs.__name__}.{info.name}").HELP)
+
+
+_load_helpdocs()

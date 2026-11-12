@@ -3,7 +3,7 @@
 You can use mylab in Jupyter notebooks, JupyterLab and VS Code notebooks.
 
 ```bash
-pip install "mylab[jupyter]"
+pip install "mylab-lang[jupyter]"
 mylab-kernel install --user        # or --sys-prefix to install into the current environment
 ```
 

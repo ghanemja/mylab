@@ -2,7 +2,7 @@
 
 Install the kernel spec once, then pick "mylab" in Jupyter's kernel list::
 
-    pip install "mylab[jupyter]"
+    pip install "mylab-lang[jupyter]"
     mylab-kernel install --user
 
 Figures are shown inline, Tab completes names, and Shift+Tab shows help.
