@@ -1,0 +1,6 @@
+{
+  "title": "Celsius to Fahrenheit",
+  "points": 20,
+  "function": "c2f",
+  "timeout": 10
+}

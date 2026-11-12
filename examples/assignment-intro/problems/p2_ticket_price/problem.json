@@ -1,0 +1,6 @@
+{
+  "title": "Museum ticket price",
+  "points": 25,
+  "function": "ticket_price",
+  "timeout": 10
+}
