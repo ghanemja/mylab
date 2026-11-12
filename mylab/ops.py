@@ -237,7 +237,7 @@ def left_divide(a: np.ndarray, b: np.ndarray) -> np.ndarray:
                 _warn("Matrix is singular to working precision.", "MATLAB:singularMatrix")
                 with np.errstate(all="ignore"):
                     return simplify(np.linalg.lstsq(af, bf, rcond=None)[0])
-            return simplify(np.linalg.solve(af, bf))
+            return simplify(np.linalg.solve(af, bf) + 0.0)  # + 0.0: no negative zeros from the solver
         except np.linalg.LinAlgError:
             _warn("Matrix is singular to working precision.", "MATLAB:singularMatrix")
             return np.full((a.shape[1], b.shape[1]), np.inf)

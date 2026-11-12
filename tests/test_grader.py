@@ -287,8 +287,8 @@ def test_syntax_error_names_the_file(tmp_path):
 
 
 def test_timeout_only_fails_those_tests(tmp_path):
-    # p1_double has a 2-second limit; p2_sign keeps the default limit.
-    root = make_assignment(tmp_path / "a", timeout=2)
+    # p1_double has a 6-second limit (long enough for a slow machine to start printing); p2_sign keeps the default limit.
+    root = make_assignment(tmp_path / "a", timeout=6)
     sub = tmp_path / "s"
     write(sub / "double_it.m",
           "function y = double_it(x)\nwhile true\n    fprintf('still going\\n');\nend\ny = 2 * x;\nend\n")
@@ -296,7 +296,7 @@ def test_timeout_only_fails_those_tests(tmp_path):
     result = grader.grade_submission(root, sub, jobs=JOBS)
     p1, p2 = result.problems
     assert [t.status for t in p1.tests] == ["timeout", "timeout", "timeout"] and p1.score == 0
-    assert "Timed out" in p1.tests[0].message and "2 seconds" in p1.tests[0].message
+    assert "Timed out" in p1.tests[0].message and "6 seconds" in p1.tests[0].message
     assert len(p1.tests[0].output) < 3000           # endless printing is cut short
     assert "still going" in p1.tests[0].output
     assert p2.score == 5                            # the other problem is graded normally

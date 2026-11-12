@@ -316,7 +316,7 @@ def test_fscanf_textscan(m, tmp_path):
 
 def test_dir_and_rmdir(m, tmp_path):
     for name in ("a.csv", "b.csv", "c.txt"):
-        (tmp_path / name).write_text("1\n")
+        (tmp_path / name).write_bytes(b"1\n")
     (tmp_path / "sub").mkdir()
     d = str(tmp_path).replace("\\", "/")
     m.run(f"L = dir('{d}/*.csv');")
