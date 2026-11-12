@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+import itertools
+
 import numpy as np
 
 from .errors import MatlabError
@@ -165,6 +167,23 @@ def _grow(arr: np.ndarray, new_shape: tuple, fill: Callable[[], Any]) -> np.ndar
     if all(n <= o for n, o in zip(new_shape, arr.shape)) and len(new_shape) == arr.ndim:
         return arr
     target = tuple(max(n, o) for n, o in zip(new_shape, arr.shape))
+    if arr.dtype.kind == "O" and len(target) == arr.ndim:
+        # Fill only the cells that are new, so appending in a loop stays cheap.
+        out = np.empty(target, dtype=object)
+        old = tuple(slice(0, s) for s in arr.shape)
+        out[old] = arr
+        grown = [d for d in range(arr.ndim) if target[d] > arr.shape[d]]
+        if len(grown) == 1:
+            region = [range(s) for s in target]
+            region[grown[0]] = range(arr.shape[grown[0]], target[grown[0]])
+            cells = itertools.product(*region)
+        else:
+            fresh = np.ones(target, dtype=bool)
+            fresh[old] = False
+            cells = zip(*np.nonzero(fresh))
+        for idx in cells:
+            out[idx] = fill()
+        return out
     out = _new_array(target, arr.dtype, fill)
     out[tuple(slice(0, s) for s in arr.shape)] = arr
     return out

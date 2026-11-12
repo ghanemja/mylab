@@ -287,3 +287,26 @@ def test_value_class_super_constructor_statement(m, tmp_path):
 def test_empties_dropped_next_to_nonempty(m):
     assert m.num("size([zeros(1,0); 5])").tolist() == [[1, 1]]
     assert m.num("size([zeros(1,0), [1;2]])").tolist() == [[2, 1]]
+
+
+def test_append_loops_are_not_quadratic_in_python_calls():
+    import time
+
+    from mylab.api import Session
+    s = Session()
+    t = time.perf_counter()
+    r = s.run("c={}; for i=1:4000, c{end+1}=i; end\n"
+              "st=struct('a',{}); for i=1:4000, st(end+1).a=i; end\n"
+              "disp(numel(c)+numel(st)); disp(st(4000).a); disp(c{17})")
+    assert r.error is None
+    assert r.output.split() == ["8000", "4000", "17"]
+    assert time.perf_counter() - t < 5
+
+
+def test_struct_array_sharing_keeps_copies_independent():
+    from mylab.api import Session
+    r = Session().run("s(3).a=1; t=s; s(2).a=5; q=s; q(2).a=9; s(1).b=2;\n"
+                      "disp(isempty(t(2).a)); disp(isfield(t,'b')); disp(s(2).a); disp(q(2).a)\n"
+                      "c=cell(2,2); c{3,4}=1; disp(size(c)); disp(class(c{3,1}))")
+    assert r.error is None
+    assert r.output.split() == ["1", "0", "5", "9", "3", "4", "double"]

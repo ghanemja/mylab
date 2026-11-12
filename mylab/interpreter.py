@@ -699,14 +699,22 @@ class Interpreter:
                 for f in value.fields:
                     if f not in fields:
                         fields.append(f)
-                data = current.copy().data
-                for d in data.flat:
-                    for f in fields:
-                        d.setdefault(f, empty_double())
-                vdata = value.copy().data
-                for d in vdata.flat:
-                    for f in fields:
-                        d.setdefault(f, empty_double())
+                # Structs are copied before they are changed, so elements that keep
+                # their fields can be shared instead of copied (keeps appends cheap).
+                if fields == current.fields:
+                    data = current.data
+                else:
+                    data = current.copy().data
+                    for d in data.flat:
+                        for f in fields:
+                            d.setdefault(f, empty_double())
+                if fields == value.fields:
+                    vdata = value.data
+                else:
+                    vdata = value.copy().data
+                    for d in vdata.flat:
+                        for f in fields:
+                            d.setdefault(f, empty_double())
                 fill = lambda: {f: empty_double() for f in fields}  # noqa: E731
                 return Struct(ix.set_(data, args, vdata, fill), fields)
             if isinstance(current, np.ndarray) and isinstance(value, (MString, StringArray)) and current.size == 0:
