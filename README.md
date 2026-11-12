@@ -115,10 +115,18 @@ events, enumerations and object arrays) are in
 
 ## Speed
 
-Vectorized code runs at NumPy speed. Loops are interpreted: a simple
-statement takes about 2–10 µs, so 100,000 loop iterations take about a
-second. That's fine for coursework, but slower than MATLAB's JIT compiler.
-For heavy loops, vectorize. `benchmarks/bench.py` measures common patterns.
+- **Vectorized code** runs at NumPy speed (compiled BLAS/LAPACK underneath).
+- **Simple numeric loops are compiled.** Loops that do scalar arithmetic and
+  read or write array elements are translated to fast code automatically,
+  about 20–50× faster than interpreting them: 200,000 iterations of
+  `s = s + k^2` take about 0.03 s. If anything unusual happens (an index
+  out of range, a complex result), mylab falls back to the interpreter for
+  that loop, so results and error messages stay the same.
+- **Other loops are interpreted** (ones that call your own functions, use
+  cells, structs or strings, or print): about 2–10 µs per statement. That's
+  fine for coursework, but slower than MATLAB.
+
+`benchmarks/bench.py` measures common patterns.
 
 ## Project layout
 

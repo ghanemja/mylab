@@ -1,0 +1,6 @@
+{
+  "title": "Rain summary",
+  "points": 30,
+  "function": "rain_summary",
+  "timeout": 10
+}
