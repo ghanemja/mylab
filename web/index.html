@@ -24,6 +24,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/runmode/runmode.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
   <script type="module" src="js/app.js"></script>
 </head>
@@ -56,6 +57,30 @@
       <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3" stroke="currentColor" stroke-width="1.8" fill="none"/></symbol>
       <symbol id="i-insert" viewBox="0 0 24 24"><path d="M4 5h16M4 19h16M12 8v8m0 0l-3-3m3 3l3-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-menu" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></symbol>
+      <symbol id="i-caret" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a1 1 0 011-1h5l2 2.5h8a1 1 0 011 1V18a1 1 0 01-1 1H4a1 1 0 01-1-1z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="1.7" fill="none"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="M4.5 17l4.5-4 3.5 3 3-2.5 4 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></symbol>
+      <symbol id="i-table" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M3.5 10h17M3.5 14.5h17M9.5 5v14" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <symbol id="i-text" viewBox="0 0 24 24"><path d="M6 3h8l5 5v12a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><path d="M8.5 12h7M8.5 15.5h7M8.5 8.5h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <symbol id="i-data" viewBox="0 0 24 24"><ellipse cx="12" cy="6.5" rx="7" ry="3" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M5 6.5v11c0 1.7 3.1 3 7 3s7-1.3 7-3v-11M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" stroke="currentColor" stroke-width="1.7" fill="none"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.8" fill="none"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></symbol>
+      <symbol id="i-step" viewBox="0 0 24 24"><path d="M4 6h9M4 12h6M4 18h9" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M14 12h6m0 0l-3-3m3 3l-3 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-section" viewBox="0 0 24 24"><rect x="3.5" y="4" width="11" height="16" rx="2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-dasharray="3 2.5"/><path d="M15.5 8l6 4-6 4z" fill="currentColor"/></symbol>
+      <symbol id="i-report" viewBox="0 0 24 24"><path d="M6 3h8l5 5v12a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z M14 3v5h5" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <symbol id="i-task" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16" rx="2" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M9 4.5V3.5h6v1M8.5 13l2.5 2.5 4.5-5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-repo" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2.3" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="7" cy="18" r="2.3" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="17" cy="9" r="2.3" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M7 8.3v7.4M17 11.3c0 3-4 3-10 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></symbol>
+      <symbol id="i-first" viewBox="0 0 24 24"><path d="M18 6l-8 6 8 6z" fill="currentColor"/><path d="M7 6v12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+      <symbol id="i-last" viewBox="0 0 24 24"><path d="M6 6l8 6-8 6z" fill="currentColor"/><path d="M17 6v12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="M16 5.5L7 12l9 6.5z" fill="currentColor"/></symbol>
+      <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M8 5.5l9 6.5-9 6.5z" fill="currentColor"/></symbol>
+      <symbol id="i-bp-next" viewBox="0 0 24 24"><circle cx="17" cy="12" r="4" fill="currentColor"/><path d="M3 12h7m0 0l-3-3m3 3l-3 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-bp-prev" viewBox="0 0 24 24"><circle cx="7" cy="12" r="4" fill="currentColor"/><path d="M21 12h-7m0 0l3-3m-3 3l3 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 8V4h10v4M7 17H5a1 1 0 01-1-1v-6a1 1 0 011-1h14a1 1 0 011 1v6a1 1 0 01-1 1h-2M7 14h10v6H7z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/></symbol>
     </defs>
   </svg>
 
@@ -65,11 +90,20 @@
       <span class="brand-name">mylab</span>
     </a>
     <div class="toolbar" role="toolbar" aria-label="Run">
-      <button id="btn-run" class="btn primary" disabled title="Run the current file (Ctrl+Enter)">
-        <svg class="ic"><use href="#i-play"/></svg><span>Run</span>
+      <button id="btn-run" class="btn primary" disabled title="Run the whole file (F5, or Ctrl+Enter when the file has no %% sections)">
+        <svg class="ic"><use href="#i-play"/></svg><span>Run<span class="hide-md"> file</span></span>
+      </button>
+      <button id="btn-run-section" class="btn" disabled hidden title="Run the %% section that holds the cursor (Ctrl+Enter). Alt+Enter runs it and moves to the next one.">
+        <svg class="ic"><use href="#i-section"/></svg><span class="hide-sm">Run section</span>
       </button>
       <button id="btn-run-sel" class="btn" disabled title="Run the selected lines (Ctrl+Shift+Enter)">
-        <svg class="ic"><use href="#i-play-sel"/></svg><span class="hide-sm">Run selection</span>
+        <svg class="ic"><use href="#i-play-sel"/></svg><span class="hide-md">Run selection</span>
+      </button>
+      <button id="btn-step" class="btn" disabled aria-pressed="false" title="Step through: run the file, then walk through it line by line, forwards and backwards">
+        <svg class="ic"><use href="#i-step"/></svg><span class="hide-sm">Step through</span>
+      </button>
+      <button id="btn-publish" class="btn" disabled title="Publish report: run the file section by section and build a document with code, output and figures">
+        <svg class="ic"><use href="#i-report"/></svg><span class="hide-md">Publish</span>
       </button>
       <button id="btn-stop" class="btn danger" hidden title="Stop running code (restarts the engine)">
         <svg class="ic"><use href="#i-stop"/></svg><span>Stop</span>
@@ -80,6 +114,9 @@
     </button>
     <div class="spacer"></div>
     <div class="toolbar right">
+      <button id="btn-share" class="btn ghost" title="Share: make a link that contains this file or the whole project">
+        <svg class="ic"><use href="#i-link"/></svg><span class="hide-sm">Share</span>
+      </button>
       <button id="btn-ai" class="btn ghost" aria-pressed="false" title="Show the assistant panel">
         <svg class="ic"><use href="#i-spark"/></svg><span class="hide-sm">Assistant</span>
       </button>
@@ -98,31 +135,71 @@
   <main id="layout" class="layout">
     <!-- Files -->
     <aside id="files-panel" class="panel" aria-label="Files">
-      <div class="panel-head">
-        <h2>Files</h2>
+      <div class="panel-head files-head">
+        <button id="project-btn" class="project-btn" type="button" aria-haspopup="menu" title="Project">
+          <svg class="ic project-ic"><use href="#i-folder"/></svg>
+          <span id="project-name" class="project-name">My files</span>
+          <svg class="ic"><use href="#i-chevron"/></svg>
+        </button>
         <div class="panel-actions">
           <button id="btn-new" class="btn icon sm ghost" title="New file (Alt+N)" aria-label="New file"><svg class="ic"><use href="#i-plus"/></svg></button>
-          <button id="btn-import" class="btn icon sm ghost" title="Import .m files" aria-label="Import files"><svg class="ic"><use href="#i-upload"/></svg></button>
-          <button id="btn-zip" class="btn icon sm ghost" title="Download all files as .zip" aria-label="Download all as zip"><svg class="ic"><use href="#i-zip"/></svg></button>
+          <button id="btn-import" class="btn icon sm ghost" title="Add files from your computer (.m and data files)" aria-label="Import files"><svg class="ic"><use href="#i-upload"/></svg></button>
+          <button id="btn-zip" class="btn icon sm ghost" title="Download this project as .zip" aria-label="Download project as zip"><svg class="ic"><use href="#i-zip"/></svg></button>
         </div>
       </div>
-      <ul id="file-list" class="file-list" role="listbox" aria-label="Your files"></ul>
+      <div id="temp-banner" class="temp-banner" hidden>
+        <p id="temp-text" class="small"></p>
+        <div class="row">
+          <button id="temp-keep" class="btn sm primary" type="button">Keep a copy</button>
+          <button id="temp-close" class="btn sm ghost" type="button">Close</button>
+        </div>
+      </div>
+      <ul id="file-list" class="file-list" role="tree" aria-label="Files in this project"></ul>
       <div class="files-foot">
         <p id="storage-note" class="muted small">Files are saved in this browser.</p>
-        <p class="muted small">Drop <code>.m</code> files anywhere to import them.</p>
+        <p class="muted small">Drop files, a folder or a <code>.zip</code> anywhere to import.</p>
       </div>
-      <input id="file-input" type="file" accept=".m,.txt,.csv,.dat,.json" multiple hidden>
+      <input id="file-input" type="file" accept=".m,.txt,.csv,.tsv,.dat,.json,.md,.xml,.png,.jpg,.jpeg,.gif,.bmp,.mat" multiple hidden>
+      <input id="folder-input" type="file" webkitdirectory multiple hidden>
+      <input id="zip-input" type="file" accept=".zip,application/zip" hidden>
+      <input id="asg-file-input" type="file" accept=".json,application/json" hidden>
     </aside>
     <div class="gutter gutter-v" data-resize="files" role="separator" aria-orientation="vertical" aria-label="Resize files panel" tabindex="0"></div>
 
     <!-- Editor + command window -->
     <section id="center" class="center">
-      <div class="panel editor-panel">
-        <div class="tabs-row">
-          <div id="tabs" class="tabs" role="tablist" aria-label="Open files"></div>
-          <span id="save-state" class="save-state muted small" aria-live="polite"></span>
+      <div id="editor-row" class="editor-row">
+        <div class="panel editor-panel">
+          <div class="tabs-row">
+            <div id="tabs" class="tabs" role="tablist" aria-label="Open files"></div>
+            <span id="save-state" class="save-state muted small" aria-live="polite"></span>
+          </div>
+          <div id="step-bar" class="step-bar" role="toolbar" aria-label="Step through" hidden>
+            <div class="step-controls">
+              <button id="step-first" class="btn icon sm" type="button" title="First step (Home)" aria-label="First step"><svg class="ic"><use href="#i-first"/></svg></button>
+              <button id="step-back" class="btn icon sm" type="button" title="Step back (←)" aria-label="Step back"><svg class="ic"><use href="#i-back"/></svg></button>
+              <button id="step-fwd" class="btn icon sm primary" type="button" title="Step forward (→)" aria-label="Step forward"><svg class="ic"><use href="#i-fwd"/></svg></button>
+              <button id="step-last" class="btn icon sm" type="button" title="Last step (End)" aria-label="Last step"><svg class="ic"><use href="#i-last"/></svg></button>
+              <input id="step-slider" type="range" min="0" max="0" value="0" step="1" aria-label="Step">
+              <button id="step-prev-bp" class="btn icon sm" type="button" title="Back to the previous breakpoint" aria-label="Previous breakpoint"><svg class="ic bp"><use href="#i-bp-prev"/></svg></button>
+              <button id="step-next-bp" class="btn icon sm" type="button" title="Forward to the next breakpoint (click beside a line number to set one)" aria-label="Next breakpoint"><svg class="ic bp"><use href="#i-bp-next"/></svg></button>
+              <button id="step-exit" class="btn sm ghost" type="button" title="Leave step-through (Esc)"><svg class="ic"><use href="#i-close"/></svg>Done</button>
+            </div>
+            <div class="step-info" aria-live="polite"><strong id="step-count"></strong> <span id="step-where" class="muted"></span></div>
+            <div id="step-msg" class="step-msg" hidden></div>
+          </div>
+          <div id="editor" class="editor"></div>
         </div>
-        <div id="editor" class="editor"></div>
+        <div id="asg-gutter" class="gutter gutter-v" data-resize="asg" role="separator" aria-orientation="vertical" aria-label="Resize assignment panel" tabindex="0" hidden></div>
+        <aside id="asg-panel" class="panel asg-panel" aria-label="Assignment" hidden>
+          <div class="panel-head">
+            <h2><svg class="ic accent"><use href="#i-task"/></svg> Assignment</h2>
+            <div class="panel-actions">
+              <button id="asg-share" class="btn icon sm ghost" title="Copy a link to this assignment (for teachers)" aria-label="Copy a link to this assignment"><svg class="ic"><use href="#i-link"/></svg></button>
+            </div>
+          </div>
+          <div id="asg-body" class="asg-body"></div>
+        </aside>
       </div>
       <div class="gutter gutter-h" data-resize="console" role="separator" aria-orientation="horizontal" aria-label="Resize command window" tabindex="0"></div>
       <div class="panel console-panel" aria-label="Command window">
@@ -134,6 +211,11 @@
           </div>
         </div>
         <div id="console-out" class="console-out" role="log" aria-live="polite" tabindex="0"></div>
+        <div id="step-out-wrap" class="console-out step-out-wrap" hidden>
+          <div class="step-out-label">Output printed up to this step</div>
+          <pre id="step-out" class="step-out"></pre>
+          <div id="step-out-empty" class="info">Nothing has been printed yet at this step.</div>
+        </div>
         <div id="completions" class="completions" hidden></div>
         <form id="console-form" class="console-in" autocomplete="off">
           <label for="console-input" class="prompt">&gt;&gt;</label>
@@ -147,7 +229,7 @@
     <aside id="side" class="side">
       <div class="panel workspace-panel" aria-label="Workspace">
         <div class="panel-head">
-          <h2>Workspace</h2>
+          <h2 id="ws-title">Workspace</h2>
           <span id="var-count" class="muted small"></span>
         </div>
         <div class="table-wrap">
@@ -221,7 +303,150 @@
     </div>
   </main>
 
+  <footer class="footbar">
+    <span class="muted">mylab runs in your browser. Your code stays on this computer.</span>
+    <span class="spacer"></span>
+    <button id="foot-welcome" class="linklike" type="button">Getting started</button>
+    <button id="foot-about" class="linklike" type="button">About</button>
+    <a href="https://github.com/ghanemja/mylab/issues" target="_blank" rel="noopener">Report a problem</a>
+  </footer>
+
   <!-- Dialogs -->
+  <dialog id="dlg-welcome" class="dialog wide welcome">
+    <form method="dialog">
+      <h2><img src="favicon.svg" alt="" width="26" height="26" class="inline-logo"> Welcome to mylab</h2>
+      <p class="muted">Run MATLAB-language code right here in your browser. Free, nothing to install, no account. Pick a place to start:</p>
+      <div class="welcome-grid">
+        <button id="welcome-examples" type="button" class="welcome-card">
+          <svg class="ic"><use href="#i-play"/></svg>
+          <strong>Try the examples</strong>
+          <span>Open <code>welcome.m</code> and press Run. More examples are in the Files panel.</span>
+        </button>
+        <button id="welcome-step" type="button" class="welcome-card">
+          <svg class="ic"><use href="#i-step"/></svg>
+          <strong>Step through</strong>
+          <span>Watch a loop run line by line, forwards and backwards, and see each variable change.</span>
+        </button>
+        <button id="welcome-github" type="button" class="welcome-card">
+          <svg class="ic"><use href="#i-repo"/></svg>
+          <strong>Open from GitHub</strong>
+          <span>Paste the address of a public repository to open its <code>.m</code> and data files.</span>
+        </button>
+        <button id="welcome-assignment" type="button" class="welcome-card">
+          <svg class="ic"><use href="#i-task"/></svg>
+          <strong>Example assignment</strong>
+          <span>See how homework works: read a problem, write a function, check your answers.</span>
+        </button>
+      </div>
+      <p class="muted small">You can also drop your own files or a folder onto the page. Find this again under “Getting started” at the bottom of the page.</p>
+      <menu><button value="close" class="btn primary" id="welcome-close">Start coding</button></menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-share" class="dialog wide">
+    <form method="dialog">
+      <h2><svg class="ic accent"><use href="#i-link"/></svg> Share a link</h2>
+      <p class="muted small">The link contains the code itself. Nothing is uploaded: whoever opens the link gets a copy in their own browser and can run it.</p>
+      <div class="choice">
+        <label><input type="radio" name="share-scope" id="share-scope-file" value="file" checked> This file: <strong id="share-file-name"></strong></label>
+        <label><input type="radio" name="share-scope" id="share-scope-project" value="project"> The whole project: <strong id="share-project-name"></strong></label>
+      </div>
+      <label class="check"><input type="checkbox" id="share-run"> Run the code as soon as the link is opened</label>
+      <textarea id="share-link" class="share-link" rows="4" readonly spellcheck="false" aria-label="Link"></textarea>
+      <p id="share-length" class="muted small"></p>
+      <div id="share-warning" class="privacy small" hidden>
+        <strong>This link is long.</strong> Some chat and e-mail programs cut off links over about 8,000 characters. For bigger projects, put the files in a public
+        GitHub repository and share a link like <code>…#gh=owner/repository</code> instead (Project menu → Open from GitHub).
+      </div>
+      <p id="share-copied" class="small ok-text" role="status" hidden></p>
+      <menu>
+        <button value="close" class="btn ghost">Close</button>
+        <button id="share-copy" type="button" class="btn primary"><svg class="ic"><use href="#i-copy"/></svg>Copy link</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-github" class="dialog wide">
+    <form id="github-form">
+      <h2><svg class="ic accent"><use href="#i-repo"/></svg> Open from GitHub</h2>
+      <p class="muted small">Paste the address of a <strong>public</strong> repository, or of a folder inside one. mylab downloads its <code>.m</code> files and data files
+        (.csv, .txt, .json, .md, .png, .jpg, .mat) into a new project in this browser.</p>
+      <label class="field"><span>Repository address</span>
+        <input id="github-url" type="text" spellcheck="false" autocomplete="off" placeholder="https://github.com/owner/repository" required>
+      </label>
+      <label class="field"><span>Branch or tag <span class="muted">(optional; the default branch is used when empty)</span></span>
+        <input id="github-ref" type="text" spellcheck="false" autocomplete="off" placeholder="main">
+      </label>
+      <div id="github-progress" class="progress" hidden><div id="github-bar"></div></div>
+      <p id="github-status" class="small muted" role="status" hidden></p>
+      <p class="muted small">Tip for teachers: the link <code>…#gh=owner/repository/folder</code> opens a course repository in one click.</p>
+      <menu>
+        <button id="github-cancel" type="button" class="btn ghost">Cancel</button>
+        <button id="github-open" class="btn primary">Open</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-assignment" class="dialog wide">
+    <form method="dialog">
+      <h2><svg class="ic accent"><use href="#i-task"/></svg> Open an assignment</h2>
+      <p class="muted small">An assignment is a file your teacher made (with <code>mylab-grade export</code>). It holds the problems, starter files and tests.
+        Your work is saved in this browser, and opening the same assignment again never overwrites it.</p>
+      <div class="row">
+        <button id="asg-file-btn" type="button" class="btn"><svg class="ic"><use href="#i-upload"/></svg>Choose a file…</button>
+        <span class="muted small">or drop the <code>.json</code> file anywhere on the page</span>
+      </div>
+      <div id="asg-url-form" class="field" role="group" aria-label="Open from a web address">
+        <span>…or paste its web address</span>
+        <div class="row">
+          <input id="asg-url" type="url" spellcheck="false" autocomplete="off" placeholder="https://…/assignment.json">
+          <button id="asg-url-open" type="button" class="btn">Open</button>
+        </div>
+      </div>
+      <p id="asg-open-error" class="error-text small" role="alert" hidden></p>
+      <p class="small">New here? Try the <a id="asg-example" href="#assignment=samples/intro-assignment.json">Example assignment</a> (four problems) or the shorter <a href="#assignment=samples/first-steps.json">two-problem practice</a>.</p>
+      <menu><button value="close" class="btn ghost">Close</button></menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-report" class="dialog report-dialog">
+    <form method="dialog">
+      <div class="report-head">
+        <h2><svg class="ic accent"><use href="#i-report"/></svg> Report</h2>
+        <span id="report-summary" class="muted small"></span>
+        <span class="spacer"></span>
+        <label class="report-author small">Your name <input id="report-author" type="text" autocomplete="name" placeholder="optional"></label>
+      </div>
+      <iframe id="report-frame" class="report-frame" title="Report preview" sandbox="allow-same-origin allow-modals"></iframe>
+      <menu>
+        <button value="close" class="btn ghost">Close</button>
+        <button id="report-print" type="button" class="btn"><svg class="ic"><use href="#i-print"/></svg>Print / Save as PDF</button>
+        <button id="report-download" type="button" class="btn primary"><svg class="ic"><use href="#i-download"/></svg>Download HTML</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-viewer" class="dialog figure-dialog">
+    <form method="dialog">
+      <h2><span id="viewer-title"></span> <span id="viewer-meta" class="muted small"></span></h2>
+      <div id="viewer-body" class="viewer-body"></div>
+      <menu>
+        <button id="viewer-edit" type="button" class="btn ghost"><svg class="ic"><use href="#i-pencil"/></svg>Open in the editor</button>
+        <button id="viewer-download" type="button" class="btn ghost"><svg class="ic"><use href="#i-download"/></svg>Download</button>
+        <button value="close" class="btn primary">Close</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-summary" class="dialog wide">
+    <form method="dialog">
+      <h2 id="summary-title"></h2>
+      <p id="summary-text" class="muted small"></p>
+      <div id="summary-body" class="summary-body"></div>
+      <menu><button value="close" class="btn primary">OK</button></menu>
+    </form>
+  </dialog>
+
   <dialog id="dlg-prompt" class="dialog">
     <form method="dialog">
       <h2 id="prompt-title">Name</h2>
@@ -271,8 +496,13 @@
     <form method="dialog">
       <h2>Keyboard shortcuts</h2>
       <table class="keys">
-        <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Run the current file</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Run the section with the cursor (files with <code>%%</code> lines), otherwise the whole file</td></tr>
+        <tr><td><kbd>Alt</kbd>+<kbd>Enter</kbd></td><td>Run the section and move to the next one</td></tr>
+        <tr><td><kbd>F5</kbd></td><td>Run the whole file</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Run the selection (or the current line)</td></tr>
+        <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Step back / forward (while stepping through)</td></tr>
+        <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>First / last step; <kbd>Esc</kbd> leaves step-through</td></tr>
+        <tr><td>Click beside a line number</td><td>Set or remove a breakpoint</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save now (files also save automatically)</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Comment or uncomment lines</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>Space</kbd></td><td>Complete a name (editor)</td></tr>
@@ -362,7 +592,7 @@
     </form>
   </dialog>
 
-  <div id="drop-overlay" class="drop-overlay" hidden><div>Drop <code>.m</code> files to add them</div></div>
+  <div id="drop-overlay" class="drop-overlay" hidden><div>Drop files to add them, or a folder / <code>.zip</code> to open it as a project</div></div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 </body>
 </html>

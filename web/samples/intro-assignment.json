@@ -1,0 +1,103 @@
+{
+  "format": "mylab-assignment-1",
+  "title": "Intro Assignment: First Functions",
+  "description": "Four short problems to practise writing functions: arithmetic on arrays, `if` statements, loops, and reading a data file.\n\nFor each problem, complete the starter file. **Do not change the function name or its inputs and outputs.** Press *Check my answers* as often as you like. Your teacher may run extra tests when grading, so read each problem statement carefully.",
+  "problems": [
+    {
+      "id": "p1_celsius",
+      "title": "Celsius to Fahrenheit",
+      "points": 20,
+      "function": "c2f",
+      "prompt": "# Celsius to Fahrenheit\n\nWrite a function\n\n```matlab\nf = c2f(c)\n```\n\nthat converts temperatures from degrees Celsius to degrees Fahrenheit.\n\nTo convert, multiply by 9/5 and then add 32.\n\n- `c` may be a single number, a vector or a matrix.\n- `f` must have the same size as `c`, with every element converted.\n\n## Examples\n\n```matlab\n>> c2f(100)\nans =\n   212\n\n>> c2f([0 37 -40])\nans =\n   32.0000   98.6000  -40.0000\n```\n",
+      "starter": {
+        "c2f.m": "function f = c2f(c)\n% C2F  Convert degrees Celsius to degrees Fahrenheit.\n%   f = c2f(c) converts every element of c.\n\nf = [];   % replace this line with your code\n\nend\n"
+      },
+      "data": {},
+      "tests": [
+        {
+          "name": "Single temperatures",
+          "points": 8,
+          "code": "% name: Single temperatures\n% points: 8\nassert(abs(c2f(0) - 32) < 1e-9, 'c2f(0) should be 32 (water freezes)');\nassert(abs(c2f(100) - 212) < 1e-9, 'c2f(100) should be 212 (water boils)');\nassert(abs(c2f(-40) - (-40)) < 1e-9, 'c2f(-40) should be -40');\nassert(abs(c2f(37) - 98.6) < 1e-9, 'c2f(37) should be 98.6');\n"
+        },
+        {
+          "name": "A row of temperatures",
+          "points": 6,
+          "code": "% name: A row of temperatures\n% points: 6\nf = c2f([0 10 20 30]);\nassert(isequal(size(f), [1 4]), 'The output must have the same size as the input');\nassert(all(abs(f - [32 50 68 86]) < 1e-9), 'c2f([0 10 20 30]) should be [32 50 68 86]');\n"
+        }
+      ]
+    },
+    {
+      "id": "p2_ticket_price",
+      "title": "Museum ticket price",
+      "points": 25,
+      "function": "ticket_price",
+      "prompt": "# Museum ticket price\n\nA museum charges by age:\n\n| Age         | Price |\n|-------------|-------|\n| under 5     | 0     |\n| 5 to 17     | 6     |\n| 18 to 64    | 11    |\n| 65 and over | 8     |\n\nOn Mondays (`is_monday` is `true`) every ticket that costs money is 2 cheaper.\nFree tickets stay free.\n\nWrite a function\n\n```matlab\nprice = ticket_price(age, is_monday)\n```\n\n- `age` is a whole number, 0 or more.\n- `is_monday` is `true` or `false`.\n- `price` is the price of one ticket, as a number.\n\n## Examples\n\n```matlab\n>> ticket_price(30, false)\nans =\n    11\n\n>> ticket_price(12, true)\nans =\n     4\n\n>> ticket_price(3, true)\nans =\n     0\n```\n",
+      "starter": {
+        "ticket_price.m": "function price = ticket_price(age, is_monday)\n% TICKET_PRICE  Price of one museum ticket.\n%   price = ticket_price(age, is_monday)\n\nprice = -1;   % replace this line with your code (hint: use if / elseif / else)\n\nend\n"
+      },
+      "data": {},
+      "tests": [
+        {
+          "name": "Regular days",
+          "points": 10,
+          "code": "% name: Regular days\n% points: 10\nassert(isequal(ticket_price(2, false), 0), 'A 2-year-old gets in free');\nassert(isequal(ticket_price(10, false), 6), 'A 10-year-old pays 6');\nassert(isequal(ticket_price(30, false), 11), 'A 30-year-old pays 11');\nassert(isequal(ticket_price(70, false), 8), 'A 70-year-old pays 8');\n"
+        },
+        {
+          "name": "Monday discount",
+          "points": 8,
+          "code": "% name: Monday discount\n% points: 8\nassert(isequal(ticket_price(12, true), 4), 'On Monday a 12-year-old pays 6 - 2 = 4');\nassert(isequal(ticket_price(40, true), 9), 'On Monday a 40-year-old pays 11 - 2 = 9');\nassert(isequal(ticket_price(80, true), 6), 'On Monday an 80-year-old pays 8 - 2 = 6');\nassert(isequal(ticket_price(3, true), 0), 'A free ticket stays free on Monday');\n"
+        }
+      ]
+    },
+    {
+      "id": "p3_longest_streak",
+      "title": "Longest streak",
+      "points": 25,
+      "function": "longest_streak",
+      "prompt": "# Longest streak\n\nA weather station records `1` for every day with sunshine and `0` for every\nday without. A *streak* is a group of equal values next to each other.\n\nWrite a function\n\n```matlab\nn = longest_streak(v)\n```\n\nthat returns the length of the longest streak of equal values in the vector\n`v`.\n\n- `v` is a row or column vector of numbers (not only 0 and 1).\n- If `v` is empty, return `0`.\n- A single value on its own is a streak of length 1.\n\n## Examples\n\n```matlab\n>> longest_streak([1 1 0 1 1 1 0])\nans =\n     3\n\n>> longest_streak([4 4 4 4])\nans =\n     4\n\n>> longest_streak([7 8 9])\nans =\n     1\n```\n\nHint: walk through the vector with a `for` loop and count how long the\ncurrent streak is.\n",
+      "starter": {
+        "longest_streak.m": "function n = longest_streak(v)\n% LONGEST_STREAK  Length of the longest group of equal neighbours in v.\n\nn = -1;   % replace this line with your code\n\nend\n"
+      },
+      "data": {},
+      "tests": [
+        {
+          "name": "Examples from the problem statement",
+          "points": 10,
+          "code": "% name: Examples from the problem statement\n% points: 10\nassert(isequal(longest_streak([1 1 0 1 1 1 0]), 3), 'longest_streak([1 1 0 1 1 1 0]) should be 3');\nassert(isequal(longest_streak([4 4 4 4]), 4), 'longest_streak([4 4 4 4]) should be 4');\nassert(isequal(longest_streak([7 8 9]), 1), 'longest_streak([7 8 9]) should be 1');\n"
+        },
+        {
+          "name": "Empty vector and single value",
+          "points": 5,
+          "code": "% name: Empty vector and single value\n% points: 5\nassert(isequal(longest_streak([]), 0), 'An empty vector has no streak: the answer is 0');\nassert(isequal(longest_streak(5), 1), 'A single value is a streak of length 1');\n"
+        }
+      ]
+    },
+    {
+      "id": "p4_rain_summary",
+      "title": "Rain summary",
+      "points": 30,
+      "function": "rain_summary",
+      "prompt": "# Rain summary\n\nA text file holds the rainfall measured on each day of a period, in\nmillimetres. All the numbers are on one line, separated by commas, for\nexample the file `rain_week.csv`:\n\n```\n0,12.5,3,0,0,7.5,1\n```\n\nWrite a function\n\n```matlab\n[total, wettest_day, dry_days] = rain_summary(filename)\n```\n\nthat reads the file and returns:\n\n- `total`: the total rainfall (the sum of all values);\n- `wettest_day`: the number of the day with the most rain (the first day is\n  day 1). If several days share the highest value, return the earliest;\n- `dry_days`: a **row vector** with the numbers of the days that had no rain\n  at all (value 0), in increasing order. If there are none, it is empty.\n\n`filename` is text such as `'rain_week.csv'`. You can read the numbers with\n`readmatrix(filename)`.\n\n## Example\n\n```matlab\n>> [total, wettest_day, dry_days] = rain_summary('rain_week.csv')\ntotal =\n    24\nwettest_day =\n     2\ndry_days =\n     1     4     5\n```\n\nThe file `rain_week.csv` is provided so that you can try your function.\n",
+      "starter": {
+        "rain_summary.m": "function [total, wettest_day, dry_days] = rain_summary(filename)\n% RAIN_SUMMARY  Total rainfall, wettest day and dry days from a data file.\n\nrain = readmatrix(filename);   % the rainfall values as a row vector\n\ntotal = -1;         % replace these three lines with your code\nwettest_day = -1;\ndry_days = -1;\n\nend\n"
+      },
+      "data": {
+        "rain_twelve.csv": "4,0,9.5,2,9.5,0,0,1,6,0.5,3,8\n",
+        "rain_week.csv": "0,12.5,3,0,0,7.5,1\n",
+        "rain_wet.csv": "2,1.5,0.5,4\n"
+      },
+      "tests": [
+        {
+          "name": "Total rainfall",
+          "points": 8,
+          "code": "% name: Total rainfall\n% points: 8\ntotal = rain_summary('rain_week.csv');\nassert(abs(total - 24) < 1e-9, 'The total for rain_week.csv should be 24');\n"
+        },
+        {
+          "name": "Wettest day and dry days",
+          "points": 10,
+          "code": "% name: Wettest day and dry days\n% points: 10\n[total, wettest_day, dry_days] = rain_summary('rain_week.csv');\nassert(abs(total - 24) < 1e-9, 'The total for rain_week.csv should be 24');\nassert(isequal(wettest_day, 2), 'The wettest day in rain_week.csv is day 2');\nassert(isequal(dry_days, [1 4 5]), 'The dry days in rain_week.csv are [1 4 5]');\n"
+        }
+      ]
+    }
+  ]
+}

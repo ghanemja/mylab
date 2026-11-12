@@ -56,12 +56,32 @@ export class Engine extends EventTarget {
     return this.pending.size > 0;
   }
 
-  run(code, files) { return this.request("run", { code, files }); }
+  /** opts: { fs, cwd } - see worker.js */
+  run(code, opts = {}) { return this.request("run", { code, ...opts }); }
+  trace(code, opts = {}) { return this.request("trace", { code, ...opts }); }
+  publish(sections, opts = {}) { return this.request("publish", { sections, ...opts }); }
+  test(files, code) { return this.request("test", { files, code }); }
   variables() { return this.request("variables"); }
   showVariable(name) { return this.request("showVariable", { name }); }
   complete(prefix) { return this.request("complete", { prefix }); }
   help(name) { return this.request("help", { name }); }
   reset() { return this.request("reset"); }
+
+  /** Resolves when the engine is usable (again); rejects if loading fails. */
+  whenReady() {
+    if (this.ready) return Promise.resolve(this.info);
+    return new Promise((resolve, reject) => {
+      const done = (fn) => (e) => {
+        this.removeEventListener("ready", onReady);
+        this.removeEventListener("fatal", onFatal);
+        fn(e);
+      };
+      const onReady = done((e) => resolve(e.detail));
+      const onFatal = done((e) => reject(new Error(e.detail.error)));
+      this.addEventListener("ready", onReady);
+      this.addEventListener("fatal", onFatal);
+    });
+  }
 
   /** Kill the worker (stops running code) and start a fresh one. Workspace is lost. */
   restart() {

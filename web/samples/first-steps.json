@@ -1,0 +1,55 @@
+{
+  "format": "mylab-assignment-1",
+  "title": "First steps: two small functions",
+  "description": "A two-problem practice assignment that shows how assignments work in mylab.\n\nOpen each starter file, replace the placeholder line with your own code, then press **Check my answers**. You can check as often as you like.",
+  "problems": [
+    {
+      "id": "p1_rect_area",
+      "title": "Area of a rectangle",
+      "points": 4,
+      "function": "rect_area",
+      "prompt": "Write a function\n\n```matlab\na = rect_area(w, h)\n```\n\nthat returns the area of a rectangle with width `w` and height `h`.\n\n- `w` and `h` may be single numbers or arrays of the same size.\n- When they are arrays, return the area for each pair.\n\n| w | h | area |\n|---|---|------|\n| 3 | 4 | 12   |\n| 2.5 | 2 | 5  |\n",
+      "starter": {
+        "rect_area.m": "function a = rect_area(w, h)\n% RECT_AREA  Area of a rectangle with width w and height h.\n\na = 0;   % replace this line with your code\n\nend\n"
+      },
+      "data": {},
+      "tests": [
+        {
+          "name": "Whole numbers",
+          "points": 2,
+          "code": "% name: Whole numbers\n% points: 2\nassert(rect_area(3, 4) == 12, 'rect_area(3, 4) should be 12');\nassert(rect_area(1, 1) == 1, 'rect_area(1, 1) should be 1');\n"
+        },
+        {
+          "name": "Arrays of sizes",
+          "points": 2,
+          "code": "% name: Arrays of sizes\n% points: 2\na = rect_area([1 2 3], [4 5 6]);\nassert(isequal(a, [4 10 18]), 'rect_area([1 2 3], [4 5 6]) should be [4 10 18]');\n"
+        }
+      ]
+    },
+    {
+      "id": "p2_mean_score",
+      "title": "Average score from a file",
+      "points": 6,
+      "function": "mean_score",
+      "prompt": "The file `scores.csv` holds one row per student: a student number, then a score.\n\nWrite a function\n\n```matlab\nm = mean_score(filename)\n```\n\nthat reads the file and returns the average of the scores (the second column).\n\nHint: `readmatrix(filename)` returns the numbers in the file as a matrix.\n",
+      "starter": {
+        "mean_score.m": "function m = mean_score(filename)\n% MEAN_SCORE  Average of the scores in the second column of a CSV file.\n\nm = 0;   % replace this line with your code\n\nend\n"
+      },
+      "data": {
+        "scores.csv": "1,70\n2,85\n3,90\n4,55\n"
+      },
+      "tests": [
+        {
+          "name": "The class file",
+          "points": 3,
+          "code": "% name: The class file\n% points: 3\nm = mean_score('scores.csv');\nassert(abs(m - 75) < 1e-9, 'The average of the scores in scores.csv should be 75');\n"
+        },
+        {
+          "name": "Another file",
+          "points": 3,
+          "code": "% name: Another file\n% points: 3\nwritematrix([1 10; 2 20; 3 60], 'other.csv');\nm = mean_score('other.csv');\nassert(abs(m - 30) < 1e-9, 'For scores 10, 20 and 60 the average should be 30');\n"
+        }
+      ]
+    }
+  ]
+}
