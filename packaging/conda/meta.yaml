@@ -26,6 +26,7 @@ build:
     - mylab = mylab.cli:main
     - mylab-mcp = mylab.mcp_server:main
     - mylab-kernel = mylab.kernel:main
+    - mylab-grade = mylab.grader:main
     # Keep this list the same as [project.scripts] in pyproject.toml. If that
     # table has more commands (for example mylab-grade), copy them here.
 
