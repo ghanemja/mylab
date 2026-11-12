@@ -13,9 +13,13 @@ Several handles at once (e.g. ``plot`` drawing three lines) are returned as a
 
 from __future__ import annotations
 
+import io
 import math
 import os
 import re
+import sys
+import time
+import zlib
 from typing import Any, Callable
 
 import numpy as np
@@ -227,7 +231,7 @@ def _split_name_values(args, known: set[str]):
 
 
 _LINE_OPTS = {"linewidth", "color", "markersize", "displayname", "marker", "linestyle",
-              "markerfacecolor", "markeredgecolor", "visible"}
+              "markerfacecolor", "markeredgecolor", "visible", "tag", "userdata"}
 
 _MARKER_NAMES = {"circle": "o", "square": "s", "diamond": "d", "pentagram": "p", "hexagram": "h",
                  "none": "None", "plus": "+", "asterisk": "*", "point": ".", "cross": "x",
@@ -454,6 +458,14 @@ def _prep_xy(x: np.ndarray, y: np.ndarray):
     return x, y
 
 
+def _tag_lines(interp, lines: list, opts: dict, kind: str = "line") -> None:
+    """Apply the 'Tag' and 'UserData' options of a plotting call to the new objects."""
+    for key, name in (("tag", "Tag"), ("userdata", "UserData")):
+        if key in opts:
+            for ln in lines:
+                _wrap(interp, kind, ln).extra[name] = text(opts[key]) if key == "tag" else opts[key]
+
+
 def _redraw(interp):
     plt = _plt()
     if plt.isinteractive():
@@ -485,13 +497,16 @@ _CLASS = {
     "text": "matlab.graphics.primitive.Text", "legend": "matlab.graphics.illustration.Legend",
     "colorbar": "matlab.graphics.illustration.ColorBar", "pie": "matlab.graphics.primitive.Patch",
     "tiledlayout": "matlab.graphics.layout.TiledChartLayout",
+    "animatedline": "matlab.graphics.animation.AnimatedLine",
+    "rectangle": "matlab.graphics.primitive.Rectangle",
 }
 
 _TYPE = {"root": "root", "figure": "figure", "axes": "axes", "polaraxes": "polaraxes", "line": "line",
          "stair": "stair", "scatter": "scatter", "bar": "bar", "histogram": "histogram",
          "surface": "surface", "contour": "contour", "quiver": "quiver", "stem": "stem",
          "errorbar": "errorbar", "area": "area", "image": "image", "patch": "patch", "text": "text",
-         "legend": "legend", "colorbar": "colorbar", "pie": "patch", "tiledlayout": "tiledlayout"}
+         "legend": "legend", "colorbar": "colorbar", "pie": "patch", "tiledlayout": "tiledlayout",
+         "animatedline": "animatedline", "rectangle": "rectangle"}
 
 
 class _Root:
@@ -2067,6 +2082,12 @@ _PROPS: dict[str, dict] = {
     "patch": _PATCH_PROPS, "area": _PATCH_PROPS, "pie": _PATCH_PROPS, "image": _IMAGE_PROPS,
     "quiver": _QUIVER_PROPS, "stem": _STEM_PROPS, "errorbar": _ERRORBAR_PROPS, "tiledlayout": _LAYOUT_PROPS,
     "root": _ROOT_PROPS, "contour": {},
+    "animatedline": {**_LINE_PROPS,
+                     "MaximumNumPoints": (lambda h: _num_val(h.extra.get("MaximumNumPoints", np.inf)),
+                                          lambda h, v: h.extra.__setitem__("MaximumNumPoints", _scalar(v)))},
+    "rectangle": {**_PATCH_PROPS,
+                  "Position": (lambda h: _row(h.extra["Position"]), lambda h, v: _rect_update(h, position=v)),
+                  "Curvature": (lambda h: _row(h.extra["Curvature"]), lambda h, v: _rect_update(h, curvature=v))},
 }
 
 _IGNORED: dict[str, set] = {"axes": _AXES_IGNORED, "polaraxes": _AXES_IGNORED, "figure": _FIGURE_IGNORED,
@@ -2270,6 +2291,8 @@ def _isgraphics(interp, args, nargout):
                                                           and want in (None, "figure"))
             flags.append(ok)
         return np.array(flags, dtype=bool).reshape(v.shape, order="F")
+    if isinstance(v, MObject) and v.is_handle and want is None:  # waitbar, VideoWriter, user handles
+        return np.array([[not getattr(v, "_deleted", False)]])
     return np.array([[False]])
 
 
@@ -2286,6 +2309,7 @@ def _do_plot(interp, args, method: str, nargout: int):
         x, y = _prep_xy(x, y)
         fn = getattr(ax, method)
         lines.extend(fn(x, y, spec, **kw) if spec else fn(x, y, **kw))
+    _tag_lines(interp, lines, opts)
     _redraw(interp)
     return _ret(interp, "line", lines, nargout)
 
@@ -2337,6 +2361,7 @@ def _plot3(interp, args, nargout):
             lines.extend(ax.plot(xs, ys, zs, spec, **kw) if spec else ax.plot(xs, ys, zs, **kw))
     if not lines:
         raise MatlabError("plot3 needs x, y and z data.")
+    _tag_lines(interp, lines, opts)
     _redraw(interp)
     return _ret(interp, "line", lines, nargout)
 
@@ -2366,6 +2391,7 @@ def _line(interp, args, nargout):
         lines = ax.plot(np.asarray(X).flatten(), np.asarray(Y).flatten(), Z.flatten(), **kw)
     else:
         lines = ax.plot(X, Y, **kw)
+    _tag_lines(interp, lines, opts)
     _redraw(interp)
     return _ret(interp, "line", lines, nargout)
 
@@ -2776,6 +2802,17 @@ def _fill(interp, args, nargout):
 @builtin("patch")
 @_with_axes_arg
 def _patch(interp, args, nargout):
+    lead = []
+    for a in args:
+        if is_text(a):
+            break
+        lead.append(a)
+    names = {text(a).lower() for a in args[len(lead)::2] if is_text(a)}
+    if "faces" in names or "vertices" in names or "xdata" in names:
+        return _patch_named(interp, args[len(lead):], nargout)
+    if len(lead) >= 4 or (len(lead) == 3 and len(args) > 3 and _is_color_text(args[3])
+                          and np.asarray(lead[2]).size == np.asarray(lead[0]).size):
+        return _fill3_core(interp, args, nargout, fresh=False)
     return _fill_core(interp, args, nargout, patch=True)
 
 
@@ -2958,6 +2995,9 @@ def _surface(interp, args, kind: str, nargout: int):
         if "showtext" in opts and _onoff(opts["showtext"]):
             ax.clabel(cs, inline=True, fontsize=8)
         _redraw(interp)
+        ax._mylab_contour = cs
+        if nargout >= 2:  # [C, h] = contour(...)
+            return _contour_matrix(cs), _wrap(interp, "contour", cs)
         return _ret(interp, "contour", [cs], nargout)
     ax = _axes(interp, projection="3d")
     rc = min(Z.shape[0], 200)
@@ -4278,7 +4318,9 @@ def _annotation_arrow(fig, x, y, style, color, lw, s, fontsize):
 
 @builtin("drawnow", "shg", "refresh")
 def _drawnow(interp, args, nargout):
+    # Options such as 'limitrate', 'nocallbacks', 'update' and 'expose' are accepted.
     _redraw(interp)
+    _capture_frame(interp)
     return None
 
 
@@ -4398,3 +4440,1774 @@ def show_figures(interp, block: bool = True) -> None:
     if matplotlib.get_backend().lower() == "agg":
         return
     plt.show(block=block)
+
+
+# -- rendering figures to pixels ----------------------------------------------------------------
+
+_NONINTERACTIVE = {"agg", "pdf", "ps", "svg", "pgf", "cairo", "template"}
+
+
+def _noninteractive() -> bool:
+    """True when matplotlib draws off-screen (browser, Jupyter, MCP, ``--no-plots``)."""
+    import matplotlib
+    b = str(matplotlib.get_backend()).lower()
+    return b in _NONINTERACTIVE or "inline" in b
+
+
+def _render_rgb(fig, dpi: float | None = None) -> np.ndarray:
+    """The figure as an H x W x 3 uint8 image."""
+    dpi = float(dpi or fig.dpi)
+    buf = io.BytesIO()
+    fig.savefig(buf, format="rgba", dpi=dpi)
+    raw = buf.getvalue()
+    w_in, h_in = (float(v) for v in fig.get_size_inches())
+    total = len(raw) // 4
+    rgba = None
+    for w in (int(w_in * dpi), int(round(w_in * dpi)), int(w_in * dpi) + 1):
+        if w > 0 and total % w == 0 and abs(total // w - h_in * dpi) <= 2:
+            rgba = np.frombuffer(raw, dtype=np.uint8).reshape(total // w, w, 4)
+            break
+    if rgba is None:  # unusual canvas size: go through PNG, which records its own shape
+        from PIL import Image
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=dpi)
+        buf.seek(0)
+        rgba = np.asarray(Image.open(buf).convert("RGBA"))
+    alpha = rgba[..., 3:4]
+    if alpha.min() < 255:  # transparent figure background: show it on white
+        a = alpha.astype(np.float32) / 255.0
+        return (rgba[..., :3] * a + 255.0 * (1 - a)).astype(np.uint8)
+    return np.ascontiguousarray(rgba[..., :3])
+
+
+def _resize_rgb(a: np.ndarray, shape: tuple) -> np.ndarray:
+    if tuple(a.shape[:2]) == tuple(shape):
+        return a
+    from PIL import Image
+    return np.asarray(Image.fromarray(a, "RGB").resize((int(shape[1]), int(shape[0]))))
+
+
+def _write_gif(target, frames, durations_ms, loop: int = 0) -> None:
+    """Write RGB frames (an iterable of equal-sized uint8 arrays) as an animated GIF."""
+    from PIL import Image
+    fast = getattr(getattr(Image, "Quantize", Image), "FASTOCTREE", 2)
+    none = getattr(getattr(Image, "Dither", Image), "NONE", 0)
+
+    def palettised():
+        for a in frames:
+            yield Image.fromarray(np.ascontiguousarray(a), "RGB").quantize(colors=256, method=fast, dither=none)
+
+    it = palettised()
+    first = next(it)
+    if isinstance(durations_ms, (list, tuple)):
+        durations_ms = [max(20, int(round(d / 10.0)) * 10) for d in durations_ms]
+    else:
+        durations_ms = max(20, int(round(durations_ms / 10.0)) * 10)
+    first.save(target, format="GIF", save_all=True, append_images=it, duration=durations_ms, loop=loop,
+               disposal=1, optimize=False)
+
+
+# -- animation capture for front ends without a live window --------------------------------------
+#
+# In a non-interactive backend every drawnow / pause / getframe stores a snapshot of the current
+# figure in interp.state["animation"]. Session.run turns the snapshots of each figure into an
+# animated GIF (RunResult.animations). Set interp.state["animation_capture"] = False to turn it off.
+
+ANIM_MAX_FRAMES = 150
+ANIM_MAX_PIXELS = 60_000_000
+ANIM_MAX_WIDTH = 720
+ANIM_FRAME_SECONDS = 1.0 / 12.0
+ANIM_MAX_SECONDS = 20.0
+ANIM_RENDER_BUDGET = 5.0  # seconds spent drawing snapshots before they become rapidly sparser
+PAUSE_CAP_SECONDS = 0.05
+PAUSE_BUDGET_SECONDS = 2.0  # total real waiting per capture; later pauses return at once
+
+
+class _AnimCapture:
+    def __init__(self):
+        self.frames: dict[int, list[list]] = {}  # figure number -> [compressed RGB, (h, w), seconds, digest]
+        self.count = 0
+        self.pixels = 0
+        self.stride = 1  # keep one snapshot out of every `stride` requests
+        self.calls = 0
+        self.slept = 0.0
+        self.spent = 0.0
+
+    def thin(self) -> None:
+        """Drop every other frame so that a long animation still covers the whole run."""
+        self.count = self.pixels = 0
+        for n, fr in self.frames.items():
+            kept: list[list] = []
+            for i, f in enumerate(fr):
+                if i % 2 == 0 or i == len(fr) - 1:
+                    kept.append(f)
+                else:
+                    kept[-1][2] += f[2]
+            self.frames[n] = kept
+            self.count += len(kept)
+            self.pixels += sum(f[1][0] * f[1][1] for f in kept)
+        self.stride *= 2
+
+
+def _capture_frame(interp, seconds: float = 0.0) -> bool:
+    """Snapshot the current figure; returns True when animation capture is active."""
+    st = interp.state.get("plot")
+    if st is None or not st.figures or st.current not in st.figures:
+        return False
+    if interp.state.get("animation_capture") is False or not _noninteractive():
+        return False
+    cap = interp.state.get("animation")
+    if cap is None:
+        cap = interp.state["animation"] = _AnimCapture()
+    n = st.current
+    frames = cap.frames.setdefault(n, [])
+    cap.calls += 1
+    if frames and cap.calls % cap.stride:
+        frames[-1][2] += seconds
+        return True
+    t0 = time.perf_counter()
+    _snapshot(cap, n, st.figures[n], seconds)
+    cap.spent += time.perf_counter() - t0
+    if cap.count > ANIM_MAX_FRAMES or cap.pixels > ANIM_MAX_PIXELS:
+        cap.thin()
+    elif cap.spent > ANIM_RENDER_BUDGET:
+        cap.stride *= 2  # a long loop: keep following it, but with ever fewer snapshots
+    return True
+
+
+def _snapshot(cap: _AnimCapture, n: int, fig, seconds: float = 0.0) -> None:
+    frames = cap.frames.setdefault(n, [])
+    try:
+        rgb = _render_rgb(fig, min(float(fig.dpi), ANIM_MAX_WIDTH / max(float(fig.get_size_inches()[0]), 0.1)))
+    except Exception:  # a figure that cannot be drawn must not stop the script here
+        return
+    raw = rgb.tobytes()
+    digest = zlib.adler32(raw)
+    if frames and frames[-1][3] == digest and tuple(frames[-1][1]) == rgb.shape[:2]:
+        frames[-1][2] += seconds
+        return
+    frames.append([zlib.compress(raw, 1), rgb.shape[:2], float(seconds), digest])
+    cap.count += 1
+    cap.pixels += rgb.shape[0] * rgb.shape[1]
+
+
+def clear_animation(interp) -> None:
+    """Forget captured animation frames (Session.run calls this before each run)."""
+    interp.state.pop("animation", None)
+
+
+def animation_frame_counts(interp) -> dict:
+    """Number of frames captured so far, by figure number."""
+    cap = interp.state.get("animation")
+    return {n: len(f) for n, f in cap.frames.items()} if cap else {}
+
+
+def render_animations(interp, clear: bool = True) -> list:
+    """One animated GIF (bytes) per figure that captured at least two different frames."""
+    cap = interp.state.get("animation")
+    if clear:
+        interp.state.pop("animation", None)
+    if cap is None:
+        return []
+    st = interp.state.get("plot")
+    out = []
+    for n in sorted(cap.frames):
+        frames = cap.frames[n]
+        if len(frames) < 2:
+            continue
+        if cap.stride > 1 and st is not None and n in st.figures:
+            _snapshot(cap, n, st.figures[n])  # snapshots were skipped: end on the figure as it is now
+        shape = frames[0][1]
+        secs = [min(f[2], 2.0) if f[2] > 0 else ANIM_FRAME_SECONDS for f in frames]
+        total = sum(secs)
+        if total > ANIM_MAX_SECONDS:
+            secs = [s * ANIM_MAX_SECONDS / total for s in secs]
+        secs[-1] = max(secs[-1], 0.8)  # rest on the final picture before looping
+
+        def arrays(frames=frames, shape=shape):
+            for z, shp, _, _ in frames:
+                a = np.frombuffer(zlib.decompress(z), dtype=np.uint8).reshape(shp[0], shp[1], 3)
+                yield _resize_rgb(a, shape)
+
+        buf = io.BytesIO()
+        try:
+            _write_gif(buf, arrays(), [s * 1000.0 for s in secs])
+        except ImportError:  # Pillow is missing: no animations
+            return []
+        out.append(buf.getvalue())
+    return out
+
+
+@builtin("pause")
+def _pause(interp, args, nargout):
+    secs = 0.0
+    if args and not is_text(args[0]):
+        secs = float(num(args[0]).flat[0])
+        if not (np.isfinite(secs) and secs > 0):
+            secs = 0.0
+    st = interp.state.get("plot")
+    if st is None or not st.figures:  # nothing on screen: a plain wait
+        if secs:
+            time.sleep(min(secs, 3600))
+        return None
+    if args and is_text(args[0]):  # pause on / pause off
+        return None
+    if _capture_frame(interp, secs):
+        cap = interp.state.get("animation")
+        if secs and cap is not None and cap.slept < PAUSE_BUDGET_SECONDS and sys.platform != "emscripten":
+            nap = min(secs, PAUSE_CAP_SECONDS)  # nobody is watching a live window
+            cap.slept += nap
+            time.sleep(nap)
+        return None
+    plt = _plt()
+    if secs and not _noninteractive() and plt.isinteractive():
+        plt.pause(min(secs, 3600))  # keeps the window responsive
+    elif secs:
+        time.sleep(min(secs, 3600))
+    return None
+
+
+# -- frames and movies ---------------------------------------------------------------------------
+
+def _image_rgb(v, cmap=None) -> np.ndarray:
+    """A MATLAB image value (uint8/uint16/double/logical, gray, RGB or indexed) as H x W x 3 uint8."""
+    a = np.asarray(v)
+    if a.dtype == object or a.dtype.kind in "USc" or a.ndim not in (2, 3):
+        raise MatlabError("Expected an image: an H-by-W or H-by-W-by-3 numeric array.")
+    if cmap is not None and np.asarray(cmap).size:
+        m = np.real(fnum(cmap))
+        if m.ndim != 2 or m.shape[1] != 3:
+            raise MatlabError("A colormap must be an N-by-3 matrix.")
+        idx = a.astype(np.int64) if a.dtype.kind in "ub" else np.real(a).astype(np.int64) - 1
+        a = m[np.clip(idx.reshape(idx.shape[:2]), 0, m.shape[0] - 1)]
+    if a.ndim == 3 and a.shape[2] == 1:
+        a = a[:, :, 0]
+    if a.ndim == 3 and a.shape[2] != 3:
+        raise MatlabError("Expected an image: an H-by-W or H-by-W-by-3 numeric array.")
+    if a.dtype == np.uint8:
+        out = a
+    elif a.dtype == bool:
+        out = a.astype(np.uint8) * 255
+    elif a.dtype == np.uint16:
+        out = (a >> 8).astype(np.uint8)
+    elif a.dtype.kind in "iu":
+        out = np.clip(a, 0, 255).astype(np.uint8)
+    else:
+        out = (np.clip(np.nan_to_num(np.real(a)), 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+    if out.ndim == 2:
+        out = np.repeat(out[:, :, None], 3, axis=2)
+    return np.ascontiguousarray(out)
+
+
+def _frame_struct(cdata: np.ndarray, cmap=None) -> Struct:
+    return Struct.scalar({"cdata": cdata, "colormap": np.zeros((0, 0)) if cmap is None else cmap})
+
+
+def _frames_of(v) -> list:
+    """RGB frames from a frame struct (array), an image, or an H x W x C x N stack."""
+    if isinstance(v, Struct):
+        if "cdata" not in v.fields:
+            raise MatlabError("A movie frame must be a struct with the fields cdata and colormap.")
+        out = []
+        for i in range(v.numel()):
+            cd = v.get_field(i, "cdata")
+            if isinstance(cd, np.ndarray) and cd.size:
+                out.append(_image_rgb(cd, v.get_field(i, "colormap") if "colormap" in v.fields else None))
+        return out
+    if isinstance(v, np.ndarray) and v.ndim == 4:
+        return [_image_rgb(v[:, :, :, k]) for k in range(v.shape[3])]
+    return [_image_rgb(v)]
+
+
+@builtin("getframe")
+def _getframe(interp, args, nargout):
+    st = _state(interp)
+    target = args[0] if args else None
+    fig, ax = None, None
+    if isinstance(target, GraphicsArray) and target.items:
+        target = target.items[0]
+    if isinstance(target, GraphicsHandle):
+        if not _alive(target):
+            raise MatlabError("Invalid or deleted object.")
+        if target.kind == "figure":
+            fig = target.obj
+        elif target.kind in ("axes", "polaraxes"):
+            ax = target.obj
+        else:
+            ax = _obj_axes(target)
+            if ax is None:
+                raise MatlabError("getframe expects a figure or axes handle.")
+    elif target is not None:
+        hs = _resolve(interp, target)
+        fig = hs[0].obj if hs and hs[0].kind == "figure" else None
+        if fig is None:
+            raise MatlabError("getframe expects a figure or axes handle.")
+    else:
+        ax = _axes(interp, fresh=False)
+    whole = fig is not None
+    if fig is None:
+        fig = ax.figure
+    n = _fig_number(interp, fig)
+    if n is not None and st.current == n:
+        _redraw(interp)
+        _capture_frame(interp)
+    img = _render_rgb(fig)
+    H, W = img.shape[:2]
+    if not whole:
+        b = ax.get_position()
+        r0, r1 = int(round(H * (1 - b.y1))), int(round(H * (1 - b.y0)))
+        c0, c1 = int(round(W * b.x0)), int(round(W * b.x1))
+        r0, c0 = max(r0, 0), max(c0, 0)
+        if r1 > r0 and c1 > c0:
+            img = img[r0:r1, c0:c1]
+    if len(args) > 1 and isinstance(args[1], np.ndarray) and args[1].size == 4:  # [left bottom width height]
+        left, bottom, w, h = (int(round(float(x))) for x in np.real(fnum(args[1])).flatten())
+        hh = img.shape[0]
+        sub = img[max(hh - bottom - h, 0):max(hh - bottom, 0), max(left, 0):max(left + w, 0)]
+        if sub.size:
+            img = sub
+    return _frame_struct(np.ascontiguousarray(img))
+
+
+@builtin("frame2im")
+def _frame2im(interp, args, nargout):
+    if not args or not isinstance(args[0], Struct) or "cdata" not in args[0].fields:
+        raise MatlabError("frame2im expects a movie frame (a struct with the fields cdata and colormap).")
+    f = args[0]
+    cdata = f.get_field(0, "cdata")
+    cmap = f.get_field(0, "colormap") if "colormap" in f.fields else np.zeros((0, 0))
+    return (cdata, cmap) if nargout > 1 else cdata
+
+
+@builtin("im2frame")
+def _im2frame(interp, args, nargout):
+    if not args:
+        raise MatlabError("im2frame needs an image.")
+    x = args[0]
+    if not isinstance(x, np.ndarray) or is_char(x):
+        raise MatlabError("im2frame expects an image array.")
+    if len(args) > 1:
+        return _frame_struct(x, args[1])
+    if x.ndim == 3 and x.dtype != np.uint8:
+        x = _image_rgb(x)
+    return _frame_struct(x)
+
+
+@builtin("movie")
+def _movie(interp, args, nargout):
+    rest = [a for a in args if not isinstance(a, (GraphicsHandle, GraphicsArray))]
+    if not rest or not isinstance(rest[0], Struct):
+        raise MatlabError("movie expects an array of frames made by getframe or im2frame.")
+    frames = _frames_of(rest[0])
+    if not frames or _noninteractive():
+        return None  # off-screen: the frames were already recorded while they were drawn
+    times = int(abs(_scalar(rest[1]))) if len(rest) > 1 and np.asarray(rest[1]).size == 1 else 1
+    fps = _scalar(rest[2]) if len(rest) > 2 else 12.0
+    plt = _plt()
+    ax = _axes(interp)
+    ax.set_axis_off()
+    im = ax.imshow(frames[0], aspect="equal")
+    for _ in range(max(times, 1)):
+        for f in frames:
+            im.set_data(f)
+            plt.pause(1.0 / max(fps, 0.1))
+    return None
+
+
+def _find_ffmpeg() -> str | None:
+    """Path of an ffmpeg program, or None."""
+    import shutil
+    try:
+        import matplotlib
+        exe = shutil.which(matplotlib.rcParams.get("animation.ffmpeg_path", "ffmpeg") or "ffmpeg")
+    except Exception:
+        exe = None
+    exe = exe or shutil.which("ffmpeg")
+    if exe is None:
+        try:
+            import imageio_ffmpeg
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            exe = None
+    return exe
+
+
+_VIDEO_PROFILES = {"motion jpeg avi": ".avi", "mpeg-4": ".mp4", "uncompressed avi": ".avi", "archival": ".mj2",
+                   "motion jpeg 2000": ".mj2", "grayscale avi": ".avi", "indexed avi": ".avi"}
+
+
+class VideoWriterObject(MObject):
+    """VideoWriter: collects frames and encodes them when the file is closed."""
+
+    is_handle = True
+    _METHODS = ("open", "close", "writeVideo", "delete")
+    _SETTABLE = ("FrameRate", "Quality", "Colormap", "CompressionRatio", "LosslessCompression", "MJ2BitDepth")
+
+    def __init__(self, filename: str, profile: str | None):
+        prof = (profile or "").lower()
+        if profile is not None and prof not in _VIDEO_PROFILES:
+            raise MatlabError(f"Unknown VideoWriter profile '{profile}'. Use 'Motion JPEG AVI' or 'MPEG-4'.")
+        base, ext = os.path.splitext(filename)
+        if not ext:
+            ext = _VIDEO_PROFILES.get(prof, ".avi")
+            filename = base + ext
+        if profile is None:
+            profile = {".mp4": "MPEG-4", ".m4v": "MPEG-4", ".mj2": "Motion JPEG 2000"}.get(ext.lower(),
+                                                                                           "Motion JPEG AVI")
+        self.path = os.path.abspath(filename)
+        self.profile = profile
+        self.props: dict[str, Any] = {"FrameRate": 30.0, "Quality": 75.0}
+        self.count = 0
+        self.shape: tuple | None = None
+        self.is_open = False
+        self.closed = False
+        self.store = None
+        self.index: list[tuple[int, int]] = []
+        self.written: str | None = None  # file produced by close (may be a .gif fallback)
+
+    def class_name(self) -> str:
+        return "VideoWriter"
+
+    def isa_class(self, name: str) -> bool:
+        return name in ("VideoWriter", "handle")
+
+    def has_method(self, name: str) -> bool:
+        return name in self._METHODS
+
+    # properties ---------------------------------------------------------------------------
+    def get_field(self, interp, name: str) -> Any:
+        ext = os.path.splitext(self.path)[1].lower().lstrip(".")
+        fixed = {
+            "Filename": lambda: char(os.path.basename(self.path)),
+            "Path": lambda: char(os.path.dirname(self.path)),
+            "FrameCount": lambda: _num_val(self.count),
+            "Duration": lambda: _num_val(self.count / self.props["FrameRate"]),
+            "Width": lambda: _num_val(self.shape[1]) if self.shape else np.zeros((0, 0)),
+            "Height": lambda: _num_val(self.shape[0]) if self.shape else np.zeros((0, 0)),
+            "FileFormat": lambda: char(ext),
+            "VideoFormat": lambda: char("RGB24"),
+            "VideoBitsPerPixel": lambda: _num_val(24),
+            "ColorChannels": lambda: _num_val(3),
+            "VideoCompressionMethod": lambda: char({"mp4": "H.264", "gif": "GIF"}.get(ext, "Motion JPEG")),
+        }
+        for k, fn in fixed.items():
+            if k.lower() == name.lower():
+                return fn()
+        for k in self._SETTABLE:
+            if k.lower() == name.lower():
+                v = self.props.get(k, np.zeros((0, 0)))
+                return _num_val(v) if isinstance(v, float) else v
+        if self.has_method(name):
+            return super().get_field(interp, name)
+        raise MatlabError(f"Unrecognized property '{name}' for class 'VideoWriter'.")
+
+    def set_field(self, interp, name: str, value: Any) -> "VideoWriterObject":
+        for k in self._SETTABLE:
+            if k.lower() == name.lower():
+                if k in ("FrameRate", "Quality"):
+                    x = _scalar(value)
+                    if k == "FrameRate" and not (np.isfinite(x) and x > 0):
+                        raise MatlabError("FrameRate must be a positive number.")
+                    if k == "Quality" and not 0 <= x <= 100:
+                        raise MatlabError("Quality must be between 0 and 100.")
+                    self.props[k] = x
+                else:
+                    self.props[k] = value
+                return self
+        raise MatlabError(f"Unable to set the '{name}' property of class 'VideoWriter': it is read-only or "
+                          "does not exist.")
+
+    def display_lines(self) -> list[str]:
+        rows = [("Filename", f"'{os.path.basename(self.path)}'"), ("Path", f"'{os.path.dirname(self.path)}'"),
+                ("FrameRate", f"{self.props['FrameRate']:g}"), ("Quality", f"{self.props['Quality']:g}"),
+                ("FrameCount", str(self.count)),
+                ("Width", str(self.shape[1]) if self.shape else "[]"),
+                ("Height", str(self.shape[0]) if self.shape else "[]")]
+        return ["  VideoWriter with properties:", ""] + [f"    {k.rjust(10)}: {v}" for k, v in rows]
+
+    # methods ------------------------------------------------------------------------------
+    def call_method(self, interp, name: str, args: list, nargout: int) -> list:
+        rest = [a for a in args if a is not self]
+        if name == "open":
+            self.open()
+        elif name == "writeVideo":
+            if not rest:
+                raise MatlabError("writeVideo needs a frame, e.g. writeVideo(v, getframe(gcf)).")
+            self.write(rest[0])
+        elif name in ("close", "delete"):
+            self.close(interp)
+            if name == "delete":
+                self._deleted = True
+        else:
+            return super().call_method(interp, name, args, nargout)
+        return []
+
+    def open(self) -> None:
+        if self.is_open:
+            return
+        folder = os.path.dirname(self.path)
+        if not os.path.isdir(folder):
+            raise MatlabError(f"Cannot create the video file: the folder '{folder}' does not exist.")
+        import tempfile
+        self.store = tempfile.TemporaryFile()
+        self.index = []
+        self.count = 0
+        self.shape = None
+        self.is_open = True
+        self.closed = False
+
+    def write(self, value) -> None:
+        if not self.is_open:
+            raise MatlabError("The video file was already closed; create a new VideoWriter to write more frames."
+                              if self.closed else
+                              "The video file is not open. Call open(v) before writeVideo(v, frame).")
+        for f in _frames_of(value):
+            if self.shape is None:
+                self.shape = tuple(f.shape[:2])
+            f = _resize_rgb(f, self.shape)
+            z = zlib.compress(f.tobytes(), 1)
+            self.store.seek(0, os.SEEK_END)
+            self.index.append((self.store.tell(), len(z)))
+            self.store.write(z)
+            self.count += 1
+
+    def _frames(self):
+        h, w = self.shape
+        for off, size in self.index:
+            self.store.seek(off)
+            yield np.frombuffer(zlib.decompress(self.store.read(size)), dtype=np.uint8).reshape(h, w, 3)
+
+    def close(self, interp) -> None:
+        if not self.is_open:
+            return
+        self.is_open = False
+        self.closed = True
+        try:
+            if self.count:
+                self._encode(interp)
+        finally:
+            self.store.close()
+            self.store = None
+            self.index = []
+
+    def _encode(self, interp) -> None:
+        ext = os.path.splitext(self.path)[1].lower()
+        fps = float(self.props["FrameRate"])
+        target = self.path
+        if ext != ".gif":
+            exe = _find_ffmpeg()
+            if exe is not None and self._ffmpeg(exe, ext, fps):
+                self.written = target
+                return
+            target = os.path.splitext(self.path)[0] + ".gif"
+            why = "no ffmpeg program was found" if exe is None else "ffmpeg could not encode it"
+            interp.warn(f"Cannot write '{os.path.basename(self.path)}' because {why}. The animation was saved "
+                        f"as the animated GIF '{os.path.basename(target)}' instead.",
+                        "mylab:VideoWriter:gifFallback")
+        try:
+            _write_gif(target, self._frames(), 1000.0 / fps)
+        except OSError as e:
+            raise MatlabError(f"Cannot write '{target}': {e.strerror or e}") from e
+        self.written = target
+
+    def _ffmpeg(self, exe: str, ext: str, fps: float) -> bool:
+        import subprocess
+        h, w = self.shape
+        q = float(self.props["Quality"])
+        even = ["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]
+        qv = str(max(1, int(round(31 - q * 0.29))))
+        if ext in (".mp4", ".m4v", ".mov"):
+            attempts = [["-vcodec", "libx264", "-pix_fmt", "yuv420p", "-crf", str(int(round(40 - q * 0.3))), *even],
+                        ["-vcodec", "mpeg4", "-q:v", qv, *even]]
+        elif ext == ".avi" and self.profile.lower() == "uncompressed avi":
+            attempts = [["-vcodec", "rawvideo", "-pix_fmt", "bgr24"]]
+        elif ext == ".avi":
+            attempts = [["-vcodec", "mjpeg", "-pix_fmt", "yuvj420p", "-q:v", qv, *even]]
+        else:
+            attempts = [[]]
+        for codec in attempts:
+            cmd = [exe, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}",
+                   "-r", f"{fps:g}", "-i", "-", "-an", *codec, self.path]
+            try:
+                proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL)
+                try:
+                    for f in self._frames():
+                        proc.stdin.write(f.tobytes())
+                    proc.stdin.close()
+                except (BrokenPipeError, OSError):
+                    pass
+                if proc.wait(timeout=600) == 0 and os.path.isfile(self.path) and os.path.getsize(self.path) > 0:
+                    return True
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
+            try:
+                if os.path.isfile(self.path):
+                    os.remove(self.path)
+            except OSError:
+                pass
+        return False
+
+
+@builtin("VideoWriter")
+def _videowriter(interp, args, nargout):
+    if not args or not is_text(args[0]) or not text(args[0]):
+        raise MatlabError("VideoWriter needs a file name, e.g. v = VideoWriter('movie.avi').")
+    profile = text(args[1]) if len(args) > 1 else None
+    return VideoWriterObject(text(args[0]), profile)
+
+
+@builtin("writeVideo")
+def _writevideo(interp, args, nargout):
+    raise MatlabError("writeVideo expects a VideoWriter object as its first input.")
+
+
+@builtin("open")
+def _open(interp, args, nargout):
+    if not args or not is_text(args[0]):
+        raise MatlabError("open expects a VideoWriter object or a file name.")
+    name = text(args[0])
+    ext = os.path.splitext(name)[1].lower()
+    if ext == ".fig":
+        raise MatlabError(_FIG_ERROR)
+    if not os.path.exists(name):
+        raise MatlabError(f"File '{name}' not found.")
+    if ext == ".mat":
+        from ._registry import BUILTINS
+        return BUILTINS["load"](interp, [char(name)], 1)
+    interp.warn(f"open: '{name}' was not opened; mylab has no editor or viewer windows.")
+    return None
+
+
+# -- animated lines -------------------------------------------------------------------------------
+
+@builtin("animatedline")
+@_with_axes_arg
+def _animatedline(interp, args, nargout):
+    args = list(args)
+    nums = []
+    while args and not is_text(args[0]):
+        nums.append(np.real(fnum(args.pop(0))).flatten())
+    args, opts = _split_name_values(args, _LINE_OPTS | {"maximumnumpoints"})
+    if args:
+        raise MatlabError(f"Invalid argument to animatedline: '{text(args[0]) if is_text(args[0]) else args[0]}'.")
+    maxpts = opts.pop("maximumnumpoints", None)
+    ax = _axes(interp, fresh=False)
+    if len(nums) >= 3 and not hasattr(ax, "get_zlim"):
+        ax = _axes(interp, fresh=False, projection="3d")
+    kw = _mpl_kwargs(opts)
+    kw.setdefault("color", "k")
+    x = nums[0] if nums else np.zeros(0)
+    y = nums[1] if len(nums) > 1 else np.zeros(0)
+    if hasattr(ax, "get_zlim"):
+        line = ax.plot(x, y, nums[2] if len(nums) >= 3 else np.zeros(x.size), **kw)[0]
+    else:
+        line = ax.plot(x, y, **kw)[0]
+    h = _wrap(interp, "animatedline", line)
+    _tag_lines(interp, [line], opts, "animatedline")
+    if maxpts is not None:
+        h.extra["MaximumNumPoints"] = _scalar(maxpts)
+    _redraw(interp)
+    return h if nargout > 0 else None
+
+
+def _aline(args, name: str) -> GraphicsHandle:
+    if not args or not isinstance(args[0], GraphicsHandle) or args[0].kind != "animatedline":
+        raise MatlabError(f"{name} expects an animatedline object as its first input.")
+    if not _alive(args[0]):
+        raise MatlabError("Invalid or deleted object.")
+    return args[0]
+
+
+def _aline_data(h) -> list:
+    line = h.obj
+    vals = line.get_data_3d() if hasattr(line, "get_data_3d") else line.get_data()
+    return [np.asarray(v, dtype=float).flatten() for v in vals]
+
+
+def _aline_set(h, data: list, new: list | None = None) -> None:
+    """Store the points of an animated line and grow the axes limits (``new``: only these were added)."""
+    line = h.obj
+    ax = line.axes
+    if hasattr(line, "set_data_3d"):
+        line.set_data_3d(*data)
+        if ax is None or not all(d.size for d in data):
+            return
+        for d, setlim, auto in ((data[0], ax.set_xlim, ax.get_autoscalex_on()),
+                                (data[1], ax.set_ylim, ax.get_autoscaley_on()),
+                                (data[2], ax.set_zlim, ax.get_autoscalez_on())):
+            d = d[np.isfinite(d)]
+            if auto and d.size:
+                lo, hi = float(d.min()), float(d.max())
+                if lo == hi:
+                    lo, hi = lo - 0.5, hi + 0.5
+                setlim(lo, hi, auto=True)
+        return
+    line.set_data(*data[:2])
+    if ax is None:
+        return
+    if new is None:
+        ax.relim()
+    else:
+        pts = np.column_stack(new[:2])
+        pts = pts[np.all(np.isfinite(pts), axis=1)]
+        if pts.size:
+            ax.dataLim.update_from_data_xy(pts, ignore=False)
+    ax.autoscale_view()
+
+
+@builtin("addpoints")
+def _addpoints(interp, args, nargout):
+    h = _aline(args, "addpoints")
+    new = [np.real(fnum(a)).flatten() for a in args[1:]]
+    old = _aline_data(h)
+    if len(new) < 2 or len(new) != len(old):
+        need = "x, y and z" if len(old) == 3 else "x and y"
+        raise MatlabError(f"addpoints needs {need} values for this line.")
+    if len({v.size for v in new}) != 1:
+        raise MatlabError("addpoints: the coordinate vectors must have the same length.")
+    data = [np.concatenate([o, v]) for o, v in zip(old, new)]
+    limit = h.extra.get("MaximumNumPoints", np.inf)
+    if np.isfinite(limit) and data[0].size > limit:
+        _aline_set(h, [d[-int(limit):] for d in data])
+    else:
+        _aline_set(h, data, new=new)
+    return None
+
+
+@builtin("clearpoints")
+def _clearpoints(interp, args, nargout):
+    h = _aline(args, "clearpoints")
+    _aline_set(h, [np.zeros(0)] * len(_aline_data(h)))
+    return None
+
+
+@builtin("getpoints")
+def _getpoints(interp, args, nargout):
+    h = _aline(args, "getpoints")
+    data = [_row(d) for d in _aline_data(h)]
+    return tuple(data[:nargout]) if nargout > 1 else data[0]
+
+
+# -- axes, rectangles and finding objects ----------------------------------------------------------
+
+def _name_values(args, fname: str) -> list:
+    """[(name, value), ...] from trailing Name,Value arguments."""
+    if len(args) % 2 or not all(is_text(a) for a in args[::2]):
+        raise MatlabError(f"{fname} options must be name/value pairs.")
+    return [(text(args[i]), args[i + 1]) for i in range(0, len(args), 2)]
+
+
+def _apply_props(h: GraphicsHandle, pairs: list) -> None:
+    for name, value in pairs:
+        key, _ = _lookup(h, name)
+        if key is None:
+            h.extra[name] = value  # unknown options are remembered but have no effect
+        else:
+            _set_prop(h, name, value)
+
+
+@builtin("axes")
+def _axes_b(interp, args, nargout):
+    st = _state(interp)
+    args = list(args)
+    fig = None
+    if args and isinstance(args[0], GraphicsHandle):
+        h = args.pop(0)
+        if not _alive(h):
+            raise MatlabError("Invalid or deleted object.")
+        if h.kind in ("axes", "polaraxes") and not args:  # axes(ax): make it current
+            n = _fig_number(interp, h.obj.figure)
+            _figure(interp, n)
+            st.axes[n] = h.obj
+            return h if nargout > 0 else None
+        if h.kind != "figure":
+            raise MatlabError("axes expects an axes handle, a figure handle or name/value pairs.")
+        fig = h.obj
+    pairs = _name_values(args, "axes")
+    units, pos, rest = "normalized", None, []
+    for name, value in pairs:
+        low = name.lower()
+        if low == "parent":
+            hs = _handles_of(value) or _resolve(interp, value)
+            fig = hs[0].obj if hs[0].kind == "figure" else _obj_figure(hs[0])
+        elif low == "units":
+            units = text(value).lower()
+        elif low in ("position", "outerposition", "innerposition"):
+            pos = np.real(fnum(value)).flatten()
+            if pos.size != 4 or pos[2] <= 0 or pos[3] <= 0:
+                raise MatlabError("Position must be [left bottom width height] with a positive width and height.")
+        else:
+            rest.append((name, value))
+    if fig is None:
+        fig = _figure(interp)
+    n = _fig_number(interp, fig)
+    if n is None:
+        raise MatlabError("Invalid or deleted object.")
+    if pos is None:
+        rect = [0.13, 0.11, 0.775, 0.815]
+    else:
+        rect = [float(x) for x in pos]
+        if units == "pixels" or (units == "normalized" and max(rect) > 2):
+            w, h_px = fig.get_size_inches() * fig.dpi
+            rect = [rect[0] / w, rect[1] / h_px, rect[2] / w, rect[3] / h_px]
+    st.counter = getattr(st, "counter", 0) + 1
+    ax = fig.add_axes(rect, label=f"mylab-axes-{st.counter}")
+    _figure(interp, n)
+    st.axes[n] = ax
+    h = _wrap(interp, "axes", ax)
+    h.extra["Units"] = units
+    _apply_props(h, rest)
+    _redraw(interp)
+    return h if nargout > 0 else None
+
+
+def _rect_path(pos, curv):
+    from matplotlib.path import Path
+    x, y, w, h = (float(v) for v in pos)
+    rx, ry = float(curv[0]) * w / 2.0, float(curv[1]) * h / 2.0
+    if rx <= 0 or ry <= 0:
+        return Path([(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)], closed=True)
+    verts, codes = [], []
+    for cx, cy, a0 in ((x + w - rx, y + ry, 270), (x + w - rx, y + h - ry, 0), (x + rx, y + h - ry, 90),
+                       (x + rx, y + ry, 180)):
+        arc = Path.arc(a0, a0 + 90)
+        v = arc.vertices * [rx, ry] + [cx, cy]
+        c = arc.codes.copy()
+        if verts:
+            c[0] = Path.LINETO
+        verts.extend(v.tolist())
+        codes.extend(c.tolist())
+    verts.append(verts[0])
+    codes.append(Path.CLOSEPOLY)
+    return Path(verts, codes)
+
+
+def _rect_curvature(v, pos) -> np.ndarray:
+    c = np.clip(np.real(fnum(v)).flatten(), 0.0, 1.0)
+    if c.size == 1:  # one number rounds the corners with circles sized from the shorter side
+        r = float(c[0]) * min(pos[2], pos[3]) / 2.0
+        return np.array([2 * r / pos[2] if pos[2] else 0.0, 2 * r / pos[3] if pos[3] else 0.0])
+    if c.size != 2:
+        raise MatlabError("Curvature must be a number or a two-element vector with values from 0 to 1.")
+    return c
+
+
+def _rect_position(v) -> np.ndarray:
+    p = np.real(fnum(v)).flatten()
+    if p.size != 4 or p[2] < 0 or p[3] < 0:
+        raise MatlabError("Position must be [x y width height] with a non-negative width and height.")
+    return p
+
+
+def _rect_update(h, position=None, curvature=None) -> None:
+    if position is not None:
+        h.extra["Position"] = _rect_position(position)
+    if curvature is not None:
+        h.extra["Curvature"] = _rect_curvature(curvature, h.extra["Position"])
+    h.obj.set_path(_rect_path(h.extra["Position"], h.extra["Curvature"]))
+    ax = h.obj.axes
+    if ax is not None:
+        ax.relim()
+        ax.autoscale_view()
+
+
+@builtin("rectangle")
+@_with_axes_arg
+def _rectangle(interp, args, nargout):
+    from matplotlib.patches import PathPatch
+    pairs = _name_values(list(args), "rectangle")
+    pos, curv, rest = np.array([0.0, 0.0, 1.0, 1.0]), [0.0, 0.0], []
+    kw: dict = {"facecolor": "none", "edgecolor": "k", "linewidth": 0.5}
+    parent = None
+    for name, value in pairs:
+        low = name.lower()
+        if low == "position":
+            pos = _rect_position(value)
+        elif low == "curvature":
+            curv = value
+        elif low in ("facecolor", "edgecolor"):
+            kw[low] = _color(value)
+        elif low == "linewidth":
+            kw["linewidth"] = _scalar(value)
+        elif low == "linestyle":
+            kw["linestyle"] = _mpl_linestyle(text(value))
+        elif low == "facealpha":
+            kw["alpha"] = _scalar(value)
+        elif low == "parent":
+            hs = _handles_of(value)
+            parent = _obj_axes(hs[0]) if hs else None
+        else:
+            rest.append((name, value))
+    ax = parent if parent is not None else _axes(interp, fresh=False)
+    curv = _rect_curvature(curv, pos)
+    patch = PathPatch(_rect_path(pos, curv), **kw)
+    ax.add_patch(patch)
+    ax.autoscale_view()
+    h = _wrap(interp, "rectangle", patch)
+    h.extra.update({"Position": pos, "Curvature": curv, "axes": ax, "figure": ax.figure})
+    _apply_props(h, rest)
+    _redraw(interp)
+    return h if nargout > 0 else None
+
+
+def _handle_list(hs: list):
+    """A list of handles as a MATLAB value (empty, one handle, or a column of handles)."""
+    if not hs:
+        return np.zeros((0, 0))
+    return hs[0] if len(hs) == 1 else GraphicsArray(hs)
+
+
+_CONTAINER_KINDS = ("bar", "errorbar", "stem", "histogram", "pie", "patch", "area")
+
+
+def _child_handles(interp, h: GraphicsHandle) -> list:
+    """Children of a handle, including charts that are groups of matplotlib artists."""
+    kids = _handles_of(_children_get(h)) if h.kind in ("root", "figure", "axes", "polaraxes") else []
+    if h.kind == "figure":
+        for ax in h.obj.axes:
+            leg = ax.get_legend()
+            if leg is not None:
+                kids.append(_wrap(interp, "legend", leg))
+            cb = getattr(ax, "_mylab_colorbar", None)
+            if cb is not None:
+                kids.append(_wrap(interp, "colorbar", cb))
+    elif h.kind in ("axes", "polaraxes"):
+        ax = h.obj
+        groups = [g for g in list(_state(interp).handles.values())
+                  if g.kind in _CONTAINER_KINDS + ("rectangle",) and not g.extra.get("deleted")
+                  and _obj_axes(g) is ax]
+        owned = {id(a) for g in groups for a in _artists(g.obj)}
+        kids = [k for k in kids if id(k.obj) not in owned or k in groups]
+        kids += [g for g in groups if g not in kids]
+    return kids
+
+
+def _prop_matches(h: GraphicsHandle, name: str, want, regexp: bool) -> bool:
+    try:
+        have = _get_prop(h, name)
+    except (MatlabError, ValueError, TypeError, AttributeError, IndexError, KeyError):
+        return False
+    if is_text(want):
+        if not is_text(have):
+            return False
+        a, b = text(have), text(want)
+        if regexp:
+            return re.search(b, a) is not None
+        return a.lower() == b.lower() if name.lower() == "type" else a == b
+    if isinstance(want, (GraphicsHandle, GraphicsArray)):
+        return have is want
+    if isinstance(want, np.ndarray) and isinstance(have, np.ndarray) and not is_char(have):
+        try:
+            return bool(np.array_equal(np.asarray(have, dtype=float).flatten(),
+                                       np.asarray(want, dtype=float).flatten()))
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def _find_objects(interp, args) -> list:
+    args = list(args)
+    st = _state(interp)
+    if args and not is_text(args[0]):
+        first = args.pop(0)
+        if isinstance(first, np.ndarray) and first.size == 0:
+            return []
+        roots = _resolve(interp, first)
+    else:
+        roots = [_wrap(interp, "root", _ROOT)]
+    depth = math.inf
+    conds: list = []  # (operator, negate, kind, name, value)
+    op, negate, regexp = "and", False, False
+    k = 0
+    while k < len(args):
+        if not is_text(args[k]):
+            raise MatlabError("findobj expects property names followed by values.")
+        s = text(args[k])
+        low = s.lower()
+        if low == "flat":
+            depth = 0
+        elif low == "-depth":
+            if k + 1 >= len(args):
+                raise MatlabError("findobj: '-depth' needs a number.")
+            depth = _scalar(args[k + 1])
+            k += 1
+        elif low in ("-and", "-or", "-xor"):
+            op = low[1:]
+        elif low == "-not":
+            negate = True
+        elif low == "-regexp":
+            regexp = True
+        elif low in ("-property", "-isa", "-function", "-class"):
+            if k + 1 >= len(args):
+                raise MatlabError(f"findobj: '{s}' needs a value.")
+            conds.append((op, negate, low, None, args[k + 1]))
+            op, negate = "and", False
+            k += 1
+        else:
+            if k + 1 >= len(args):
+                raise MatlabError("findobj expects property names followed by values.")
+            conds.append((op, negate, "regexp" if regexp else "value", s, args[k + 1]))
+            op, negate = "and", False
+            k += 1
+        k += 1
+
+    found: list = []
+    seen: set = set()
+
+    def visit(h, d):
+        if id(h) in seen:
+            return
+        seen.add(id(h))
+        found.append(h)
+        if d < depth:
+            for c in _child_handles(interp, h):
+                visit(c, d + 1)
+
+    for r in roots:
+        visit(r, 0)
+    del st
+
+    def test(h, cond) -> bool:
+        _, neg, kind, name, value = cond
+        if kind == "-property":
+            ok = _lookup(h, text(value))[0] is not None
+        elif kind in ("-isa", "-class"):
+            ok = h.isa_class(text(value))
+        elif kind == "-function":
+            res = interp.call_function_value(value, [h], 1)
+            ok = bool(res and np.all(np.asarray(res[0])))
+        else:
+            ok = _prop_matches(h, name, value, kind == "regexp")
+        return ok != neg
+
+    out = []
+    for h in found:
+        result = True
+        for i, cond in enumerate(conds):
+            t = test(h, cond)
+            if i == 0:
+                result = t
+            elif cond[0] == "or":
+                result = result or t
+            elif cond[0] == "xor":
+                result = result != t
+            else:
+                result = result and t
+        if result:
+            out.append(h)
+    return out
+
+
+@builtin("findobj", "findall")
+def _findobj(interp, args, nargout):
+    return _handle_list(_find_objects(interp, args))
+
+
+@builtin("allchild")
+def _allchild(interp, args, nargout):
+    if not args:
+        raise MatlabError("allchild needs a graphics handle.")
+    out = []
+    for h in _resolve(interp, args[0]):
+        out.extend(_child_handles(interp, h))
+    return _handle_list(out)
+
+
+@builtin("ancestor")
+def _ancestor(interp, args, nargout):
+    if len(args) < 2:
+        raise MatlabError("ancestor needs a handle and a type, e.g. ancestor(h, 'figure').")
+    if isinstance(args[0], np.ndarray) and args[0].size == 0:
+        return np.zeros((0, 0))
+    types = {t.lower() for t in _text_list(args[1])}
+    top = len(args) > 2 and is_text(args[2]) and text(args[2]).lower() == "toplevel"
+    cur = _resolve(interp, args[0])[0]
+    match = None
+    while isinstance(cur, GraphicsHandle):
+        if _TYPE.get(cur.kind, cur.kind) in types:
+            match = cur
+            if not top:
+                break
+        cur = _parent_get(cur)
+    return match if match is not None else np.zeros((0, 0))
+
+
+# -- application data ---------------------------------------------------------------------------
+
+_GUIDATA_KEY = "\0guidata"
+
+
+def _appdata(interp, v) -> dict:
+    hs = _resolve(interp, v)
+    if not hs:
+        raise MatlabError("Expected a graphics handle.")
+    h = hs[0]
+    if h.kind == "root":  # survives 'close all'
+        return interp.state.setdefault("root_appdata", {})
+    if not _alive(h):
+        raise MatlabError("Invalid or deleted object.")
+    return h.extra.setdefault("_appdata", {})
+
+
+@builtin("setappdata")
+def _setappdata(interp, args, nargout):
+    if len(args) != 3:
+        raise MatlabError("setappdata needs a handle, a name and a value.")
+    _appdata(interp, args[0])[text(args[1], "name")] = args[2]
+    return None
+
+
+@builtin("getappdata")
+def _getappdata(interp, args, nargout):
+    if not args:
+        raise MatlabError("getappdata needs a graphics handle.")
+    data = _appdata(interp, args[0])
+    if len(args) == 1:
+        return Struct.scalar({k: v for k, v in data.items() if k != _GUIDATA_KEY and k.isidentifier()})
+    return data.get(text(args[1], "name"), np.zeros((0, 0)))
+
+
+@builtin("isappdata")
+def _isappdata(interp, args, nargout):
+    if len(args) != 2:
+        raise MatlabError("isappdata needs a handle and a name.")
+    return np.array([[text(args[1], "name") in _appdata(interp, args[0])]])
+
+
+@builtin("rmappdata")
+def _rmappdata(interp, args, nargout):
+    if len(args) != 2:
+        raise MatlabError("rmappdata needs a handle and a name.")
+    name = text(args[1], "name")
+    data = _appdata(interp, args[0])
+    if name not in data:
+        raise MatlabError(f"Application data '{name}' does not exist.")
+    del data[name]
+    return None
+
+
+@builtin("guidata")
+def _guidata(interp, args, nargout):
+    if not args:
+        raise MatlabError("guidata needs a graphics handle.")
+    h = _resolve(interp, args[0])[0]
+    while isinstance(h, GraphicsHandle) and h.kind not in ("figure", "root"):
+        h = _parent_get(h)
+    if not isinstance(h, GraphicsHandle):
+        raise MatlabError("guidata: the object is not inside a figure.")
+    data = _appdata(interp, h)
+    if len(args) > 1:
+        data[_GUIDATA_KEY] = args[1]
+        return None
+    return data.get(_GUIDATA_KEY, np.zeros((0, 0)))
+
+
+# -- colour limits, aspect ratios and accepted-but-ignored commands -----------------------------------
+
+@builtin("caxis", "clim")
+@_with_axes_arg
+def _caxis(interp, args, nargout):
+    ax = _axes(interp, fresh=False)
+    h = _wrap(interp, _axes_kind(ax), ax)
+    if args:
+        if is_text(args[0]):
+            mode = text(args[0]).lower()
+            if mode == "auto":
+                for m in _mappables(ax):
+                    m.autoscale()
+            elif mode not in ("manual", "tight", "padded", "tickaligned"):
+                raise MatlabError("caxis expects [cmin cmax], 'auto' or 'manual'.")
+        else:
+            lim = np.real(fnum(args[0])).flatten()
+            if lim.size != 2 or not lim[0] < lim[1]:
+                raise MatlabError("Color limits must be a two-element vector [cmin cmax] with cmin < cmax.")
+            _clim_set(h, lim)
+        _redraw(interp)
+    return _clim_get(h) if nargout > 0 or not args else None
+
+
+def _aspect(interp, args, nargout, which: str):
+    ax = _axes(interp, fresh=False)
+    attr = f"_mylab_{which}"
+    if args:
+        if is_text(args[0]):
+            mode = text(args[0]).lower()
+            if mode == "mode":
+                return char("manual" if getattr(ax, attr, None) is not None else "auto")
+            if mode == "auto":
+                setattr(ax, attr, None)
+                if which == "daspect":
+                    ax.set_aspect("auto")
+                elif not hasattr(ax, "get_zlim"):
+                    ax.set_box_aspect(None)
+            elif mode != "manual":
+                raise MatlabError(f"{which} expects a vector such as [1 1 1], 'auto' or 'manual'.")
+        else:
+            v = np.real(fnum(args[0])).flatten()
+            if v.size == 2:
+                v = np.append(v, 1.0)
+            if v.size != 3 or np.any(v <= 0) or not np.all(np.isfinite(v)):
+                raise MatlabError(f"{which} expects three positive numbers, e.g. {which}([1 1 1]).")
+            setattr(ax, attr, v)
+            three_d = hasattr(ax, "get_zlim")
+            if which == "daspect":
+                if not three_d:
+                    ax.set_aspect(float(v[0] / v[1]), adjustable="box")
+                elif v[0] == v[1] == v[2]:
+                    try:
+                        ax.set_aspect("equal")
+                    except (NotImplementedError, ValueError):
+                        pass
+            elif three_d:
+                ax.set_box_aspect(tuple(float(x) for x in v))
+            else:
+                ax.set_box_aspect(float(v[1] / v[0]))
+        _redraw(interp)
+    if nargout > 0 or not args:
+        v = getattr(ax, attr, None)
+        return _row(v if v is not None else [1.0, 1.0, 1.0])
+    return None
+
+
+builtin("daspect")(_with_axes_arg(lambda interp, args, nargout: _aspect(interp, args, nargout, "daspect")))
+builtin("pbaspect")(_with_axes_arg(lambda interp, args, nargout: _aspect(interp, args, nargout, "pbaspect")))
+
+
+@builtin("lighting", "camlight", "material", "light", "zoom", "pan", "rotate3d", "datacursormode",
+         "refreshdata")
+def _graphics_noop(interp, args, nargout):
+    """Lighting and mouse-interaction commands: accepted, without an effect."""
+    return np.zeros((0, 0)) if nargout > 0 else None
+
+
+@builtin("hgsave", "hgload", "openfig", "savefig")
+def _fig_files(interp, args, nargout):
+    raise MatlabError(_FIG_ERROR)
+
+
+@builtin("linkaxes")
+def _linkaxes(interp, args, nargout):
+    if not args:
+        raise MatlabError("linkaxes needs an array of axes handles.")
+    axs = [h.obj for h in _handles_of(args[0]) if h.kind == "axes"]
+    if len(axs) != len(_handles_of(args[0])) or not axs:
+        raise MatlabError("linkaxes expects axes handles, e.g. linkaxes([ax1 ax2], 'x').")
+    mode = text(args[1]).lower() if len(args) > 1 else "xy"
+    if mode not in ("x", "y", "xy", "off", "xyz", "z", "xz", "yz"):
+        raise MatlabError("linkaxes: the option must be 'x', 'y', 'xy' or 'off'.")
+    if mode == "off" or len(axs) < 2:
+        return None
+    for which in "xy":
+        if which not in mode:
+            continue
+        lims = [getattr(a, f"get_{which}lim")() for a in axs]
+        lo, hi = min(min(v) for v in lims), max(max(v) for v in lims)
+        for a in axs[1:]:
+            try:
+                getattr(a, f"share{which}")(axs[0])
+            except (ValueError, AttributeError):
+                pass  # already shared
+        for a in axs:
+            _set_lim(a, which, lo, hi)
+    _redraw(interp)
+    return None
+
+
+# -- contour labels, two y-axes, 3-D polygons ---------------------------------------------------------
+
+def _contour_matrix(cs) -> np.ndarray:
+    """Contour lines as a 2-row matrix: [level, x...; count, y...] for each line, side by side."""
+    cols = []
+    for level, segs in zip(cs.levels, cs.allsegs):
+        for seg in segs:
+            seg = np.asarray(seg, dtype=float)
+            if seg.ndim != 2 or seg.shape[0] == 0:
+                continue
+            cols.append(np.array([[float(level)], [float(seg.shape[0])]]))
+            cols.append(seg.T)
+    return np.hstack(cols) if cols else np.zeros((2, 0))
+
+
+@builtin("clabel")
+def _clabel(interp, args, nargout):
+    cs = None
+    for a in args:
+        if isinstance(a, GraphicsHandle) and a.kind == "contour":
+            cs = a.obj
+    _, opts = _split_name_values([a for a in args if is_text(a) or not isinstance(a, GraphicsHandle)],
+                                 {"fontsize", "color", "labelspacing", "fontweight", "rotation"})
+    if cs is None:
+        cs = getattr(_axes(interp, fresh=False), "_mylab_contour", None)
+    if cs is None:
+        raise MatlabError("clabel: draw a contour plot first, e.g. [C, h] = contour(Z); clabel(C, h).")
+    kw: dict = {"inline": True, "fontsize": _scalar(opts["fontsize"]) if "fontsize" in opts else 8}
+    if "color" in opts:
+        kw["colors"] = [_color(opts["color"])]
+    try:
+        cs.axes.clabel(cs, **kw)
+    except (ValueError, IndexError):
+        pass  # nothing to label
+    _redraw(interp)
+    return np.zeros((0, 0)) if nargout > 0 else None
+
+
+@builtin("plotyy")
+def _plotyy(interp, args, nargout):
+    args = list(args)
+    if len(args) < 4:
+        raise MatlabError("plotyy needs two data sets: plotyy(x1, y1, x2, y2).")
+    methods = []
+    for f in args[4:6]:
+        name = f.name if isinstance(f, FunctionHandle) and not f.is_anonymous else (text(f) if is_text(f) else "")
+        if name not in ("plot", "semilogx", "semilogy", "loglog", "stem", "stairs", "bar"):
+            raise MatlabError("plotyy: the plotting function must be plot, semilogx, semilogy, loglog, stem, "
+                              "stairs or bar.")
+        methods.append({"stairs": "step"}.get(name, name))
+    methods += ["plot"] * (2 - len(methods)) if not methods else [methods[0]] * (2 - len(methods))
+    import matplotlib as mpl
+    colors = mpl.rcParams["axes.prop_cycle"].by_key().get("color", ["C0", "C1"])
+    ax1 = _axes(interp, projection="rectilinear")
+    ax2 = ax1.twinx()
+    out = []
+    for ax, (x, y), method, color in ((ax1, args[0:2], methods[0], colors[0]),
+                                      (ax2, args[2:4], methods[1], colors[1 % len(colors)])):
+        X, Y = _prep_xy(fnum(x), fnum(y))
+        kw = {} if method in ("stem", "bar") else {"color": color}
+        res = getattr(ax, method)(np.asarray(X), np.asarray(Y), **kw)
+        lines = [a for a in _artists(res) if hasattr(a, "set_color")]
+        if method in ("stem", "bar"):
+            for a in lines:
+                a.set_color(color)
+        ax.tick_params(axis="y", colors=color)
+        kind = {"stem": "stem", "bar": "bar"}.get(method, "line")
+        out.append(_handle_list([_wrap(interp, kind, o) for o in ([res] if kind != "line" else lines)]))
+    _redraw(interp)
+    hax = GraphicsArray([_wrap(interp, "axes", ax1), _wrap(interp, "axes", ax2)], row=True)
+    return (hax, out[0], out[1])[:max(nargout, 1)] if nargout > 1 else (hax if nargout == 1 else None)
+
+
+def _face_colors(interp, c, nfaces: int):
+    """(fixed colour or None, per-face numbers or None) from a colour argument."""
+    if c is None:
+        return None, None
+    if is_text(c):
+        return _color(c), None
+    v = np.real(fnum(c))
+    if v.size == 3 and nfaces != 3:
+        return _color(c), None
+    if v.ndim == 2 and v.shape[0] > 1 and v.shape[1] == nfaces:
+        return None, v.mean(axis=0)
+    if v.size == nfaces:
+        return None, v.flatten()
+    if v.size == 3:
+        return _color(c), None
+    return None, np.full(nfaces, float(v.mean()))
+
+
+def _add_polys(interp, ax, polys: list, opts: dict, color, nargout: int):
+    """Add 2-D or 3-D polygons (lists of vertices) to ``ax`` as one patch object."""
+    three_d = hasattr(ax, "get_zlim")
+    fixed, values = _face_colors(interp, color, len(polys))
+    kw: dict = {"edgecolor": "k", "linewidth": 0.5}
+    fc = opts.get("facecolor")
+    if fc is not None and not (is_text(fc) and text(fc).lower() in ("flat", "interp")):
+        fixed, values = _color(fc), None
+    if "edgecolor" in opts:
+        ec = opts["edgecolor"]
+        kw["edgecolor"] = "none" if is_text(ec) and text(ec).lower() in ("none", "flat", "interp") else _color(ec)
+    if "linewidth" in opts:
+        kw["linewidth"] = _scalar(opts["linewidth"])
+    if "facealpha" in opts:
+        kw["alpha"] = _scalar(opts["facealpha"])
+    if "displayname" in opts:
+        kw["label"] = text(opts["displayname"])
+    if three_d:
+        from mpl_toolkits.mplot3d.art3d import Poly3DCollection as Coll
+    else:
+        from matplotlib.collections import PolyCollection as Coll
+    if values is None:
+        kw["facecolor"] = fixed if fixed is not None else "k"
+    coll = Coll(polys, **kw)
+    if values is not None:
+        coll.set_cmap(_current_cmap(interp))
+        coll.set_array(np.asarray(values, dtype=float))
+    pts = np.vstack(polys)
+    if three_d:
+        had = ax.has_data()
+        ax.add_collection3d(coll)
+        ax.auto_scale_xyz(pts[:, 0], pts[:, 1], pts[:, 2], had)
+    else:
+        ax.add_collection(coll)
+        ax.update_datalim(pts[:, :2])
+        ax.autoscale_view()
+    _redraw(interp)
+    if nargout <= 0:
+        return None
+    h = _wrap(interp, "patch", coll)
+    h.extra.update({"axes": ax, "figure": ax.figure})
+    return h
+
+
+_POLY_OPTS = {"facecolor", "edgecolor", "facealpha", "displayname", "linewidth", "linestyle", "edgealpha"}
+
+
+def _fill3_core(interp, args, nargout, fresh: bool = True):
+    args, opts = _split_name_values(list(args), _POLY_OPTS)
+    if len(args) < 3:
+        raise MatlabError("fill3 needs x, y and z data and a colour.")
+    x, y, z = (np.real(fnum(a)) for a in args[:3])
+    if not x.size == y.size == z.size:
+        raise MatlabError("The x, y and z data must have the same number of elements.")
+    if x.shape[0] > 1 and x.shape[1] > 1:
+        polys = [np.column_stack([x[:, j], y[:, j], z[:, j]]) for j in range(x.shape[1])]
+    else:
+        polys = [np.column_stack([x.flatten(), y.flatten(), z.flatten()])]
+    ax = _axes(interp, fresh=fresh, projection="3d")
+    return _add_polys(interp, ax, polys, opts, args[3] if len(args) > 3 else None, nargout)
+
+
+@builtin("fill3")
+@_with_axes_arg
+def _fill3(interp, args, nargout):
+    return _fill3_core(interp, args, nargout)
+
+
+def _patch_named(interp, args, nargout):
+    """patch('Faces', F, 'Vertices', V, ...) and patch('XData', x, 'YData', y, ...)."""
+    pairs = {name.lower(): value for name, value in _name_values(list(args), "patch")}
+    opts = {k: v for k, v in pairs.items() if k in _POLY_OPTS}
+    color = pairs.get("facevertexcdata", pairs.get("cdata"))
+    if "xdata" in pairs:
+        if "ydata" not in pairs:
+            raise MatlabError("patch needs both XData and YData.")
+        data = [pairs["xdata"], pairs["ydata"]] + ([pairs["zdata"]] if "zdata" in pairs else [])
+        cols = [np.real(fnum(d)) for d in data]
+        if cols[0].shape[0] > 1 and cols[0].shape[1] > 1:
+            polys = [np.column_stack([c[:, j] for c in cols]) for j in range(cols[0].shape[1])]
+        else:
+            polys = [np.column_stack([c.flatten() for c in cols])]
+    else:
+        if "faces" not in pairs or "vertices" not in pairs:
+            raise MatlabError("patch needs both Faces and Vertices.")
+        V = np.real(fnum(pairs["vertices"]))
+        F = np.real(fnum(pairs["faces"]))
+        if V.ndim != 2 or V.shape[1] not in (2, 3):
+            raise MatlabError("Vertices must be an N-by-2 or N-by-3 matrix.")
+        polys = []
+        for row in F.reshape(-1, F.shape[-1]) if F.ndim == 2 else [F.flatten()]:
+            idx = row[np.isfinite(row)].astype(int) - 1
+            if idx.size and (idx.min() < 0 or idx.max() >= V.shape[0]):
+                raise MatlabError("Faces contains an index outside the rows of Vertices.")
+            if idx.size:
+                polys.append(V[idx])
+        if color is not None and not is_text(color):
+            c = np.real(fnum(color))
+            if c.ndim == 2 and c.shape[0] == V.shape[0] and c.shape[0] != len(polys) and c.shape[1] == 1:
+                rows = F.reshape(-1, F.shape[-1])  # per-vertex numbers: average them over each face
+                color = np.array([np.nanmean(c[r[np.isfinite(r)].astype(int) - 1, 0]) for r in rows])
+            elif c.ndim == 2 and c.shape[1] == 3 and c.shape[0] == len(polys) and "facecolor" in opts and \
+                    is_text(opts["facecolor"]) and text(opts["facecolor"]).lower() == "flat":
+                color = None
+                opts["_rgb"] = c
+    if not polys:
+        return np.zeros((0, 0)) if nargout > 0 else None
+    three_d = polys[0].shape[1] == 3
+    ax = _axes(interp, fresh=False, projection="3d") if three_d else _axes(interp, fresh=False)
+    if not three_d and hasattr(ax, "get_zlim"):
+        polys = [np.column_stack([p, np.zeros(len(p))]) for p in polys]
+    rgb = opts.pop("_rgb", None)
+    h = _add_polys(interp, ax, polys, opts, color, 1)
+    if rgb is not None:
+        h.obj.set_facecolor(np.clip(rgb, 0, 1))
+    return h if nargout > 0 else None
+
+
+# -- plots of functions -------------------------------------------------------------------------------
+
+_EZ_CONSTANTS = {"pi", "inf", "nan", "eps", "i", "j", "Inf", "NaN"}
+
+
+def _as_fn(interp, f):
+    """(function handle, number of inputs or None, label) from a handle or an expression in text."""
+    if isinstance(f, FunctionHandle):
+        label = re.sub(r"^@\([^)]*\)\s*", "", f.text) if f.is_anonymous and f.text else str(f)
+        return f, (len(f.params) if f.is_anonymous else None), label
+    if not is_text(f):
+        raise MatlabError("Expected a function handle or an expression in quotes, e.g. @(x) sin(x).")
+    expr = text(f).strip()
+    m = re.fullmatch(r"([^=<>~]+)=([^=]+)", expr)
+    body = f"({m.group(1)}) - ({m.group(2)})" if m else expr
+    names = []
+    for mm in re.finditer(r"[A-Za-z_]\w*", body):
+        name = mm.group(0)
+        after = body[mm.end():].lstrip()
+        if name in _EZ_CONSTANTS or after.startswith("(") or name in names:
+            continue
+        if mm.start() > 0 and (body[mm.start() - 1].isdigit() or body[mm.start() - 1] == ".") and name in "eE":
+            continue
+        names.append(name)
+    names = sorted(names) or ["x"]
+    vec = re.sub(r"(?<![.])([*/^])", r".\1", body)
+    try:
+        handle = interp.eval_expression(f"@({','.join(names)}) {vec}")
+    except MatlabError as e:
+        raise MatlabError(f"Cannot turn '{expr}' into a function: {e.message}") from e
+    return handle, len(names), expr
+
+
+def _eval_fn(interp, f, arrays: list) -> np.ndarray:
+    """Evaluate ``f`` on arrays of equal shape, element by element if it is not vectorised."""
+    shape = arrays[0].shape
+    try:
+        res = interp.call_function_value(f, [np.array(a, dtype=float) for a in arrays], 1)
+        vals = fnum(res[0]) if res else None
+        if vals is not None and vals.shape == shape:
+            return np.where(np.abs(np.imag(vals)) > 1e-12, np.nan, np.real(vals)) if np.iscomplexobj(vals) \
+                else np.asarray(vals, dtype=float)
+        if vals is not None and vals.size == 1:
+            return np.full(shape, float(np.real(vals.flat[0])))
+    except MatlabError:
+        pass
+    out = np.full(shape, np.nan)
+    for idx in np.ndindex(shape):
+        res = interp.call_function_value(f, [np.array([[float(a[idx])]]) for a in arrays], 1)
+        if res:
+            v = fnum(res[0])
+            if v.size and abs(np.imag(v.flat[0])) <= 1e-12:
+                out[idx] = float(np.real(v.flat[0]))
+    return out
+
+
+def _fn_args(interp, args):
+    """Split (functions..., [limits], options...) for the function plotters."""
+    args = list(args)
+    funcs = []
+    while args and (isinstance(args[0], FunctionHandle) or
+                    (is_text(args[0]) and not _is_linespec(text(args[0])) and len(funcs) < 3
+                     and text(args[0]).lower() not in ("meshdensity", "linewidth", "color", "linestyle"))):
+        funcs.append(_as_fn(interp, args.pop(0)))
+    if not funcs:
+        raise MatlabError("Expected a function handle, e.g. @(x) sin(x).")
+    lims = None
+    if args and not is_text(args[0]):
+        lims = np.real(fnum(args.pop(0))).flatten()
+    return funcs, lims, args
+
+
+def _range(lims, default: float, n: int = 2) -> list:
+    if lims is None:
+        return [-default, default] * n
+    if lims.size == 2 and lims[0] < lims[1]:
+        return [float(lims[0]), float(lims[1])] * n
+    if lims.size == 4 and n == 2 and lims[0] < lims[1] and lims[2] < lims[3]:
+        return [float(v) for v in lims]
+    raise MatlabError("The interval must be [min max]" + (" or [xmin xmax ymin ymax]." if n == 2 else "."))
+
+
+def _ezplot_core(interp, args, nargout, name: str):
+    funcs, lims, rest = _fn_args(interp, args)
+    rest, opts = _split_name_values(rest, _LINE_OPTS | {"meshdensity"})
+    kw = _mpl_kwargs({k: v for k, v in opts.items() if k != "meshdensity"})
+    ez = name == "ezplot"
+    span = 2 * math.pi if ez else 5.0
+    ax = _axes(interp, projection="rectilinear")
+    (f, nin, label) = funcs[0]
+    if len(funcs) >= 2 and name != "fimplicit":  # parametric curve x(t), y(t)
+        a, b = (0.0, 2 * math.pi) if lims is None else _range(lims, span, 1)
+        t = np.linspace(a, b, 400).reshape(1, -1)
+        x, y = _eval_fn(interp, funcs[0][0], [t]), _eval_fn(interp, funcs[1][0], [t])
+        objs = ax.plot(x.flatten(), y.flatten(), **kw)
+        title = f"x = {funcs[0][2]}, y = {funcs[1][2]}"
+        kind = "line"
+    elif nin == 2 or name == "fimplicit":  # implicit curve f(x, y) = 0
+        r = _range(lims, span)
+        X, Y = np.meshgrid(np.linspace(r[0], r[1], 250), np.linspace(r[2], r[3], 250))
+        Z = _eval_fn(interp, f, [X, Y])
+        ckw = {"colors": [kw["color"]]} if "color" in kw else {"colors": ["C0"]}
+        cs = ax.contour(X, Y, Z, levels=[0.0], **ckw)
+        objs = [cs]
+        title = label if "=" in label else f"{label} = 0"
+        kind = "contour"
+    else:
+        a, b = _range(lims, span, 1)
+        x = np.linspace(a, b, 400).reshape(1, -1)
+        y = _eval_fn(interp, f, [x])
+        objs = ax.plot(x.flatten(), np.where(np.isfinite(y), y, np.nan).flatten(), **kw)
+        ax.set_xlim(a, b)
+        title = label
+        kind = "line"
+    if ez:
+        ax.set_title(title)
+        if kind != "line" or len(funcs) >= 2:
+            ax.set_xlabel("x")
+            ax.set_ylabel("y")
+        else:
+            ax.set_xlabel(f.params[0] if isinstance(f, FunctionHandle) and f.params else "x")
+    _redraw(interp)
+    return _ret(interp, kind, objs, nargout)
+
+
+builtin("ezplot")(_with_axes_arg(lambda interp, args, nargout: _ezplot_core(interp, args, nargout, "ezplot")))
+builtin("fimplicit")(_with_axes_arg(lambda interp, args, nargout: _ezplot_core(interp, args, nargout,
+                                                                             "fimplicit")))
+
+
+def _fsurface(interp, args, nargout, name: str):
+    funcs, lims, rest = _fn_args(interp, args)
+    rest, opts = _split_name_values(rest, {"meshdensity"})
+    ez = name.startswith("ez")
+    kind = {"fsurf": "surf", "ezsurf": "surf", "ezsurfc": "surf", "fmesh": "mesh", "ezmesh": "mesh",
+            "fcontour": "contour", "ezcontour": "contour", "ezcontourf": "contourf"}[name]
+    n = int(_scalar(opts["meshdensity"])) if "meshdensity" in opts else (120 if "contour" in kind else 50)
+    r = _range(lims, 2 * math.pi if ez else 5.0)
+    X, Y = np.meshgrid(np.linspace(r[0], r[1], max(n, 2)), np.linspace(r[2], r[3], max(n, 2)))
+    if len(funcs) >= 3 and "contour" not in kind:  # parametric surface x(u,v), y(u,v), z(u,v)
+        data = [_eval_fn(interp, fn[0], [X, Y]) for fn in funcs[:3]]
+        label = ", ".join(fn[2] for fn in funcs[:3])
+    else:
+        data = [X, Y, _eval_fn(interp, funcs[0][0], [X, Y])]
+        label = funcs[0][2]
+    out = _surface(interp, data + rest, kind, nargout)
+    if ez:
+        ax = _axes(interp, fresh=False)
+        ax.set_title(label)
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        _redraw(interp)
+    return out
+
+
+for _name in ("fsurf", "fmesh", "fcontour", "ezsurf", "ezsurfc", "ezmesh", "ezcontour", "ezcontourf"):
+    builtin(_name)(_with_axes_arg(lambda interp, args, nargout, _n=_name: _fsurface(interp, args, nargout, _n)))
+
+
+@builtin("comet")
+@_with_axes_arg
+def _comet(interp, args, nargout):
+    nums = [a for a in args if not is_text(a)]
+    if not nums:
+        raise MatlabError("comet needs data, e.g. comet(x, y).")
+    if len(nums) >= 3 and np.asarray(nums[2]).size == 1:
+        nums = nums[:2]  # the tail length has no meaning in a still picture
+    return _do_plot(interp, nums[:2], "plot", nargout)
+
+
+@builtin("comet3")
+@_with_axes_arg
+def _comet3(interp, args, nargout):
+    nums = [a for a in args if not is_text(a)]
+    if len(nums) < 3:
+        raise MatlabError("comet3 needs x, y and z data.")
+    return _plot3(interp, nums[:3], nargout)
+
+
+def _grid_xyz(args, name: str):
+    nums = [np.real(fnum(a)) for a in args if not is_text(a)]
+    if not nums:
+        raise MatlabError(f"{name} needs data.")
+    if len(nums) < 3:
+        Z = nums[0]
+        X, Y = np.meshgrid(np.arange(1, Z.shape[1] + 1), np.arange(1, Z.shape[0] + 1))
+    else:
+        X, Y, Z = nums[:3]
+        if X.shape != Z.shape:
+            X, Y = np.meshgrid(X.flatten(), Y.flatten())
+        if X.shape != Z.shape:
+            raise MatlabError(f"{name}: the sizes of X, Y and Z do not match.")
+    return X, Y, Z
+
+
+@builtin("waterfall")
+@_with_axes_arg
+def _waterfall(interp, args, nargout):
+    X, Y, Z = _grid_xyz(args, "waterfall")
+    ax = _axes(interp, projection="3d")
+    coll = ax.plot_wireframe(X, Y, Z, rstride=1, cstride=0, linewidth=0.8)
+    _redraw(interp)
+    if nargout <= 0:
+        return None
+    h = _wrap(interp, "surface", coll)
+    h.extra.update({"XData": X, "YData": Y, "ZData": Z})
+    return h
+
+
+@builtin("ribbon")
+@_with_axes_arg
+def _ribbon(interp, args, nargout):
+    nums = [np.real(fnum(a)) for a in args if not is_text(a)]
+    if not nums:
+        raise MatlabError("ribbon needs data, e.g. ribbon(Y).")
+    width = 0.75
+    if len(nums) >= 2 and nums[1].size == 1 and nums[0].size > 1:
+        Y, width, x = nums[0], float(nums[1].flat[0]), None
+    elif len(nums) >= 2:
+        x, Y = nums[0], nums[1]
+        if len(nums) > 2:
+            width = float(nums[2].flat[0])
+    else:
+        x, Y = None, nums[0]
+    if Y.shape[0] == 1:
+        Y = Y.T
+    m, n = Y.shape
+    t = np.arange(1, m + 1, dtype=float) if x is None else x.flatten()
+    if t.size != m:
+        raise MatlabError("ribbon: x must have one element for each row of Y.")
+    ax = _axes(interp, projection="3d")
+    cmap = _current_cmap(interp)
+    if isinstance(cmap, str):
+        import matplotlib as mpl
+        cmap = mpl.colormaps[cmap]
+    hs = []
+    for j in range(n):
+        xs = np.column_stack([np.full(m, j + 1 - width / 2), np.full(m, j + 1 + width / 2)])
+        ys = np.column_stack([t, t])
+        zs = np.column_stack([Y[:, j], Y[:, j]])
+        coll = ax.plot_surface(xs, ys, zs, color=cmap(j / max(n - 1, 1)), edgecolor="k", linewidth=0.3)
+        hs.append(_wrap(interp, "surface", coll))
+    _redraw(interp)
+    return _handle_list(hs) if nargout > 0 else None
+
+
+@builtin("copyobj")
+def _copyobj(interp, args, nargout):
+    if len(args) < 2:
+        raise MatlabError("copyobj needs the objects to copy and the new parent.")
+    parents = _handles_of(args[1])
+    if not parents or parents[0].kind not in ("axes", "polaraxes"):
+        raise MatlabError("copyobj: the new parent must be an axes. Copying axes or figures is not supported.")
+    ax = parents[0].obj
+    out = []
+    for h in _handles_of(args[0]):
+        if h.kind not in ("line", "animatedline", "stair") or hasattr(h.obj, "get_data_3d"):
+            raise MatlabError(f"copyobj: copying {_short(h.kind)} objects is not supported; only 2-D lines "
+                              "can be copied.")
+        src = h.obj
+        new = ax.plot(*src.get_data(), color=src.get_color(), linestyle=src.get_linestyle(),
+                      linewidth=src.get_linewidth(), marker=src.get_marker(), markersize=src.get_markersize(),
+                      markerfacecolor=src.get_markerfacecolor(), markeredgecolor=src.get_markeredgecolor(),
+                      label=src.get_label(), drawstyle=src.get_drawstyle())[0]
+        nh = _wrap(interp, "line", new)
+        nh.extra.update({k: v for k, v in h.extra.items() if k in ("Tag", "UserData")})
+        out.append(nh)
+    _redraw(interp)
+    return _handle_list(out) if nargout > 0 else None
+
+
+@builtin("gtext")
+def _gtext(interp, args, nargout):
+    if not args:
+        raise MatlabError("gtext needs the text to place.")
+    ax = _axes(interp, fresh=False)
+    label = "\n".join(_text_list(args[0]))
+    plt = _plt()
+    if not _noninteractive() and plt.isinteractive():
+        pts = plt.ginput(1, timeout=0)
+        x, y = pts[0] if pts else (np.mean(ax.get_xlim()), np.mean(ax.get_ylim()))
+    else:
+        interp.warn("gtext places text with a mouse click, which is not possible here; the text was put in "
+                    "the middle of the axes. Use text(x, y, str) to choose the position.")
+        x, y = float(np.mean(ax.get_xlim())), float(np.mean(ax.get_ylim()))
+    t = ax.text(x, y, label)
+    _redraw(interp)
+    return _wrap(interp, "text", t) if nargout > 0 else None
