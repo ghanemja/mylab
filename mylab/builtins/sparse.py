@@ -44,7 +44,8 @@ _OWN: set[str] = set()  # built-ins defined in this module: they accept sparse i
 _PASSTHROUGH = {
     "size", "numel", "length", "ndims", "isempty", "isscalar", "isvector", "isrow", "iscolumn", "ismatrix",
     "issquare", "disp", "display", "struct", "cell", "deal", "setfield", "getfield", "isfield", "rmfield",
-    "fieldnames", "feval", "cellfun", "arrayfun", "structfun", "save", "table", "assert", "error", "warning", "func2str", "builtin", "exist", "isvarname", "whos", "who", "clear",
+    "fieldnames", "feval", "cellfun", "arrayfun", "structfun", "save", "table", "assert",
+    "error", "warning", "func2str", "builtin", "exist", "isvarname", "whos", "who", "clear",
     "tic", "toc", "timeit", "containers.Map", "isobject", "isvalid", "ishandle", "isgraphics", "nargin",
     "nargout", "inputname", "isdatetime", "isduration", "istable", "iscategorical", "addvars",
 }
