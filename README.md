@@ -10,12 +10,15 @@ students, researchers and engineers who can't afford a MATLAB license.
 - **Has an AI helper built in.** It explains errors, fixes code and translates
   to Python, using free local models (Ollama) or your own API key. No paid
   account is needed.
+- **Built for classes.** Share code as a link, step through a program
+  forwards and backwards, publish a report, and auto-grade assignments in the
+  browser or on Gradescope.
 - **Covers a lot of the language:** matrices, N-D arrays, cells, structs,
-  strings, tables, `containers.Map`, `classdef` classes and about 750
-  functions, from linear algebra to `fft`, `ode45`, `fminsearch`, `kmeans` and
-  plotting.
+  strings, tables, sparse matrices, dates, `containers.Map`, `classdef`
+  classes and about 1,090 functions, from linear algebra to `fft`, `ode45`,
+  `fminsearch`, `imread` and plotting.
 
-![The mylab browser app](docs/images/web-app.png)
+![mylab running in the browser](docs/images/demo.gif)
 
 ```matlab
 >> A = magic(4);
@@ -73,7 +76,20 @@ pip install "mylab-lang[mcp] @ git+https://github.com/ghanemja/mylab"
 Add `{"mcpServers": {"mylab": {"command": "mylab-mcp"}}}` to your client's
 configuration. See [docs/MCP.md](docs/MCP.md).
 
-### 5. From Python
+### 5. In VS Code
+
+An extension in [editors/vscode](editors/vscode) adds run, debug, error
+checking and hover help. See [docs/VSCODE.md](docs/VSCODE.md).
+
+### 6. For teaching
+
+- Share any file as a link that opens and runs in the browser.
+- Give students an assignment bundle; they press "Check my answers".
+- Grade a whole class with `mylab-grade`, locally or on Gradescope.
+
+See [docs/AUTOGRADER.md](docs/AUTOGRADER.md).
+
+### 7. From Python
 
 ```python
 from mylab.api import Session
@@ -104,13 +120,13 @@ mylab also publishes two datasets for the community (see [datasets/](datasets/))
 |---|---|
 | Language | All operators and precedence, ranges, 1-based column-major indexing, `end`, logical indexing, arrays that grow on assignment, deleting with `x(i) = []`, `if`/`for`/`while`/`switch`/`try`, `break`/`continue`/`return`, command syntax (`hold on`) |
 | Functions | Script-local functions, `.m` files on the path, multiple outputs, `nargin`/`nargout`, `varargin`/`varargout`, anonymous functions with captured variables, `global`, `eval`/`feval` |
-| Data types | double, single, logical, char, int8–uint64 (saturating), complex numbers, N-D arrays, cell arrays, structs and struct arrays, string arrays, function handles, `containers.Map`, `table` |
+| Data types | double, single, logical, char, int8–uint64 (saturating), complex numbers, N-D arrays, cell arrays, structs and struct arrays, string arrays, function handles, `containers.Map`, `table`, sparse matrices, `datetime`/`duration` |
 | Classes | `classdef` value and handle classes, properties with defaults, `Constant`/`Dependent` properties, `get.`/`set.` methods, constructors, `Static` methods, inheritance with `obj@Parent`, operator overloading, custom `disp` |
-| Library | About 750 functions: math, linear algebra, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, `findpeaks`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, file input/output, `readtable`/`writetable`, plotting (`plot`, `subplot`, `scatter`, `bar`, `histogram`, `surf`, `contour`, …) |
+| Library | About 1,090 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations |
 
 The full list is in [docs/FUNCTIONS.md](docs/FUNCTIONS.md). Type `help name` in
 mylab for any function. Known differences and gaps (for example Simulink,
-events, enumerations and object arrays) are in
+GUIs, enumerations and object arrays) are in
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ## Speed
@@ -133,13 +149,17 @@ events, enumerations and object arrays) are in
 ```
 mylab/            the engine (lexer, parser, interpreter, values, indexing, display)
   builtins/       the function library, one module per area
-  classdef.py     user-defined classes;   objects.py  containers.Map / object protocol
+  helpdocs/       help text for every function
+  jit.py          loop compiler           debugger.py  debugger and tracer
+  classdef.py     user-defined classes    grader.py    autograder
   api.py          Session API used by every front end
-  cli.py          `mylab` command          kernel.py   Jupyter kernel
-  mcp_server.py   MCP server               help_data.py  help text for every function
+  cli.py          `mylab` command         kernel.py    Jupyter kernel
+  mcp_server.py   MCP server
 web/              the browser app (Pyodide + CodeMirror, no build step)
-examples/         runnable example scripts
-tests/            pytest suite (engine, functions, objects, tables, MCP, kernel)
+editors/vscode/   VS Code extension
+datasets/         MATLAB Tasks benchmark and MATLAB Corpus index
+examples/         runnable example scripts and a sample assignment
+tests/            pytest suite, including conformance checks against GNU Octave
 docs/             guides, function list, compatibility notes
 ```
 
