@@ -5,7 +5,7 @@ import { Engine } from "./engine.js";
 import { ProjectStore, DEFAULT_PROJECT, newId, prefs } from "./storage.js";
 import { EXAMPLES } from "./examples.js";
 import { Assistant } from "./ai.js";
-import { $, el, icon, toast, isMac, downloadBlob, promptDialog, confirmDialog } from "./ui.js";
+import { $, el, icon, toast, downloadBlob, promptDialog, confirmDialog } from "./ui.js";
 import { parseHash, toStored, isImageName, mimeOf, formatSize } from "./codec.js";
 import { splitSections, sectionAt, sectionCode, tailCode } from "./sections.js";
 import { initProjects } from "./projects.js";
@@ -13,6 +13,15 @@ import { initShare } from "./share.js";
 import { initPublish } from "./publish.js";
 import { initStepper } from "./stepper.js";
 import { initAssignments } from "./assignment.js";
+import { initCommands } from "./commands.js";
+import { initSettings } from "./settings.js";
+import { initEditing } from "./editing.js";
+import { initSearch } from "./search.js";
+import { initProblems } from "./problems.js";
+import { initIntel } from "./intel.js";
+import { initVarView } from "./varview.js";
+import { initHistory } from "./history.js";
+import { renderDiff, statsText } from "./diff.js";
 
 /* ================================================================== state */
 
@@ -37,6 +46,9 @@ const state = {
   runStarted: 0,
   runTimer: null,
   sectionView: null,
+  dirty: new Set(), // files with changes that are not saved yet
+  cursors: {}, // path -> [line, ch, scrollTop], remembered per project
+  breaks: {}, // path -> [1-based breakpoint lines], remembered per project
 };
 
 const store = new ProjectStore();
@@ -46,6 +58,25 @@ let assistant;
 
 /** Shared with the feature modules. Filled in below and by the modules' init functions. */
 const app = { state, store, prefs };
+
+// A small event bus so feature modules can react without knowing about each other.
+// Events: fileOpened(path), docCreated(path, doc), tabsChanged, projectChanged, saved(info),
+// moved(from, to), removed(paths), projectDeleted(id), runFinished(result, error),
+// variables(list), engineReady(info), settingsChanged(key, value), keysChanged(preset).
+const listeners = new Map();
+app.on = (name, fn) => {
+  if (!listeners.has(name)) listeners.set(name, []);
+  listeners.get(name).push(fn);
+};
+app.emit = (name, ...args) => {
+  for (const fn of listeners.get(name) || []) {
+    try {
+      fn(...args);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+};
 
 /* ================================================================== helpers */
 
@@ -93,27 +124,6 @@ function validatePath(input, { current = null, addExt = true } = {}) {
   return { name: p, warn };
 }
 
-/* ================================================================== theme */
-
-function currentTheme() {
-  const t = document.documentElement.dataset.theme;
-  if (t) return t;
-  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function updateThemeIcon() {
-  const use = $("btn-theme").querySelector("use");
-  use.setAttribute("href", currentTheme() === "dark" ? "#i-sun" : "#i-moon");
-  $("btn-theme").title = currentTheme() === "dark" ? "Switch to light theme" : "Switch to dark theme";
-}
-
-function toggleTheme() {
-  const next = currentTheme() === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
-  prefs.set("theme", next);
-  updateThemeIcon();
-}
-
 /* ================================================================== projects */
 
 async function loadProjects() {
@@ -149,10 +159,21 @@ function sessionFor(id) {
   return null;
 }
 
+/** Note where the cursor is in the active file, so it can be put back later. */
+function rememberCursor() {
+  if (!state.active || !editor || editor.getWrapperElement().hidden) return;
+  const c = editor.getCursor();
+  state.cursors[state.active] = [c.line, c.ch, Math.round(editor.getScrollInfo().top)];
+}
+
 function saveSession() {
   if (!state.project || state.project.temp) return;
+  rememberCursor();
   const all = prefs.get("sessions", {});
-  all[state.project.id] = { tabs: state.tabs, active: state.active, collapsed: [...state.collapsed] };
+  const cursors = {};
+  for (const t of state.tabs) if (state.cursors[t]) cursors[t] = state.cursors[t];
+  const breaks = app.breakpointMap ? app.breakpointMap() : state.breaks;
+  all[state.project.id] = { tabs: state.tabs, active: state.active, collapsed: [...state.collapsed], cursors, breaks };
   // Forget sessions of deleted projects.
   for (const id of Object.keys(all)) if (!state.projects.some((p) => p.id === id)) delete all[id];
   prefs.set("sessions", all);
@@ -174,6 +195,8 @@ async function switchProject(id, { initial = false, open = null } = {}) {
   clearErrorMark();
   for (const t of state.saveTimers.values()) clearTimeout(t);
   state.saveTimers.clear();
+  state.dirty.clear();
+  state.active = null;
   state.project = project;
   state.files.clear();
   state.docs.clear();
@@ -183,6 +206,8 @@ async function switchProject(id, { initial = false, open = null } = {}) {
   const session = sessionFor(id);
   state.collapsed = new Set((session && session.collapsed) || []);
   state.tabs = ((session && session.tabs) || []).filter((t) => isText(t));
+  state.cursors = { ...((session && session.cursors) || {}) };
+  state.breaks = { ...((session && session.breaks) || {}) };
   if (!project.temp) prefs.set("project", id);
   renderProjectHead();
   renderFileList();
@@ -192,6 +217,7 @@ async function switchProject(id, { initial = false, open = null } = {}) {
   else showNoFile();
   $("save-state").textContent = saveLabel();
   app.onProjectChanged && app.onProjectChanged();
+  app.emit("projectChanged", project);
   return true;
 }
 
@@ -224,6 +250,7 @@ async function deleteProject(id) {
   const wasCurrent = state.project && state.project.id === id;
   state.projects.splice(i, 1);
   await store.deleteProject(id);
+  app.emit("projectDeleted", id);
   if (!state.projects.length) {
     state.projects.push(await store.putProject({ id: DEFAULT_PROJECT, name: "My files", kind: "files" }));
   }
@@ -381,6 +408,17 @@ function getDoc(path) {
     const mode = path.endsWith(".m") ? "text/x-octave" : "text/plain";
     doc = CodeMirror.Doc(state.files.get(path).content, mode);
     state.docs.set(path, doc);
+    // Put the cursor back where it was the last time this file was open.
+    const c = state.cursors[path];
+    if (c) {
+      try {
+        doc.setCursor(Math.min(c[0], doc.lastLine()), c[1]);
+        doc.scrollTop = c[2] || 0;
+      } catch {
+        /* the file is shorter now */
+      }
+    }
+    app.emit("docCreated", path, doc);
   }
   return doc;
 }
@@ -400,6 +438,7 @@ function expandTo(path) {
 function openFile(path, { focus = true } = {}) {
   if (!state.files.has(path)) return;
   if (!isText(path)) return viewFile(path);
+  if (state.active !== path) rememberCursor();
   if (!state.tabs.includes(path)) state.tabs.push(path);
   state.active = path;
   clearErrorMark();
@@ -414,6 +453,7 @@ function openFile(path, { focus = true } = {}) {
   editor.refresh();
   updateSections(true);
   app.onFileOpened && app.onFileOpened(path);
+  app.emit("fileOpened", path);
 }
 
 function closeTab(path) {
@@ -454,24 +494,26 @@ function renderTabs() {
   for (const t of state.tabs) counts.set(baseName(t), (counts.get(baseName(t)) || 0) + 1);
   for (const path of state.tabs) {
     const name = baseName(path);
+    const dirty = state.dirty.has(path);
     const tab = el(
       "button",
       {
-        class: "tab" + (path === state.active ? " active" : ""),
+        class: "tab" + (path === state.active ? " active" : "") + (dirty ? " dirty" : ""),
         role: "tab",
         "aria-selected": path === state.active ? "true" : "false",
-        title: path,
+        tabindex: path === state.active ? "0" : "-1",
+        title: `${path}${dirty ? " (not saved yet)" : ""} · Delete closes the tab`,
         "data-name": path,
         onclick: () => openFile(path),
         onauxclick: (e) => e.button === 1 && closeTab(path),
       },
       el("span", {}, counts.get(name) > 1 && dirName(path) ? el("span", { class: "tab-dir" }, dirName(path) + "/") : null, name),
+      el("span", { class: "dirty-dot", role: "img", "aria-label": "not saved yet" }),
       el(
         "span",
         {
           class: "close",
-          role: "button",
-          "aria-label": `Close ${name}`,
+          "aria-hidden": "true",
           title: "Close",
           onclick: (e) => {
             e.stopPropagation();
@@ -485,10 +527,60 @@ function renderTabs() {
   }
   const activeTab = box.querySelector(".tab.active");
   if (activeTab) activeTab.scrollIntoView({ block: "nearest", inline: "nearest" });
+  app.emit("tabsChanged");
+}
+
+/** Show or hide the "not saved yet" dot on a tab. */
+function markDirty(path, dirty) {
+  if (dirty === state.dirty.has(path)) return;
+  if (dirty) state.dirty.add(path);
+  else state.dirty.delete(path);
+  for (const tab of $("tabs").children) {
+    if (tab.dataset.name !== path) continue;
+    tab.classList.toggle("dirty", dirty);
+    tab.title = `${path}${dirty ? " (not saved yet)" : ""} · Delete closes the tab`;
+  }
+}
+
+function switchTab(delta) {
+  if (state.tabs.length < 2) return;
+  const i = state.tabs.indexOf(state.active);
+  openFile(state.tabs[(i + delta + state.tabs.length) % state.tabs.length]);
+}
+
+function setupTabs() {
+  // Arrow keys move between tabs, Delete closes one (the usual keys for a row of tabs).
+  $("tabs").addEventListener("keydown", (e) => {
+    const tab = e.target.closest(".tab");
+    if (!tab) return;
+    const i = state.tabs.indexOf(tab.dataset.name);
+    let next = null;
+    if (e.key === "ArrowRight") next = state.tabs[(i + 1) % state.tabs.length];
+    else if (e.key === "ArrowLeft") next = state.tabs[(i - 1 + state.tabs.length) % state.tabs.length];
+    else if (e.key === "Home") next = state.tabs[0];
+    else if (e.key === "End") next = state.tabs[state.tabs.length - 1];
+    else if (e.key === "Delete") {
+      e.preventDefault();
+      closeTab(tab.dataset.name);
+      const now = $("tabs").querySelector(".tab.active");
+      if (now) now.focus();
+      return;
+    } else return;
+    e.preventDefault();
+    openFile(next, { focus: false });
+    const now = $("tabs").querySelector(".tab.active");
+    if (now) now.focus();
+  });
 }
 
 function scheduleSave(path) {
   clearTimeout(state.saveTimers.get(path));
+  markDirty(path, true);
+  if (app.settings && !app.settings.get("autosave")) {
+    state.saveTimers.delete(path);
+    $("save-state").textContent = "Not saved";
+    return;
+  }
   $("save-state").textContent = "Editing…";
   state.saveTimers.set(
     path,
@@ -496,23 +588,27 @@ function scheduleSave(path) {
   );
 }
 
-async function flushSave(path) {
+/** Write a file to storage if it changed. manual: the user asked for it (Ctrl+S). */
+async function flushSave(path, { manual = false } = {}) {
   clearTimeout(state.saveTimers.get(path));
   state.saveTimers.delete(path);
   const doc = state.docs.get(path);
   const f = state.files.get(path);
   if (!doc || !f) return;
   const content = doc.getValue();
-  if (content !== f.content) {
+  const previous = f.content;
+  if (content !== previous) {
     f.content = content;
     f.modified = Date.now();
     await store.putFile(state.project.id, path, content);
   }
-  if (!state.saveTimers.size) $("save-state").textContent = saveLabel();
+  if (content !== previous || manual) app.emit("saved", { path, content, previous, manual });
+  markDirty(path, false);
+  if (!state.saveTimers.size) $("save-state").textContent = state.dirty.size ? "Not saved" : saveLabel();
 }
 
-async function flushAll() {
-  await Promise.all([...state.docs.keys()].map((n) => flushSave(n)));
+async function flushAll(opts = {}) {
+  await Promise.all([...state.docs.keys()].map((n) => flushSave(n, opts)));
 }
 
 /** Add or replace several files in the current project. files: [{ path, content }] */
@@ -573,6 +669,11 @@ async function movePaths(moves) {
     if (doc) state.docs.set(to, doc);
     state.tabs = state.tabs.map((t) => (t === from ? to : t));
     if (state.active === from) state.active = to;
+    if (state.cursors[from]) {
+      state.cursors[to] = state.cursors[from];
+      delete state.cursors[from];
+    }
+    app.emit("moved", from, to);
     puts.push({ path: to, content: f.content });
   }
   await store.putFiles(state.project.id, puts);
@@ -625,6 +726,8 @@ async function removePaths(paths) {
     state.docs.delete(path);
   }
   await store.removeFiles(state.project.id, paths);
+  for (const path of paths) state.dirty.delete(path);
+  app.emit("removed", paths);
   const wasActive = paths.includes(state.active);
   state.tabs = state.tabs.filter((t) => !paths.includes(t));
   if (wasActive) {
@@ -824,7 +927,8 @@ function printError(err) {
     actions.append(el("button", { class: "linklike", type: "button", onclick: () => gotoError(err) }, `Go to line ${err.line}`));
   }
   actions.append(
-    el("button", { class: "linklike", type: "button", onclick: () => (showAssistant(true), assistant.quick("error")) }, "Explain this error")
+    el("button", { class: "linklike", type: "button", onclick: () => (showAssistant(true), assistant.quick("error")) }, "Explain this error"),
+    el("button", { class: "linklike", type: "button", onclick: () => (showAssistant(true), assistant.quick("fixerror")) }, "Fix this error")
   );
   box.append(actions);
   appendConsole(box);
@@ -943,6 +1047,7 @@ async function runCode(code, ctx) {
   if (!canRun()) return null;
   app.exitStep && app.exitStep();
   clearErrorMark();
+  showBottom("console");
   if (ctx.kind === "command") printEcho(code);
   else printEcho(code, ctx.label);
   setRunning(true);
@@ -983,6 +1088,7 @@ async function runCode(code, ctx) {
   if (res.variables) renderVariables(res.variables);
   for (const d of res.dialogs || []) showMessageBox(d);
   await applyWritten(res.files);
+  app.emit("runFinished", res, state.lastError);
   return res;
 }
 
@@ -1243,36 +1349,6 @@ async function completeConsole() {
   box.hidden = false;
 }
 
-function editorHint(cm) {
-  return new Promise((resolve) => {
-    const cur = cm.getCursor();
-    const line = cm.getLine(cur.line);
-    let start = cur.ch;
-    while (start > 0 && /\w/.test(line.charAt(start - 1))) start--;
-    const prefix = line.slice(start, cur.ch);
-    if (!prefix || /^\d/.test(prefix)) return resolve(null);
-    // Words from the current file plus names the engine knows.
-    const words = new Set();
-    const re = /[A-Za-z_]\w*/g;
-    const text = cm.getValue();
-    let m;
-    while ((m = re.exec(text))) if (m[0] !== prefix && m[0].startsWith(prefix)) words.add(m[0]);
-    for (const n of state.files.keys()) {
-      if (!n.endsWith(".m")) continue;
-      const base = baseName(n).replace(/\.m$/, "");
-      if (base.startsWith(prefix) && base !== prefix) words.add(base);
-    }
-    const finish = (extra) => {
-      for (const e of extra) words.add(e);
-      const list = [...words].sort((a, b) => a.length - b.length || a.localeCompare(b)).slice(0, 80);
-      resolve(list.length ? { list, from: CodeMirror.Pos(cur.line, start), to: CodeMirror.Pos(cur.line, cur.ch) } : null);
-    };
-    if (engine.ready && !engine.busy) engine.complete(prefix).then(finish, () => finish([]));
-    else finish([]);
-  });
-}
-editorHint.async = false;
-
 /* ================================================================== workspace */
 
 function renderVariables(vars) {
@@ -1288,10 +1364,10 @@ function renderVariables(vars) {
       {
         tabindex: "0",
         class: changed ? "changed" : "",
-        title: `Click to show ${v.name}`,
+        title: `Open ${v.name} in the variable viewer`,
         "data-name": v.name,
-        onclick: () => showVariable(v),
-        onkeydown: (e) => e.key === "Enter" && showVariable(v),
+        onclick: () => app.showVariable(v),
+        onkeydown: (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), app.showVariable(v)),
       },
       el("td", {}, v.name),
       el("td", {}, v.size),
@@ -1303,22 +1379,7 @@ function renderVariables(vars) {
   $("var-empty").hidden = state.variables.length > 0;
   $("var-table").hidden = state.variables.length === 0;
   $("var-count").textContent = state.variables.length ? `${state.variables.length}` : "";
-}
-
-async function showVariable(v) {
-  if (!engine.ready || engine.busy) {
-    toast("Wait for the running code to finish.");
-    return;
-  }
-  try {
-    const text = await engine.showVariable(v.name);
-    $("var-title").textContent = v.name;
-    $("var-meta").textContent = `${v.size} ${v.class}`;
-    $("var-body").textContent = text.replace(/\n+$/, "");
-    $("dlg-var").showModal();
-  } catch (e) {
-    toast(e.message, "error");
-  }
+  app.emit("variables", state.variables);
 }
 
 /* ================================================================== plots */
@@ -1435,6 +1496,13 @@ function setupGutters() {
       g.addEventListener("pointerup", up);
       g.addEventListener("pointercancel", up);
     });
+    g.title = "Drag to resize. Double-click to reset.";
+    g.addEventListener("dblclick", () => {
+      delete SIZES[key];
+      document.documentElement.style.removeProperty({ files: "--files-w", side: "--side-w", ai: "--ai-w", asg: "--asg-w", console: "--console-h", workspace: "--workspace-h" }[key]);
+      prefs.set("sizes", SIZES);
+      editor && editor.refresh();
+    });
     g.addEventListener("keydown", (ev) => {
       const keys = vertical ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
       const i = keys.indexOf(ev.key);
@@ -1445,6 +1513,46 @@ function setupGutters() {
       set(cur + sign * (i === 0 ? -20 : 20));
       prefs.set("sizes", SIZES);
     });
+  });
+}
+
+function resetLayout() {
+  for (const key of Object.keys(SIZES)) delete SIZES[key];
+  for (const prop of ["--files-w", "--side-w", "--ai-w", "--asg-w", "--console-h", "--workspace-h"]) document.documentElement.style.removeProperty(prop);
+  prefs.remove("sizes");
+  editor && editor.refresh();
+  toast("The panels are back to their usual sizes.");
+}
+
+/* ---------- the bottom panel: command window, problems, search ---------- */
+
+function showBottom(view) {
+  const panel = document.querySelector(".console-panel");
+  if (view === "search") $("tab-search").hidden = false;
+  if (panel.dataset.view === view) return;
+  panel.dataset.view = view;
+  for (const t of panel.querySelectorAll(".bottom-tab")) {
+    const on = t.dataset.view === view;
+    t.setAttribute("aria-selected", String(on));
+    t.tabIndex = on ? 0 : -1;
+  }
+  $("problems-view").hidden = view !== "problems";
+  $("search-view").hidden = view !== "search";
+  if (view !== "console" && matchMedia("(max-width: 820px)").matches) panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function setupBottomTabs() {
+  const tabs = [...document.querySelectorAll(".bottom-tab")];
+  for (const t of tabs) t.addEventListener("click", () => showBottom(t.dataset.view));
+  document.querySelector(".bottom-tabs").addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const shown = tabs.filter((t) => !t.hidden);
+    const i = shown.indexOf(document.activeElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = shown[(i + (e.key === "ArrowRight" ? 1 : -1) + shown.length) % shown.length];
+    showBottom(next.dataset.view);
+    next.focus();
   });
 }
 
@@ -1512,6 +1620,7 @@ function onReady(info) {
     printInfo("Engine restarted and ready.");
   }
   if (document.activeElement === document.body) input.focus();
+  app.emit("engineReady", info);
 }
 
 function onFatal({ error }) {
@@ -1569,12 +1678,11 @@ function setupWelcome() {
 /* ================================================================== setup */
 
 function setupEditor() {
-  const mod = isMac ? "Cmd" : "Ctrl";
   editor = CodeMirror($("editor"), {
     value: "",
     mode: "text/x-octave",
     lineNumbers: true,
-    gutters: ["bp-gutter", "CodeMirror-linenumbers"],
+    gutters: ["bp-gutter", "lint-gutter", "CodeMirror-linenumbers", "CodeMirror-foldgutter"],
     indentUnit: 4,
     tabSize: 4,
     indentWithTabs: false,
@@ -1583,31 +1691,37 @@ function setupEditor() {
     styleActiveLine: true,
     lineWrapping: false,
     viewportMargin: 30,
+    highlightSelectionMatches: { minChars: 2, wordsOnly: true, delay: 200 },
+    // Alt+click adds a cursor (Ctrl/Cmd+click goes to a definition); Shift+Alt+drag selects a column.
+    configureMouse: (cm, repeat, ev) => ({
+      addNew: ev.altKey && !ev.shiftKey,
+      unit: ev.altKey && ev.shiftKey ? "rectangle" : repeat === "single" ? "char" : repeat === "double" ? "word" : "line",
+    }),
+    // Every other shortcut lives in the command list (js/commands.js).
     extraKeys: {
-      [`${mod}-Enter`]: () => runSmart(),
-      [`Shift-${mod}-Enter`]: () => runSelection(),
-      "Alt-Enter": () => runSection({ advance: true }),
-      F5: () => runActiveFile(),
-      [`${mod}-S`]: () => {
-        if (state.active) flushSave(state.active).then(() => toast("Saved."));
-      },
-      [`${mod}-/`]: (cm) => cm.toggleComment({ indent: true }),
-      "Ctrl-Space": (cm) => cm.showHint({ hint: editorHint, completeSingle: true }),
       Tab: (cm) => {
         if (cm.somethingSelected()) cm.indentSelection("add");
         else cm.replaceSelection(" ".repeat(cm.getOption("indentUnit")), "end");
       },
       "Shift-Tab": (cm) => cm.indentSelection("subtract"),
-      [`${mod}-L`]: () => $("console-input").focus(),
     },
   });
+  editor.getInputField().setAttribute("aria-label", "Code editor");
   editor.on("change", (cm, change) => {
     if (!state.active) return;
     scheduleSave(state.active);
     if (state.errorMark && state.errorMark.file === state.active && change.origin !== "setValue") clearErrorMark();
   });
   let sectionTimer = null;
-  editor.on("cursorActivity", () => updateSections());
+  let cursorTimer = null;
+  const selectionChip = () => ($("ai-explain-selection").hidden = !state.active || !editor.somethingSelected());
+  editor.on("swapDoc", selectionChip);
+  editor.on("cursorActivity", () => {
+    updateSections();
+    selectionChip();
+    clearTimeout(cursorTimer);
+    cursorTimer = setTimeout(rememberCursor, 400);
+  });
   editor.on("changes", () => {
     clearTimeout(sectionTimer);
     sectionTimer = setTimeout(() => updateSections(), 120);
@@ -1674,8 +1788,8 @@ function setupButtons() {
     $("plots").querySelectorAll(".plot-card").forEach((c) => c.remove());
     updatePlotsEmpty();
   });
-  $("btn-theme").addEventListener("click", toggleTheme);
-  $("btn-keys").addEventListener("click", () => $("dlg-keys").showModal());
+  $("btn-keys").addEventListener("click", () => app.commands.showCheatSheet());
+  $("help-close").addEventListener("click", () => $("dlg-help").close());
   $("btn-about").addEventListener("click", () => $("dlg-about").showModal());
   $("foot-about").addEventListener("click", () => $("dlg-about").showModal());
   $("foot-welcome").addEventListener("click", showWelcome);
@@ -1690,51 +1804,147 @@ function setupButtons() {
     setStatus("loading", "Loading engine…");
     engine.restart();
   });
-  $("var-copy").addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText($("var-body").textContent);
-      toast("Copied.");
-    } catch {
-      toast("Couldn't access the clipboard.", "error");
-    }
-  });
   // Close dialogs when clicking the backdrop.
-  document.querySelectorAll("dialog").forEach((d) =>
+  document.querySelectorAll("dialog").forEach((d) => {
     d.addEventListener("click", (e) => {
       if (e.target === d) d.close("cancel");
-    })
-  );
-  document.addEventListener("keydown", (e) => {
-    const mod = isMac ? e.metaKey : e.ctrlKey;
-    const inField = document.activeElement === $("console-input") || document.activeElement === $("ai-input");
-    if (document.querySelector("dialog[open]")) return;
-    if (e.altKey && (e.key === "n" || e.key === "N" || e.code === "KeyN")) {
+    });
+    // When a dialog closes, the browser hands the focus back to the editor, but typed text
+    // only arrives again after the editor is focused afresh.
+    d.addEventListener("close", () =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const field = editor.getInputField();
+          if (document.activeElement !== field || document.querySelector("dialog[open]")) return;
+          field.blur();
+          editor.focus();
+        })
+      )
+    );
+  });
+  window.addEventListener("beforeunload", (e) => {
+    saveSession();
+    for (const name of state.saveTimers.keys()) flushSave(name);
+    // With autosave turned off, ask before unsaved work is lost.
+    if (state.dirty.size && app.settings && !app.settings.get("autosave")) {
       e.preventDefault();
-      newFile();
-    } else if (mod && e.key === "Enter" && !editor.hasFocus() && !inField) {
-      e.preventDefault();
-      e.shiftKey ? runSelection() : runSmart();
-    } else if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.shiftKey && !editor.hasFocus()) {
-      e.preventDefault();
-      runActiveFile();
-    } else if (mod && (e.key === "e" || e.key === "E") && !e.shiftKey) {
-      e.preventDefault();
-      editor.focus();
-    } else if (mod && (e.key === "l" || e.key === "L") && document.activeElement !== $("console-input")) {
-      e.preventDefault();
-      $("console-input").focus();
-    } else if (mod && (e.key === "s" || e.key === "S")) {
-      e.preventDefault();
-      flushAll().then(() => toast("Saved."));
+      e.returnValue = "";
     }
   });
-  window.addEventListener("beforeunload", () => {
-    for (const name of state.saveTimers.keys()) flushSave(name);
-  });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") flushAll();
+    if (document.visibilityState !== "hidden") return;
+    saveSession();
+    if (!app.settings || app.settings.get("autosave")) flushAll();
   });
-  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", updateThemeIcon);
+}
+
+/** Commands of the core app. Feature modules add their own (see js/commands.js). */
+function registerCommands() {
+  const hasFile = () => !!state.active;
+  const consoleFocused = () => document.activeElement === $("console-input");
+  app.commands.register([
+    { id: "run.file", group: "Run", title: "Run the whole file", keys: "F5", run: runActiveFile },
+    { id: "run.smart", group: "Run", title: "Run the section at the cursor, or the file", keys: "Mod-Enter", scope: "noField", run: runSmart, hint: "Run the section with the cursor (files with %% lines), otherwise the whole file" },
+    { id: "run.selection", group: "Run", title: "Run the selection or the current line", keys: "Mod-Shift-Enter", matlab: "F9", scope: "noField", run: runSelection },
+    { id: "run.advance", group: "Run", title: "Run the section and move to the next one", keys: "Alt-Enter", matlab: ["Mod-Shift-Enter", "Alt-Enter"], scope: "noField", run: () => runSection({ advance: true }) },
+    { id: "run.stop", group: "Run", title: "Stop the running code", run: stopRun, when: () => !!engine && engine.busy },
+    { id: "run.publish", group: "Run", title: "Publish a report", run: () => $("btn-publish").click(), when: hasFile },
+    { id: "file.new", group: "File", title: "New file", keys: "Alt-N", run: () => newFile() },
+    {
+      id: "file.save", group: "File", title: "Save now", keys: "Mod-S", hint: "Save now (files also save automatically)",
+      run: () => flushAll({ manual: true }).then(() => toast("Saved.")),
+    },
+    { id: "file.close", group: "File", title: "Close this tab", keys: "Alt-W", run: () => state.active && closeTab(state.active), when: hasFile },
+    { id: "file.nextTab", group: "File", title: "Next tab", keys: "Alt-PageDown", run: () => switchTab(1), when: () => state.tabs.length > 1 },
+    { id: "file.prevTab", group: "File", title: "Previous tab", keys: "Alt-PageUp", run: () => switchTab(-1), when: () => state.tabs.length > 1 },
+    { id: "file.rename", group: "File", title: "Rename or move this file", run: () => renameFile(state.active), when: hasFile },
+    { id: "file.download", group: "File", title: "Download this file", run: () => exportFile(state.active), when: hasFile },
+    { id: "file.history", group: "File", title: "Version history of this file", run: () => app.openHistory(), when: hasFile },
+    { id: "view.console", group: "View", title: "Go to the command window", keys: "Mod-L", run: () => (showBottom("console"), $("console-input").focus()), when: () => !consoleFocused() },
+    { id: "view.editor", group: "View", title: "Go to the editor", keys: "Mod-E", run: () => editor.focus() },
+    { id: "view.assistant", group: "Assistant", title: "Show or hide the assistant", run: () => showAssistant() },
+    { id: "view.resetLayout", group: "View", title: "Reset the panel sizes", run: resetLayout },
+    { id: "view.clearConsole", group: "View", title: "Clear the command window", run: clearConsole },
+    { id: "view.clearPlots", group: "View", title: "Remove all plots", run: () => $("btn-clear-plots").click() },
+    { id: "run.reset", group: "Run", title: "Clear all variables", run: resetWorkspace },
+    { id: "ai.explainSelection", group: "Assistant", title: "Explain the selected code", run: () => (showAssistant(true), assistant.quick("selection")), when: () => hasFile() && editor.somethingSelected() },
+    { id: "ai.explainFile", group: "Assistant", title: "Explain this file", run: () => (showAssistant(true), assistant.quick("explain")), when: hasFile },
+    { id: "ai.explainError", group: "Assistant", title: "Explain the last error", run: () => (showAssistant(true), assistant.quick("error")), when: () => !!state.lastError },
+    { id: "ai.fixError", group: "Assistant", title: "Fix the last error", run: () => (showAssistant(true), assistant.quick("fixerror")), when: () => !!state.lastError },
+    { id: "project.share", group: "Project", title: "Share a link", run: () => $("btn-share").click() },
+    { id: "project.zip", group: "Project", title: "Download the project as .zip", run: () => $("btn-zip").click() },
+    { id: "project.import", group: "Project", title: "Add files from your computer", run: () => $("btn-import").click() },
+    { id: "project.menu", group: "Project", title: "Switch or create a project…", run: () => $("project-btn").click() },
+    { id: "help.welcome", group: "Help", title: "Getting started", run: showWelcome },
+    { id: "help.about", group: "Help", title: "About mylab", run: () => $("dlg-about").showModal() },
+  ]);
+}
+
+/* ---------- replacing text, with a review step for big changes ---------- */
+
+/** Replace the text of a file, touching only the lines that differ (so marks and undo survive). */
+function replaceText(path, text) {
+  const doc = getDoc(path);
+  const before = doc.getValue();
+  if (before === text) return;
+  const A = before.split("\n");
+  const B = text.split("\n");
+  const apply = () => {
+    if (A.length === B.length) {
+      for (let i = 0; i < A.length; i++) if (A[i] !== B[i]) doc.replaceRange(B[i], CodeMirror.Pos(i, 0), CodeMirror.Pos(i, A[i].length), "+replace");
+      return;
+    }
+    let start = 0;
+    while (start < A.length && start < B.length && A[start] === B[start]) start++;
+    let endA = A.length;
+    let endB = B.length;
+    while (endA > start && endB > start && A[endA - 1] === B[endB - 1]) {
+      endA--;
+      endB--;
+    }
+    // Lines [start, endA) of the old text become lines [start, endB) of the new text.
+    const P = CodeMirror.Pos;
+    const added = B.slice(start, endB).join("\n");
+    const lastA = A.length - 1;
+    if (start < endA && endB > start) doc.replaceRange(added, P(start, 0), P(endA - 1, A[endA - 1].length), "+replace");
+    else if (start < endA && endA < A.length) doc.replaceRange("", P(start, 0), P(endA, 0), "+replace");
+    else if (start < endA) doc.replaceRange("", start > 0 ? P(start - 1, A[start - 1].length) : P(0, 0), P(lastA, A[lastA].length), "+replace");
+    else if (start < A.length) doc.replaceRange(added + "\n", P(start, 0), P(start, 0), "+replace");
+    else doc.replaceRange("\n" + added, P(lastA, A[lastA].length), P(lastA, A[lastA].length), "+replace");
+    if (doc.getValue() !== text) doc.setValue(text); // safety net
+  };
+  if (editor.getDoc() === doc) editor.operation(apply);
+  else {
+    apply();
+    markDirty(path, true);
+    flushSave(path);
+  }
+}
+
+function gotoLine(line, ch = 0) {
+  line = Math.max(0, Math.min(editor.lastLine(), line));
+  editor.setCursor({ line, ch });
+  editor.scrollIntoView({ line, ch }, Math.min(120, editor.getScrollInfo().clientHeight / 3));
+  editor.focus();
+}
+
+/** Show the difference between two texts and ask the user to accept or reject it. */
+function reviewChanges({ title, oldText, newText, okLabel = "Accept the changes", note = "" }) {
+  const dlg = $("dlg-diff");
+  $("diff-title").textContent = title;
+  const stats = renderDiff($("diff-body"), oldText, newText);
+  $("diff-summary").textContent = statsText(stats) + ". " + (note || "Green lines are added, red lines are removed. Nothing changes until you accept.");
+  $("diff-accept").textContent = okLabel;
+  return new Promise((resolve) => {
+    const onClose = () => {
+      dlg.removeEventListener("close", onClose);
+      resolve(dlg.returnValue === "ok");
+    };
+    dlg.addEventListener("close", onClose);
+    dlg.returnValue = "";
+    dlg.showModal();
+    $("diff-body").scrollTop = 0;
+  });
 }
 
 function insertIntoEditor(code) {
@@ -1748,20 +1958,33 @@ function insertIntoEditor(code) {
   toast(`Inserted into ${state.active}.`);
 }
 
-async function replaceFileWith(code) {
+/** Code from the assistant that should replace the file: shown as a diff to accept or reject. */
+async function proposeEdit(code) {
   if (!state.active) {
     toast("Open a file first.", "error");
-    return;
+    return false;
   }
-  const ok = await confirmDialog({
-    title: `Replace ${state.active}?`,
-    text: "The whole file will be replaced with the assistant's code. You can undo with Ctrl+Z.",
-    okLabel: "Replace",
-  });
-  if (!ok) return;
-  const doc = editor.getDoc();
-  doc.replaceRange(code.endsWith("\n") ? code : code + "\n", CodeMirror.Pos(doc.firstLine(), 0), CodeMirror.Pos(doc.lastLine()));
+  if (editor.getOption("readOnly")) {
+    toast("Leave step-through first.");
+    return false;
+  }
+  const path = state.active;
+  const oldText = editor.getValue();
+  const newText = code.endsWith("\n") ? code : code + "\n";
+  if (newText.trimEnd() === oldText.trimEnd()) {
+    toast("This code is the same as your file.");
+    return false;
+  }
+  const ok = await reviewChanges({ title: `Changes the assistant suggests for ${baseName(path)}`, oldText, newText });
+  if (!ok) {
+    toast("Rejected. Your file was not changed.");
+    return false;
+  }
+  await app.snapshot(path, "Before the assistant's changes");
+  replaceText(path, newText);
   editor.focus();
+  toast("Changes applied. Undo with Ctrl+Z.");
+  return true;
 }
 
 function assistantContext() {
@@ -1838,6 +2061,19 @@ Object.assign(app, {
   appendConsole,
   addFigures,
   renderVariables,
+  showBottom,
+  replaceText,
+  reviewChanges,
+  proposeEdit,
+  gotoLine,
+  gotoError,
+  resetLayout,
+  saveSession,
+  closeTab,
+  flushSave,
+  runSelection,
+  runSection,
+  showAssistant,
   locateError,
   markErrorLine,
   clearErrorMark,
@@ -1847,13 +2083,16 @@ Object.assign(app, {
 });
 
 async function main() {
-  updateThemeIcon();
   applySizes();
   setupEditor();
+  initCommands(app);
+  initSettings(app);
   setupConsole();
   setupButtons();
   setupGutters();
   setupWelcome();
+  setupTabs();
+  setupBottomTabs();
 
   // Start the engine as early as possible; it loads while the files are read.
   engine = new Engine();
@@ -1873,10 +2112,12 @@ async function main() {
   assistant = new Assistant({
     getContext: assistantContext,
     insertCode: insertIntoEditor,
-    replaceFile: replaceFileWith,
+    replaceFile: proposeEdit,
     runCode: (code) => runCode(code, { kind: "command" }),
     toast,
   });
+  app.assistant = assistant;
+  registerCommands();
   if (prefs.get("aiOpen", false)) showAssistant(true);
 
   initProjects(app);
@@ -1884,6 +2125,12 @@ async function main() {
   initPublish(app);
   initStepper(app);
   initAssignments(app);
+  initEditing(app);
+  initSearch(app);
+  initProblems(app);
+  initIntel(app);
+  initVarView(app);
+  initHistory(app);
 
   await loadProjects();
   document.body.dataset.files = "ready";

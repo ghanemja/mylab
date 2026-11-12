@@ -20,9 +20,9 @@ Contents: [For students](#for-students) · [For teachers](#for-teachers) ·
 | Panel | What it does |
 |-------|--------------|
 | **Files** (left) | The files of the current project, in folders if you like. Create, rename, move, delete, import and download files. The button at the top switches between projects. |
-| **Editor** (center) | Tabs, syntax highlighting, bracket matching, comment toggling and name completion. Files save automatically. |
-| **Command Window** (bottom) | Type a command and press Enter. Arrow keys walk through your history. Tab completes names. `clc` clears the window. |
-| **Workspace** (right) | Every variable with its size and class. Click one to see its full value. |
+| **Editor** (center) | Tabs, syntax highlighting, automatic indentation, name suggestions, help on hover, problems underlined as you type, find and replace. Files save automatically. See [Editor help](#editor-help). |
+| **Command Window** (bottom) | Type a command and press Enter. Arrow keys walk through your history. Tab completes names. `clc` clears the window. The **Problems** tab next to it lists what the checker found; a **Search** tab appears when you search all files. |
+| **Workspace** (right) | Every variable with its size and class. Click one to open it in the [variable viewer](#variable-viewer). |
 | **Plots** (right) | Figures and animations drawn by your code. Click to enlarge, or download them (PNG, or GIF for animations). |
 | **Assignment** | Appears when you open an assignment: the problems, and a button to check your answers. |
 | **Assistant** (optional) | An AI helper, see below. |
@@ -30,6 +30,11 @@ Contents: [For students](#for-students) · [For teachers](#for-teachers) ·
 The first time you open the app, a welcome window points to the examples, to
 *Step through*, to *Open from GitHub* and to an example assignment. You can
 open it again with **Getting started** at the bottom of the page.
+
+Everything the app can do is also in the **command palette**: press
+Ctrl+Shift+P (or the ⋯ button in the top bar), type a few letters of what you
+want ("fmt" finds *Format document*) and press Enter. Each entry shows its
+keyboard shortcut. Ctrl+P is the same list for the files of the project.
 
 ### Running code
 
@@ -41,7 +46,9 @@ open it again with **Getting started** at the bottom of the page.
   section; Alt+Enter runs it and moves to the next one. In a file without
   `%%` lines, Ctrl+Enter runs the whole file.
 - Errors are shown in red with the file and line number, and the line is
-  highlighted in the editor.
+  highlighted in the editor and listed under **Problems**. Each error has the
+  links **Go to line**, **Explain this error** and **Fix this error** (the
+  last two use the [assistant](#the-assistant)).
 - **Stop** stops runaway code (for example an endless loop). The browser has
   no safe way to interrupt Python inside a worker, so Stop restarts the
   engine: **all variables are cleared**. Your files are not affected.
@@ -52,6 +59,79 @@ A script can call functions saved in other `.m` files of the project (a file
 called as `add_squares(3, 4)`), including files in other folders of the
 project. A file runs with its own folder as the current folder, so
 `readmatrix('data.csv')` finds a `data.csv` that sits next to the script.
+
+### Editor help
+
+![Problems are underlined as you type and listed below the editor](images/problems.png)
+
+The editor works the way programmers' editors do, but you can ignore all of
+it and just type.
+
+- **Problems as you type.** A moment after you stop typing, mylab checks the
+  file without running it. A syntax error gets a red underline; a name that is
+  not a function or variable mylab knows gets an orange one (a likely typo).
+  A mark beside the line number and the **Problems** tab show the same list;
+  click an entry to jump to it. F8 goes to the next problem.
+- **Help where you are.** Rest the mouse on a function name to see how it is
+  called and one line about what it does. Type `name(` to see the same while
+  you fill in the inputs. F1 opens the full help for the name at the cursor.
+  This works for mylab's functions and for functions in your own files (the
+  comment lines under a `function` line are its help).
+- **Suggestions.** While you type a name, a list offers your variables, the
+  functions in your project and mylab's functions, each with a short
+  description. Tab accepts a suggestion; Enter always starts a new line.
+  Ctrl+Space asks for the list.
+- **Find your way.** Ctrl+click a function name (or press F12) to go to where
+  it is defined, in this file or another file of the project. Ctrl+Shift+O
+  lists the functions and `%%` sections of the file. Ctrl+F finds text in the
+  file, Ctrl+H replaces it (with match count, and toggles for upper/lower
+  case, whole words and regular expressions). Ctrl+Shift+F searches every
+  file of the project.
+- **Rename.** Put the cursor on a variable or function and press F2 to rename
+  every use of it in the file. Comments and text in quotes are not touched.
+- **Tidy code.** New lines are indented for you after `if`, `for`, `while`,
+  `function`, `switch` and `try`, and `end`, `else` and `case` move back by
+  themselves. *Format document* (Shift+Alt+F) fixes the indentation of the
+  whole file; it only ever changes spaces at the start and end of lines.
+  Blocks and `%%` sections can be folded with the small arrows beside the
+  line numbers.
+- **Editing keys.** Ctrl+/ comments lines, Alt+↑/↓ moves a line,
+  Shift+Alt+↓ copies it, Ctrl+D selects the next place the selected word
+  appears so you can change several at once (Alt+click adds a cursor
+  anywhere).
+- **Tabs.** Each open file has a tab; a dot marks changes that are not saved
+  yet (files save by themselves after a moment, unless you turn that off in
+  the settings). The app remembers the open tabs, the cursor in each file and
+  your breakpoints for every project.
+- **Version history.** mylab keeps the last 30 saved versions of each file in
+  your browser (⋯ → *Version history*). Pick a version to see what changed
+  since then, and restore it if you want. Restoring can be undone.
+
+![Version history with the changes since an earlier save](images/version-history.png)
+
+**Settings** (⋯ → *Settings*, or Ctrl+,): color theme (light, dark or high
+contrast; by default the app follows your system), text size, keyboard
+shortcut style and the helpers above. Drag the bars between panels to resize
+them; double-click a bar to reset it. All of this is remembered in your
+browser.
+
+![The dark theme](images/web-app-dark.png)
+
+### Variable viewer
+
+![A matrix in the variable viewer](images/variable-viewer.png)
+
+Click a variable in the Workspace panel to open it:
+
+- Matrices, tables, cell arrays, string arrays and structs are shown as a
+  **grid**. Large values are shown one page at a time (100 rows and 25
+  columns). Values inside a struct or a cell can be opened with a click.
+- **Text** shows the value the way the Command Window prints it.
+- **Copy as CSV** copies the whole value (with full precision) so you can
+  paste it into a spreadsheet.
+- **Plot** draws a numeric matrix right away as a line plot, bar chart,
+  histogram or image. The command it runs is shown in the Command Window, so
+  you can copy it into your script.
 
 ### Step through your code
 
@@ -68,8 +148,11 @@ lets you walk through the run:
   that just changed are marked. Inside a function you see that function's
   variables and how deep the call is.
 - The Command Window shows what had been printed up to that step.
-- Click beside a line number to set a **breakpoint** (a red dot). The two
-  breakpoint buttons jump to the next or previous time that line is reached.
+- Click beside a line number (or press F9) to set a **breakpoint** (a red
+  dot). The two breakpoint buttons jump to the next or previous time that
+  line is reached. *Run to the next breakpoint* (Alt+F5) starts stepping and
+  goes straight to the first breakpoint, with the variables as they are
+  there.
 - If the run ends with an error, the last step shows the failing line and the
   error message.
 
@@ -158,19 +241,42 @@ repository instead.
 
 | Keys | Action |
 |------|--------|
+| Ctrl+Shift+P | Command palette: every action, with its shortcut |
+| Ctrl+P | Go to a file of the project (type `:12` for a line, `@` for the outline) |
 | Ctrl+Enter | Run the section with the cursor (or the whole file if it has no `%%` lines) |
 | Alt+Enter | Run the section and move to the next one |
 | F5 | Run the whole file |
 | Ctrl+Shift+Enter | Run the selection or the current line |
+| F10 | Step through the file (then: next step) |
+| F9, Alt+F5 | Set or remove a breakpoint; run to the next breakpoint |
 | ← / →, Home / End, Esc | While stepping: back / forward, first / last step, leave |
 | Ctrl+S | Save now (files also save automatically) |
-| Ctrl+/ | Comment or uncomment lines |
+| Ctrl+F, Ctrl+H | Find, find and replace in the file (F3 / Shift+F3: next / previous match) |
+| Ctrl+Shift+F | Search in all files |
+| F1 | Help for the function at the cursor |
+| F12, Ctrl+click | Go to the definition |
+| Ctrl+Shift+O | Outline: functions and sections of the file |
+| F2 | Rename a variable or function in the file |
+| F8, Shift+F8 | Next / previous problem; Ctrl+Shift+M shows the Problems list |
 | Ctrl+Space, Tab | Complete a name (editor, command window) |
-| Alt+N | New file |
+| Ctrl+/ | Comment or uncomment lines |
+| Alt+↑ / Alt+↓, Shift+Alt+↓ | Move the line up / down, copy it down |
+| Ctrl+D, Ctrl+Shift+L | Add the next match to the selection, select every match (several cursors) |
+| Tab / Shift+Tab, Ctrl+] / Ctrl+[ | Indent / outdent |
+| Shift+Alt+F | Format document (fix the indentation) |
+| Ctrl+Shift+[ / Ctrl+Shift+] | Fold / unfold the block at the cursor |
+| Alt+N, Alt+W | New file, close the tab (Alt+PgUp / Alt+PgDn: previous / next tab) |
 | Ctrl+L, Ctrl+E | Go to the command window, go to the editor |
+| Ctrl+, | Settings |
 
-On a Mac, use ⌘ instead of Ctrl. The keyboard button in the top bar shows
-this list.
+On a Mac, use ⌘ instead of Ctrl. The keyboard button in the top bar shows the
+full list, made from the same table the app uses.
+
+**MATLAB-style keys.** If your fingers know the MATLAB desktop, switch the
+shortcut style (in the shortcut list or the settings): F5 runs the file, F9
+runs the selection, Ctrl+Enter runs the section, Ctrl+Shift+Enter runs the
+section and moves on, F12 sets a breakpoint, Ctrl+R comments and Ctrl+I fixes
+the indentation.
 
 ## For teachers
 
@@ -265,7 +371,16 @@ output and figures in it match the code.
 The assistant panel (Assistant button, top right) can explain an error, fix
 your code, explain code, translate it to Python (NumPy/Matplotlib) or answer
 questions. Code in its answers gets buttons to copy it, insert it into the
-editor, replace the current file, or run it.
+editor, run it, or **review the changes**: the app shows what the code would
+change in your file, line by line, and nothing changes until you press
+*Accept*. An accepted change can be undone, and the file as it was is kept in
+the version history.
+
+![A fix proposed by the assistant, shown as changes to accept or reject](images/ai-diff.png)
+
+The assistant is also where the editor's shortcuts lead: **Explain this
+error** and **Fix this error** under an error message, and **Explain
+selection** when some code is selected.
 
 With each question, the app sends your current file (or selection), your last
 error and a list of variable names, sizes and classes (not their values).
@@ -323,6 +438,8 @@ needed).
   uploaded anywhere. If the browser blocks storage (some private modes do),
   the app keeps files in memory only and says so in the Files panel; download
   them before closing the tab.
+- The version history, your settings, the open tabs and your breakpoints are
+  kept in the same browser storage (IndexedDB and `localStorage`).
 - Clearing your browser's site data deletes your files. Use **Export this
   project as .zip** to keep a backup.
 - A share link holds the code in the part of the address after `#`. Browsers
@@ -365,6 +482,15 @@ needed).
 - Share links cannot hold large projects. Use a GitHub repository for those.
 - `exit`/`quit`, system commands and files outside the project folder are
   not available.
+- The checker behind **Problems** reads one file at a time and does not run
+  it. It reports syntax errors and unknown names; it does not know about
+  variables that only exist after other code has run (it stays quiet about
+  names in your Workspace and about files that use `load` or `eval`).
+- Rename (F2) works within one file. The editor shows one file at a time
+  (there is no split view).
+- Some browsers keep a few shortcuts for themselves (Firefox uses
+  Ctrl+Shift+P for a private window). Ctrl+Alt+P and the ⋯ button open the
+  command palette everywhere.
 
 ## For developers
 
@@ -393,9 +519,11 @@ committed; CI builds it.
 
 The app has no build step: `web/index.html`, `web/styles.css`, ES modules in
 `web/js/` and the worker `web/worker.js`. Third-party code is loaded from CDNs
-with pinned versions: Pyodide 0.27.7 (jsDelivr), CodeMirror 5.65.16 and JSZip
-3.10.1 (cdnjs), and the Anthropic SDK 1.3.0 (jsDelivr, only when that
-provider is used).
+with pinned versions: Pyodide 0.27.7 (jsDelivr), CodeMirror 5.65.16 (with its
+octave mode and the matchbrackets, closebrackets, comment, active-line,
+show-hint, runmode, searchcursor, match-highlighter, foldcode and foldgutter
+addons and the sublime keymap's commands) and JSZip 3.10.1 (cdnjs), and the
+Anthropic SDK 1.3.0 (jsDelivr, only when that provider is used).
 
 ### Code map
 
@@ -409,6 +537,15 @@ provider is used).
 | `js/sections.js`, `js/publish.js`, `js/report.js` | `%%` sections and the report document. |
 | `js/stepper.js` | Step-through panel and breakpoints. |
 | `js/assignment.js` | Assignment panel, checking, submission .zip. |
+| `js/commands.js` | The command list: every action with its shortcut. The key handler, the command palette, the file switcher and the shortcut list are built from it. Shortcut presets (standard, MATLAB-style). |
+| `js/blocks.js` | Block structure of code (which lines open and close `if`/`for`/`function`… blocks) as plain text work: used for auto-indent, *Format document*, folding and the outline. |
+| `js/editing.js` | Auto-indent, *Format document*, folding, line and multi-cursor commands. |
+| `js/search.js` | Find and replace in the file; search across the project. |
+| `js/problems.js` | Problems as you type: asks the worker to run `mylab.lint.check_source`, underlines the findings and fills the Problems tab. |
+| `js/intel.js` | Hover help, usage hints, F1 help, autocomplete, go to definition, outline, rename. |
+| `js/varview.js` | The variable viewer (grid pages come from the worker). |
+| `js/history.js`, `js/diff.js` | Version history (IndexedDB database `mylab-history`, store `versions`, last 30 saves per file) and the line diff view, which also shows edits proposed by the assistant. |
+| `js/settings.js` | Themes, text size, the settings dialog and the ⋯ menu. |
 | `js/ui.js`, `js/markdown.js` | DOM helpers, dialogs, menus; a small safe Markdown renderer. |
 | `js/ai.js` | The assistant. |
 
@@ -437,6 +574,23 @@ Requests are `{ id, type, … }`; replies are `{ id, ok, result | error }`.
 - `test { files, code }` wipes `/home/pyodide/grade`, writes `files` there and
   runs `code` in a fresh session with that folder as the current folder.
 - `variables`, `showVariable`, `complete`, `help`, `reset`.
+- `lint { code, known }` returns `mylab.lint.check_source(code)` without the
+  warnings about names in `known` (the project's `.m` files) or in the
+  workspace. `helpIndex` returns `{ name: [usage lines, one-line description] }`
+  from `mylab.help_data` for hover help and autocomplete.
+- `inspect { name, path, row, rows, col, cols }` returns one page of a
+  variable as a grid of short texts (`path` walks into struct fields and
+  cells); `csv { name, path, maxCells }` returns it as CSV text.
+
+Requests that only look things up (`lint`, `helpIndex`, `help`, `inspect`,
+`csv`) are sent with `Engine.background()`: they wait their turn in the
+worker like any other request, but they do not make the app look busy, so
+Run stays available.
+
+Feature modules talk to each other through a small event bus on the `app`
+object (`app.on(name, fn)` / `app.emit(name, …)`; the events are listed at
+the top of `js/app.js`) and add their actions with
+`app.commands.register([{ id, title, group, keys, run }])`.
 
 The step-through view rebuilds the workspace of step *i* by replaying the
 `set`/`del` changes of all earlier steps with the same `frame`; `out` is the
@@ -473,13 +627,19 @@ PYTHON=.venv/bin/python node scripts/test_web.mjs --gif   # record docs/images/d
 
 It checks the welcome window, command window, workspace, plotting, error line
 numbers, functions in other files, run selection, the assistant (mocked),
-sections, published reports, stepping forward and back, breakpoints, folders
+the editor helpers (command palette and file switcher, find/replace and
+search in files, problems as you type, hover help, usage hints and F1,
+autocomplete, go to definition, outline, rename, editing shortcuts,
+auto-indent, formatting, folding, tabs, the variable viewer, run to
+breakpoint, version history, themes and settings, assistant edits as a diff,
+keyboard access and focus), sections, published reports, stepping forward and back, breakpoints, folders
 and binary files through the engine's file system, files written by code,
 animations, projects and .zip round trips, folder import, GitHub import and
 its error messages, share links opened in a second browser context,
 assignments (wrong answer, right answer, `exit`, the timeout watchdog,
-submission .zip, reload), Stop, persistence, the phone layout, and that there
-are no console errors.
+submission .zip, reload), Stop, persistence (files, tabs, cursor,
+breakpoints), the phone layout down to 320 px, and that there are no console
+errors.
 
 ### Deployment
 

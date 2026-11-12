@@ -27,6 +27,21 @@
   `writetable`, `readmatrix`, `writematrix`, `readcell`, `writecell`.
 - Plots: `quiver3`, `surface`, `pcolor`, `surfl`, `trisurf`, `trimesh`,
   `triplot`, `stem3`, `xline`, `yline`, `alpha`, `boxplot`, `gobjects`.
+### Web app
+- Editor conveniences: a command palette (Ctrl+Shift+P) and file switcher
+  (Ctrl+P); find and replace, and search across the project; problems
+  underlined as you type (from `mylab.lint`) with a Problems list; help on
+  hover, usage hints and F1 help; richer autocomplete; go to definition,
+  outline and rename; auto-indent, *Format document*, folding, line and
+  multi-cursor shortcuts.
+- A variable viewer with a paged grid, copy as CSV and quick plots.
+- "Run to the next breakpoint"; tabs, cursor positions and breakpoints are
+  remembered per project.
+- Light, dark and high-contrast themes that follow the system, text size,
+  optional MATLAB-style keys, a shortcut list built from the command table,
+  and a local version history with a diff view.
+- The assistant offers "Fix this error" and "Explain selection", and shows
+  its edits as a diff to accept or reject.
 
 ## 1.0.0
 

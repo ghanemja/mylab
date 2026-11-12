@@ -6,6 +6,7 @@ export class Engine extends EventTarget {
     this.url = url;
     this.worker = null;
     this.pending = new Map();
+    this.quiet = new Map(); // background requests (problems, help, variable pages): they do not count as "busy"
     this.nextId = 1;
     this.ready = false;
     this.info = null;
@@ -35,6 +36,11 @@ export class Engine extends EventTarget {
       return this._emit("ready", msg.info);
     }
     if (msg.type === "fatal") return this._emit("fatal", msg);
+    const q = this.quiet.get(msg.id);
+    if (q) {
+      this.quiet.delete(msg.id);
+      return msg.ok ? q.resolve(msg.result) : q.reject(new Error(msg.error));
+    }
     const p = this.pending.get(msg.id);
     if (!p) return;
     this.pending.delete(msg.id);
@@ -52,6 +58,16 @@ export class Engine extends EventTarget {
     });
   }
 
+  /** Like request(), but the engine does not look busy: Run stays available while it waits. */
+  background(type, args = {}) {
+    if (!this.ready) return Promise.reject(new Error("The engine is still loading."));
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      this.quiet.set(id, { resolve, reject, type });
+      this.worker.postMessage({ id, type, ...args });
+    });
+  }
+
   get busy() {
     return this.pending.size > 0;
   }
@@ -64,7 +80,11 @@ export class Engine extends EventTarget {
   variables() { return this.request("variables"); }
   showVariable(name) { return this.request("showVariable", { name }); }
   complete(prefix) { return this.request("complete", { prefix }); }
-  help(name) { return this.request("help", { name }); }
+  help(name) { return this.background("help", { name }); }
+  lint(code, known) { return this.background("lint", { code, known }); }
+  helpIndex() { return this.background("helpIndex"); }
+  inspect(name, opts = {}) { return this.background("inspect", { name, ...opts }); }
+  csv(name, opts = {}) { return this.background("csv", { name, ...opts }); }
   reset() { return this.request("reset"); }
 
   /** Resolves when the engine is usable (again); rejects if loading fails. */
@@ -87,7 +107,9 @@ export class Engine extends EventTarget {
   restart() {
     this.worker.terminate();
     for (const p of this.pending.values()) p.reject(new Error("Stopped."));
+    for (const q of this.quiet.values()) q.reject(new Error("Stopped."));
     this.pending.clear();
+    this.quiet.clear();
     this._emit("idle", {});
     this._emit("restarting", {});
     this.start();
