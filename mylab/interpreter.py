@@ -619,6 +619,8 @@ class Interpreter:
         if isinstance(value, MObject) and isinstance(target, A.Index) and (
                 current is None or (isinstance(current, np.ndarray) and current.size == 0)):
             args = self.eval_index_args(target.args, empty_double(), frame)
+            if hasattr(value, "empty_like"):  # array-valued objects (datetime, duration) can grow
+                return value.empty_like().index_set(self, args, value)
             if all(isinstance(a, np.ndarray) and a.size == 1 and float(np.real(a.flat[0])) == 1 for a in args):
                 return value
             raise MatlabError("Object arrays are not supported yet; use a cell array {obj1, obj2}.")
@@ -837,6 +839,9 @@ class Interpreter:
         start_v = self.eval(node.start, frame)
         stop_v = self.eval(node.stop, frame)
         step_v = self.eval(node.step, frame) if node.step is not None else None
+        for v in (start_v, step_v, stop_v):
+            if isinstance(v, MObject) and hasattr(v, "colon_range"):
+                return v.colon_range(start_v, step_v, stop_v)  # e.g. t1:days(1):t2
         return colon_range(start_v, step_v, stop_v)
 
     def eval_cell_literal(self, node: A.CellArray, frame: Frame) -> Cell:

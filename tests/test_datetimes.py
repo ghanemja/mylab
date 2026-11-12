@@ -559,3 +559,12 @@ def test_plotting_accepts_datetimes(m):
     m.run("plot(datetime(2024,1,1:3), [1 2 3]); ax = gca; n = numel(ax.Children); close all")
     assert m.num("n").item() == 1
     m.run("plot(hours(1:3), [1 2 3]); close all")
+
+
+def test_ranges_and_growing_arrays(m):
+    m.run("t1 = datetime(2024, 1, 30); r = t1:days(1):datetime(2024, 2, 2); n = numel(r);")
+    assert m.val("n").item() == 4
+    m.run("for k = 1:3, x(k) = datetime(2024, 3, k); end; d = day(x);")
+    assert m.num("d").tolist() == [[1, 2, 3]]
+    m.run("h = hours(1):minutes(30):hours(2); nh = numel(h);")
+    assert m.val("nh").item() == 3
