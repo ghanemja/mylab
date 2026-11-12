@@ -6,10 +6,6 @@ third-party toolboxes or MEX files, or code for other MATLAB-like languages.
 
 | function | repositories | calls |
 |---|---|---|
-| `speye` | 23 | 676 |
-| `spdiags` | 22 | 229 |
-| `datetime` | 21 | 99 |
-| `datenum` | 17 | 424 |
 | `onCleanup` | 17 | 281 |
 | `handle` | 17 | 207 |
 | `pdist2` | 17 | 63 |
@@ -23,23 +19,19 @@ third-party toolboxes or MEX files, or code for other MATLAB-like languages.
 | `quiver3` | 14 | 91 |
 | `wait` | 14 | 62 |
 | `subs` | 13 | 327 |
-| `pow2` | 13 | 211 |
 | `message` | 13 | 102 |
 | `simplify` | 13 | 92 |
 | `syms` | 13 | 92 |
 | `step` | 13 | 61 |
-| `eigs` | 13 | 33 |
 | `RandStream` | 13 | 29 |
 | `griddata` | 13 | 27 |
 | `timer` | 13 | 21 |
 | `getReport` | 13 | 15 |
-| `nonzeros` | 12 | 109 |
 | `vl_argparse` | 12 | 76 |
 | `start` | 12 | 36 |
 | `sphere` | 12 | 26 |
 | `feature` | 12 | 23 |
 | `sym` | 11 | 399 |
-| `datevec` | 11 | 86 |
 | `ifftn` | 11 | 83 |
 | `caffe.Net` | 11 | 80 |
 | `addlistener` | 11 | 76 |
@@ -86,11 +78,9 @@ third-party toolboxes or MEX files, or code for other MATLAB-like languages.
 | `xmlread` | 8 | 44 |
 | `makehgtform` | 8 | 33 |
 | `categorical` | 8 | 29 |
-| `spalloc` | 8 | 26 |
 | `triangulation` | 8 | 23 |
 | `montage` | 8 | 22 |
 | `spectrogram` | 8 | 21 |
-| `lasterr` | 8 | 20 |
 | `PASreadrecord` | 8 | 19 |
 | `random` | 8 | 19 |
 | `runner.addPlugin` | 8 | 14 |
@@ -105,7 +95,6 @@ third-party toolboxes or MEX files, or code for other MATLAB-like languages.
 | `matlabFunction` | 7 | 72 |
 | `boxplot` | 7 | 71 |
 | `inline` | 7 | 68 |
-| `lasterror` | 7 | 51 |
 | `findprop` | 7 | 49 |
 | `pkg` | 7 | 49 |
 | `vl_nnconv` | 7 | 40 |
@@ -120,11 +109,9 @@ third-party toolboxes or MEX files, or code for other MATLAB-like languages.
 | `rec.objects` | 7 | 26 |
 | `imResampleMex` | 7 | 23 |
 | `grp2idx` | 7 | 22 |
-| `svds` | 7 | 21 |
 | `vl_simplenn_tidy` | 7 | 21 |
 | `h5create` | 7 | 20 |
 | `h5write` | 7 | 20 |
-| `pcg` | 7 | 20 |
 | `polyarea` | 7 | 20 |
 | `vl_imreadjpeg` | 7 | 20 |
 | `imregionalmax` | 7 | 19 |
@@ -197,7 +184,6 @@ third-party toolboxes or MEX files, or code for other MATLAB-like languages.
 | `dagnn.Conv` | 5 | 424 |
 | `ip.addRequired` | 5 | 181 |
 | `ip.addOptional` | 5 | 174 |
-| `sprand` | 5 | 92 |
 | `set_param` | 5 | 81 |
 | `ip.parse` | 5 | 78 |
 | `e.stack` | 5 | 75 |
@@ -215,7 +201,6 @@ third-party toolboxes or MEX files, or code for other MATLAB-like languages.
 | `info.stride` | 5 | 42 |
 | `vl_testsim` | 5 | 41 |
 | `vpa` | 5 | 41 |
-| `convertStringsToChars` | 5 | 40 |
 | `dispApi.getInfo` | 5 | 40 |
 | `objApi.objSetVal` | 5 | 40 |
 | `sr.seek` | 5 | 40 |
@@ -228,7 +213,6 @@ third-party toolboxes or MEX files, or code for other MATLAB-like languages.
 | `values` | 5 | 28 |
 | `features` | 5 | 27 |
 | `net.blobs` | 5 | 27 |
-| `seconds` | 5 | 27 |
 | `tree.child` | 5 | 26 |
 | `A.getId` | 5 | 25 |
 | `controller` | 5 | 25 |
@@ -306,3 +290,19 @@ third-party toolboxes or MEX files, or code for other MATLAB-like languages.
 | `A.move` | 5 | 10 |
 | `A.nStrm` | 5 | 10 |
 | `A.save` | 5 | 10 |
+| `A.setType` | 5 | 10 |
+| `cache.freeinds` | 5 | 10 |
+| `camorbit` | 5 | 10 |
+| `demosaic` | 5 | 10 |
+| `dicomread` | 5 | 10 |
+| `dispApi.setAud` | 5 | 10 |
+| `dispApi.setSpeedCb` | 5 | 10 |
+| `ferns.ysFern` | 5 | 10 |
+| `findsym` | 5 | 10 |
+| `histc2c` | 5 | 10 |
+| `imgApi.adjContrast` | 5 | 10 |
+| `legendre` | 5 | 10 |
+| `menuApi.vidOpen` | 5 | 10 |
+| `mvnrnd` | 5 | 10 |
+| `nlfiltersep_max` | 5 | 10 |
+| `objApi.objSetType` | 5 | 10 |
