@@ -1,5 +1,5 @@
 // A small, safe Markdown renderer for assistant replies.
-// Supports fenced code blocks, inline code, bold/italic, links, headings and lists.
+// Supports fenced code blocks, inline code, bold/italic, links, headings, lists and tables.
 // Everything is HTML-escaped first; no raw HTML from the model is ever inserted.
 
 export function escapeHtml(s) {
@@ -71,6 +71,24 @@ export function parseMarkdown(md) {
         i++;
       }
       blocks.push({ type: "code", lang, code: body.join("\n"), closed });
+      continue;
+    }
+    // Tables: a row of cells, then a line like |---|:--:|
+    if (line.includes("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes("-")) {
+      const cells = (row) => row.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+      flushPara();
+      flushList();
+      const head = cells(line);
+      const body = [];
+      i += 2;
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) body.push(cells(lines[i++]));
+      blocks.push({
+        type: "html",
+        html:
+          `<table class="md-table"><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>` +
+          body.map((r) => `<tr>${head.map((_, k) => `<td>${inline(r[k] || "")}</td>`).join("")}</tr>`).join("") +
+          "</tbody></table>",
+      });
       continue;
     }
     const heading = line.match(/^(#{1,6})\s+(.*)$/);

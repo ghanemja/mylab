@@ -79,7 +79,7 @@ export function initStepper(app) {
   function clearMark() {
     if (!mark) return;
     try {
-      mark.doc.removeLineClass(mark.handle, "wrap", mark.cls);
+      mark.doc.removeLineClass(mark.handle, "background", mark.cls);
       mark.doc.removeLineClass(mark.handle, "gutter", "cm-step-gutter");
     } catch {
       /* line is gone */
@@ -130,7 +130,7 @@ export function initStepper(app) {
       const doc = app.getDoc(path);
       if (step.line <= doc.lineCount()) {
         const cls = failing ? "cm-step-error" : "cm-step-line";
-        const handle = doc.addLineClass(step.line - 1, "wrap", cls);
+        const handle = doc.addLineClass(step.line - 1, "background", cls);
         doc.addLineClass(step.line - 1, "gutter", "cm-step-gutter");
         mark = { doc, handle, cls };
         editor.setCursor({ line: step.line - 1, ch: 0 });
@@ -222,7 +222,7 @@ export function initStepper(app) {
       return null;
     }
     app.setRunning(false);
-    const steps = (res.steps || []).filter((s) => !s.end || true);
+    const steps = res.steps || [];
     if (!steps.some((s) => !s.end)) {
       if (res.error) {
         const at = app.locateError(res, { file: f.name });

@@ -38,7 +38,7 @@ export function validateBundle(raw) {
     const id = String(p.id ?? `problem${i + 1}`);
     if (seen.has(id)) throw new Error(`Two problems share the id “${id}”.`);
     seen.add(id);
-    let folder = id.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || `problem${i + 1}`;
+    let folder = id.replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^[_.]+|[_.]+$/g, "") || `problem${i + 1}`;
     while (folders.has(folder.toLowerCase())) folder += "_";
     folders.add(folder.toLowerCase());
     const textMap = (obj) => {
@@ -79,19 +79,29 @@ function bundleKey(bundle) {
 
 const fmtPoints = (n) => String(Math.round(n * 100) / 100);
 
-/** Points a problem's results are worth: the tests' points, scaled to the problem's points. */
+/**
+ * Points earned on the tests that can be run here. A problem's `points` is its full total,
+ * which may include hidden tests, so the visible tests can add up to less than that.
+ * Returns { earned, visible, testPoints, counted } (counted: tests carry points; otherwise
+ * earned/visible count tests).
+ */
 function score(problem, results) {
   const tests = problem.tests;
-  const weights = tests.map((t) => t.points);
-  const sum = weights.reduce((s, w) => s + w, 0);
-  const w = sum > 0 ? weights : tests.map(() => 1);
-  const total = sum > 0 ? sum : tests.length;
-  let passed = 0;
+  const sum = tests.reduce((s, t) => s + t.points, 0);
+  const counted = sum > 0;
+  const w = counted ? tests.map((t) => t.points) : tests.map(() => 1);
+  let earned = 0;
   tests.forEach((t, i) => {
-    if (results && results[i] && results[i].status === "pass") passed += w[i];
+    if (results && results[i] && results[i].status === "pass") earned += w[i];
   });
-  const scale = total > 0 ? problem.points / total : 0;
-  return { earned: passed * scale, testPoints: w.map((x) => x * scale) };
+  return { earned, visible: counted ? sum : tests.length, testPoints: w, counted };
+}
+
+/** The file a student completes: <function>.m when the bundle names one, else the first starter file. */
+function mainFile(p) {
+  const names = Object.keys(p.starter);
+  const main = names.find((n) => n === p.function + ".m") || names.find((n) => n.endsWith(".m")) || names[0];
+  return main ? `${p.folder}/${main}` : null;
 }
 
 export function initAssignments(app) {
@@ -113,7 +123,7 @@ export function initAssignments(app) {
       for (const [name, text] of Object.entries(p.starter)) wanted.push({ path: `${p.folder}/${name}`, content: text });
       for (const [name, text] of Object.entries(p.data)) wanted.push({ path: `${p.folder}/${name}`, content: text });
     }
-    const firstFile = b.problems.map((p) => Object.keys(p.starter).map((n) => `${p.folder}/${n}`)[0]).find(Boolean) || null;
+    const firstFile = b.problems.map(mainFile).find(Boolean) || null;
     if (project) {
       // The student already started: keep every file they have and only add what is missing.
       if (state.project.id !== project.id && !(await app.switchProject(project.id))) return null;
@@ -164,6 +174,7 @@ export function initAssignments(app) {
 
   /** #assignment=<url>  or  #assignmentdata=<compressed bundle> */
   async function openAssignmentFromLink(params) {
+    if ($("dlg-assignment").open) $("dlg-assignment").close();
     if (params.assignmentdata) {
       const raw = await decodePayload(params.assignmentdata);
       return !!(await openAssignmentBundle(raw, { source: "link" }));
@@ -213,7 +224,7 @@ export function initAssignments(app) {
       { class: "asg-test " + status, "data-test": t.name, "data-status": status },
       el("span", { class: "asg-mark", title: label, "aria-label": label }, icon({ pass: "check", fail: "close", timeout: "clock", pending: "dot", running: "dot" }[status])),
       el("span", { class: "asg-test-name" }, t.name),
-      el("span", { class: "asg-test-points muted small" }, `${status === "pass" ? fmtPoints(pts) : "0"} / ${fmtPoints(pts)}`)
+      pts === null ? null : el("span", { class: "asg-test-points muted small" }, `${status === "pass" ? fmtPoints(pts) : "0"} / ${fmtPoints(pts)}`)
     );
     if (r && r.status !== "pass" && r.message) {
       const file = r.file ? `${problem.folder}/${r.file}` : null;
@@ -259,19 +270,32 @@ export function initAssignments(app) {
     body.innerHTML = "";
 
     let earned = 0;
-    let possible = 0;
+    let visible = 0;
+    let total = 0;
     let checked = 0;
+    let allCounted = true;
     const sections = b.problems.map((p, n) => {
       const r = res.problems[p.id];
       const s = score(p, r && r.tests);
-      possible += p.points;
-      if (r) {
-        earned += s.earned;
-        checked++;
+      total += p.points;
+      if (p.tests.length) {
+        visible += s.visible;
+        allCounted = allCounted && s.counted;
+        if (r) {
+          earned += s.earned;
+          checked++;
+        }
       }
-      const allPass = r && p.tests.length && r.tests.every((t) => t && t.status === "pass");
-      const starter = Object.keys(p.starter).map((name) => `${p.folder}/${name}`);
+      const unit = s.counted ? "points" : "tests";
+      const allPass = !!r && p.tests.length > 0 && r.tests.every((t) => t && t.status === "pass");
+      const files = Object.keys(p.starter).map((name) => `${p.folder}/${name}`);
+      const main = mainFile(p);
       const activeHere = state.active && state.active.startsWith(p.folder + "/");
+      const pill = !p.tests.length
+        ? "graded after submission"
+        : r
+          ? `visible tests: ${fmtPoints(s.earned)} of ${fmtPoints(s.visible)} ${unit}`
+          : `${fmtPoints(s.visible)} ${unit} in visible tests`;
       return el(
         "details",
         { class: "asg-problem" + (allPass ? " done" : ""), "data-problem": p.id, open: firstRender ? activeHere || n === 0 : open.has(p.id) },
@@ -279,30 +303,40 @@ export function initAssignments(app) {
           "summary",
           {},
           el("span", { class: "asg-num" }, String(n + 1)),
-          el("span", { class: "asg-problem-title" }, p.title),
-          el("span", { class: "pill small asg-points" + (allPass ? " ok" : ""), "data-points": "" }, r ? `${fmtPoints(s.earned)} / ${fmtPoints(p.points)} pts` : `${fmtPoints(p.points)} pts`)
+          el("span", { class: "asg-problem-title" }, p.title, el("span", { class: "asg-worth muted small" }, ` · ${fmtPoints(p.points)} pts`)),
+          el("span", { class: "pill small asg-points" + (allPass ? " ok" : ""), "data-points": "" }, pill)
         ),
         el("div", { class: "asg-prompt md", html: renderMarkdown(p.prompt) }),
         el(
           "div",
           { class: "asg-problem-actions" },
-          starter.map((path) => el("button", { class: "chip", type: "button", title: `Open ${path}`, onclick: () => app.openFile(path) }, app.baseName(path))),
-          el("button", { class: "btn sm", type: "button", "data-check": p.id, disabled: !!checking, onclick: () => check([p.id]) }, "Check this problem")
+          files.map((path) =>
+            el("button", { class: "chip" + (path === main ? " main" : ""), type: "button", title: path === main ? `Open ${path} (the file to complete)` : `Open ${path}`, onclick: () => app.openFile(path) }, app.baseName(path))
+          ),
+          p.tests.length ? el("button", { class: "btn sm", type: "button", "data-check": p.id, disabled: !!checking, onclick: () => check([p.id]) }, "Check this problem") : null
         ),
         p.tests.length
-          ? el("ul", { class: "asg-tests" }, p.tests.map((_, i) => testRow(p, i, r && r.tests[i], s.testPoints[i])))
-          : el("p", { class: "muted small" }, "This problem has no automatic tests.")
+          ? el("ul", { class: "asg-tests" }, p.tests.map((_, i) => testRow(p, i, r && r.tests[i], s.counted ? s.testPoints[i] : null)))
+          : el("p", { class: "asg-hidden-note small" }, "Graded after submission: this problem has no tests that can be run here. Check your work against the examples above.")
       );
     });
 
+    const unit = allCounted ? "points" : "tests";
     const when = res.when ? new Date(res.when).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+    const testable = b.problems.filter((p) => p.tests.length).length;
+    const hiddenPart = allCounted && total > visible;
     body.append(
       el("h3", { class: "asg-title" }, b.title),
       el(
         "div",
-        { class: "asg-score" + (checked && earned >= possible && possible > 0 ? " full" : ""), id: "asg-score", "data-earned": fmtPoints(earned), "data-possible": fmtPoints(possible) },
-        el("strong", {}, checked ? `${fmtPoints(earned)} / ${fmtPoints(possible)} points` : `${fmtPoints(possible)} points`),
-        el("span", { class: "muted small" }, checked ? (checked < b.problems.length ? ` · ${checked} of ${b.problems.length} problems checked` : "") + (when ? ` · last checked ${when}` : "") : " · not checked yet")
+        { class: "asg-score", id: "asg-score", "data-earned": fmtPoints(earned), "data-visible": fmtPoints(visible), "data-total": fmtPoints(total) },
+        el("strong", {}, checked ? `Visible tests: ${fmtPoints(earned)} of ${fmtPoints(visible)} ${unit}` : `Visible tests: ${fmtPoints(visible)} ${unit}`),
+        el(
+          "span",
+          { class: "muted small" },
+          ` · the assignment is worth ${fmtPoints(total)} points` +
+            (checked ? (checked < testable ? ` · ${checked} of ${testable} problems checked` : "") + (when ? ` · last checked ${when}` : "") : " · not checked yet")
+        )
       ),
       el(
         "div",
@@ -310,7 +344,12 @@ export function initAssignments(app) {
         el("button", { class: "btn primary", id: "asg-check", type: "button", disabled: !!checking, onclick: () => check() }, icon("check"), checking ? "Checking…" : "Check my answers"),
         el("button", { class: "btn", id: "asg-download", type: "button", onclick: downloadSubmission }, icon("zip"), "Download my submission (.zip)")
       ),
-      el("p", { class: "muted small asg-hint" }, "These checks run in your browser and you can repeat them as often as you like. Your final grade may use extra hidden tests."),
+      el(
+        "p",
+        { class: "muted small asg-hint" },
+        "These checks run in your browser and you can repeat them as often as you like. Passing them is not your final grade: " +
+          (hiddenPart ? `the remaining ${fmtPoints(total - visible)} points come from hidden tests that run after you hand in.` : "your teacher may use extra hidden tests after you hand in.")
+      ),
       b.description ? el("div", { class: "asg-desc md", html: renderMarkdown(b.description) }) : null,
       ...sections
     );
@@ -344,11 +383,16 @@ export function initAssignments(app) {
     const b = bundle();
     if (!b || checking || !app.canRun()) return;
     app.exitStep && app.exitStep();
-    await app.flushAll();
     const run = (checking = { cancelled: false });
+    await app.flushAll();
     const projectId = state.project.id;
     const res = results();
-    const todo = b.problems.filter((p) => !onlyIds || onlyIds.includes(p.id));
+    const todo = b.problems.filter((p) => p.tests.length && (!onlyIds || onlyIds.includes(p.id)));
+    if (!todo.length) {
+      toast("There are no tests to run here: this work is graded after you hand it in.");
+      checking = null;
+      return;
+    }
     for (const p of todo) res.problems[p.id] = { tests: p.tests.map(() => ({ status: "pending" })) };
     app.printEcho("", onlyIds ? `check problem ${todo.map((p) => p.title).join(", ")}` : "check my answers");
     app.setRunning(true, "Checking");
@@ -409,9 +453,9 @@ export function initAssignments(app) {
         }
         await app.saveProjectRecord();
         renderPanel();
-        const total = b.problems.reduce((s, p) => s + (res.problems[p.id] ? score(p, res.problems[p.id].tests).earned : 0), 0);
-        const possible = b.problems.reduce((s, p) => s + p.points, 0);
-        if (!run.cancelled) app.printInfo(`Checked: ${fmtPoints(total)} of ${fmtPoints(possible)} points. See the Assignment panel for details.`);
+        const passed = todo.reduce((s, p) => s + res.problems[p.id].tests.filter((t) => t.status === "pass").length, 0);
+        const count = todo.reduce((s, p) => s + p.tests.length, 0);
+        if (!run.cancelled) app.printInfo(`Checked: ${passed} of ${count} visible test${count === 1 ? "" : "s"} passed. See the Assignment panel for details. Hidden tests may still apply.`);
       }
       if (app.engine.ready) app.setRunning(false);
       else {
@@ -457,8 +501,6 @@ export function initAssignments(app) {
     if (src && /^https:\/\//.test(src)) link = `${location.origin}${location.pathname}#assignment=${encodeURIComponent(src)}`;
     else if (src === EXAMPLE_URL) link = `${location.origin}${location.pathname}#assignment=${EXAMPLE_URL}`;
     else {
-      const { folder: _f, ...rest } = {};
-      void rest;
       const clean = { ...b, problems: b.problems.map(({ folder, ...p }) => p) };
       link = `${location.origin}${location.pathname}#assignmentdata=${await encodePayload(clean)}`;
     }
@@ -476,10 +518,16 @@ export function initAssignments(app) {
     e.target.value = "";
     if (file) guarded(async () => openAssignmentText(await file.text(), { source: file.name }));
   });
-  $("asg-url-form").addEventListener("submit", (e) => {
-    e.preventDefault();
+  const openUrl = () => {
     const url = $("asg-url").value.trim();
     if (url) guarded(async () => openAssignmentText(await fetchBundle(url), { source: url }));
+  };
+  $("asg-url-open").addEventListener("click", openUrl);
+  $("asg-url").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      openUrl();
+    }
   });
   $("asg-example").addEventListener("click", (e) => {
     e.preventDefault();

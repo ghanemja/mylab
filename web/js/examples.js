@@ -11,6 +11,8 @@ export const EXAMPLES = [
 % Quick tour
 %   * Press Ctrl+Enter (or the Run button) to run this file.
 %   * Select a few lines and press Ctrl+Shift+Enter to run only those.
+%   * Press "Step through" to walk through a file line by line
+%     (try it on step_demo.m).
 %   * Type in the Command Window below and press Enter. Arrow keys
 %     bring back earlier commands.
 %   * Click a variable in the Workspace panel to see its full value.
@@ -42,6 +44,52 @@ grid on
 % --- Functions in other files ----------------------------------------
 % stats_demo.m calls describe_data, which lives in describe_data.m.
 % Open stats_demo.m from the Files panel and run it next.
+`,
+  },
+  {
+    name: "step_demo.m",
+    content: `% Step through this file: press "Step through" in the toolbar, then use
+% the arrow buttons (or the left and right arrow keys) to go forwards
+% and backwards. Watch the Workspace panel while you step.
+
+total = 0;
+for k = 1:4
+    total = total + k^2;
+    fprintf('k = %d, total = %d\\n', k, total);
+end
+
+average = total / 4;
+if average > 5
+    disp('The average square is bigger than 5.')
+else
+    disp('The average square is 5 or less.')
+end
+`,
+  },
+  {
+    name: "sections_demo.m",
+    content: `%% Sections and reports
+% Lines that start with two percent signs split a file into sections.
+% Put the cursor in a section and press Ctrl+Enter to run just that
+% section. "Publish" runs every section and builds a report with the
+% code, the output and the figures, ready to print or hand in.
+
+%% Make some data
+% A falling ball, measured every tenth of a second.
+g = 9.81;
+t = 0:0.1:2;
+height = 20 - 0.5*g*t.^2;
+fprintf('The ball lands after about %.2f s\\n', sqrt(2*20/g));
+
+%% Plot it
+plot(t, height, 'o-')
+xlabel('time (s)'), ylabel('height (m)')
+title('A falling ball')
+grid on
+
+%% Summary
+% The comment lines under a section title become text in the report.
+fprintf('Highest point: %.1f m, lowest point: %.1f m\\n', max(height), min(height));
 `,
   },
   {

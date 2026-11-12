@@ -417,7 +417,9 @@ export function initProjects(app) {
           badge: kindBadge(p),
           value: p.id,
           onclick: () => {
-            if (p.id !== state.project.id) app.switchProject(p.id);
+            if (p.id === state.project.id) return;
+            app.clearHash(); // a link that opened another project should not come back on reload
+            app.switchProject(p.id);
           },
         })),
         "sep",
