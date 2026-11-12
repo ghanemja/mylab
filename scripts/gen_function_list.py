@@ -25,6 +25,15 @@ SECTIONS = {
     "optim": "Optimization",
     "extras": "More core functions",
     "io": "Text-file input and output, folders",
+    "langextras": "Input parsing, cleanup, random streams, timers and environment",
+    "events": "Class events and enumerations",
+    "categorical": "Categorical arrays",
+    "spatial": "Geometry and scattered-data interpolation",
+    "ndmath": "N-dimensional transforms, sampling and more statistics",
+    "jsonfuncs": "JSON",
+    "audio": "Audio files",
+    "excel": "Excel files",
+    "plotmore": "More plot types",
 }
 
 

@@ -467,6 +467,10 @@ def _elements(v):
         return out, v.shape
     if isinstance(v, (MString, FunctionHandle)):
         return [v], (1, 1)
+    if hasattr(v, "field_list"):  # an array of classdef objects
+        return v.elements(), v.data.shape
+    if hasattr(v, "isa_class") and not hasattr(v, "flatten"):
+        return [v], (1, 1)
     flat = v.flatten(order="F")
     return [flat[k:k + 1].reshape(1, 1) for k in range(flat.size)], v.shape
 

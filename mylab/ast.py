@@ -218,6 +218,9 @@ class ClassDef(Node):
     static_methods: set[str] = field(default_factory=set)
     method_attrs: dict[str, dict] = field(default_factory=dict)
     abstract_methods: set[str] = field(default_factory=set)
+    events: list[str] = field(default_factory=list)
+    enums: list = field(default_factory=list)  # (member name, [argument expressions])
+    declared_methods: dict[str, dict] = field(default_factory=dict)  # signatures without a body
 
 
 @dataclass

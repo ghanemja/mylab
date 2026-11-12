@@ -512,8 +512,9 @@ def concat(items: list[Any], axis: int) -> Any:
         if hasattr(type(i), "concat") and hasattr(i, "isa_class"):
             return type(i).concat(items, axis)
     if any(hasattr(i, "isa_class") for i in items):
-        raise MatlabError("Object arrays are not supported yet; store objects in a cell array instead, "
-                          "e.g. {obj1, obj2}.")
+        kinds = sorted({i.class_name() for i in items if hasattr(i, "isa_class")})
+        raise MatlabError(f"Objects of class {', '.join(kinds)} cannot be concatenated into an array; "
+                          "store them in a cell array instead, e.g. {obj1, obj2}.")
     if any(isinstance(i, Cell) for i in items):
         return _concat_cells([_to_cell(i) for i in items], axis)
     if any(isinstance(i, Struct) for i in items):

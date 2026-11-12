@@ -104,8 +104,8 @@ def _isvalid(interp, args, nargout):
 
 
 def _class_of(v):
-    from ..classdef import UserObject
-    if isinstance(v, UserObject):
+    from ..classdef import ObjectArray, UserObject
+    if isinstance(v, (UserObject, ObjectArray)):
         return v.cls
     return None
 
@@ -165,7 +165,11 @@ def _ismethod(interp, args, nargout):
 
 def delete_object(interp, obj) -> None:
     """delete(h) for handle objects: run the class's delete method, then invalidate it."""
-    from ..classdef import UserObject
+    from ..classdef import ObjectArray, UserObject
+    if isinstance(obj, ObjectArray):
+        for element in obj.elements():
+            delete_object(interp, element)
+        return
     if isinstance(obj, UserObject) and "delete" in obj.cls.methods and not getattr(obj, "_deleted", False):
         obj.cls.call(interp, "delete", [obj], 0)
     obj._deleted = True

@@ -41,6 +41,8 @@ def _error_from_args(args) -> MatlabError:
     from ..objects import MExceptionObject
     if len(args) == 1 and isinstance(args[0], MExceptionObject):
         return args[0].to_error()
+    if args and getattr(args[0], "is_message", False):  # error(message('pkg:id', ...))
+        return MatlabError(args[0].text(), args[0].identifier)
     if len(args) == 1 and isinstance(args[0], Struct):
         s = args[0].data.flat[0]
         return MatlabError(to_str(s.get("message", char(""))), to_str(s.get("identifier", char(""))))
@@ -202,7 +204,24 @@ def _clc(interp, args, nargout):
     return None
 
 
+def _run_cleanups(interp, before: dict, after: dict) -> None:
+    for n, v in before.items():
+        if getattr(v, "is_cleanup", False) and after.get(n) is not v:
+            v.run(interp)
+
+
 @builtin("clear", "clearvars")
+def _clear_with_cleanup(interp, args, nargout):
+    if not interp.cleanup_count:
+        return _clear(interp, args, nargout)
+    frame = interp.frame
+    before = dict(frame.vars)
+    try:
+        return _clear(interp, args, nargout)
+    finally:
+        _run_cleanups(interp, before, frame.vars)
+
+
 def _clear(interp, args, nargout):
     frame = interp.frame
     names = [text(a) for a in args]
@@ -1276,7 +1295,12 @@ def _run(interp, args, nargout):
 
 @builtin("import")
 def _import(interp, args, nargout):
-    """Accepts package imports such as ``import pkg.*``; mylab has no packages, so this does nothing."""
+    """``import pkg.*`` / ``import pkg.name``: later calls may leave out the package name."""
+    imports = interp.state.setdefault("imports", [])
+    for a in args:
+        name = text(a)
+        if name and name not in imports:
+            imports.append(name)
     if nargout:
-        return Cell(np.empty((1, 0), dtype=object))
+        return Cell.from_list([char(n) for n in imports], column=True)
     return None

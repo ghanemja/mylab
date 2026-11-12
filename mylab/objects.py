@@ -54,7 +54,7 @@ class MObject:
 
     def index_set(self, interp, args: list, value: Any) -> Any:
         raise MatlabError(f"Index assignment into a {self.class_name()} object is not supported. "
-                          "Object arrays are not supported yet.")
+                          "Use a cell array to hold several of them.")
 
     def index_delete(self, interp, args: list) -> Any:
         raise MatlabError(f"Cannot delete elements of a {self.class_name()} object.")
@@ -303,7 +303,19 @@ class MExceptionObject(MObject):
         if name in ("rethrow", "throw", "throwAsCaller"):
             raise self.to_error()
         if name == "getReport":
-            report = f"Error: {self.message}"
+            from .values import Struct
+            where = ""
+            if isinstance(self.stack, Struct) and self.stack.data.size:
+                top = self.stack.data.flat[0]
+                fn = "".join(np.asarray(top.get("name", "")).flatten().tolist())
+                line = int(np.asarray(top.get("line", 0)).flat[0]) if np.asarray(top.get("line", 0)).size else 0
+                if fn and fn != "base" and line:
+                    where = f"Error using {fn} (line {line})\n"
+                elif line:
+                    where = f"Error in line {line}\n"
+            basic = any(isinstance(a, np.ndarray) and a.dtype.kind == "U"
+                        and "".join(a.flatten().tolist()) == "basic" for a in args[1:])
+            report = self.message if basic else (f"{where}{self.message}" if where else f"Error: {self.message}")
             for c in self.causes:
                 if isinstance(c, MExceptionObject):
                     report += f"\nCaused by:\n    {c.message}"
