@@ -720,3 +720,51 @@ def _rmdir(interp, args, nargout):
     outs = (bool_scalar(ok), char(msg), char("" if ok else "mylab:rmdir:failed"))
     return outs[:nargout] if nargout > 1 else outs[0]
 
+
+@builtin("textread")
+def _textread(interp, args, nargout):
+    """Read a whole text file by format; one output per conversion."""
+    nargs(args, 1, None, "textread")
+    fname = text(args[0])
+    path = fname
+    if not os.path.isfile(path):
+        path = next((c for c in (os.path.join(d, fname) for d in getattr(interp, "path", []))
+                     if os.path.isfile(c)), fname)
+    rest = list(args[1:])
+    fmt = ""
+    if rest and is_text(rest[0]) and ("%" in text(rest[0]) or text(rest[0]) == ""):
+        fmt = text(rest.pop(0))
+    content = _read_text(path)
+    if fmt == "":
+        _, opts = _name_value(rest, {"delimiter", "headerlines"})
+        lines = _lines_of(content)
+        skip = to_int(opts["headerlines"], "headerlines") if "headerlines" in opts else 0
+        delim = _delimiter(opts["delimiter"]) if "delimiter" in opts else _sniff_delimiter(lines[skip:])
+        data, _, _ = _numeric_table(lines[skip:], delim or None, 0)
+        data = np.where(np.isnan(data), 0.0, data)
+        if nargout > 1:
+            return tuple(data[:, [j]] for j in range(min(nargout, data.shape[1])))
+        return data
+    return _scan_outputs(interp, content, fmt, rest, nargout, "textread")
+
+
+def _scan_outputs(interp, content: str, fmt: str, rest: list, nargout: int, name: str):
+    cells = _textscan(interp, [char(content), char(fmt), *rest], 1)
+    # unlike textscan, these older functions return every number as double
+    outs = tuple(v.astype(float) if isinstance(v, np.ndarray) and v.dtype.kind in "iu" else v
+                 for v in cells.data.flat)
+    if nargout > len(outs):
+        raise MatlabError(f"{name}: more outputs requested than conversions in the format.")
+    if nargout <= 1:
+        return outs[0] if outs else np.zeros((0, 0))
+    return outs[:nargout]
+
+
+@builtin("strread")
+def _strread(interp, args, nargout):
+    """Like textread, but the text comes from the first argument instead of a file."""
+    nargs(args, 1, None, "strread")
+    rest = list(args[1:])
+    fmt = text(rest.pop(0)) if rest and is_text(rest[0]) and "%" in text(rest[0]) else "%f"
+    return _scan_outputs(interp, text(args[0], "input text"), fmt, rest, nargout, "strread")
+
