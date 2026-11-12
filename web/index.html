@@ -11,11 +11,13 @@
     // Apply the saved theme before the page paints.
     try {
       var t = JSON.parse(localStorage.getItem("mylab.theme") || "null");
-      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      if (t === "light" || t === "dark" || t === "hc") document.documentElement.dataset.theme = t;
+      else if (window.matchMedia && matchMedia("(prefers-contrast: more)").matches) document.documentElement.dataset.theme = "hc";
     } catch (e) {}
   </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.css">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/octave/octave.min.js"></script>
@@ -25,6 +27,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/runmode/runmode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/match-highlighter.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/keymap/sublime.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
   <script type="module" src="js/app.js"></script>
 </head>
@@ -80,6 +87,14 @@
       <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M8 5.5l9 6.5-9 6.5z" fill="currentColor"/></symbol>
       <symbol id="i-bp-next" viewBox="0 0 24 24"><circle cx="17" cy="12" r="4" fill="currentColor"/><path d="M3 12h7m0 0l-3-3m3 3l-3 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-bp-prev" viewBox="0 0 24 24"><circle cx="7" cy="12" r="4" fill="currentColor"/><path d="M21 12h-7m0 0l3-3m-3 3l3 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6" stroke="currentColor" stroke-width="2" fill="none"/><path d="M15 15l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+      <symbol id="i-error" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7" stroke="var(--panel)" stroke-width="2.2" stroke-linecap="round"/></symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3l10 18H2z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="var(--panel)" stroke-width="2.2" stroke-linecap="round"/></symbol>
+      <symbol id="i-contrast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 3.5a8.5 8.5 0 010 17z" fill="currentColor"/></symbol>
+      <symbol id="i-outline" viewBox="0 0 24 24"><path d="M4 6h3M4 12h3M4 18h3M10 6h10M10 12h7M10 18h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-format" viewBox="0 0 24 24"><path d="M4 6h16M9 12h11M9 18h11M4 10.5l3 3-3 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6m0 0l-5 5m5-5l5 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v13m0 0l-5-5m5 5l5-5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 8V4h10v4M7 17H5a1 1 0 01-1-1v-6a1 1 0 011-1h14a1 1 0 011 1v6a1 1 0 01-1 1h-2M7 14h10v6H7z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/></symbol>
     </defs>
   </svg>
@@ -120,11 +135,14 @@
       <button id="btn-ai" class="btn ghost" aria-pressed="false" title="Show the assistant panel">
         <svg class="ic"><use href="#i-spark"/></svg><span class="hide-sm">Assistant</span>
       </button>
-      <button id="btn-theme" class="btn icon ghost" title="Switch light/dark theme" aria-label="Switch theme">
+      <button id="btn-theme" class="btn icon ghost" title="Theme" aria-label="Color theme" aria-haspopup="menu">
         <svg class="ic"><use href="#i-moon"/></svg>
       </button>
       <button id="btn-keys" class="btn icon ghost" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">
         <svg class="ic"><use href="#i-keyboard"/></svg>
+      </button>
+      <button id="btn-more" class="btn icon ghost" title="More: all commands, search, version history, settings" aria-label="More actions" aria-haspopup="menu">
+        <svg class="ic"><use href="#i-menu"/></svg>
       </button>
       <button id="btn-about" class="btn icon ghost" title="About mylab" aria-label="About mylab">
         <svg class="ic"><use href="#i-info"/></svg>
@@ -172,7 +190,7 @@
         <div class="panel editor-panel">
           <div class="tabs-row">
             <div id="tabs" class="tabs" role="tablist" aria-label="Open files"></div>
-            <span id="save-state" class="save-state muted small" aria-live="polite"></span>
+            <span id="save-state" class="save-state muted small" role="status" aria-live="polite"></span>
           </div>
           <div id="step-bar" class="step-bar" role="toolbar" aria-label="Step through" hidden>
             <div class="step-controls">
@@ -188,6 +206,25 @@
             <div class="step-info" aria-live="polite"><strong id="step-count"></strong> <span id="step-where" class="muted"></span></div>
             <div id="step-msg" class="step-msg" hidden></div>
           </div>
+          <div id="find-bar" class="find-bar" role="search" aria-label="Find in this file" hidden>
+            <div class="find-row">
+              <button id="find-toggle-replace" class="btn icon sm ghost" type="button" aria-expanded="false" aria-controls="replace-row" title="Show replace" aria-label="Show or hide replace"><svg class="ic"><use href="#i-caret"/></svg></button>
+              <input id="find-input" class="find-input" type="text" spellcheck="false" autocomplete="off" placeholder="Find" aria-label="Find">
+              <span id="find-count" class="find-count muted small" role="status" aria-live="polite"></span>
+              <button id="find-case" class="btn icon sm ghost toggle" type="button" aria-pressed="false" title="Match upper and lower case" aria-label="Match case">Aa</button>
+              <button id="find-word" class="btn icon sm ghost toggle" type="button" aria-pressed="false" title="Whole words only" aria-label="Whole words only"><u>ab</u></button>
+              <button id="find-regex" class="btn icon sm ghost toggle" type="button" aria-pressed="false" title="Use a regular expression" aria-label="Regular expression">.*</button>
+              <button id="find-prev" class="btn icon sm ghost" type="button" title="Previous match (Shift+Enter)" aria-label="Previous match"><svg class="ic"><use href="#i-up"/></svg></button>
+              <button id="find-next" class="btn icon sm ghost" type="button" title="Next match (Enter)" aria-label="Next match"><svg class="ic"><use href="#i-down"/></svg></button>
+              <button id="find-close" class="btn icon sm ghost" type="button" title="Close (Esc)" aria-label="Close find"><svg class="ic"><use href="#i-close"/></svg></button>
+            </div>
+            <div id="replace-row" class="find-row" hidden>
+              <span class="find-indent" aria-hidden="true"></span>
+              <input id="replace-input" class="find-input" type="text" spellcheck="false" autocomplete="off" placeholder="Replace with" aria-label="Replace with">
+              <button id="replace-one" class="btn sm" type="button" title="Replace this match (Enter)">Replace</button>
+              <button id="replace-all" class="btn sm" type="button" title="Replace every match">Replace all</button>
+            </div>
+          </div>
           <div id="editor" class="editor"></div>
         </div>
         <div id="asg-gutter" class="gutter gutter-v" data-resize="asg" role="separator" aria-orientation="vertical" aria-label="Resize assignment panel" tabindex="0" hidden></div>
@@ -202,10 +239,14 @@
         </aside>
       </div>
       <div class="gutter gutter-h" data-resize="console" role="separator" aria-orientation="horizontal" aria-label="Resize command window" tabindex="0"></div>
-      <div class="panel console-panel" aria-label="Command window">
-        <div class="panel-head">
-          <h2>Command Window</h2>
-          <div class="panel-actions">
+      <div class="panel console-panel" role="region" aria-label="Command window" data-view="console">
+        <div class="panel-head bottom-head">
+          <div class="bottom-tabs" role="tablist" aria-label="Command window, problems and search">
+            <button id="tab-console" class="bottom-tab" role="tab" type="button" aria-selected="true" aria-controls="console-out" data-view="console">Command Window</button>
+            <button id="tab-problems" class="bottom-tab" role="tab" type="button" aria-selected="false" aria-controls="problems-view" data-view="problems" tabindex="-1">Problems<span id="problems-count" class="count" hidden>0</span></button>
+            <button id="tab-search" class="bottom-tab" role="tab" type="button" aria-selected="false" aria-controls="search-view" data-view="search" tabindex="-1" hidden>Search</button>
+          </div>
+          <div class="panel-actions console-actions">
             <button id="btn-clear-console" class="btn sm ghost" title="Clear the command window (clc)"><svg class="ic"><use href="#i-eraser"/></svg><span class="hide-sm">Clear</span></button>
             <button id="btn-reset" class="btn sm ghost" title="Clear all variables and functions (keeps your files)"><svg class="ic"><use href="#i-restart"/></svg><span class="hide-sm">Reset</span></button>
           </div>
@@ -215,6 +256,20 @@
           <div class="step-out-label">Output printed up to this step</div>
           <pre id="step-out" class="step-out"></pre>
           <div id="step-out-empty" class="info">Nothing has been printed yet at this step.</div>
+        </div>
+        <div id="problems-view" class="bottom-view" role="tabpanel" aria-labelledby="tab-problems" hidden>
+          <p id="problems-empty" class="empty muted"></p>
+          <div id="problems-list" class="problems-list"></div>
+        </div>
+        <div id="search-view" class="bottom-view" role="tabpanel" aria-labelledby="tab-search" hidden>
+          <div class="find-row search-form">
+            <input id="search-input" class="find-input" type="text" spellcheck="false" autocomplete="off" placeholder="Search all files in this project" aria-label="Search all files in this project">
+            <button id="search-case" class="btn icon sm ghost toggle" type="button" aria-pressed="false" title="Match upper and lower case" aria-label="Match case">Aa</button>
+            <button id="search-word" class="btn icon sm ghost toggle" type="button" aria-pressed="false" title="Whole words only" aria-label="Whole words only"><u>ab</u></button>
+            <button id="search-regex" class="btn icon sm ghost toggle" type="button" aria-pressed="false" title="Use a regular expression" aria-label="Regular expression">.*</button>
+          </div>
+          <p id="search-status" class="muted small search-status" role="status" aria-live="polite"></p>
+          <div id="search-results" class="search-results"></div>
         </div>
         <div id="completions" class="completions" hidden></div>
         <form id="console-form" class="console-in" autocomplete="off">
@@ -269,8 +324,10 @@
       <div id="ai-messages" class="ai-messages" aria-live="polite"></div>
       <div class="ai-quick">
         <button id="ai-explain-error" class="chip warn" hidden>Explain this error</button>
+        <button id="ai-fix-error" class="chip warn" hidden>Fix this error</button>
         <button data-ai-action="fix" class="chip">Fix my code</button>
         <button data-ai-action="explain" class="chip">Explain this code</button>
+        <button data-ai-action="selection" class="chip" id="ai-explain-selection" hidden>Explain selection</button>
         <button data-ai-action="python" class="chip">Translate to Python</button>
       </div>
       <form id="ai-form" class="ai-form">
@@ -471,14 +528,130 @@
     </form>
   </dialog>
 
-  <dialog id="dlg-var" class="dialog wide">
+  <dialog id="dlg-var" class="dialog var-dialog">
     <form method="dialog">
       <h2><span id="var-title"></span> <span id="var-meta" class="muted small"></span></h2>
-      <pre id="var-body" class="var-body"></pre>
+      <nav id="var-crumbs" class="var-crumbs small" aria-label="Where this value is" hidden></nav>
+      <div class="var-tools">
+        <div id="var-view" class="seg" role="group" aria-label="How to show the value">
+          <button id="var-view-grid" type="button" class="btn sm" aria-pressed="true">Grid</button>
+          <button id="var-view-text" type="button" class="btn sm" aria-pressed="false">Text</button>
+        </div>
+        <div id="var-plots" class="var-plots" role="group" aria-label="Plot this variable">
+          <span class="muted small">Plot:</span>
+          <button type="button" class="btn sm" data-plot="plot" title="Line plot: one line per column">Line</button>
+          <button type="button" class="btn sm" data-plot="bar" title="Bar chart">Bar</button>
+          <button type="button" class="btn sm" data-plot="histogram" title="Histogram of all the values">Histogram</button>
+          <button type="button" class="btn sm" data-plot="imagesc" title="Show the matrix as a colored image">Image</button>
+        </div>
+      </div>
+      <p id="var-note" class="muted small" hidden></p>
+      <div id="var-grid-wrap" class="var-grid-wrap" tabindex="0" role="region" aria-label="Values"><table id="var-grid" class="data-grid"></table></div>
+      <pre id="var-body" class="var-body" tabindex="0" hidden></pre>
+      <div id="var-pager" class="var-pager small" hidden>
+        <span id="var-rows" class="pager">
+          <button id="var-rows-first" type="button" class="btn icon sm ghost" title="First rows" aria-label="First rows"><svg class="ic"><use href="#i-first"/></svg></button>
+          <button id="var-rows-prev" type="button" class="btn icon sm ghost" title="Previous rows" aria-label="Previous rows"><svg class="ic"><use href="#i-back"/></svg></button>
+          <span id="var-rows-text" aria-live="polite"></span>
+          <button id="var-rows-next" type="button" class="btn icon sm ghost" title="Next rows" aria-label="Next rows"><svg class="ic"><use href="#i-fwd"/></svg></button>
+          <button id="var-rows-last" type="button" class="btn icon sm ghost" title="Last rows" aria-label="Last rows"><svg class="ic"><use href="#i-last"/></svg></button>
+        </span>
+        <span id="var-cols" class="pager">
+          <button id="var-cols-prev" type="button" class="btn icon sm ghost" title="Previous columns" aria-label="Previous columns"><svg class="ic"><use href="#i-back"/></svg></button>
+          <span id="var-cols-text" aria-live="polite"></span>
+          <button id="var-cols-next" type="button" class="btn icon sm ghost" title="Next columns" aria-label="Next columns"><svg class="ic"><use href="#i-fwd"/></svg></button>
+        </span>
+      </div>
       <menu>
+        <button id="var-copy-csv" type="button" class="btn ghost" title="Copy the whole value as comma-separated text"><svg class="ic"><use href="#i-table"/></svg>Copy as CSV</button>
         <button id="var-copy" type="button" class="btn ghost"><svg class="ic"><use href="#i-copy"/></svg>Copy</button>
         <button value="close" class="btn primary">Close</button>
       </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-palette" class="dialog palette" aria-labelledby="palette-title">
+    <form method="dialog">
+      <h2 id="palette-title" class="sr-only">Command palette</h2>
+      <input id="palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" aria-label="Search commands and files" spellcheck="false" autocomplete="off">
+      <ul id="palette-list" class="palette-list" role="listbox" aria-label="Results"></ul>
+      <p class="palette-foot muted small"><kbd>↑</kbd><kbd>↓</kbd> to move, <kbd>Enter</kbd> to choose, <kbd>Esc</kbd> to close</p>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-help" class="dialog wide">
+    <form id="help-form">
+      <h2><svg class="ic accent"><use href="#i-info"/></svg> Function help</h2>
+      <div class="row help-search">
+        <input id="help-name" type="text" list="help-names" spellcheck="false" autocomplete="off" placeholder="Name of a function, for example plot" aria-label="Function name">
+        <datalist id="help-names"></datalist>
+        <button class="btn" id="help-go">Look up</button>
+      </div>
+      <p id="help-where" class="muted small"></p>
+      <pre id="help-body" class="var-body help-body" tabindex="0"></pre>
+      <p id="help-also" class="small"></p>
+      <menu><button type="button" class="btn primary" id="help-close">Close</button></menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-diff" class="dialog diff-dialog">
+    <form method="dialog">
+      <h2 id="diff-title">Review the changes</h2>
+      <p id="diff-summary" class="muted small"></p>
+      <div id="diff-body" class="diff-box" tabindex="0" role="region" aria-label="Changes"></div>
+      <menu>
+        <button id="diff-reject" value="cancel" class="btn ghost">Reject</button>
+        <button id="diff-accept" value="ok" class="btn primary">Accept the changes</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-history" class="dialog history-dialog">
+    <form method="dialog">
+      <h2><svg class="ic accent"><use href="#i-clock"/></svg> Version history: <span id="history-title"></span></h2>
+      <p class="muted small">mylab keeps the last 30 saved versions of each file in this browser. Pick one to compare it with the file as it is now.</p>
+      <p id="history-empty" class="muted" hidden>No earlier versions yet. A version is kept when the file is saved after a change.</p>
+      <div id="history-main" class="history-main">
+        <div id="history-list" class="history-list" role="group" aria-label="Saved versions"></div>
+        <div class="history-right">
+          <p id="history-summary" class="small" role="status"></p>
+          <div id="history-diff" class="diff-box" tabindex="0" role="region" aria-label="Changes since this version"></div>
+        </div>
+      </div>
+      <menu>
+        <button value="close" class="btn ghost">Close</button>
+        <button id="history-restore" type="button" class="btn primary">Restore this version</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-settings" class="dialog">
+    <form method="dialog">
+      <h2><svg class="ic accent"><use href="#i-gear"/></svg> Settings</h2>
+      <label class="field"><span>Color theme</span>
+        <select id="set-theme">
+          <option value="system">Follow my system</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+          <option value="hc">High contrast</option>
+        </select>
+      </label>
+      <label class="field"><span>Text size in the editor and command window: <strong id="set-font-value"></strong></span>
+        <input id="set-font" type="range" min="10" max="24" step="0.5">
+      </label>
+      <label class="field"><span>Keyboard shortcuts</span>
+        <select id="set-keys">
+          <option value="default">Standard</option>
+          <option value="matlab">MATLAB-style (F5 run, F9 run selection, Ctrl+Enter run section)</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="set-autosave"> Save files automatically while I type</label>
+      <label class="check"><input type="checkbox" id="set-lint"> Check for problems as I type</label>
+      <label class="check"><input type="checkbox" id="set-suggest"> Suggest names as I type (Tab accepts)</label>
+      <label class="check"><input type="checkbox" id="set-hover"> Show help when the mouse rests on a function</label>
+      <div class="row"><button id="set-layout" type="button" class="btn sm">Reset the panel sizes</button></div>
+      <p class="muted small">Settings are saved in this browser.</p>
+      <menu><button value="close" class="btn primary">Done</button></menu>
     </form>
   </dialog>
 
@@ -492,28 +665,17 @@
     </form>
   </dialog>
 
-  <dialog id="dlg-keys" class="dialog">
+  <dialog id="dlg-keys" class="dialog wide">
     <form method="dialog">
-      <h2>Keyboard shortcuts</h2>
-      <table class="keys">
-        <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Run the section with the cursor (files with <code>%%</code> lines), otherwise the whole file</td></tr>
-        <tr><td><kbd>Alt</kbd>+<kbd>Enter</kbd></td><td>Run the section and move to the next one</td></tr>
-        <tr><td><kbd>F5</kbd></td><td>Run the whole file</td></tr>
-        <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Run the selection (or the current line)</td></tr>
-        <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Step back / forward (while stepping through)</td></tr>
-        <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>First / last step; <kbd>Esc</kbd> leaves step-through</td></tr>
-        <tr><td>Click beside a line number</td><td>Set or remove a breakpoint</td></tr>
-        <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save now (files also save automatically)</td></tr>
-        <tr><td><kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Comment or uncomment lines</td></tr>
-        <tr><td><kbd>Ctrl</kbd>+<kbd>Space</kbd></td><td>Complete a name (editor)</td></tr>
-        <tr><td><kbd>Tab</kbd></td><td>Complete a name (command window)</td></tr>
-        <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Previous / next command (command window)</td></tr>
-        <tr><td><kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>New line in the command window</td></tr>
-        <tr><td><kbd>Alt</kbd>+<kbd>N</kbd></td><td>New file</td></tr>
-        <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Focus the command window</td></tr>
-        <tr><td><kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>Focus the editor</td></tr>
-      </table>
-      <p class="muted small">On a Mac, use <kbd>⌘</kbd> instead of <kbd>Ctrl</kbd>.</p>
+      <h2><svg class="ic accent"><use href="#i-keyboard"/></svg> Keyboard shortcuts</h2>
+      <label class="field keys-preset"><span>Shortcut style</span>
+        <select id="keys-preset">
+          <option value="default">Standard</option>
+          <option value="matlab">MATLAB-style (F5 run, F9 run selection, Ctrl+Enter run section)</option>
+        </select>
+      </label>
+      <div id="keys-body" class="keys-body" tabindex="0"></div>
+      <p class="muted small">On a Mac, <kbd>⌘</kbd> takes the place of <kbd>Ctrl</kbd>. Every action is also in the command palette.</p>
       <menu><button value="close" class="btn primary">Close</button></menu>
     </form>
   </dialog>

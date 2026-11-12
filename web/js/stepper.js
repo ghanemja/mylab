@@ -20,22 +20,46 @@ export function initStepper(app) {
 
   /* ---------- breakpoints ---------- */
 
-  function toggleBreakpoint(line) {
-    const editor = app.editor;
-    const doc = editor.getDoc();
-    if (!state.active || !state.active.endsWith(".m")) return;
+  function setBreakpoint(doc, line, on) {
     const handle = doc.getLineHandle(line);
     if (!handle) return;
     let set = breakpoints.get(doc);
     if (!set) breakpoints.set(doc, (set = new Set()));
-    if (set.has(handle)) {
-      set.delete(handle);
-      editor.setGutterMarker(handle, "bp-gutter", null);
-    } else {
+    if (set.has(handle) === on) return;
+    if (on) {
       set.add(handle);
-      editor.setGutterMarker(handle, "bp-gutter", el("div", { class: "bp-dot", title: "Breakpoint (click to remove)" }));
+      doc.setGutterMarker(handle, "bp-gutter", el("div", { class: "bp-dot", title: "Breakpoint (click to remove)", role: "img", "aria-label": "Breakpoint" }));
+    } else {
+      set.delete(handle);
+      doc.setGutterMarker(handle, "bp-gutter", null);
     }
   }
+
+  function toggleBreakpoint(line) {
+    const doc = app.editor.getDoc();
+    if (!state.active || !state.active.endsWith(".m")) return;
+    const handle = doc.getLineHandle(line);
+    if (!handle) return;
+    const set = breakpoints.get(doc);
+    setBreakpoint(doc, line, !(set && set.has(handle)));
+    app.saveSession();
+  }
+
+  /** { path: [1-based lines] } for every file of the project, to remember between visits. */
+  function breakpointMap() {
+    const out = {};
+    for (const path of state.files.keys()) {
+      const lines = state.docs.has(path) ? [...breakLines(path)].sort((a, b) => a - b) : state.breaks[path] || [];
+      if (lines.length) out[path] = lines;
+    }
+    state.breaks = out;
+    return out;
+  }
+
+  // Breakpoints saved on an earlier visit come back when the file is opened.
+  app.on("docCreated", (path, doc) => {
+    for (const line of state.breaks[path] || []) if (line >= 1 && line <= doc.lineCount()) setBreakpoint(doc, line - 1, true);
+  });
 
   /** 1-based breakpoint lines of a project file. */
   function breakLines(path) {
@@ -182,7 +206,7 @@ export function initStepper(app) {
     out.parentElement.scrollTop = out.parentElement.scrollHeight;
   }
 
-  function jumpBreakpoint(dir) {
+  function jumpBreakpoint(dir, { inclusive = false } = {}) {
     if (!trace) return;
     const cache = new Map();
     const isBreak = (s) => {
@@ -197,7 +221,7 @@ export function initStepper(app) {
       toast("No breakpoints yet. Click next to a line number in the editor to set one.");
       return;
     }
-    for (let i = trace.index + dir; i >= 0 && i < trace.steps.length; i += dir) {
+    for (let i = trace.index + (inclusive ? 0 : dir); i >= 0 && i < trace.steps.length; i += dir) {
       if (isBreak(trace.steps[i])) return go(i);
     }
     toast(dir > 0 ? "No breakpoint is reached after this step — went to the end." : "No breakpoint is reached before this step — went to the start.");
@@ -273,6 +297,14 @@ export function initStepper(app) {
     app.editor.refresh();
   }
 
+  /** Run (recording the steps) and stop at the next breakpoint, showing the workspace there. */
+  async function runToBreakpoint() {
+    if (trace) return jumpBreakpoint(1);
+    const started = await startStep();
+    if (started) jumpBreakpoint(1, { inclusive: true });
+    return undefined;
+  }
+
   $("btn-step").addEventListener("click", () => (trace ? exitStep() : startStep()));
   $("step-exit").addEventListener("click", exitStep);
   $("step-first").addEventListener("click", () => go(0));
@@ -283,7 +315,19 @@ export function initStepper(app) {
   $("step-next-bp").addEventListener("click", () => jumpBreakpoint(1));
   $("step-slider").addEventListener("input", (e) => go(Number(e.target.value)));
 
-  app.editor.on("gutterClick", (cm, line) => toggleBreakpoint(line));
+  app.editor.on("gutterClick", (cm, line, gutter) => {
+    if (gutter === "bp-gutter" || gutter === "CodeMirror-linenumbers") toggleBreakpoint(line);
+  });
+
+  app.commands.register([
+    { id: "step.start", group: "Run", title: "Step through the file line by line", keys: "F10", run: () => (trace ? go(trace.index + 1) : startStep()), hint: "Start step-through (then: next step)" },
+    { id: "step.toBreakpoint", group: "Run", title: "Run to the next breakpoint", keys: "Alt-F5", run: runToBreakpoint, hint: "Run to the next breakpoint and show the variables there" },
+    { id: "step.exit", group: "Run", title: "Leave step-through", run: exitStep, when: () => !!trace },
+    {
+      id: "bp.toggle", group: "Run", title: "Set or remove a breakpoint on this line", keys: "F9", matlab: "F12", scope: "editor",
+      run: () => toggleBreakpoint(app.editor.getCursor().line),
+    },
+  ]);
 
   // Arrow keys step while the walk-through is open (the editor is read-only then).
   document.addEventListener(
@@ -316,5 +360,8 @@ export function initStepper(app) {
     stepActive: () => !!trace,
     stepTrace: () => trace,
     toggleBreakpoint,
+    runToBreakpoint,
+    breakpointMap,
+    breakLines,
   });
 }

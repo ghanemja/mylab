@@ -56,12 +56,14 @@ function startServer() {
   });
 }
 
-async function shot(page, name) {
+/** Save a still for the docs. With `selector`, only that part of the page is kept. */
+async function shot(page, name, selector = null) {
   if (!SHOTS) return;
   fs.mkdirSync(IMAGES, { recursive: true });
   await page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove()));
   await page.waitForTimeout(350);
-  await page.screenshot({ path: path.join(IMAGES, name) });
+  const clip = selector ? await page.locator(selector).boundingBox() : undefined;
+  await page.screenshot({ path: path.join(IMAGES, name), clip });
   ok(`screenshot saved to docs/images/${name}`);
 }
 
@@ -98,6 +100,15 @@ function helpers(page) {
       await page.click("#project-btn");
       await page.locator("#project-menu .menu-item", { hasText: name }).first().click();
       await page.waitForFunction((n) => document.querySelector("#project-name").textContent === n, name);
+    },
+    /** Wait until a function in the page (it may be async) returns something truthy. */
+    async until(fn, arg, timeout = 30000) {
+      const t0 = Date.now();
+      for (;;) {
+        if (await page.evaluate(fn, arg)) return;
+        if (Date.now() - t0 > timeout) throw new Error("timed out waiting for: " + String(fn).slice(0, 160));
+        await page.waitForTimeout(50);
+      }
     },
     markedLine: (cls) =>
       page.evaluate((c) => {
@@ -324,6 +335,8 @@ async function main() {
     await page.waitForSelector("#dlg-var[open]");
     const varText = await page.locator("#var-body").innerText();
     if (!/8\s+1\s+6/.test(varText)) throw new Error("variable viewer shows: " + varText);
+    const gridText = (await page.locator("#var-grid tbody tr").first().innerText()).replace(/\s+/g, " ");
+    if (gridText !== "1 8 1 6") throw new Error("variable grid shows: " + gridText);
     await page.click("#dlg-var button[value='close']");
     ok("clicking a variable shows its value");
 
@@ -497,6 +510,559 @@ async function main() {
     await page.waitForSelector("#ai-messages .msg.notice:has-text('assistant is off')");
     ok("assistant works safely with no provider configured");
     await page.click("#btn-ai-close");
+
+    /* ---------------- editor conveniences ---------------- */
+    const ed = (fn, arg) => page.evaluate(fn, arg);
+    const edValue = () => ed(() => window.mylab.editor.getValue());
+    const focusAt = (line, ch) => ed(([l, c]) => (window.mylab.editor.focus(), window.mylab.editor.setCursor(l, c)), [line, ch]);
+    const hoverAt = async (line, ch) => {
+      const c = await ed(([l, k]) => window.mylab.editor.charCoords({ line: l, ch: k }, "window"), [line, ch]);
+      await page.mouse.move(c.left + 3, (c.top + c.bottom) / 2 - 1);
+      await page.mouse.move(c.left + 4, (c.top + c.bottom) / 2);
+    };
+    const problems = () => ed(() => window.mylab.app.allProblems().map((p) => ({ path: p.path, line: p.line + 1, severity: p.severity, message: p.message, run: !!p.run })));
+    await input.fill("clear");
+    await input.press("Enter");
+    await waitIdle();
+    await ed(() =>
+      window.mylab.app.createProject({
+        name: "Editor tests",
+        files: [
+          { path: "main.m", content: "%% Load\nvalues = [3 1 2];\ntotal = sum(values);\nfor k = 1:3\n    total = total + area(k, 2); % total so far\nend\n%% Report\nfprintf('total is %d\\n', total);\nresult = twice(total);\n\nfunction y = twice(x)\n% TWICE  Two times x.\ny = 2 * x;\nend\n" },
+          { path: "lib/area.m", content: "function a = area(w, h)\n% AREA  Area of a rectangle.\n%   a = area(w, h) multiplies the two sides.\na = w * h;\nend\n" },
+          { path: "notes.txt", content: "The total area is what we want.\n" },
+        ],
+        open: "main.m",
+      })
+    );
+    await page.waitForSelector(".tab.active[data-name='main.m']");
+    await page.waitForFunction(() => !!window.mylab.app.helpIndex());
+
+    // Command palette
+    await page.click(".CodeMirror");
+    await page.keyboard.press("Control+Shift+P");
+    await page.waitForSelector("#dlg-palette[open]");
+    const pal = await ed(() => ({ items: document.querySelectorAll("#palette-list .pal-item").length, keys: document.querySelectorAll("#palette-list .pal-keys").length, all: window.mylab.app.commands.all().filter((c) => !c.hidden).length }));
+    check(pal.items >= 60 && pal.keys >= 30, "the palette should list every command with its shortcut: " + JSON.stringify(pal));
+    await page.keyboard.type("fmt doc");
+    check(/Format document/.test(await page.locator(".pal-item.active").innerText()), "fuzzy search should find 'Format document': " + (await page.locator(".pal-item.active").innerText()));
+    check(/Shift\s*Alt\s*F/.test(await page.locator(".pal-item.active .pal-keys").innerText()), "the palette should show the shortcut of a command");
+    await page.fill("#palette-input", ">cmd window");
+    check(/Go to the command window/.test(await page.locator(".pal-item.active").innerText()), "fuzzy search for 'cmd window' failed");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#dlg-palette", { state: "hidden" });
+    await page.waitForFunction(() => document.activeElement === document.querySelector("#console-input"));
+    ok("command palette (Ctrl+Shift+P) lists every action with its shortcut, finds them by fuzzy search and runs them");
+
+    // Quick file switcher
+    await page.keyboard.press("Control+p");
+    await page.waitForSelector("#dlg-palette[open]");
+    check((await page.locator("#palette-list .pal-item").count()) === 3, "the file switcher should list the 3 project files");
+    await page.keyboard.type("are");
+    check(/lib\/area\.m/.test(await page.locator(".pal-item.active").innerText()), "file switcher did not find lib/area.m");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".tab.active[data-name='lib/area.m']");
+    await page.keyboard.press("Control+p");
+    await page.keyboard.type(":4");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.mylab.editor.getCursor().line === 3);
+    ok("quick file switcher (Ctrl+P) opens a project file by fuzzy name, and ':4' goes to a line");
+
+    // Find and replace in the file
+    await h.openFile("main.m");
+    await focusAt(0, 0);
+    await page.keyboard.press("Control+f");
+    await page.waitForSelector("#find-bar:not([hidden])");
+    await page.fill("#find-input", "total");
+    await page.waitForFunction(() => document.querySelector("#find-count").textContent === "1 of 7");
+    check((await page.locator(".cm-find-match").count()) >= 7, "matches should be highlighted in the editor");
+    await page.keyboard.press("Enter");
+    check((await page.locator("#find-count").innerText()) === "2 of 7", "Enter should go to the next match");
+    await page.keyboard.press("Shift+Enter");
+    check((await page.locator("#find-count").innerText()) === "1 of 7", "Shift+Enter should go to the previous match");
+    await page.fill("#find-input", "Total");
+    await page.click("#find-case");
+    await page.waitForFunction(() => document.querySelector("#find-count").textContent === "No results");
+    await page.click("#find-case");
+    await page.click("#find-regex");
+    await page.fill("#find-input", "t(ot)al\\b");
+    await page.waitForFunction(() => /of 7$/.test(document.querySelector("#find-count").textContent));
+    await page.fill("#find-input", "t(ot");
+    await page.waitForFunction(() => document.querySelector("#find-count").textContent === "Not valid");
+    await page.fill("#find-input", "\\b(to)tal = ");
+    await page.waitForFunction(() => /of 2$/.test(document.querySelector("#find-count").textContent));
+    await page.keyboard.press("Control+h");
+    await page.waitForSelector("#replace-row:not([hidden])");
+    check((await page.inputValue("#find-input")) === "\\b(to)tal = ", "opening replace must keep what was typed in the find box");
+    await page.fill("#replace-input", "sub$1tal = ");
+    await page.click("#replace-one");
+    check((await ed(() => window.mylab.editor.getLine(2))) === "subtotal = sum(values);", "replace with a regex group: " + (await ed(() => window.mylab.editor.getLine(2))));
+    await page.waitForFunction(() => document.querySelector("#find-count").textContent === "1 of 1");
+    await page.click("#replace-all");
+    check((await ed(() => window.mylab.editor.getLine(4))) === "    subtotal = total + area(k, 2); % total so far", "replace all: " + (await ed(() => window.mylab.editor.getLine(4))));
+    await ed(() => (window.mylab.editor.undo(), window.mylab.editor.undo()));
+    check((await ed(() => window.mylab.editor.getLine(2))) === "total = sum(values);", "undo should take the replacements back");
+    await page.click("#find-regex");
+    await page.focus("#find-input");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#find-bar", { state: "hidden" });
+    ok("find and replace (Ctrl+F / Ctrl+H): match count, case and regex toggles, replace one, replace all");
+
+    // Search in all files
+    await page.keyboard.press("Control+Shift+F");
+    await page.waitForSelector("#search-view:not([hidden])");
+    await page.fill("#search-input", "area");
+    await page.waitForFunction(() => document.querySelector("#search-results").dataset.total === "6");
+    check(/6 results in 3 files/.test(await page.locator("#search-status").innerText()), "search status: " + (await page.locator("#search-status").innerText()));
+    await page.click("#search-word");
+    await page.click("#search-case");
+    await page.waitForFunction(() => document.querySelector("#search-results").dataset.total === "4");
+    await page.locator(".search-file[data-path='lib/area.m'] .search-hit[data-line='3']").click();
+    await page.waitForSelector(".tab.active[data-name='lib/area.m']");
+    check((await ed(() => [window.mylab.editor.getSelection(), window.mylab.editor.getCursor("from").line].join())) === "area,2", "clicking a search result should select the match");
+    await page.click("#search-word");
+    await page.click("#search-case");
+    await page.click("#tab-console");
+    ok("search across all project files with click-to-jump");
+
+    // Problems as you type
+    await h.openFile("main.m");
+    await page.waitForFunction(() => window.mylab.app.problemsOf("main.m").length === 0 && document.querySelector("#problems-count").hidden);
+    check((await problems()).length === 0, "area() and twice() are project functions, so they must not be reported: " + JSON.stringify(await problems()));
+    await focusAt(8, 0);
+    await page.keyboard.type("m = meen(values);\n", { delay: 10 });
+    await page.waitForSelector(".CodeMirror .cm-lint-warning");
+    let probs = await problems();
+    check(probs.length === 1 && probs[0].line === 9 && probs[0].severity === "warning" && /meen/.test(probs[0].message), "problems: " + JSON.stringify(probs));
+    check((await page.locator(".CodeMirror .cm-lint-warning").innerText()) === "meen", "the unknown name should be underlined");
+    check((await page.locator(".lint-mark.warning").count()) === 1 && /meen/.test(await page.locator(".lint-mark.warning").getAttribute("aria-label")), "gutter marker missing");
+    check((await page.locator("#problems-count").innerText()) === "1", "the Problems tab should show a count");
+    await ed(() => window.mylab.editor.replaceRange("if total > 3\n", { line: 9, ch: 0 }));
+    await page.waitForSelector(".lint-mark.error");
+    probs = await problems();
+    check(probs.length === 1 && probs[0].severity === "error", "a syntax error should be reported as an error: " + JSON.stringify(probs));
+    await ed(() => window.mylab.editor.replaceRange("", { line: 9, ch: 0 }, { line: 10, ch: 0 }));
+    await page.waitForSelector(".CodeMirror .cm-lint-warning");
+    await page.click("#tab-problems");
+    await page.waitForSelector("#problems-view:not([hidden])");
+    await focusAt(0, 0);
+    await page.locator(".problem-item[data-kind='check']").click();
+    check((await ed(() => window.mylab.editor.getSelection())) === "meen", "clicking a problem should jump to it");
+    await hoverAt(8, 5);
+    await page.waitForSelector("#code-tip:not([hidden]) .tip-problem");
+    check(/meen/.test(await page.locator("#code-tip").innerText()), "hovering an underlined name should explain the problem");
+    await shot(page, "problems.png", "#center");
+    await page.mouse.move(5, 5);
+    ok("problems as you type: underline, gutter marker, Problems list with click-to-jump, hover text");
+    await page.click("#btn-run");
+    await page.waitForSelector("#console-out .err");
+    await waitIdle();
+    check((await h.markedLine("cm-error-line")) === 9, "the failing line should be marked after the run");
+    check((await page.locator("#console-out .err").last().locator("button").allInnerTexts()).join("|") === "Go to line 9|Explain this error|Fix this error", "error actions: " + (await page.locator("#console-out .err").last().locator("button").allInnerTexts()).join("|"));
+    await page.waitForFunction(() => window.mylab.app.allProblems().some((p) => p.run && p.line === 8));
+    await focusAt(0, 0);
+    await page.click("#tab-problems");
+    await page.locator(".problem-item[data-kind='run']").click();
+    check((await ed(() => window.mylab.editor.getCursor().line)) === 8, "the run error in the Problems list should jump to its line");
+    await ed(() => window.mylab.editor.replaceRange("", { line: 8, ch: 0 }, { line: 9, ch: 0 }));
+    await page.waitForFunction(() => window.mylab.app.problemsOf("main.m").length === 0);
+    await h.run();
+    await h.waitConsole(/total is 18/);
+    check((await problems()).length === 0, "a clean run should leave no problems");
+    ok("a failed run marks the error line, lists it under Problems and offers 'Explain' and 'Fix this error'");
+
+    // Hover help, usage hints, F1
+    await hoverAt(2, 9);
+    await page.waitForFunction(() => document.querySelector("#code-tip").dataset.name === "sum" && !document.querySelector("#code-tip").hidden);
+    let tipText = await page.locator("#code-tip").innerText();
+    check(/s = sum\(x\)/.test(tipText) && /Sum of elements\./.test(tipText), "hover on sum: " + tipText);
+    await hoverAt(4, 22);
+    await page.waitForFunction(() => document.querySelector("#code-tip").dataset.name === "area" && !document.querySelector("#code-tip").hidden);
+    tipText = await page.locator("#code-tip").innerText();
+    check(/a = area\(w, h\)/.test(tipText) && /Area of a rectangle\./.test(tipText) && /lib\/area\.m/.test(tipText), "hover on a project function: " + tipText);
+    await hoverAt(1, 2);
+    await page.waitForFunction(() => document.querySelector("#code-tip").dataset.name === "values" && !document.querySelector("#code-tip").hidden);
+    check(/values is a variable: 1×3 double/.test(await page.locator("#code-tip").innerText()), "hover on a workspace variable: " + (await page.locator("#code-tip").innerText()));
+    await hoverAt(4, 40);
+    await page.waitForFunction(() => document.querySelector("#code-tip").hidden);
+    await page.mouse.move(5, 5);
+    await focusAt(9, 0);
+    await page.keyboard.type("q = linspace(", { delay: 10 });
+    await page.waitForFunction(() => document.querySelector("#code-tip").dataset.kind === "sig" && !document.querySelector("#code-tip").hidden);
+    check(/y = linspace\(a, b, n\)/.test(await page.locator("#code-tip").innerText()), "usage hint: " + (await page.locator("#code-tip").innerText()));
+    await page.keyboard.type("0, 1", { delay: 10 });
+    check(await page.locator("#code-tip").isVisible(), "the usage hint should stay while typing the arguments");
+    await page.keyboard.press("ArrowRight");
+    await page.waitForFunction(() => document.querySelector("#code-tip").hidden);
+    check((await ed(() => window.mylab.editor.getLine(9))) === "q = linspace(0, 1)", "typed line: " + (await ed(() => window.mylab.editor.getLine(9))));
+    await focusAt(9, 7);
+    await page.keyboard.press("F1");
+    await page.waitForSelector("#dlg-help[open]");
+    await page.waitForFunction(() => /y = linspace\(a, b, n\)/.test(document.querySelector("#help-body").textContent));
+    check(/evenly spaced/.test(await page.locator("#help-body").innerText()) && (await page.inputValue("#help-name")) === "linspace", "F1 help for linspace is wrong");
+    await page.fill("#help-name", "twice");
+    await page.click("#help-go");
+    await page.waitForFunction(() => /Two times x\./.test(document.querySelector("#help-body").textContent));
+    await page.fill("#help-name", "linspase");
+    await page.click("#help-go");
+    await page.waitForSelector("#help-also button:has-text('linspace')");
+    await page.click("#help-close");
+    await page.waitForTimeout(150);
+    ok("hover shows usage and a one-line description, typing name( shows the usage, F1 opens the full help");
+
+    // Autocomplete
+    await focusAt(9, 0);
+    await ed(() => window.mylab.editor.replaceRange("", { line: 9, ch: 0 }, { line: 9, ch: 100 }));
+    await page.keyboard.type("va", { delay: 30 });
+    await page.waitForSelector(".CodeMirror-hints");
+    let hints = await page.locator(".CodeMirror-hints li").allInnerTexts();
+    check(/^x\s+values\s+1×3 double$/.test(hints[0].replace(/\n/g, " ")), "the first suggestion should be the workspace variable with its size: " + JSON.stringify(hints.slice(0, 3)));
+    check(hints.some((t) => /^ƒ\s+var\s+Variance/.test(t.replace(/\n/g, " "))), "built-ins should come with a description: " + JSON.stringify(hints.slice(0, 6)));
+    await page.keyboard.press("Tab");
+    check((await ed(() => window.mylab.editor.getLine(9))) === "values", "Tab should accept the suggestion");
+    await page.keyboard.type(" = ar", { delay: 30 });
+    await page.waitForSelector(".CodeMirror-hints");
+    hints = await page.locator(".CodeMirror-hints li").allInnerTexts();
+    check(/^ƒ\s+area\s+Area of a rectangle\.$/.test(hints[0].replace(/\n/g, " ")), "project functions should be suggested with their description: " + JSON.stringify(hints.slice(0, 3)));
+    await page.keyboard.press("Enter");
+    check((await ed(() => [window.mylab.editor.getLine(9), window.mylab.editor.getCursor().line].join("|"))) === "values = ar|10", "Enter should make a new line while suggestions pop up by themselves");
+    await ed(() => window.mylab.editor.replaceRange("", { line: 9, ch: 0 }, { line: 10, ch: 0 }));
+    await page.keyboard.type("tw", { delay: 30 });
+    await page.keyboard.press("Control+Space");
+    await page.waitForSelector(".CodeMirror-hints");
+    await page.waitForTimeout(100);
+    hints = await page.locator(".CodeMirror-hints li").allInnerTexts();
+    check(/^ƒ\s+twice\s+Two times x\.$/.test(hints[0].replace(/\n/g, " ")), "Ctrl+Space should list the function of this file first: " + JSON.stringify(hints.slice(0, 3)));
+    await page.keyboard.press("Enter");
+    check((await ed(() => window.mylab.editor.getLine(9))) === "twice", "Enter should accept a suggestion asked for with Ctrl+Space: " + (await ed(() => window.mylab.editor.getLine(9))));
+    await ed(() => window.mylab.editor.replaceRange("", { line: 9, ch: 0 }, { line: 9, ch: 100 }));
+    ok("autocomplete suggests workspace variables, project functions and built-ins with descriptions");
+
+    // Go to definition, outline, rename
+    await focusAt(4, 22);
+    await page.keyboard.press("F12");
+    await page.waitForSelector(".tab.active[data-name='lib/area.m']");
+    check((await ed(() => window.mylab.editor.getCursor().line)) === 0, "F12 should go to the function line");
+    await h.openFile("main.m");
+    const twiceAt = await ed(() => window.mylab.editor.charCoords({ line: 8, ch: 11 }, "window"));
+    await page.keyboard.down("Control");
+    await page.mouse.click(twiceAt.left + 2, (twiceAt.top + twiceAt.bottom) / 2);
+    await page.keyboard.up("Control");
+    await page.waitForFunction(() => window.mylab.editor.getCursor().line === 10);
+    check((await ed(() => window.mylab.state.active)) === "main.m", "Ctrl+click on a local function should stay in the file");
+    await focusAt(7, 27);
+    await page.keyboard.press("F12");
+    await page.waitForFunction(() => window.mylab.editor.getCursor().line === 2);
+    ok("go to definition (F12, Ctrl+click) for functions in this file and in other project files, and for variables");
+    await page.keyboard.press("Control+Shift+O");
+    await page.waitForSelector("#dlg-palette[open]");
+    const outline = (await page.locator("#palette-list .pal-item .pal-label").allInnerTexts()).join("|");
+    check(outline === "%% Load|%% Report|y = twice(x)", "outline: " + outline);
+    await page.keyboard.type("rep");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.mylab.editor.getCursor().line === 6);
+    ok("outline (Ctrl+Shift+O) lists the functions and %% sections of the file and jumps to them");
+    await focusAt(2, 2);
+    await page.keyboard.press("F2");
+    await page.waitForSelector("#dlg-prompt[open]");
+    check(/Changes 5 places/.test(await page.locator("#prompt-text").innerText()), "rename should say how many places change: " + (await page.locator("#prompt-text").innerText()));
+    await page.fill("#prompt-input", "2bad");
+    check(await page.locator("#prompt-ok").isDisabled(), "an invalid name must be refused");
+    await page.fill("#prompt-input", "grand");
+    await page.click("#prompt-ok");
+    await page.waitForFunction(() => window.mylab.editor.getLine(2) === "grand = sum(values);");
+    let text = await edValue();
+    check(text.includes("    grand = grand + area(k, 2); % total so far") && text.includes("fprintf('total is %d\\n', grand);") && text.includes("result = twice(grand);"), "rename result:\n" + text);
+    await ed(() => window.mylab.editor.undo());
+    check((await edValue()).includes("total = sum(values);") && !(await edValue()).includes("grand"), "one undo should take the whole rename back");
+    ok("rename (F2) changes every use of a name in the file, but not comments or text in quotes");
+
+    // Editing shortcuts
+    await h.newFile("edit.m", "a = 1;\nb = 2;\nc = a + b;\n");
+    await focusAt(1, 2);
+    await page.keyboard.press("Control+/");
+    check((await ed(() => window.mylab.editor.getLine(1))) === "% b = 2;", "Ctrl+/ should comment the line");
+    await page.keyboard.press("Control+/");
+    await page.keyboard.press("Shift+Alt+ArrowDown");
+    check((await edValue()) === "a = 1;\nb = 2;\nb = 2;\nc = a + b;\n", "copy line down: " + JSON.stringify(await edValue()));
+    await page.keyboard.press("Control+Shift+K");
+    await focusAt(1, 2);
+    await page.keyboard.press("Alt+ArrowUp");
+    check((await edValue()) === "b = 2;\na = 1;\nc = a + b;\n", "move line up: " + JSON.stringify(await edValue()));
+    await page.keyboard.press("Alt+ArrowDown");
+    await page.keyboard.press("Control+]");
+    check((await ed(() => window.mylab.editor.getLine(1))) === "    b = 2;", "Ctrl+] should indent the line");
+    await page.keyboard.press("Control+[");
+    check((await ed(() => window.mylab.editor.getLine(1))) === "b = 2;", "Ctrl+[ should outdent the line");
+    await focusAt(0, 0);
+    for (let i = 0; i < 2; i++) await page.keyboard.press("Control+d");
+    check((await ed(() => window.mylab.editor.listSelections().length)) === 2, "Ctrl+D should add the next match as a second cursor");
+    await page.keyboard.type("alpha");
+    check((await edValue()) === "alpha = 1;\nb = 2;\nc = alpha + b;\n", "typing with two cursors: " + JSON.stringify(await edValue()));
+    await page.keyboard.press("Escape");
+    ok("editing shortcuts: comment (Ctrl+/), copy and move lines, indent/outdent, several cursors (Ctrl+D)");
+
+    // Auto-indent, format, folding
+    await ed(() => window.mylab.editor.setValue(""));
+    await focusAt(0, 0);
+    await page.keyboard.type("function r = pick(x)\nif x > 1\nr = 1;\nelse\nr = 2;\nend\nswitch x\ncase 1\ndisp(1)\nend\nfor k = 1:2\nwhile true\nbreak\nend\nend\nend", { delay: 4 });
+    await page.keyboard.press("Escape");
+    const typed = await edValue();
+    check(
+      typed === "function r = pick(x)\n    if x > 1\n        r = 1;\n    else\n        r = 2;\n    end\n    switch x\n        case 1\n            disp(1)\n    end\n    for k = 1:2\n        while true\n            break\n        end\n    end\nend",
+      "auto-indent while typing gave:\n" + typed
+    );
+    ok("typing indents after if/for/while/function/switch and moves 'end', 'else' and 'case' back out");
+    const messy = "for k = 1:3\nif k > 1   \n      disp('if end % not code')\n  x = [1 2 ...\n       3];\n   end\n        end\n";
+    await ed((c) => window.mylab.editor.setValue(c), messy);
+    await page.keyboard.press("Shift+Alt+F");
+    const tidy = "for k = 1:3\n    if k > 1\n        disp('if end % not code')\n        x = [1 2 ...\n             3];\n    end\nend\n";
+    await page.waitForFunction((t) => window.mylab.editor.getValue() === t, tidy);
+    check(tidy.replace(/[ \t]+/g, "") === messy.replace(/[ \t]+/g, ""), "formatting may only change white space");
+    await ed(() => window.mylab.editor.undo());
+    check((await edValue()) === messy, "one undo should take the formatting back");
+    await ed(() => window.mylab.editor.redo());
+    ok("'Format document' fixes the indentation by block structure and changes nothing else");
+    await ed(() => window.mylab.editor.setValue("%% One\nfor k = 1:3\n    if k > 1\n        disp(k)\n    end\nend\n%% Two\ny = 2;\n"));
+    await page.waitForSelector(".CodeMirror-foldgutter-open");
+    await page.locator(".CodeMirror-foldgutter-open").nth(1).click();
+    await page.waitForSelector(".CodeMirror-foldmarker");
+    check((await ed(() => window.mylab.editor.getAllMarks().filter((m) => m.__isFold).map((m) => [m.find().from.line, m.find().to.line].join("-")).join())) === "1-4", "folding the for block should hide lines 3 to 5");
+    check((await page.locator(".bp-dot").count()) === 0, "clicking the fold arrow must not set a breakpoint");
+    await ed(() => window.mylab.app.commands.run("edit.unfoldAll"));
+    await ed(() => window.mylab.app.commands.run("edit.foldAll"));
+    check((await page.locator(".CodeMirror-foldmarker").count()) === 2, "fold all should fold both %% sections");
+    await ed(() => window.mylab.app.commands.run("edit.unfoldAll"));
+    await focusAt(3, 4);
+    await page.keyboard.press("Control+Shift+BracketLeft");
+    check((await ed(() => window.mylab.editor.getAllMarks().filter((m) => m.__isFold).map((m) => m.find().from.line).join())) === "2", "the fold shortcut should fold the innermost block around the cursor");
+    await page.keyboard.press("Control+Shift+BracketRight");
+    check((await page.locator(".CodeMirror-foldmarker").count()) === 0, "the unfold shortcut should open the block again");
+    ok("code folding for blocks and %% sections (gutter arrows, shortcuts, fold all)");
+
+    // Tabs: unsaved dot, keyboard, autosave off
+    await page.waitForFunction(() => !document.querySelector(".tab.dirty"));
+    await ed(() => window.mylab.app.settings.set("autosave", false));
+    await page.keyboard.type("z");
+    await page.waitForSelector(".tab.active.dirty[data-name='edit.m']");
+    await page.waitForTimeout(900);
+    check((await page.locator(".tab.dirty").count()) === 1 && (await page.locator("#save-state").innerText()) === "Not saved", "with autosave off the tab should keep its 'not saved' dot");
+    check((await ed(() => window.mylab.state.files.get("edit.m").content === window.mylab.editor.getValue())) === false, "with autosave off nothing should be saved yet");
+    await page.keyboard.press("Control+s");
+    await page.waitForFunction(() => !document.querySelector(".tab.dirty") && window.mylab.state.files.get("edit.m").content === window.mylab.editor.getValue());
+    await ed(() => window.mylab.app.settings.set("autosave", true));
+    await page.keyboard.type("z");
+    await page.waitForSelector(".tab.active.dirty");
+    await page.waitForFunction(() => !document.querySelector(".tab.dirty"));
+    await page.focus(".tab.active");
+    await page.keyboard.press("ArrowLeft");
+    await page.waitForSelector(".tab.active[data-name='lib/area.m']");
+    check((await ed(() => document.activeElement.dataset.name)) === "lib/area.m", "arrow keys should move between tabs and keep the focus on the tab row");
+    await page.keyboard.press("Alt+PageDown");
+    await page.waitForSelector(".tab.active[data-name='edit.m']");
+    await page.keyboard.press("Alt+w");
+    await page.waitForFunction(() => !document.querySelector(".tab[data-name='edit.m']"));
+    ok("tabs show a dot for unsaved changes, work with the keyboard, and autosave can be turned off");
+
+    // Variable viewer
+    await input.fill("M = magic(6) / 7; big = reshape(1:60000, 300, 200); T = table([1;2;3], {'a';'b';'c'}, 'VariableNames', {'n','name'}); s.a = 1; s.m = magic(3); c = {1, 'two'; [1 2 3], {4}};");
+    await input.press("Enter");
+    await waitIdle();
+    await page.click("#var-table tr[data-name='M']");
+    await page.waitForSelector("#dlg-var[open] #var-grid tbody tr");
+    check((await page.locator("#var-grid tbody tr").count()) === 6 && (await page.locator("#var-grid tbody tr").first().innerText()).replace(/\s+/g, " ") === "1 5 0.1429 0.8571 3.7143 2.7143 3.4286", "matrix grid: " + (await page.locator("#var-grid tbody tr").first().innerText()));
+    await shot(page, "variable-viewer.png", "#dlg-var");
+    await page.click("#var-view-text");
+    check(/M =\s+5\.0000\s+0\.1429/.test(await page.locator("#var-body").innerText()) && (await page.locator("#var-grid-wrap").isHidden()), "the Text view should show the printed form");
+    await page.click("#var-view-grid");
+    await page.click("#var-copy-csv");
+    await h.until(() => navigator.clipboard.readText().then((t) => t.startsWith("5,0.142857142857143,")));
+    check((await ed(() => navigator.clipboard.readText())).trim().split("\n").length === 6, "the CSV should have 6 rows");
+    await page.click("#var-plots [data-plot='bar']");
+    await page.waitForSelector("#dlg-var", { state: "hidden" });
+    await h.waitConsole(/figure; bar\(M\)/);
+    await page.waitForSelector(".plot-card img", { timeout: 60000 });
+    await waitIdle();
+    await page.click("#var-table tr[data-name='big']");
+    await page.waitForSelector("#dlg-var[open] #var-pager:not([hidden])");
+    check((await page.locator("#var-rows-text").innerText()) === "Rows 1–100 of 300" && (await page.locator("#var-cols-text").innerText()) === "Columns 1–25 of 200", "pager: " + (await page.locator("#var-rows-text").innerText()));
+    check((await page.locator("#var-grid tbody tr").count()) === 100, "a large matrix should be shown one page at a time");
+    await page.click("#var-rows-last");
+    await page.click("#var-cols-next");
+    await page.waitForFunction(() => document.querySelector("#var-rows-text").textContent === "Rows 201–300 of 300" && document.querySelector("#var-cols-text").textContent === "Columns 26–50 of 200");
+    check((await page.locator("#var-grid tbody tr").first().locator("td").first().innerText()) === "7701", "page 3 should start at big(201, 26) = 7701");
+    await page.click("#dlg-var button[value='close']");
+    await page.click("#var-table tr[data-name='T']");
+    await page.waitForFunction(() => document.querySelector("#dlg-var").dataset.kind === "table");
+    check((await page.locator("#var-grid").innerText()).replace(/\s+/g, " ").trim() === "n name 1 1 a 2 2 b 3 3 c", "table grid: " + (await page.locator("#var-grid").innerText()));
+    await page.click("#dlg-var button[value='close']");
+    await page.click("#var-table tr[data-name='s']");
+    await page.waitForFunction(() => document.querySelector("#dlg-var").dataset.kind === "struct");
+    await page.locator("#var-grid td.open button").click();
+    await page.waitForFunction(() => document.querySelector("#var-title").textContent === "s.m" && document.querySelector("#dlg-var").dataset.kind === "matrix");
+    check((await page.locator("#var-grid tbody tr").first().innerText()).replace(/\s+/g, " ") === "1 8 1 6", "s.m should open as a grid");
+    await page.locator("#var-crumbs button").click();
+    await page.waitForFunction(() => document.querySelector("#var-title").textContent === "s");
+    await page.click("#dlg-var button[value='close']");
+    await page.click("#var-table tr[data-name='c']");
+    await page.waitForFunction(() => document.querySelector("#dlg-var").dataset.kind === "cell");
+    check((await page.locator("#var-grid tbody").innerText()).replace(/\s+/g, " ").trim() === "1 1 two 2 [1 2 3] 1×1 cell", "cell grid: " + (await page.locator("#var-grid tbody").innerText()));
+    await page.click("#dlg-var button[value='close']");
+    await page.click("#btn-clear-plots");
+    ok("variable viewer: grid for matrices, tables, cells and structs, pages for large data, copy as CSV, quick plots");
+
+    // Breakpoints: run to the next breakpoint
+    await h.newFile("bp.m", "total = 0;\nfor k = 1:4\n    total = total + k;\nend\ndone = total * 2;\n");
+    await focusAt(4, 0);
+    await page.keyboard.press("F9");
+    await page.waitForSelector(".bp-dot");
+    await page.keyboard.press("Alt+F5");
+    await page.waitForSelector("#step-bar:not([hidden])", { timeout: 60000 });
+    const bpStop = await h.stepInfo();
+    check(bpStop.line === "5" && (await h.varValue("total")) === "10" && (await h.varValue("k")) === "4", "run to breakpoint should stop at line 5 with total = 10, got " + JSON.stringify(bpStop));
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#step-bar", { state: "hidden" });
+    ok("breakpoints: F9 sets one, 'Run to the next breakpoint' stops there and shows the workspace");
+
+    // Version history
+    await h.newFile("story.m", "a = 1;\nb = 2;\n");
+    await focusAt(1, 6);
+    await page.keyboard.type("\nc = 3;");
+    await page.keyboard.press("Control+s");
+    await page.waitForFunction(() => window.mylab.state.files.get("story.m").content === "a = 1;\nb = 2;\nc = 3;\n");
+    await page.keyboard.type("\nd = 4;");
+    await page.keyboard.press("Control+s");
+    await h.until(() => window.mylab.app.historyStore.list(window.mylab.state.project.id, "story.m").then((v) => v.length === 3));
+    await ed(() => window.mylab.app.commands.run("file.history"));
+    await page.waitForSelector("#dlg-history[open] .history-item");
+    const versions = (await page.locator(".history-item").allInnerTexts()).map((t) => t.replace(/\s+/g, " "));
+    check(versions.length === 3 && /Saved · 5 lines/.test(versions[0]) && /Saved · 4 lines/.test(versions[1]) && /Before your edits · 3 lines/.test(versions[2]), "versions: " + JSON.stringify(versions));
+    await page.locator(".history-item").nth(2).click();
+    check(/2 lines added/.test(await page.locator("#history-summary").innerText()) && (await page.locator("#history-diff .diff-add").count()) === 2, "the diff against the first version should show 2 added lines");
+    await shot(page, "version-history.png", "#dlg-history");
+    await page.click("#history-restore");
+    await page.waitForFunction(() => window.mylab.editor.getValue() === "a = 1;\nb = 2;\n");
+    check(await ed(() => window.mylab.app.historyStore.db !== null), "versions should be kept in IndexedDB");
+    ok("version history keeps the last saves of a file, shows a diff and restores a version");
+
+    // Appearance: themes, text size, shortcut presets, layout
+    check((await ed(() => document.documentElement.dataset.shown)) === "light", "the default theme should follow the system (light here)");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForFunction(() => document.documentElement.dataset.shown === "dark" && getComputedStyle(document.body).backgroundColor === "rgb(15, 20, 24)");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.click("#btn-theme");
+    await page.click("#theme-hc");
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "hc" && getComputedStyle(document.body).backgroundColor === "rgb(0, 0, 0)");
+    await page.click("#btn-theme");
+    await page.click("#theme-dark");
+    await page.waitForFunction(() => getComputedStyle(document.body).backgroundColor === "rgb(15, 20, 24)" && localStorage.getItem("mylab.theme") === '"dark"');
+    await h.openFile("main.m");
+    await shot(page, "web-app-dark.png");
+    await page.keyboard.press("Control+,");
+    await page.waitForSelector("#dlg-settings[open]");
+    await page.selectOption("#set-theme", "system");
+    await page.locator("#set-font").fill("17");
+    check((await ed(() => getComputedStyle(document.querySelector(".CodeMirror")).fontSize)) === "17px", "the text size setting should change the editor");
+    await page.selectOption("#set-keys", "matlab");
+    await page.click("#dlg-settings button[value='close']");
+    check((await ed(() => [document.documentElement.dataset.shown, localStorage.getItem("mylab.theme")].join())) === "light,", "'Follow my system' should clear the saved theme");
+    await ed(() => window.mylab.app.commands.run("view.fontReset"));
+    await page.click("#btn-clear-console");
+    await ed(() => (window.mylab.editor.focus(), window.mylab.editor.setSelection({ line: 1, ch: 0 }, { line: 2, ch: 22 })));
+    await page.keyboard.press("F9");
+    await h.waitConsole(/run lines 2–3 of main\.m/);
+    await waitIdle();
+    await page.click("#btn-keys");
+    await page.waitForSelector("#dlg-keys[open]");
+    const sheet = await page.locator("#keys-body").innerText();
+    check(/F9\s+Run the selection/.test(sheet) && /Ctrl\+Enter/.test(sheet) && /Find in this file/.test(sheet) && /Rename/.test(sheet), "the cheat sheet should list the shortcuts of the chosen style");
+    await page.selectOption("#keys-preset", "default");
+    check(/Ctrl\+Shift\+Enter\s+Run the selection/.test(await page.locator("#keys-body").innerText()), "switching back to the standard shortcuts failed");
+    await page.click("#dlg-keys button[value='close']");
+    const sideBefore = await ed(() => document.querySelector("#side").getBoundingClientRect().width);
+    await page.focus(".gutter[data-resize='side']");
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+    check((await ed(() => document.querySelector("#side").getBoundingClientRect().width)) === sideBefore + 60 && (await ed(() => JSON.parse(localStorage.getItem("mylab.sizes")).side)) === sideBefore + 60, "panel sizes should change with the keyboard and be remembered");
+    await ed(() => window.mylab.app.commands.run("view.resetLayout"));
+    check((await ed(() => document.querySelector("#side").getBoundingClientRect().width)) === sideBefore, "'Reset the panel sizes' should restore the layout");
+    ok("appearance: light, dark and high-contrast themes that follow the system, text size, MATLAB-style keys, cheat sheet, resizable panels");
+
+    // Assistant tied to the editor (mocked provider)
+    let aiPrompt = null;
+    let aiReply = "";
+    await page.route("http://localhost:11434/api/chat", async (route) => {
+      const body = route.request().postDataJSON();
+      aiPrompt = body.messages[body.messages.length - 1].content;
+      const lines = [{ message: { role: "assistant", content: aiReply }, done: false }, { message: { role: "assistant", content: "" }, done: true }];
+      await route.fulfill({ status: 200, headers: { ...cors, "Content-Type": "application/x-ndjson" }, body: lines.map((l) => JSON.stringify(l)).join("\n") + "\n" });
+    });
+    await ed(() => {
+      const a = window.mylab.app.assistant;
+      a.settings = { ...a.settings, provider: "ollama", ollama: { url: "http://localhost:11434", model: "test-model" } };
+      a.clear();
+    });
+    const broken = "a = [1 2 3];\nb = a(5);\ndisp(b)\n";
+    await h.newFile("fixme.m", broken);
+    await h.run();
+    await page.waitForSelector("#console-out .err");
+    aiReply = "The index 5 is past the end of `a`.\n\n```matlab\na = [1 2 3];\nb = a(3);\ndisp(b)\n```\n";
+    await page.locator("#console-out .err").last().locator("button:has-text('Fix this error')").click();
+    await page.waitForSelector("#ai-panel:not([hidden]) .msg.assistant .codeblock button.review:not([disabled])");
+    check(/Fix the error in my code/.test(aiPrompt) && /Last error in fixme\.m \(line 2\)/.test(aiPrompt) && aiPrompt.includes("b = a(5);"), "the 'Fix this error' request should carry the file and the error");
+    await page.locator("#ai-messages .codeblock button.review").last().click();
+    await page.waitForSelector("#dlg-diff[open]");
+    check((await page.locator("#diff-body .diff-del .diff-text").innerText()) === "b = a(5);" && (await page.locator("#diff-body .diff-add .diff-text").innerText()) === "b = a(3);", "the proposed edit should be shown as a diff");
+    check(/1 line added, 1 line removed/.test(await page.locator("#diff-summary").innerText()), "diff summary: " + (await page.locator("#diff-summary").innerText()));
+    await shot(page, "ai-diff.png", "#dlg-diff");
+    await page.click("#diff-reject");
+    await page.waitForSelector("#dlg-diff", { state: "hidden" });
+    check((await edValue()) === broken, "rejecting must leave the file alone");
+    await page.locator("#ai-messages .codeblock button.review").last().click();
+    await page.click("#diff-accept");
+    await page.waitForFunction(() => window.mylab.editor.getValue() === "a = [1 2 3];\nb = a(3);\ndisp(b)\n");
+    await h.until(() => window.mylab.app.historyStore.list(window.mylab.state.project.id, "fixme.m").then((v) => v.some((x) => /assistant/.test(x.reason) && x.content.includes("a(5)"))));
+    check(await page.locator("#ai-explain-selection").isHidden(), "'Explain selection' should only show while something is selected");
+    await ed(() => window.mylab.editor.setSelection({ line: 1, ch: 0 }, { line: 1, ch: 9 }));
+    aiReply = "It takes the third element.";
+    await page.click("#ai-explain-selection");
+    await page.waitForSelector("#ai-messages .msg.assistant:has-text('third element')");
+    check(/Explain the selected lines/.test(aiPrompt) && /Selected lines 2-2:\n```matlab\nb = a\(3\);/.test(aiPrompt), "'Explain selection' should send the selected lines");
+    await page.unroute("http://localhost:11434/api/chat");
+    await ed(() => {
+      const a = window.mylab.app.assistant;
+      a.settings = { ...a.settings, provider: "none" };
+      a.clear();
+    });
+    await page.click("#btn-ai-close");
+    ok("assistant: 'Fix this error' on a failed run, 'Explain selection', and proposed edits shown as a diff to accept or reject");
+
+    // Accessibility: names, keyboard reach, visible focus
+    const a11y = await ed(() => {
+      const visible = (e) => !e.closest("[hidden]") && e.getClientRects().length > 0;
+      const name = (e) => (e.getAttribute("aria-label") || e.textContent || e.title || "").trim() || (e.labels && e.labels[0] && e.labels[0].textContent.trim()) || e.placeholder || "";
+      const controls = [...document.querySelectorAll("button, a[href], input, select, textarea, [role='tab'], [role='separator'][tabindex]")].filter(visible);
+      return {
+        count: controls.length,
+        unnamed: controls.filter((e) => !name(e)).map((e) => e.outerHTML.slice(0, 90)),
+        unreachable: controls.filter((e) => e.tabIndex < 0 && !e.closest("[role='tablist']") && !e.closest(".CodeMirror") && !e.disabled).map((e) => e.outerHTML.slice(0, 90)),
+        rows: [...document.querySelectorAll(".file-item, .folder-item, #var-table tbody tr")].filter((e) => e.tabIndex !== 0).length,
+      };
+    });
+    check(a11y.count > 30 && a11y.unnamed.length === 0, "controls without a name: " + a11y.unnamed.join("\n"));
+    check(a11y.unreachable.length === 0 && a11y.rows === 0, "controls that the Tab key can't reach: " + a11y.unreachable.join("\n"));
+    await page.focus("#btn-run");
+    await page.keyboard.press("Tab");
+    const ring = await ed(() => {
+      const s = getComputedStyle(document.activeElement);
+      return { id: document.activeElement.id, visible: document.activeElement.matches(":focus-visible"), width: parseFloat(s.outlineWidth), style: s.outlineStyle };
+    });
+    check(ring.visible && ring.width >= 2 && ring.style === "solid", "keyboard focus should have a visible ring: " + JSON.stringify(ring));
+    check((await page.locator(".CodeMirror textarea, .CodeMirror [contenteditable]").first().getAttribute("aria-label")) === "Code editor", "the editor needs a label for screen readers");
+    ok("accessibility: every control has a name, can be reached with the keyboard and shows a focus ring");
+
+    await ed(() => window.mylab.app.commands.setPreset("default"));
+    await h.switchTo("My files");
+    await page.click("#tab-console");
 
     /* ---------------- sections ---------------- */
     await input.fill("clear");
@@ -1021,8 +1587,23 @@ async function main() {
     ok("after a restart, files (including binary ones) are synced into the new engine");
 
     // 11. Files persist after reload
+    await h.openFile("step_demo.m");
+    await page.evaluate(() => {
+      window.mylab.editor.setCursor(7, 3);
+      window.mylab.app.toggleBreakpoint(10);
+    });
+    await h.openFile("welcome.m");
     await page.reload();
     await page.waitForSelector(".file-item[data-name='add_squares.m']");
+    await page.waitForSelector(".tab.active[data-name='welcome.m']");
+    check(await page.locator(".tab[data-name='step_demo.m']").count(), "open tabs should be remembered");
+    await page.click(".tab[data-name='step_demo.m']");
+    await page.waitForSelector(".bp-dot");
+    const back = await page.evaluate(() => ({ cursor: window.mylab.editor.getCursor(), breaks: window.mylab.app.breakpointMap() }));
+    check(back.cursor.line === 7 && back.cursor.ch === 3, "the cursor position should be remembered per file: " + JSON.stringify(back.cursor));
+    check(JSON.stringify(back.breaks) === '{"step_demo.m":[11]}', "breakpoints should be remembered: " + JSON.stringify(back.breaks));
+    await page.evaluate(() => window.mylab.app.toggleBreakpoint(10));
+    ok("open tabs, the cursor in each file and breakpoints are remembered across reloads");
     const kept = await page.evaluate(() => {
       const f = window.mylab.state.files.get("data/plot.png");
       return { png: f && f.content instanceof Uint8Array && f.content[1] === 80, projects: window.mylab.state.projects.map((p) => p.name) };
@@ -1055,6 +1636,35 @@ async function main() {
     const overflow2 = await pp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(overflow2 <= 1, `phone layout with an assignment scrolls horizontally by ${overflow2}px`);
     ok("phone layout also fits the assignment panel, the project menu and the welcome dialog");
+    await pp.setViewportSize({ width: 320, height: 640 });
+    await pp.evaluate(() => window.mylab.app.switchProject("main"));
+    await pp.waitForSelector(".tab.active");
+    const narrow = async (what) => {
+      const o = await pp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      check(o <= 1, `at 320 px the page scrolls sideways by ${o}px (${what})`);
+    };
+    await narrow("main view");
+    await pp.evaluate(() => window.mylab.app.commands.run("find.replace"));
+    await pp.waitForSelector("#replace-row:not([hidden])");
+    await narrow("find and replace bar");
+    await pp.evaluate(() => window.mylab.app.closeFind());
+    await pp.evaluate(() => window.mylab.app.commands.run("find.inFiles"));
+    await pp.fill("#search-input", "plot");
+    await pp.waitForSelector(".search-hit");
+    await narrow("search results");
+    for (const [cmd, dlg] of [["palette.commands", "dlg-palette"], ["help.keys", "dlg-keys"], ["view.settings", "dlg-settings"], ["help.search", "dlg-help"]]) {
+      await pp.evaluate((c) => window.mylab.app.commands.run(c), cmd);
+      await pp.waitForSelector(`#${dlg}[open]`);
+      const box = await pp.locator("#" + dlg).boundingBox();
+      check(box.x >= 0 && box.x + box.width <= 320 && box.y >= 0 && box.y + box.height <= 640, `${dlg} does not fit a 320 px screen: ${JSON.stringify(box)}`);
+      await pp.evaluate((d) => document.getElementById(d).close(), dlg);
+    }
+    await pp.tap("#btn-more");
+    await pp.waitForSelector("#more-menu");
+    const moreBox = await pp.locator("#more-menu").boundingBox();
+    check(moreBox.x >= 0 && moreBox.x + moreBox.width <= 320, "the More menu does not fit a 320 px screen");
+    await pp.keyboard.press("Escape");
+    ok("the app is usable at 320 px: no sideways scrolling; find, search, palette, shortcuts, settings and help fit");
     await phone.close();
 
     // 13. No console errors

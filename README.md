@@ -4,7 +4,10 @@
 students, researchers and engineers who can't afford a MATLAB license.
 
 - **Runs in your browser with nothing to install.** A full editor, command
-  window, workspace and plots, running locally through WebAssembly.
+  window, workspace and plots, running locally through WebAssembly. The
+  editor underlines problems as you type, shows help when you hover a
+  function, and has a command palette, a variable viewer and a version
+  history.
 - **Runs on your computer** as a command-line tool, a Python library, a Jupyter
   kernel, or a tool your AI assistant can use (MCP).
 - **Has an AI helper built in.** It explains errors, fixes code and translates

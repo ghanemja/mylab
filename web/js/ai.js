@@ -20,7 +20,7 @@ Your job is to help users write, understand and fix MATLAB-language code that ru
 How to answer:
 - Be concise and practical. Give a short explanation, then code. Skip long introductions.
 - Put MATLAB-language code in \`\`\`matlab fenced blocks and Python code in \`\`\`python blocks. The app adds "Insert into editor" and "Run" buttons to matlab blocks, so each block should run on its own.
-- When you fix a whole file, return the complete corrected file in a single matlab block, then list the changes in a few bullets.
+- When you fix a whole file, return the complete corrected file in a single matlab block, then list the changes in a few bullets. The app shows that block as a list of changes ("Review changes") that the user accepts or rejects.
 - When explaining an error, say what caused it, name the line, and show the corrected code.
 
 What mylab supports:
@@ -34,6 +34,9 @@ Each user message may start with a [mylab context] section holding the user's cu
 
 const QUICK_PROMPTS = {
   error: "Explain this error in simple terms and show me how to fix it.",
+  fixerror:
+    "Fix the error in my code. Give me the complete corrected file in one matlab block, then say in one or two sentences what was wrong.",
+  selection: "Explain the selected lines step by step, in simple terms.",
   fix: "Find and fix the problems in my code. Give me the complete corrected code in one matlab block, then briefly list what you changed.",
   explain: "Explain what my code does, step by step, as if I were a student seeing it for the first time.",
   python:
@@ -325,6 +328,7 @@ export class Assistant {
       send: document.getElementById("ai-send"),
       stop: document.getElementById("ai-stop"),
       explainError: document.getElementById("ai-explain-error"),
+      fixError: document.getElementById("ai-fix-error"),
       label: document.getElementById("ai-provider-label"),
       dlg: document.getElementById("dlg-ai-settings"),
     };
@@ -352,6 +356,7 @@ export class Assistant {
     input.addEventListener("input", () => this._autosize());
     stop.addEventListener("click", () => this.controller && this.controller.abort());
     explainError.addEventListener("click", () => this.quick("error"));
+    this.el.fixError.addEventListener("click", () => this.quick("fixerror"));
     document.querySelectorAll("[data-ai-action]").forEach((b) =>
       b.addEventListener("click", () => this.quick(b.dataset.aiAction))
     );
@@ -396,6 +401,7 @@ export class Assistant {
 
   setLastError(err) {
     this.el.explainError.hidden = !err;
+    this.el.fixError.hidden = !err;
   }
 
   quick(kind) {
@@ -404,6 +410,10 @@ export class Assistant {
     const ctx = this.hooks.getContext();
     if (kind !== "error" && !ctx.fileName && !ctx.selection) {
       this.hooks.toast("Open a file first.", "error");
+      return;
+    }
+    if (kind === "selection" && !ctx.selection) {
+      this.hooks.toast("Select some code in the editor first.");
       return;
     }
     this.ask(text);
@@ -562,7 +572,7 @@ export class Assistant {
     });
     if (isMatlab) {
       mk("Insert into editor", "Insert at the cursor (replaces the selection)", () => this.hooks.insertCode(b.code));
-      mk("Replace file", "Replace the whole current file with this code", () => this.hooks.replaceFile(b.code));
+      mk("Review changes", "Compare this code with your file, then accept or reject the changes", () => this.hooks.replaceFile(b.code)).classList.add("review");
       mk("Run", "Run this code in the command window", () => this.hooks.runCode(b.code));
     }
     const pre = document.createElement("pre");
