@@ -59,6 +59,7 @@ function startServer() {
 async function shot(page, name) {
   if (!SHOTS) return;
   fs.mkdirSync(IMAGES, { recursive: true });
+  await page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove()));
   await page.waitForTimeout(350);
   await page.screenshot({ path: path.join(IMAGES, name) });
   ok(`screenshot saved to docs/images/${name}`);
@@ -113,6 +114,8 @@ function helpers(page) {
 
 function watchErrors(page, list, tag = "") {
   page.on("console", (msg) => {
+    // The mocked GitHub error replies (rate limit, missing repository) are expected.
+    if (msg.type() === "error" && /^Failed to load resource/.test(msg.text()) && /api\.github\.com/.test(msg.location().url || "")) return;
     if (msg.type() === "error") list.push(tag + msg.text());
   });
   page.on("pageerror", (err) => list.push(tag + "pageerror: " + err.message));
@@ -295,7 +298,7 @@ async function main() {
     }
     await page.click("#welcome-close");
     await page.waitForSelector("#dlg-welcome", { state: "hidden" });
-    check((await page.evaluate(() => localStorage.getItem("mylab.welcomed"))) === "2", "welcome not remembered");
+    await page.waitForFunction(() => localStorage.getItem("mylab.welcomed") === "2");
     ok("first-run welcome points to examples, GitHub, the example assignment and step-through");
 
     await page.waitForSelector("#loader .steps li.active, body[data-engine='ready']", { timeout: 60000 });
@@ -555,7 +558,7 @@ async function main() {
     check(dlText === report, "downloaded report differs from the preview");
     check(await page.locator("#report-print").isVisible(), "print button missing");
     ok("published report has titles, prose, highlighted code, output and an embedded figure");
-    await page.frameLocator("#report-frame").locator("#s3").scrollIntoViewIfNeeded();
+    await page.frameLocator("#report-frame").locator("#s2").evaluate((n) => n.ownerDocument.defaultView.scrollTo(0, n.offsetTop - 150));
     await shot(page, "report.png");
     await page.click("#dlg-report button[value='close']");
 
@@ -602,7 +605,7 @@ async function main() {
     check((await h.varValue("total")) === "30", "at the breakpoint total should be 30");
     await page.click("#step-last");
     check(/finished/.test(await page.locator("#step-where").innerText()), "last step should say finished");
-    check((await h.varValue("average")) === "7.5", "final workspace should show average = 7.5");
+    check(/^7\.50*$/.test(await h.varValue("average")), "final workspace should show average = 7.5");
     await page.click("#step-prev-bp");
     check((await h.stepInfo()).line === "11", "previous breakpoint should go back to line 11");
     await page.evaluate(() => {
@@ -643,7 +646,7 @@ async function main() {
     check(si.line === "3" && /This line fails/.test(await page.locator("#step-msg .step-error").innerText()), "failing step should be line 3");
     check((await h.markedLine("cm-step-error")) === 3, "failing line is not marked");
     await page.click("#step-exit");
-    await h.newFile("long_loop.m", "k = 0;\nwhile k < 4000\n    k = k + 1;\nend\n");
+    await h.newFile("long_loop.m", "k = 0;\nwhile k < 9000\n    k = k + 1;\nend\n");
     await page.click("#btn-step");
     await page.waitForSelector("#step-bar:not([hidden])", { timeout: 120000 });
     await page.click("#step-last");
@@ -706,11 +709,20 @@ async function main() {
     ok("the file tree has collapsible folders and stays in sync with the engine");
 
     /* ---------------- animations (engine output extra) ---------------- */
-    await page.evaluate(() => window.mylab.app.addFigures(["R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"], { kind: "file", file: "spin.m" }, "gif"));
-    await page.waitForSelector(".plot-card.animation");
-    check(/^Animation \d+/.test(await page.locator(".plot-card.animation .plot-meta span").innerText()), "animation label missing");
+    await page.click("#btn-clear-plots");
+    await h.newFile("spin.m", "t = linspace(0, 2*pi, 60);\nfor k = 1:8\n    plot(t, sin(t + k/2))\n    drawnow\nend\nmsgbox('Animation done')\n");
+    await h.run();
+    await page.waitForSelector(".plot-card.animation img", { timeout: 120000 });
+    const anim = await page.evaluate(async () => {
+      const img = document.querySelector(".plot-card.animation img");
+      await img.decode();
+      return { src: img.src.slice(0, 28), width: img.naturalWidth, label: document.querySelector(".plot-card.animation .plot-meta span").innerText, stills: document.querySelectorAll(".plot-card:not(.animation)").length };
+    });
+    check(anim.src === "data:image/gif;base64,R0lGOD" && anim.width > 100 && /^Animation \d+ · spin\.m/.test(anim.label), "animation card: " + JSON.stringify(anim));
+    check(anim.stills === 1, "the final still should be shown as a figure too");
     check(/\.gif$/.test(await page.locator(".plot-card.animation a[download]").getAttribute("download")), "animation should download as .gif");
-    ok("animations show in the Plots panel and download as .gif");
+    check(/Animation done/.test(await page.locator("#console-out .msg").last().innerText()), "msgbox text should be shown on the page");
+    ok("a drawnow loop produces an animation in the Plots panel (downloadable as .gif); msgbox shows a note");
 
     /* ---------------- projects ---------------- */
     await h.menu("menu-new-project");
@@ -798,14 +810,14 @@ async function main() {
     await h.waitConsole(/week1 total: 121/);
     ok("Open from GitHub (mocked) imports a folder of a repository with one API request, and the code runs");
     await page.evaluate(() => (location.hash = "#gh=octo/course@v2"));
-    await page.waitForFunction(() => document.querySelector("#project-name").textContent === "course", null, { timeout: 30000 });
+    await page.waitForFunction(() => document.querySelector("#project-name").textContent === "course (2)", null, { timeout: 30000 });
     check((await h.files()).join() === "README.md,week1/bonus.m,week1/data/values.csv,week1/main.m,week2/lab.m", "#gh files: " + (await h.files()).join());
     check(/\/git\/trees\/v2\?recursive=1$/.test(gh.lastTreeUrl), "ref from #gh link not used: " + gh.lastTreeUrl);
     await page.evaluate(() => window.mylab.createFile("week2/lab.m", "disp('my edit')\n"));
     const callsBefore = gh.treeCalls;
     await h.switchTo("My files");
     await page.evaluate(() => (location.hash = "#gh=octo/course@v2"));
-    await page.waitForFunction(() => document.querySelector("#project-name").textContent === "course");
+    await page.waitForFunction(() => document.querySelector("#project-name").textContent === "course (2)");
     check(gh.treeCalls === callsBefore, "opening the same #gh link again should reuse the saved project");
     check((await page.evaluate(() => window.mylab.app.liveContent("week2/lab.m"))) === "disp('my edit')\n", "re-opening a #gh link must keep local edits");
     ok("#gh=owner/repo@ref links open a repository in one click and keep local changes on later visits");
@@ -882,6 +894,11 @@ async function main() {
     ok("project links carry folders and binary files");
 
     /* ---------------- assignments ---------------- */
+    await input.fill("clear");
+    await input.press("Enter");
+    await waitIdle();
+    await page.click("#btn-clear-plots");
+    await page.click("#btn-clear-console");
     await page.evaluate(() => (location.hash = "#assignment=samples/first-steps.json"));
     await page.waitForSelector("#asg-panel:not([hidden])");
     check((await h.projectName()) === "First steps: two small functions", "assignment project name: " + (await h.projectName()));

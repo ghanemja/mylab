@@ -62,14 +62,28 @@ def _no_input(prompt=""):
 _session = None
 _auto_path = []
 
+_messages = []
+
+def _dialog_handler(kind, payload):
+    """msgbox/errordlg/warndlg/helpdlg are passed to the page; other dialogs use their defaults."""
+    if kind == "msgbox" and len(_messages) < 20:
+        _messages.append({"message": str(payload.get("message", "")), "title": str(payload.get("title", "")),
+                          "icon": str(payload.get("icon", "none"))})
+        return True
+    return None
+
 def _make_session():
     s = Session()
     s.interp.input_func = _no_input
+    # Nobody can answer a blocking dialog inside the worker: dialogs return their default
+    # answer and print a one-line note (see mylab/builtins/dialogs.py).
+    s.interp.state["dialogs_noninteractive"] = True
     return s
 
 def _new_session():
     global _session
     _session = _make_session()
+    _session.interp.state["dialog_handler"] = _dialog_handler
     return _session
 
 _new_session()
@@ -133,7 +147,7 @@ def _run_session(session, code, root=WORKDIR, runner=None):
         out = res.to_dict()
     except Exception as e:  # engine bug: report it instead of killing the worker
         out = {"output": "", "error": f"Internal error ({type(e).__name__}): {e}",
-               "error_line": None, "figures": [], "internal": traceback.format_exc()}
+               "error_line": None, "figures": [], "animations": [], "internal": traceback.format_exc()}
         try:
             out["figures"] = [base64.b64encode(f).decode() for f in session.render_figures()]
         except Exception:
@@ -171,7 +185,10 @@ def _wipe(folder):
 def _run(code, cwd):
     _enter(_session, cwd)
     before = _scan()
+    del _messages[:]
     out = _run_session(_session, code)
+    out["dialogs"] = list(_messages)
+    del _messages[:]
     try:
         out["variables"] = _vars()
     except Exception:

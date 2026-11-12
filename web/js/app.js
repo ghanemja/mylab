@@ -981,8 +981,17 @@ async function runCode(code, ctx) {
   if (res.figures && res.figures.length) addFigures(res.figures, ctx);
   if (res.animations && res.animations.length) addFigures(res.animations, ctx, "gif");
   if (res.variables) renderVariables(res.variables);
+  for (const d of res.dialogs || []) showMessageBox(d);
   await applyWritten(res.files);
   return res;
+}
+
+/** msgbox, errordlg, warndlg and helpdlg from the code: shown as a note and a toast. */
+function showMessageBox(d) {
+  const kind = d.icon === "error" ? "err-box" : d.icon === "warn" ? "note" : "msg-box";
+  const text = (d.title ? d.title + ": " : "") + d.message;
+  appendConsole(el("div", { class: "entry msg " + kind }, text));
+  toast(text.length > 240 ? text.slice(0, 240) + "…" : text, d.icon === "error" ? "error" : "");
 }
 
 /** The active file if it is a script that can be run; otherwise explains why not. */

@@ -534,6 +534,15 @@ export function initAssignments(app) {
     guarded(async () => openAssignmentText(await fetchBundle(EXAMPLE_URL), { source: EXAMPLE_URL }));
   });
 
+  // Opening a file of a problem unfolds that problem in the panel.
+  app.onFileOpened = (path) => {
+    const b = bundle();
+    if (!b) return;
+    const p = b.problems.find((q) => path.startsWith(q.folder + "/"));
+    const box = p && [...document.querySelectorAll("#asg-body details.asg-problem")].find((d) => d.dataset.problem === p.id);
+    if (box && !box.open) box.open = true;
+  };
+
   app.onProjectChanged = () => {
     if (checking) checking.cancelled = true;
     renderPanel();

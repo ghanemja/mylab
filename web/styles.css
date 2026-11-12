@@ -540,6 +540,9 @@ li.CodeMirror-hint-active { background: var(--accent); color: var(--accent-text)
 .var-table tbody tr.step-changed td:first-child::after { content: " ●"; color: var(--step-edge); font-size: 10px; }
 body[data-stepping] .var-table tbody tr { cursor: default; }
 .btn[aria-pressed="true"]:not(.ghost) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.console-out .msg { font-family: var(--font); font-size: 13px; padding: 4px 8px; border-radius: 4px; margin: 4px 0; }
+.console-out .msg-box { background: var(--accent-soft); color: var(--text); }
+.console-out .err-box { background: var(--error-bg); color: var(--error); }
 .console-out .file-note { color: var(--accent); font-family: var(--font); font-size: 12.5px; }
 .linklike { background: none; border: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
 .ok-text { color: var(--ok); }
