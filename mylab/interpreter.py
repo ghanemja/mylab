@@ -1233,15 +1233,20 @@ class Interpreter:
                            functions: dict[str, A.Function], file: str | None,
                            preset: dict[str, Any] | None = None, owner: Any = None,
                            parent: Frame | None = None) -> list[Any]:
-        params = fn.params
-        has_varargin = bool(params) and params[-1] == "varargin"
-        fixed = params[:-1] if has_varargin else params
-        takes_name_value = any("." in e.name for e in fn.arguments)
+        info = fn.__dict__.get("_callinfo")
+        if info is None:  # facts about the signature, worked out once per function
+            params = fn.params
+            has_varargin = bool(params) and params[-1] == "varargin"
+            outputs = fn.outputs
+            has_varargout = bool(outputs) and outputs[-1] == "varargout"
+            info = fn._callinfo = (
+                has_varargin, params[:-1] if has_varargin else params,
+                any("." in e.name for e in fn.arguments),
+                has_varargout, outputs[:-1] if has_varargout else outputs,
+            )
+        has_varargin, fixed, takes_name_value, has_varargout, fixed_out = info
         if len(args) > len(fixed) and not has_varargin and not takes_name_value:
             raise MatlabError(f"Too many input arguments for function '{fn.name}'.", "MATLAB:TooManyInputs")
-        outputs = fn.outputs
-        has_varargout = bool(outputs) and outputs[-1] == "varargout"
-        fixed_out = outputs[:-1] if has_varargout else outputs
         if nargout > len(fixed_out) and not has_varargout:
             raise MatlabError(f"Too many output arguments for function '{fn.name}'.")
         if parent is not None:
