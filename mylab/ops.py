@@ -9,7 +9,7 @@ import numpy as np
 from .errors import MatlabError
 from .values import (
     Cell, FunctionHandle, MString, StringArray, Struct, as_2d, codes_to_char, is_char,
-    saturate_int, simplify, string_data, string_result, to_numeric, to_str,
+    WIDE_FLOAT, saturate_int, simplify, string_data, string_result, to_numeric, to_str,
 )
 
 
@@ -65,18 +65,37 @@ def _check_broadcast(a: np.ndarray, b: np.ndarray, op: str) -> None:
             )
 
 
+_SINGLE = (np.dtype(np.float32), np.dtype(np.complex64))
+_INT_MIX_MSG = "Integers can only be combined with integers of the same class, or scalar doubles."
+
+
 def _result_type(a: np.ndarray, b: np.ndarray):
     """Pick the MATLAB result class for an arithmetic op (ints dominate, then single)."""
     ka, kb = a.dtype.kind, b.dtype.kind
-    if ka in "iu" and kb in "iu" and a.dtype != b.dtype:
-        raise MatlabError("Integers can only be combined with integers of the same class, or scalar doubles.")
-    if ka in "iu":
-        return a.dtype
-    if kb in "iu":
-        return b.dtype
-    if a.dtype in (np.float32, np.complex64) or b.dtype in (np.float32, np.complex64):
+    if ka in "iu" or kb in "iu":
+        if ka in "iu" and kb in "iu":
+            if a.dtype != b.dtype:
+                raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
+        elif a.dtype in _SINGLE or b.dtype in _SINGLE:
+            raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
+        return a.dtype if ka in "iu" else b.dtype
+    if a.dtype in _SINGLE or b.dtype in _SINGLE:
         return np.float32
     return None
+
+
+def check_integer_mix(a: np.ndarray, b: np.ndarray) -> None:
+    """Raise MATLAB's error for an integer combined with another integer class or with single."""
+    ka, kb = a.dtype.kind, b.dtype.kind
+    if (ka in "iu" or kb in "iu") and a.dtype != b.dtype and (
+            (ka in "iu" and kb in "iu") or a.dtype in _SINGLE or b.dtype in _SINGLE):
+        raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
+
+
+def to_single(a: np.ndarray) -> np.ndarray:
+    if a.dtype in _SINGLE:
+        return a
+    return a.astype(np.complex64 if a.dtype.kind == "c" else np.float32)
 
 
 def _finish(result: np.ndarray, rtype) -> np.ndarray:
@@ -94,7 +113,7 @@ def _power(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         if np.any((a < 0) & (np.mod(b, 1) != 0)):
             return np.power(a.astype(complex), b)
         with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-            return np.power(a.astype(float), b)
+            return np.power(a if a.dtype.kind == "f" else a.astype(float), b)
     return np.power(a.astype(complex), b)
 
 
@@ -106,9 +125,15 @@ def _divide(a, b):
 def elementwise(op: str, a: np.ndarray, b: np.ndarray) -> np.ndarray:
     a, b = align(a, b)
     rtype = _result_type(a, b)
-    if rtype is not None and np.dtype(rtype).kind in "iu":
-        a = a.astype(float) if a.dtype.kind in "iu" else a
-        b = b.astype(float) if b.dtype.kind in "iu" else b
+    if rtype is not None:
+        if np.dtype(rtype).kind in "iu":
+            # Integer arithmetic is done in floating point and then rounded and saturated;
+            # 64-bit integers need the wider float type to keep every digit.
+            wide = WIDE_FLOAT if np.dtype(rtype).itemsize == 8 else float
+            a = a.astype(wide) if a.dtype.kind in "iu" or (wide is not float and a.dtype.kind == "f") else a
+            b = b.astype(wide) if b.dtype.kind in "iu" or (wide is not float and b.dtype.kind == "f") else b
+        else:
+            a, b = to_single(a), to_single(b)
     _check_broadcast(a, b, op)
     with np.errstate(over="ignore", invalid="ignore"):
         if op == "+":
@@ -208,6 +233,8 @@ def compare(op: str, a: Any, b: Any) -> np.ndarray:
         return _string_binop(op, a, b)
     x, y = align(to_numeric(a), to_numeric(b))
     _check_broadcast(x, y, op)
+    if x.dtype != y.dtype:
+        x, y = _common_for_compare(x, y)
     if op in ("<", "<=", ">", ">="):
         x, y = np.real(x), np.real(y)
     with np.errstate(invalid="ignore"):
@@ -216,6 +243,22 @@ def compare(op: str, a: Any, b: Any) -> np.ndarray:
             ">": np.greater, ">=": np.greater_equal,
         }[op](x, y)
     return np.asarray(r, dtype=bool)
+
+
+def _common_for_compare(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Bring operands of different classes to one class the way MATLAB compares them."""
+    kx, ky = x.dtype.kind, y.dtype.kind
+    if kx in "iu" and ky in "iu":
+        raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
+    if kx in "iu" or ky in "iu":
+        if x.dtype in _SINGLE or y.dtype in _SINGLE:
+            raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
+        if (x if kx in "iu" else y).dtype.itemsize == 8 and WIDE_FLOAT is not float:
+            return x.astype(WIDE_FLOAT), y.astype(WIDE_FLOAT)  # exact for 64-bit integers
+        return x, y
+    if x.dtype in _SINGLE or y.dtype in _SINGLE:
+        return to_single(x), to_single(y)  # a double is rounded to single before the comparison
+    return x, y
 
 
 def _logical_operand(v: Any) -> np.ndarray:
@@ -312,7 +355,8 @@ def unary(op: str, v: Any) -> Any:
         if a.dtype.kind == "u":
             return np.zeros_like(a)
         if a.dtype.kind == "i":
-            return saturate_int(-a.astype(float), a.dtype)
+            info = np.iinfo(a.dtype)
+            return np.where(a == info.min, info.max, -a).astype(a.dtype)
         return -a
     return a  # unary plus
 
@@ -341,28 +385,30 @@ def transpose(v: Any, conjugate: bool) -> Any:
 def _concat_arrays(items: list[np.ndarray], axis: int) -> np.ndarray:
     if not items:
         return np.zeros((0, 0))
+    # The class of the result depends on every operand, the empty ones included:
+    # char wins, then the leftmost integer class, then single; all-logical stays logical.
     any_char = any(i.dtype.kind == "U" for i in items)
+    int_dt = next((i.dtype for i in items if i.dtype.kind in "iu"), None)
+    if any_char:
+        conv = lambda i: codes_to_char(i) if i.dtype.kind != "U" else i  # noqa: E731
+    elif int_dt is not None:
+        conv = lambda i: saturate_int(i, int_dt) if i.dtype != int_dt else i  # noqa: E731
+    elif any(i.dtype in _SINGLE for i in items):
+        conv = to_single
+    elif all(i.dtype == bool for i in items):
+        conv = lambda i: i  # noqa: E731
+    else:
+        conv = lambda i: i.astype(float) if i.dtype.kind not in "fc" else i  # noqa: E731
     # Empty operands are dropped when anything non-empty is present ([zeros(1,0); 5] is 5).
     # When everything is empty, all but [] (0x0) take part, so [zeros(0,1) zeros(0,1)] is 0x2.
     nonempty = [i for i in items if i.size > 0]
     if not nonempty:
         nonempty = [i for i in items if i.shape != (0, 0)]
         if not nonempty:
-            return np.zeros((0, 0), dtype="<U1") if any_char else items[0]
+            return conv(items[0])
     nd = max([axis + 1] + [i.ndim for i in nonempty])
     nonempty = [i.reshape(i.shape + (1,) * (nd - i.ndim)) if i.ndim < nd else i for i in nonempty]
-    if any_char:
-        nonempty = [codes_to_char(i) if i.dtype.kind != "U" else i for i in nonempty]
-    else:
-        int_items = [i for i in nonempty if i.dtype.kind in "iu"]
-        if int_items:
-            dt = int_items[0].dtype
-            nonempty = [saturate_int(i, dt) if i.dtype != dt else i for i in nonempty]
-        elif any(i.dtype in (np.float32, np.complex64) for i in nonempty):
-            # single wins over double when concatenating, as in MATLAB
-            nonempty = [i.astype(np.complex64 if np.iscomplexobj(i) else np.float32) for i in nonempty]
-        elif not all(i.dtype == bool for i in nonempty):
-            nonempty = [i.astype(float) if i.dtype == bool else i for i in nonempty]
+    nonempty = [conv(i) for i in nonempty]
     first = nonempty[0].shape[:axis] + nonempty[0].shape[axis + 1:]
     for i in nonempty[1:]:
         if i.shape[:axis] + i.shape[axis + 1:] != first:

@@ -238,7 +238,44 @@ class Lexer:
             return
         self.add("OP", sep, line, col, False)
 
+    def _radix_literal(self, line: int, col: int, space: bool) -> bool:
+        """0x1F / 0b101 with an optional s8..s64 / u8..u64 suffix; False if this is not one."""
+        digits = "01" if self.peek(1) in "bB" else "0123456789abcdefABCDEF"
+        k = 2
+        while self.peek(k) and self.peek(k) in digits:
+            k += 1
+        if k == 2:
+            return False
+        value = int(self.text[self.pos + 2:self.pos + k], 2 if digits == "01" else 16)
+        cls = None
+        if self.peek(k) and self.peek(k) in "suSU":
+            for width in ("8", "16", "32", "64"):
+                if self.text[self.pos + k + 1:self.pos + k + 1 + len(width)] == width:
+                    cls = ("int" if self.peek(k) in "sS" else "uint") + width
+                    k += 1 + len(width)
+                    break
+        if self.peek(k) and (self.peek(k).isalnum() or self.peek(k) == "_"):
+            return False
+        if cls is None:  # the smallest unsigned type that holds the value
+            cls = next((f"uint{b}" for b in (8, 16, 32, 64) if value < 2 ** b), None)
+            if cls is None:
+                raise MatlabError(f"The literal at line {line} is too large for a 64-bit integer.")
+        else:
+            bits = int(cls.lstrip("uint"))
+            if value >= 2 ** bits:
+                raise MatlabError(f"The literal at line {line} does not fit in {cls}.")
+            if cls[0] == "i" and value >= 2 ** (bits - 1):
+                value -= 2 ** bits  # signed literals give the two's complement bit pattern
+        text = self.text[self.pos:self.pos + k]
+        for _ in range(k):
+            self.advance()
+        self.add("NUM", (value, cls, text), line, col, space)
+        return True
+
     def _number(self, line: int, col: int, space: bool) -> None:
+        if self.peek() == "0" and self.peek(1) and self.peek(1) in "xXbB" \
+                and self._radix_literal(line, col, space):
+            return
         start = self.pos
         while self.peek().isdigit():
             self.advance()
@@ -256,6 +293,10 @@ class Lexer:
                 self.advance()
         text = self.text[start:self.pos].replace("d", "e").replace("D", "e")
         value: complex | float = float(text)
+        if value >= 9007199254740992.0 and text.isdigit():
+            from .ast import ExactInt
+            value = ExactInt(value)
+            value.exact = int(text)
         if self.peek() in "ij" and not (self.peek(1).isalnum() or self.peek(1) == "_"):
             self.advance()
             value = complex(0, value)

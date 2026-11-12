@@ -16,6 +16,20 @@ class Number(Node):
     value: float | complex
 
 
+class ExactInt(float):
+    """Value of an integer literal too large for a double: int64(<literal>) keeps every digit."""
+
+    exact: int = 0
+
+
+@dataclass
+class IntLiteral(Node):
+    """A hexadecimal or binary literal (0x1F, 0b101s8): an integer of class ``cls``."""
+    value: int
+    cls: str
+    text: str = ""
+
+
 @dataclass
 class String(Node):
     value: str

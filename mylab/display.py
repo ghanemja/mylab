@@ -258,6 +258,8 @@ def unparse(node: A.Node, parent_prec: int = 0) -> str:
         if isinstance(v, complex):
             return f"{format_scalar_plain(v.imag)}i"
         return format_scalar_plain(v) if v == int(v) else repr(float(v))
+    if isinstance(node, A.IntLiteral):
+        return node.text
     if isinstance(node, A.String):
         q = '"' if node.double else "'"
         return q + node.value.replace(q, q + q) + q

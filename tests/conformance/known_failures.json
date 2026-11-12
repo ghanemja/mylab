@@ -1,32 +1,6 @@
 {
- "arith/comparisons": {
-  "c26": "single vs double comparison is done in double precision"
- },
- "arith/hex_binary_literals": {
-  "__error__": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
-  "h1": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
-  "h2": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
-  "h3": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
-  "h4": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
-  "h5": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
-  "h6": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
-  "h7": "hexadecimal/binary literals (0x1F, 0b101) are a parse error",
-  "h8": "hexadecimal/binary literals (0x1F, 0b101) are a parse error"
- },
- "arith/integer_mixing_rules": {
-  "t3": "integer + single is accepted (MATLAB raises an error)"
- },
- "arith/integer_saturation": {
-  "s18": "int64/uint64 values go through double: no saturation and precision loss above 2^53"
- },
  "arith/logical_arithmetic": {
   "l19": "max of logical returns double (expected logical)"
- },
- "arith/single_double_mixing": {
-  "m10": "single class is not propagated (result is double)",
-  "m12": "single class is not propagated (result is double)",
-  "m3": "single vs double comparison is done in double precision",
-  "m9": "single class is not propagated (result is double)"
  },
  "bits/bit_operations": {
   "b10": "bit functions return double for integer inputs and do not wrap to the type",
@@ -56,55 +30,10 @@
   "u14": "uniform output of cellfun/arrayfun loses an integer class",
   "u15": "uniform output of cellfun/arrayfun loses an integer class"
  },
- "cells/deal_forms": {
-  "q": "[q{1:2}] = deal(a, b) fails when q does not exist yet"
- },
  "cells/num2cell_cell2mat": {
   "e1": "cell2mat of mixed classes does not raise an error",
   "n11": "num2cell(A, dim) ignores dim",
   "n12": "num2cell(A, dim) ignores dim"
- },
- "concat/empties": {
-  "e20": "class of an empty operand is ignored in concatenation"
- },
- "concat/logical_and_numeric_empty_classes": {
-  "c1": "class of an empty operand is ignored in concatenation",
-  "c2": "class of an empty operand is ignored in concatenation",
-  "c6": "class of an empty operand is ignored in concatenation",
-  "c7": "class of an empty operand is ignored in concatenation",
-  "v6": "class of an empty operand is ignored in concatenation"
- },
- "concat/strings_vertical": {
-  "__error__": "char(cell, char) raises a Python TypeError",
-  "f": "char(cell, char) raises a Python TypeError",
-  "g": "char(cell, char) raises a Python TypeError",
-  "sf": "char(cell, char) raises a Python TypeError"
- },
- "control/anonymous_capture": {
-  "r22": "nargin(function_handle) is not supported",
-  "r23": "nargin(function_handle) is not supported"
- },
- "control/global_persistent": {
-  "cfh_other_global": "who does not list global variables declared in the workspace",
-  "cfh_shared": "who does not list global variables declared in the workspace"
- },
- "control/nargin_nargout": {
-  "na": "nargin('name') is not supported",
-  "na2": "nargin('name') is not supported",
-  "na3": "nargin('name') is not supported",
-  "no": "nargout('name') returns 0",
-  "no2": "nargout('name') returns 0"
- },
- "control/rethrow_mexception": {
-  "le": "function is missing: lasterr"
- },
- "control/switch_forms": {
-  "r": "switch on a non-scalar numeric value does not raise an error"
- },
- "control/varargin_varargout": {
-  "r3": "[varargout{1:nargout}] = f(...) does not forward nargout to f",
-  "r5": "[varargout{1:nargout}] = f(...) does not forward nargout to f",
-  "r6": "[varargout{1:nargout}] = f(...) does not forward nargout to f"
  },
  "elemath/complex_domain": {
   "c1": "asin/acos/acosh of a real argument outside the domain take the wrong branch",
@@ -138,43 +67,12 @@
   "sr9": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
   "v10": "third output of find for logical input is double (expected logical)"
  },
- "indexing/assign_shape_rules": {
-  "t3": "A(1:2,1:2) = 1x4 vector is accepted (shape mismatch must raise an error)"
- },
- "indexing/delete_all_shapes": {
-  "d": "deleting all columns with A(:, 1:n) = [] gives 0xn (expected mx0)",
-  "sd": "deleting all columns with A(:, 1:n) = [] gives 0xn (expected mx0)"
- },
- "indexing/grow_vectors": {
-  "g": "a 0x1 empty grows into a row by linear index (MATLAB keeps a column)"
- },
  "linalg/kron_tril_triu_diag": {
   "d9": "diag([]) is 0x1 (expected 0x0)"
  },
  "linalg/norm_forms": {
   "c22": "single class is not propagated (result is double)",
   "n22": "single class is not propagated (result is double)"
- },
- "logic/isequal_forms": {
-  "e25": "isequal of two handles to the same function is false",
-  "e26": "isequaln of structs with NaN fields is false"
- },
- "maps/basic_char_keys": {
-  "n1": "containers.Map Count is double (expected uint64)",
-  "n4": "containers.Map Count is double (expected uint64)"
- },
- "maps/constructors": {
-  "n4": "containers.Map Count is double (expected uint64)",
-  "n8": "containers.Map Count is double (expected uint64)"
- },
- "maps/handle_semantics_and_loops": {
-  "n1": "containers.Map Count is double (expected uint64)"
- },
- "maps/numeric_keys": {
-  "n5": "containers.Map Count is double (expected uint64)"
- },
- "matlab_only/builtin_error_identifiers": {
-  "id14": "assignment size mismatch error has no identifier"
  },
  "matlab_only/char_text_functions": {
   "r24": "function is missing: isStringScalar",
@@ -236,18 +134,6 @@
  "poly/spline_pchip_interp2": {
   "z5": "interp2 'nearest' rounds a tie down (expected up)"
  },
- "ranges/classes": {
-  "c16": "single class is not propagated (result is double) by the colon operator",
-  "c6": "single class is not propagated (result is double) by the colon operator"
- },
- "ranges/in_loops": {
-  "e1": "the loop variable stays undefined after a loop over an empty range",
-  "se1": "the loop variable stays undefined after a loop over an empty range"
- },
- "ranges/linspace_logspace": {
-  "l13": "linspace rejects a non-integer point count (MATLAB floors it)",
-  "l15": "single class is not propagated (result is double)"
- },
  "reductions/any_all_forms": {
   "a20": "reduction along a dimension beyond ndims raises a Python error"
  },
@@ -276,8 +162,7 @@
   "c10": "max of logical returns double (expected logical)",
   "c12": "single class is not propagated (result is double)",
   "c4": "single class is not propagated (result is double)",
-  "c5": "max of logical returns double (expected logical)",
-  "t9": "min of two different integer classes is accepted"
+  "c5": "max of logical returns double (expected logical)"
  },
  "reductions/min_max_forms": {
   "m10": "max of a non-0x0 empty returns 0x0",
@@ -342,12 +227,7 @@
   "d8": "round(x, n, 'significant') ignores 'significant'"
  },
  "rounding/round_family": {
-  "r1": "round/ceil/fix lose the sign of a negative zero result",
-  "r14": "fix of a complex number raises a Python error",
-  "r18": "round(0.49999999999999994) is 1 (expected 0)",
-  "r19": "round/ceil/fix lose the sign of a negative zero result",
-  "r8": "round/ceil/fix lose the sign of a negative zero result",
-  "r9": "round/ceil/fix lose the sign of a negative zero result"
+  "r14": "fix of a complex number raises a Python error"
  },
  "sets/intersect_union": {
   "a12": "intersect ignores 'rows'",
@@ -384,21 +264,6 @@
  "sizes/cat_kron_misc": {
   "cp1": "function is missing: compan",
   "iv1": "function is missing: invhilb"
- },
- "sizes/repmat_forms": {
-  "r18": "repmat with a negative count raises an error (expected an empty)",
-  "s18": "repmat with a negative count raises an error (expected an empty)"
- },
- "sizes/reshape_forms": {
-  "t3": "reshape with two [] placeholders is accepted"
- },
- "sizes/shape_predicates": {
-  "p2": "isvector of 1x0 and 0x1 is false (expected true)"
- },
- "sizes/size_forms": {
-  "c22": "[a, b] = size(A, [d1 d2]) is not supported",
-  "r22": "[a, b] = size(A, [d1 d2]) is not supported",
-  "s23": "size(A, d1, d2) is not supported"
  },
  "sorting/sort_basic": {
   "s14": "reduction along a dimension beyond ndims raises a Python error"
@@ -504,7 +369,6 @@
  },
  "strings/sprintf_integers": {
   "s21": "integer precision (%.3d) is ignored",
-  "s22": "sprintf of intmax('int64') goes through double",
   "s26": "%#o prints Python's 0o prefix",
   "s27": "%ld is not recognized",
   "s28": "integer precision (%.3d) is ignored"
@@ -536,10 +400,6 @@
  "strings/upper_lower_flip": {
   "u14": "upper of a number raises an error (MATLAB returns it unchanged)"
  },
- "structs/create_and_fields": {
-  "s11": "struct([]) raises an error",
-  "z11": "struct([]) raises an error"
- },
  "structs/rmfield_orderfields": {
   "f4": "orderfields ignores its order argument",
   "f5": "orderfields ignores its order argument",
@@ -555,14 +415,6 @@
   "v4": "cell2struct of a 2-D cell along dimension 2 fails",
   "z4": "cell2struct of a 2-D cell along dimension 2 fails",
   "z5": "struct2cell of a struct array returns only the first element"
- },
- "types/cast_conversions": {
-  "c6": "cast(x, 'char') is not supported",
-  "c9": "cast(x, 'like', p) is not supported",
-  "k9": "cast(x, 'like', p) is not supported"
- },
- "types/is_functions": {
-  "q8": "isreal of a cell, struct or function handle is true (expected false)"
  },
  "types/mixed_class_operations": {
   "c30": "single class is not propagated (result is double)",

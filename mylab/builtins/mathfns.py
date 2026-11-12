@@ -10,7 +10,7 @@ import numpy as np
 import scipy.special as sp
 
 from ..errors import MatlabError
-from ..ops import binop, unary
+from ..ops import binop, check_integer_mix, unary
 from ..values import Cell, MString, StringArray, char, is_char, simplify, string_result, to_int, to_str
 from ._registry import builtin
 from ._util import (
@@ -54,7 +54,14 @@ def _unary_math(fn, *, allow_int=False, scalar=None):
 def _round_half_away(a):
     if a.dtype.kind == "c":
         return _round_half_away(a.real) + 1j * _round_half_away(a.imag)
-    return np.sign(a) * np.floor(np.abs(a) + 0.5)
+    if a.dtype.kind != "f":
+        return a.astype(float)
+    # floor(|a| + 0.5) is wrong where the sum rounds up (0.49999999999999994, odd values near 2^53).
+    m = np.abs(a)
+    r = np.floor(m)
+    with np.errstate(invalid="ignore"):
+        r = r + (m - r >= 0.5)
+    return np.copysign(r, a)  # a zero result keeps the sign of the input, as in MATLAB
 
 
 _ELEMENTWISE = {
@@ -95,9 +102,9 @@ _SCALAR = {
     "cos": lambda x: math.cos(x) if math.isfinite(x) else None,
     "tan": lambda x: math.tan(x) if math.isfinite(x) else None,
     "atan": math.atan,
-    "floor": lambda x: float(math.floor(x)) if math.isfinite(x) else None,
-    "ceil": lambda x: float(math.ceil(x)) if math.isfinite(x) else None,
-    "fix": lambda x: float(math.trunc(x)) if math.isfinite(x) else None,
+    "floor": lambda x: math.copysign(float(math.floor(x)), x) if math.isfinite(x) else None,
+    "ceil": lambda x: math.copysign(float(math.ceil(x)), x) if math.isfinite(x) else None,
+    "fix": lambda x: math.copysign(float(math.trunc(x)), x) if math.isfinite(x) else None,
 }
 
 for _name, _fn in _ELEMENTWISE.items():
@@ -490,6 +497,7 @@ def _minmax(is_max):
         a = num(rest[0])
         if len(rest) >= 2 and not (isinstance(rest[1], np.ndarray) and rest[1].size == 0):
             b = num(rest[1])
+            check_integer_mix(a, b)
             int_class = a.dtype if a.dtype.kind in "iu" else (b.dtype if b.dtype.kind in "iu" else None)
             r = np_pair(a.astype(float) if a.dtype.kind in "iu" else a,
                         b.astype(float) if b.dtype.kind in "iu" else b)

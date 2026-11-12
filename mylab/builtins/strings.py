@@ -119,7 +119,7 @@ def _format_one(spec: re.Match, value, width, prec) -> str:
     if isinstance(value, float) and not math.isfinite(value):
         return _fmt_nonfinite(value, flags, w)
     if conv in "diu":
-        if float(value) != int(value):
+        if not isinstance(value, int) and float(value) != int(value):  # an int64 prints all its digits
             # non-integer with %d: MATLAB switches to %e
             return f"%{flags}{w}{p or ''}e" % value
         return f"%{flags}{w}d" % int(value)

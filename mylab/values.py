@@ -442,20 +442,50 @@ def simplify(a: np.ndarray) -> np.ndarray:
     return a
 
 
+_LD = np.longdouble
+# x87 extended precision holds every 64-bit integer exactly; elsewhere fall back to double.
+WIDE_FLOAT = _LD if np.finfo(_LD).nmant >= 63 else np.float64
+
+
 def saturate_int(a: np.ndarray, dtype) -> np.ndarray:
+    """Convert to an integer class the MATLAB way: round halves away from zero, then saturate."""
+    dtype = np.dtype(dtype)
     info = np.iinfo(dtype)
-    a = np.real(np.asarray(a, dtype=complex if np.iscomplexobj(a) else float))
-    a = np.where(np.isnan(a), 0, a)
-    rounded = np.sign(a) * np.floor(np.abs(a) + 0.5)  # MATLAB rounds halves away from zero
-    out = np.clip(rounded, info.min, info.max).astype(dtype)
-    if info.max > 2 ** 53:
-        # float(info.max) rounds up to 2**63 or 2**64, which overflows in the cast: fix the top end.
-        out = np.where(rounded >= float(info.max), info.max, out).astype(dtype)
+    a = np.asarray(a)
+    kind = a.dtype.kind
+    if kind in "iu":
+        # Integer to integer: stay in integers, so 64-bit values keep all their digits.
+        if a.dtype == dtype:
+            return a
+        src = np.iinfo(a.dtype)
+        if src.min >= info.min and src.max <= info.max:
+            return a.astype(dtype)
+        return np.clip(a, max(src.min, info.min), min(src.max, info.max)).astype(dtype)
+    if kind == "b":
+        return a.astype(dtype)
+    if kind == "c":
+        a = np.real(a)
+    elif kind != "f" or a.dtype.itemsize < 8:
+        a = np.asarray(a, dtype=float)
+    with np.errstate(invalid="ignore", over="ignore"):
+        a = np.where(np.isnan(a), 0, a)
+        mag = np.abs(a)
+        rounded = np.floor(mag)
+        rounded = np.sign(a) * (rounded + (mag - rounded >= 0.5))  # halves round away from zero
+        if info.bits < 64:
+            return np.clip(rounded, info.min, info.max).astype(dtype)
+        # float(info.max) rounds up to 2**63 or 2**64, which overflows in the cast: clip to the
+        # largest value below it and fix the top end afterwards.
+        top = rounded >= rounded.dtype.type(2.0) ** (info.bits if info.min == 0 else info.bits - 1)
+        low = rounded <= info.min
+        out = np.where(top | low, 0, rounded).astype(dtype)
+        out[top] = info.max
+        out[low] = info.min
     return out
 
 
-def values_equal(a: Any, b: Any) -> bool:
-    """``isequal`` semantics."""
+def values_equal(a: Any, b: Any, nan_equal: bool = False) -> bool:
+    """``isequal`` semantics (``isequaln`` when ``nan_equal``: NaNs compare equal)."""
     if isinstance(a, StringArray) or isinstance(b, StringArray):
         if not (isinstance(a, StringArray) and isinstance(b, StringArray)):
             return False
@@ -466,13 +496,17 @@ def values_equal(a: Any, b: Any) -> bool:
         except MatlabError:
             return False
     if isinstance(a, Cell) and isinstance(b, Cell):
-        return a.shape == b.shape and all(values_equal(x, y) for x, y in zip(a.data.flat, b.data.flat))
+        return a.shape == b.shape and all(values_equal(x, y, nan_equal) for x, y in zip(a.data.flat, b.data.flat))
     if isinstance(a, Struct) and isinstance(b, Struct):
         if a.shape != b.shape or set(a.fields) != set(b.fields):
             return False
-        return all(values_equal(x[f], y[f]) for x, y in zip(a.data.flat, b.data.flat) for f in a.fields)
+        return all(values_equal(x[f], y[f], nan_equal) for x, y in zip(a.data.flat, b.data.flat) for f in a.fields)
     if isinstance(a, FunctionHandle) or isinstance(b, FunctionHandle):
-        return a is b
+        if a is b:
+            return True
+        # Handles to the same named function are equal; anonymous functions only to their copies.
+        return (isinstance(a, FunctionHandle) and isinstance(b, FunctionHandle)
+                and a.name is not None and a.name == b.name)
     for x, y in ((a, b), (b, a)):
         if hasattr(x, "object_equals"):  # array-like objects (sparse, datetime, duration) compare by value
             return bool(x.object_equals(y))
@@ -483,7 +517,13 @@ def values_equal(a: Any, b: Any) -> bool:
         if a.shape != b.shape:
             return False
         try:
-            return bool(np.all(to_numeric(a) == to_numeric(b)))
+            x, y = to_numeric(a), to_numeric(b)
         except MatlabError:
             return False
+        if x.dtype != y.dtype and (x.dtype.kind in "iu" or y.dtype.kind in "iu") and WIDE_FLOAT is not float \
+                and x.dtype.kind != "c" and y.dtype.kind != "c":
+            x, y = x.astype(WIDE_FLOAT), y.astype(WIDE_FLOAT)  # exact for 64-bit integers
+        if nan_equal and x.dtype.kind in "fc" and y.dtype.kind in "fc":
+            return bool(np.array_equal(x, y, equal_nan=True))
+        return bool(np.all(x == y))
     return False

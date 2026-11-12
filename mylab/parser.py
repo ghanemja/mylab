@@ -718,6 +718,8 @@ class Parser:
         t = self.tok
         if t.kind == "NUM":
             self.next()
+            if isinstance(t.value, tuple):
+                return A.IntLiteral(*t.value)
             return A.Number(t.value)
         if t.kind == "STR":
             self.next()

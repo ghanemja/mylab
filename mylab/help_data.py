@@ -97,8 +97,12 @@ HELP: dict = {
     "pi": ("p = pi", "The ratio of a circle's circumference to its diameter, 3.14159..., in double precision."),
     "e": ("x = e", "Euler's number 2.71828..., the base of the natural logarithm. Same as exp(1)."),
     "i": ("z = i", "The imaginary unit, sqrt(-1). Can be overwritten by a variable named i; writing 1i is safer."),
-    "realmax": ("x = realmax", "Largest finite double-precision number, about 1.7977e308."),
-    "realmin": ("x = realmin", "Smallest positive normalized double-precision number, about 2.2251e-308."),
+    "realmax": (["x = realmax", "x = realmax('single')"],
+                "Largest finite double-precision number, about 1.7977e308. realmax('single') is the "
+                "largest single, about 3.4028e38."),
+    "realmin": (["x = realmin", "x = realmin('single')"],
+                "Smallest positive normalized double-precision number, about 2.2251e-308. "
+                "realmin('single') is the single-precision one, about 1.1755e-38."),
     "flintmax": ("x = flintmax",
                  "2^53, the largest value up to which every integer is exactly representable as a double. "
                  "A class argument is not supported."),
@@ -112,7 +116,8 @@ HELP: dict = {
                "Smallest value an integer class can hold, returned in that class. Defaults to 'int32'. "
                "Example: intmin('int8') is -128."),
     # -- size and shape queries -----------------------------------------------------------
-    "size": (["sz = size(A)", "n = size(A, dim)", "v = size(A, [d1 d2 ...])", "[r, c] = size(A)",
+    "size": (["sz = size(A)", "n = size(A, dim)", "v = size(A, [d1 d2 ...])", "v = size(A, d1, d2, ...)",
+              "[r, c] = size(A)",
               "[d1, d2, ..., dn] = size(A)"],
              "Dimensions of A. With one output, a row vector holding the length of every dimension; "
              "size(A, dim) gives one length (1 for a dimension beyond ndims(A)) and a vector of dims gives "
@@ -185,8 +190,9 @@ HELP: dict = {
              "Makes a char array. Numbers are taken as character codes. A cell array, a string array or "
              "several text inputs become rows of a char matrix, padded with spaces to equal length. "
              "Example: char(72, 105) is a two-row char array; char([72 105]) is 'Hi'."),
-    "cast": ("y = cast(x, classname)",
-             "Converts x to the named class: 'double', 'single', 'logical' or an integer class."),
+    "cast": (["y = cast(x, classname)", "y = cast(x, 'like', p)"],
+             "Converts x to the named class: 'double', 'single', 'logical', 'char' or an integer class. "
+             "cast(x, 'like', p) converts to the class of p."),
     "typecast": ("y = typecast(x, classname)",
                  "Reinterprets the bytes of a real numeric scalar or vector as another numeric type ('double', "
                  "'single' or an integer class) without changing the bits, using little-endian byte order. "
@@ -733,9 +739,17 @@ HELP: dict = {
     "iskeyword": (["tf = iskeyword(s)", "list = iskeyword"],
                   "True if s is a reserved word of the language such as 'for' or 'end'. With no input, "
                   "returns all keywords as a column cell array."),
-    "nargin": ("n = nargin",
-               "Inside a function, the number of inputs the caller passed. nargin(fname) is not supported."),
-    "nargout": ("n = nargout", "Inside a function, the number of outputs the caller asked for."),
+    "nargin": (["n = nargin", "n = nargin(fun)"],
+               "Inside a function, the number of inputs the caller passed. nargin(fun), with a function "
+               "name or handle, is the number of inputs fun declares; it is negative when the list ends "
+               "in varargin (-3 for f(a, b, varargin))."),
+    "nargout": (["n = nargout", "n = nargout(fun)"],
+                "Inside a function, the number of outputs the caller asked for. nargout(fun), with a "
+                "function name or handle, is the number of outputs fun declares; it is negative when the "
+                "list ends in varargout, and -1 for an anonymous function."),
+    "lasterr": (["msg = lasterr", "[msg, id] = lasterr"],
+                "Message (and identifier) of the error most recently caught by try/catch. Prefer "
+                "catch err and err.message in new code."),
     "narginchk": ("narginchk(minargs, maxargs)",
                   "Inside a function, throws an error if the number of inputs passed is below minargs or "
                   "above maxargs."),

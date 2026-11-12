@@ -77,6 +77,10 @@ def _num2cell(interp, args, nargout):
 def _struct(interp, args, nargout):
     if not args:
         return Struct()
+    if len(args) == 1 and isinstance(args[0], np.ndarray) and args[0].size == 0:
+        return Struct(np.empty((0, 0), dtype=object), [])  # struct([]) is a 0x0 struct with no fields
+    if len(args) == 1 and isinstance(args[0], Struct):
+        return args[0]
     if len(args) % 2:
         raise MatlabError("struct: field names and values must come in pairs.")
     names = [text(args[k], "field name") for k in range(0, len(args), 2)]

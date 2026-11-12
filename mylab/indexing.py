@@ -236,13 +236,16 @@ def set_(arr: np.ndarray, args: list[Any], rhs: np.ndarray, fill: Callable[[], A
     n = _prod(target)
     if rhs.size == 1:
         vals = np.broadcast_to(rhs.reshape((1,) * k), target)
-    elif rhs.size == n:
+    elif rhs.size == n and (rhs.shape == target
+                            or [t for t in target if t != 1] == [r for r in rhs.shape if r != 1]):
+        # Shapes must agree once singleton dimensions are ignored (a column fits a row slice).
         vals = rhs if rhs.shape == target else rhs.reshape(-1, order="F").reshape(target, order="F")
     else:
         tshape = "x".join(str(t) for t in target)
         rshape = "x".join(str(t) for t in rhs.shape)
         raise MatlabError("Unable to perform assignment because the indices on the left side are not "
-                          f"compatible with the size of the right side ({rshape} into {tshape}).")
+                          f"compatible with the size of the right side ({rshape} into {tshape}).",
+                          "MATLAB:subsassigndimmismatch")
     need = tuple(int(p.max()) + 1 for p in pos_list)
     if folded and need[-1] > eshape[-1]:
         raise MatlabError("Attempt to grow array along ambiguous dimension.")
@@ -259,7 +262,7 @@ def _set_linear(arr: np.ndarray, idx: Any, rhs: np.ndarray, fill: Callable[[], A
     if idx is COLON:
         if rhs.size != 1 and rhs.size != n:
             raise MatlabError("Unable to perform assignment because the left and right sides have a "
-                              "different number of elements.")
+                              "different number of elements.", "MATLAB:subsassignnumelmismatch")
         vals = rhs.reshape(-1, order="F")
         out = arr.copy(order="F")
         flat = out.reshape(-1, order="F")  # a view, since out is Fortran-ordered
@@ -272,12 +275,15 @@ def _set_linear(arr: np.ndarray, idx: Any, rhs: np.ndarray, fill: Callable[[], A
     if rhs.size != 1 and rhs.size != pos.size:
         raise MatlabError(
             "Unable to perform assignment because the left and right sides have a different "
-            f"number of elements ({pos.size} on the left, {rhs.size} on the right)."
+            f"number of elements ({pos.size} on the left, {rhs.size} on the right).",
+            "MATLAB:subsassignnumelmismatch",
         )
     need = int(pos.max()) + 1
     shape = arr.shape
     if need > n:
-        if n == 0 and len(shape) == 2 and (shape[0] <= 1 or shape[1] <= 1) and not (shape[0] > 1):
+        if shape == (0, 1):  # an empty column grows as a column
+            arr = _grow(arr, (need, 1), fill)
+        elif n == 0 and len(shape) == 2 and (shape[0] <= 1 or shape[1] <= 1) and not (shape[0] > 1):
             arr = _grow(_new_array((1, 0), arr.dtype, fill), (1, need), fill)
         elif len(shape) == 2 and shape[0] == 1:
             arr = _grow(arr, (1, need), fill)
@@ -320,8 +326,9 @@ def delete(arr: np.ndarray, args: list[Any]) -> np.ndarray:
     work = arr.reshape(eshape, order="F") if eshape != shape else arr
     non_full = [d for d, idx in enumerate(args) if not (idx is COLON or _covers(idx, eshape[d]))]
     if not non_full:
-        # Everything selected: deletes along the first dimension.
-        non_full = [0]
+        # Everything selected: delete along the first dimension that is not a plain colon
+        # (A(:, 1:n) = [] leaves m-by-0), or along the first dimension for A(:, :) = [].
+        non_full = [next((d for d, idx in enumerate(args) if idx is not COLON), 0)]
     if len(non_full) > 1:
         raise MatlabError("A null assignment can have only one non-colon index.")
     d = non_full[0]

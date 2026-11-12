@@ -144,6 +144,7 @@ class Interpreter:
         self.warnings_enabled = True
         self.last_warning = ""
         self.last_warning_id = ""
+        self.last_error: MatlabError | None = None  # the error most recently caught by try/catch
         self.disabled_warnings: set[str] = set()
         self.depth = 0
         self.max_depth = 500  # MATLAB's default recursion limit
@@ -290,6 +291,7 @@ class Interpreter:
             try:
                 self.exec_block(stmt.body, frame)
             except MatlabError as e:
+                self.last_error = e
                 if stmt.ident:
                     frame.set(stmt.ident, make_exception(e))
                 self.exec_block(stmt.handler, frame)
@@ -378,6 +380,10 @@ class Interpreter:
             values = self.eval_multi(stmt.value, frame, total)
             if len(values) < total:
                 raise MatlabError("Too many output arguments.")
+            if total == 0 and values:
+                # [c{1:0}] = f(...) calls f with no outputs; a value it still returns goes to c{1}.
+                targets = [A.CellIndex(targets[0].base, [A.Number(1.0)])]
+                counts = [1]
             k = 0
             for target, n in zip(targets, counts):
                 chunk = values[k:k + n]
@@ -404,12 +410,24 @@ class Interpreter:
                 return base.numel()
         if isinstance(target, A.CellIndex):
             base = self.lookup_existing(target.base, frame)
-            if isinstance(base, Cell):
-                args = self.eval_index_args(target.args, base, frame)
-                try:
-                    return max(1, int(ix.get(base.data, args).size))
-                except MatlabError:
+            if not isinstance(base, Cell):
+                if base is not None and not (isinstance(base, np.ndarray) and base.size == 0):
                     return 1
+                base = Cell(np.empty((0, 0), dtype=object))
+            args = self.eval_index_args(target.args, base, frame)
+            try:
+                return int(ix.get(base.data, args).size)
+            except MatlabError:
+                pass
+            # Indices beyond the current size (the cell grows): count the selected positions.
+            count = 1
+            for d, a in enumerate(args):
+                if a is ix.COLON:
+                    eshape = ix._effective_shape(base.data.shape, len(args))
+                    count *= base.data.size if len(args) == 1 else eshape[d]
+                elif isinstance(a, np.ndarray):
+                    count *= int(np.count_nonzero(a)) if a.dtype == bool else a.size
+            return count
         return 1
 
     def _assign_list(self, target: A.Node, values: list, frame: Frame) -> None:
@@ -422,13 +440,17 @@ class Interpreter:
             return
         if isinstance(target, A.CellIndex):
             base = self.lookup_existing(target.base, frame)
+            if not isinstance(base, Cell):
+                base = Cell(np.empty((0, 0), dtype=object))
             args = self.eval_index_args(target.args, base, frame)
-            data = base.data.copy()
-            picked = ix.get(np.arange(data.size).reshape(data.shape, order="F"), args).flatten(order="F")
-            flat = data.reshape(-1, order="F")
-            for pos, v in zip(picked, values):
-                flat[int(pos)] = v
-            self.assign(target.base, Cell(flat.reshape(data.shape, order="F")), frame)
+            rhs = np.empty((len(values), 1), dtype=object)
+            for i, v in enumerate(values):
+                rhs[i, 0] = v
+            if len(args) > 1:  # shape the values like the selected block
+                dims = [a.size if isinstance(a, np.ndarray) else 0 for a in args]
+                if 0 not in dims and int(np.prod(dims)) == len(values):
+                    rhs = rhs.reshape(dims, order="F")
+            self.assign(target.base, Cell(ix.set_(base.data, args, rhs, empty_double)), frame)
             return
         raise MatlabError("Invalid assignment target.")
 
@@ -463,6 +485,11 @@ class Interpreter:
                 columns = [arr[:, j:j + 1] for j in range(arr.shape[1])]
             else:
                 columns = [arr[:, j:j + 1].copy() for j in range(arr.shape[1])]
+        if not columns:
+            # No iterations: the loop variable becomes the empty value that was looped over.
+            if isinstance(iterable, np.ndarray):
+                frame.set(name, iterable if iterable.size == 0 else iterable[:, :0])
+            return
         for col in columns:
             frame.set(name, col)
             try:
@@ -474,6 +501,9 @@ class Interpreter:
 
     def exec_switch(self, stmt: A.Switch, frame: Frame) -> None:
         subject = self.eval(stmt.subject, frame)
+        if isinstance(subject, np.ndarray) and subject.size != 1 and subject.dtype.kind != "U":
+            raise MatlabError("SWITCH expression must be a scalar or a character vector.",
+                              "MATLAB:badSwitchExpression")
         for case_expr, body in stmt.cases:
             case_val = self.eval(case_expr, frame)
             if isinstance(case_val, StringArray):
@@ -757,6 +787,8 @@ class Interpreter:
             return cached
         if t is A.String:
             return MString(node.value) if node.double else char(node.value)
+        if t is A.IntLiteral:
+            return np.array([[node.value]], dtype=node.cls)
         if t is A.Ident:
             vals = self.call_named(node.name, [], 1, frame, node)
             if not vals:
@@ -913,6 +945,11 @@ class Interpreter:
         if t is A.Index:
             base = node.base
             if isinstance(base, A.Ident) and not frame.has(base.name):
+                if base.name in ("int64", "uint64") and len(node.args) == 1:
+                    exact = _exact_literal(node.args[0])
+                    if exact is not None and base.name not in frame.functions:
+                        info = np.iinfo(base.name)  # int64(<literal>) does not go through double
+                        return [np.array([[min(max(exact, info.min), info.max)]], dtype=base.name)]
                 args = self.eval_elements(node.args, frame)
                 args = [ix_colon_to_char(a) for a in args]
                 # Argument variable names, for functions such as table() that use them.
@@ -1289,6 +1326,16 @@ def _wrap_cell(v: Any) -> Cell:
     return Cell(data)
 
 
+def _exact_literal(node: A.Node) -> int | None:
+    """The exact value of a large integer literal (optionally negated), else None."""
+    if type(node) is A.UnaryOp and node.op == "-":
+        v = _exact_literal(node.operand)
+        return None if v is None else -v
+    if type(node) is A.Number and isinstance(node.value, A.ExactInt):
+        return node.value.exact
+    return None
+
+
 def ix_colon_to_char(v: Any) -> Any:
     return char(":") if v is ix.COLON else v
 
@@ -1384,10 +1431,16 @@ def colon_range(start_v: Any, step_v: Any, stop_v: Any) -> np.ndarray:
         out = (start + step * np.arange(n, dtype=float)).reshape(1, -1)
     if is_chr:
         return codes_to_char(out)
-    for v in (start_v, stop_v):
-        if isinstance(v, np.ndarray) and v.dtype.kind in "iu":
-            from .values import saturate_int
-            return saturate_int(out, v.dtype)
+    operands = [v for v in (start_v, step_v, stop_v) if isinstance(v, np.ndarray)]
+    int_types = {v.dtype for v in operands if v.dtype.kind in "iu"}
+    if int_types:
+        if len(int_types) > 1 or any(v.dtype == np.float32 for v in operands):
+            raise MatlabError("Colon operands must be all the same type, or mixed with real scalar doubles.",
+                              "MATLAB:colon:mixedClasses")
+        from .values import saturate_int
+        return saturate_int(out, next(iter(int_types)))
+    if any(v.dtype in (np.float32, np.complex64) for v in operands):
+        return out.astype(np.float32)  # single if any operand is single
     return out
 
 

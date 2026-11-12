@@ -240,7 +240,8 @@ def _clear(interp, args, nargout):
 
 @builtin("who")
 def _who(interp, args, nargout):
-    names = sorted(interp.frame.vars)
+    frame = interp.frame
+    names = sorted(set(frame.vars) | {n for n, store in frame.globals.items() if n in store})
     if nargout > 0:
         return Cell.from_list([char(n) for n in names], column=True)
     if names:
@@ -307,16 +308,58 @@ def _iskeyword(interp, args, nargout):
     return bool_scalar(text(args[0]) in KEYWORDS)
 
 
+def _declared_count(interp, f, outputs: bool) -> float:
+    """nargin(f) / nargout(f): the declared count, negative when the list ends in varargin/varargout."""
+    from ..interpreter import NestedRef
+    last = "varargout" if outputs else "varargin"
+    if isinstance(f, FunctionHandle) and f.is_anonymous:
+        if outputs:
+            return -1.0  # an anonymous function returns whatever its expression returns
+        names = list(f.params)
+    else:
+        if isinstance(f, FunctionHandle):
+            name, functions = f.name, f.closure.get("__functions__", {})
+        else:
+            name, functions = text(f, "function name"), interp.frame.functions
+        fn = functions.get(name) or interp.frame.functions.get(name)
+        if isinstance(fn, NestedRef):
+            fn = fn.fn
+        if fn is None:
+            found = interp.find_file_function(name)
+            if found is not None and found[0].functions and not found[0].body:
+                fn = next(iter(found[0].functions.values()))
+            elif found is not None and not found[0].classdefs:
+                raise MatlabError(f"{name} is a script.", "MATLAB:nargin:isScript")
+        if fn is None:
+            if name in BUILTINS:
+                return -1.0  # built-in functions do not declare their argument lists
+            raise MatlabError(f"Function '{name}' not found.", "MATLAB:narginout:functionDoesnotExist")
+        names = list(fn.outputs if outputs else fn.params)
+    if names and names[-1] == last:
+        return -float(len(names))
+    return float(len(names))
+
+
 @builtin("nargin")
 def _nargin(interp, args, nargout):
     if args:
-        raise MatlabError("nargin(fname) is not supported yet.")
+        return _declared_count(interp, args[0], False)
     return float(interp.frame.nargin)
 
 
 @builtin("nargout")
 def _nargout(interp, args, nargout):
+    if args:
+        return _declared_count(interp, args[0], True)
     return float(interp.frame.nargout)
+
+
+@builtin("lasterr")
+def _lasterr(interp, args, nargout):
+    e = interp.last_error
+    if nargout > 1:
+        return (char(e.message if e else ""), char((e.identifier or "") if e else ""))
+    return char(e.message if e else "")
 
 
 @builtin("narginchk")

@@ -105,10 +105,14 @@ def _rngf(interp, args, nargout):
 def _linspace(interp, args, nargout):
     nargs(args, 2, 3, "linspace")
     a, b = num(args[0]).flat[0], num(args[1]).flat[0]
-    n = to_int(args[2], "n") if len(args) > 2 else 100
+    single = any(isinstance(v, np.ndarray) and v.dtype in (np.float32, np.complex64) for v in args[:2])
+    a, b = (complex(a) if np.iscomplexobj(a) else float(a)), (complex(b) if np.iscomplexobj(b) else float(b))
+    n = int(np.floor(np.real(num(args[2]).flat[0]))) if len(args) > 2 else 100  # a fractional count is floored
     if n == 1:
-        return np.array([[b]], dtype=complex if np.iscomplexobj(b) else float)
-    return np.linspace(a, b, max(n, 0)).reshape(1, -1)
+        out = np.array([[b]], dtype=complex if np.iscomplexobj(b) else float)
+    else:
+        out = np.linspace(a, b, max(n, 0)).reshape(1, -1)
+    return out.astype(np.complex64 if out.dtype.kind == "c" else np.float32) if single else out
 
 
 @builtin("logspace")
@@ -173,6 +177,7 @@ def _repmat(interp, args, nargout):
         reps = [r[0], r[0]] if len(r) == 1 else r
     else:
         reps = [to_int(a, "repetitions") for a in args[1:]]
+    reps = [max(r, 0) for r in reps]  # a negative count gives an empty result
     if isinstance(v, MString):
         if int(np.prod(reps)) == 1:
             return v
@@ -199,6 +204,8 @@ def _reshape(interp, args, nargout):
         unknown = None
         for k, a in enumerate(args[1:]):
             if isinstance(a, np.ndarray) and a.size == 0:
+                if unknown is not None:
+                    raise MatlabError("Size can only have one unknown dimension.", "MATLAB:getReshapeDims:unknownDim")
                 unknown = k
                 dims.append(1)
             else:
@@ -272,8 +279,22 @@ def _diag(interp, args, nargout):
 
 builtin("pi")(lambda interp, args, nargout: np.pi)
 builtin("i", "j")(lambda interp, args, nargout: np.array([[1j]]))
-builtin("realmax")(lambda interp, args, nargout: np.finfo(float).max)
-builtin("realmin")(lambda interp, args, nargout: np.finfo(float).tiny)
+def _float_const(attr):
+    def f(interp, args, nargout):
+        cls = "double"
+        if len(args) == 2 and is_text(args[0]) and text(args[0]).lower() == "like":
+            cls = class_name(args[1])
+        elif args:
+            cls = text(args[0])
+        if cls not in ("double", "single"):
+            raise MatlabError("Input must be 'single' or 'double'.")
+        t = np.float32 if cls == "single" else np.float64
+        return np.array([[getattr(np.finfo(t), attr)]], dtype=t)
+    return f
+
+
+builtin("realmax")(_float_const("max"))
+builtin("realmin")(_float_const("tiny"))
 builtin("flintmax")(lambda interp, args, nargout: 2.0 ** 53)
 builtin("e")(lambda interp, args, nargout: np.e)
 
@@ -283,9 +304,11 @@ def _eps(interp, args, nargout):
     if not args:
         return np.finfo(float).eps
     if is_text(args[0]):
-        return np.finfo(np.float32 if text(args[0]) == "single" else float).eps
-    x = np.abs(fnum(args[0]))
-    return np.spacing(x)
+        if text(args[0]) == "single":
+            return np.array([[np.finfo(np.float32).eps]], dtype=np.float32)
+        return np.finfo(float).eps
+    x = np.abs(np.real(fnum(args[0])))
+    return np.spacing(x)  # eps(single) is single: the spacing of single-precision numbers
 
 
 @builtin("intmax")
@@ -306,11 +329,21 @@ def _intmin(interp, args, nargout):
 
 @builtin("size")
 def _size(interp, args, nargout):
-    nargs(args, 1, 2, "size")
+    nargs(args, 1, None, "size")
     dims = shape_of(args[0])
-    if len(args) == 2:
-        want = [int(d) for d in num(args[1]).flatten()]
+    if len(args) >= 2:
+        # size(A, d), size(A, [d1 d2 ...]) and size(A, d1, d2, ...)
+        want = [to_int(a, "dimension") for a in args[1:]] if len(args) > 2 \
+            else [int(d) for d in num(args[1]).flatten()]
+        if any(d < 1 for d in want):
+            raise MatlabError("Dimension argument must be a positive integer scalar or a vector of "
+                              "positive integers.", "MATLAB:getdimarg:dimensionMustBePositiveInteger")
         vals = [float(dims[d - 1]) if d <= len(dims) else 1.0 for d in want]
+        if nargout > 1:
+            if nargout != len(vals):
+                raise MatlabError("Incorrect number of output arguments. Number of output arguments must "
+                                  "equal the number of input dimension arguments.")
+            return tuple(vals)
         return vals[0] if len(vals) == 1 else np.array([vals])
     if nargout <= 1:
         return np.array([[float(d) for d in dims]])
@@ -348,7 +381,7 @@ def _shape_pred(fn):
 
 builtin("isempty")(_shape_pred(lambda d: 0 in d))
 builtin("isscalar")(_shape_pred(lambda d: all(x == 1 for x in d)))
-builtin("isvector")(_shape_pred(lambda d: len(d) == 2 and (d[0] == 1 or d[1] == 1) and d[0] * d[1] >= 1))
+builtin("isvector")(_shape_pred(lambda d: len(d) == 2 and (d[0] == 1 or d[1] == 1)))
 builtin("isrow")(_shape_pred(lambda d: len(d) == 2 and d[0] == 1))
 builtin("iscolumn")(_shape_pred(lambda d: len(d) == 2 and d[1] == 1))
 builtin("ismatrix")(_shape_pred(lambda d: len(d) == 2))
@@ -432,7 +465,7 @@ builtin("ischar")(_type_pred(is_char))
 builtin("isstring")(_type_pred(lambda v: isinstance(v, (MString, StringArray))))
 builtin("iscell")(_type_pred(lambda v: isinstance(v, Cell)))
 builtin("isstruct")(_type_pred(lambda v: isinstance(v, Struct)))
-builtin("isreal")(_type_pred(lambda v: not (isinstance(v, np.ndarray) and v.dtype.kind == "c")))
+builtin("isreal")(_type_pred(lambda v: isinstance(v, np.ndarray) and v.dtype.kind != "c"))
 builtin("is_function_handle")(_type_pred(lambda v: isinstance(v, FunctionHandle)))
 builtin("istext")(_type_pred(lambda v: isinstance(v, (MString, StringArray)) or is_char(v)))
 
@@ -460,12 +493,8 @@ def _isequal(interp, args, nargout):
 
 @builtin("isequaln")
 def _isequaln(interp, args, nargout):
-    def eq(a, b):
-        if isinstance(a, np.ndarray) and isinstance(b, np.ndarray) and a.dtype.kind in "fc" \
-                and b.dtype.kind in "fc":
-            return a.shape == b.shape and bool(np.array_equal(a, b, equal_nan=True))
-        return values_equal(a, b)
-    return bool_scalar(all(eq(args[0], b) for b in args[1:]))
+    nargs(args, 2, None, "isequaln")
+    return bool_scalar(all(values_equal(args[0], b, nan_equal=True) for b in args[1:]))
 
 
 # -- conversions ----------------------------------------------------------------------
@@ -522,7 +551,18 @@ def _char(interp, args, nargout):
             return _char_rows([to_str(x) for x in v.values_f()])
         if isinstance(v, np.ndarray):
             return codes_to_char(v)
-    return _char_rows([to_str(a) if is_text(a) else to_str(codes_to_char(a)) for a in args])
+    rows: list[str] = []
+    for a in args:  # every argument adds its rows: text, a cell array of text, or character codes
+        if isinstance(a, Cell):
+            rows.extend(to_str(x) for x in a.values_f())
+        elif isinstance(a, StringArray):
+            rows.extend("" if x is None else x for x in a.data.flatten(order="F"))
+        elif isinstance(a, np.ndarray) and a.ndim == 2 and a.shape[0] > 1:
+            m = codes_to_char(a)
+            rows.extend("".join(m[i]) for i in range(m.shape[0]))
+        else:
+            rows.append(to_str(a) if is_text(a) else to_str(codes_to_char(a)))
+    return _char_rows(rows)
 
 
 def _char_rows(rows: list[str]) -> np.ndarray:
@@ -534,5 +574,14 @@ def _char_rows(rows: list[str]) -> np.ndarray:
 
 @builtin("cast")
 def _cast(interp, args, nargout):
-    return cast_class(num(args[0]), text(args[1]))
+    nargs(args, 2, 3, "cast")
+    if len(args) == 3:
+        if text(args[1]).lower() != "like":
+            raise MatlabError("cast: expected cast(x, 'like', p).")
+        cls = class_name(args[2])
+    else:
+        cls = text(args[1])
+    if cls == "char":
+        return codes_to_char(num(args[0]))
+    return cast_class(num(args[0]), cls)
 
