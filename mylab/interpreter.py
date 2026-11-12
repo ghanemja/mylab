@@ -10,6 +10,7 @@ import numpy as np
 
 from . import ast as A
 from . import indexing as ix
+from . import jit
 from . import ops
 from .display import format_display, function_handle_text, unparse
 from .errors import BreakSignal, ContinueSignal, MatlabError, ReturnSignal
@@ -20,6 +21,9 @@ from .values import (
     string_data, string_result,
     empty_double, is_char, is_true, shape_of, to_matlab, to_numeric, to_str, values_equal,
 )
+
+_F64 = np.dtype(float)
+_INPLACE = {"+": np.add, "-": np.subtract, ".*": np.multiply, "./": np.divide}
 
 _CURRENT: list["Interpreter"] = []
 
@@ -151,6 +155,7 @@ class Interpreter:
         self.state: dict[str, Any] = {}  # scratch space for builtins (tic, rng, figures...)
         self.classes: dict[str, Any] = {}  # classdef name -> ClassInfo
         self.trace_hook: Callable[[A.Node, Frame], None] | None = None  # called before each statement
+        self.jit_enabled = os.environ.get("MYLAB_JIT", "1") != "0"  # loop compiler (see jit.py)
         self.input_func: Callable[[str], str] = input
 
     # -- public API -------------------------------------------------------------------
@@ -269,6 +274,9 @@ class Interpreter:
         elif t is A.For:
             self.exec_for(stmt, frame)
         elif t is A.While:
+            if self.jit_enabled and self.trace_hook is None and type(frame) is Frame \
+                    and jit.run_while(self, stmt, frame):
+                return
             while is_true(self.eval(stmt.cond, frame)):
                 try:
                     self.exec_block(stmt.body, frame)
@@ -429,6 +437,9 @@ class Interpreter:
             raise MatlabError("Not enough input arguments.", "MATLAB:minrhs")
 
     def exec_for(self, stmt: A.For, frame: Frame) -> None:
+        if self.jit_enabled and type(stmt.iterable) is A.Range and self.trace_hook is None \
+                and type(frame) is Frame and jit.run_for(self, stmt, frame):
+            return
         iterable = self.eval(stmt.iterable, frame)
         name = stmt.var.name
         if isinstance(iterable, Cell):
@@ -755,6 +766,18 @@ class Interpreter:
             if isinstance(left, MObject) or isinstance(right, MObject):
                 from .classdef import call_operator
                 return call_operator(self, op, left, right)
+            if type(left) is np.ndarray and type(right) is np.ndarray and (left.size >= 100000 or right.size >= 100000):
+                # Large arrays: when an operand is a temporary (nothing else refers to it), write the
+                # result into it instead of allocating a new array, e.g. the a.*b in  a.*b + c.
+                ufunc = _INPLACE.get(op)
+                if ufunc is not None and left.dtype is _F64 and right.dtype is _F64:
+                    if left.base is None and left.flags.writeable and sys.getrefcount(left) == 2 \
+                            and (right.shape == left.shape or right.shape == (1, 1)):
+                        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                            return ufunc(left, right, out=left)
+                    if op in ("+", ".*") and right.base is None and right.flags.writeable \
+                            and sys.getrefcount(right) == 2 and left.shape == (1, 1) and right.size > 1:
+                        return ufunc(left, right, out=right)
             return ops.binop(op, left, right)
         if t is A.UnaryOp:
             operand = self.eval(node.operand, frame)

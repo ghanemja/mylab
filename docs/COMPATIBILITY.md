@@ -69,8 +69,10 @@ what mylab printed, and what you expected.
 
 ## Behaviour differences
 
-- **Speed:** loops are interpreted, roughly 2–10 µs per simple statement.
-  Vectorized code runs at NumPy speed.
+- **Speed:** vectorized code runs at NumPy speed, and simple numeric loops
+  are compiled automatically (20–50× faster than interpreting). Loops that
+  call user functions or work with cells, structs or text are interpreted, at
+  roughly 2–10 µs per simple statement.
 - **Display:** command-window output follows the familiar layout. Column
   widths, scale-factor headers and blank lines may differ slightly. Very wide
   matrices aren't split into column blocks.
