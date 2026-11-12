@@ -17,7 +17,6 @@
   "t3": "integer + single is accepted (MATLAB raises an error)"
  },
  "arith/integer_saturation": {
-  "s13": "int64/uint64 values go through double: no saturation and precision loss above 2^53",
   "s18": "int64/uint64 values go through double: no saturation and precision loss above 2^53"
  },
  "arith/logical_arithmetic": {
@@ -40,7 +39,6 @@
   "b24": "bit functions return double for integer inputs and do not wrap to the type",
   "b28": "bit functions return double for integer inputs and do not wrap to the type",
   "b29": "bit functions return double for integer inputs and do not wrap to the type",
-  "b31": "function is missing: swapbytes",
   "b32": "bit functions return double for integer inputs and do not wrap to the type",
   "b33": "bit functions return double for integer inputs and do not wrap to the type",
   "b7": "bit functions return double for integer inputs and do not wrap to the type",
@@ -156,9 +154,6 @@
  "linalg/norm_forms": {
   "c22": "single class is not propagated (result is double)",
   "n22": "single class is not propagated (result is double)"
- },
- "linalg/structure_predicates": {
-  "q11": "function is missing: isbanded"
  },
  "logic/isequal_forms": {
   "e25": "isequal of two handles to the same function is false",
@@ -387,8 +382,6 @@
   "u8": "unique merges NaNs (each NaN is distinct in MATLAB)"
  },
  "sizes/cat_kron_misc": {
-  "b1": "function is missing: blkdiag",
-  "b2": "function is missing: blkdiag",
   "cp1": "function is missing: compan",
   "iv1": "function is missing: invhilb"
  },
@@ -547,10 +540,6 @@
   "s11": "struct([]) raises an error",
   "z11": "struct([]) raises an error"
  },
- "structs/dynamic_fields": {
-  "d12": "getfield/setfield ignore nested field arguments",
-  "d13": "getfield/setfield ignore nested field arguments"
- },
  "structs/rmfield_orderfields": {
   "f4": "orderfields ignores its order argument",
   "f5": "orderfields ignores its order argument",
@@ -571,12 +560,6 @@
   "c6": "cast(x, 'char') is not supported",
   "c9": "cast(x, 'like', p) is not supported",
   "k9": "cast(x, 'like', p) is not supported"
- },
- "types/int_conversions": {
-  "i7": "int64/uint64 values go through double: no saturation and precision loss above 2^53"
- },
- "types/intmax_intmin_ranges": {
-  "m9": "int64/uint64 values go through double: no saturation and precision loss above 2^53"
  },
  "types/is_functions": {
   "q8": "isreal of a cell, struct or function handle is true (expected false)"
