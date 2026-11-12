@@ -1177,10 +1177,12 @@ HELP.update({
                    "T = readtable(..., 'ReadVariableNames', false)", "T = readtable(..., 'TextType', 'string')"],
                   "Reads a delimited text file (CSV, tab, semicolon...) into a table. The first row gives the "
                   "variable names; all-numeric columns become numbers (blank cells become NaN), other columns "
-                  "become cell arrays of text (or strings with 'TextType', 'string')."),
+                  "become cell arrays of text (or strings with 'TextType', 'string'). Excel files (.xlsx) "
+                  "are read too, with the options 'Sheet' and 'Range'."),
     "writetable": (["writetable(T, file)", "writetable(T, file, 'Delimiter', d)",
                     "writetable(..., 'WriteVariableNames', false)"],
-                   "Writes a table to a delimited text file with a header row of variable names."),
+                   "Writes a table to a delimited text file with a header row of variable names. A file "
+                   "name ending in .xlsx writes an Excel workbook; 'Sheet' and 'Range' choose where."),
 })
 HELP["summary"] = ("summary(T)",
                    "Prints a short description of each table variable: its size and type, plus the minimum, "
@@ -2152,7 +2154,8 @@ HELP.update({
                    "Reads delimited numeric text into a matrix. The delimiter (comma, tab, semicolon, bar "
                    "or whitespace) is detected when not given. Leading lines with only text, such as a "
                    "header row, are skipped automatically unless 'NumHeaderLines' says how many to skip. "
-                   "Empty or non-numeric fields become NaN, and short rows are padded with NaN."),
+                   "Empty or non-numeric fields become NaN, and short rows are padded with NaN. Excel "
+                   "files (.xlsx) are read too, with the options 'Sheet' and 'Range'."),
     "csvread": (["A = csvread(filename)", "A = csvread(filename, r, c)"],
                 "Reads a comma-separated numeric file; empty fields become 0. r and c are zero-based row "
                 "and column offsets of the first value to read."),
@@ -2163,7 +2166,8 @@ HELP.update({
                     "Writes a matrix to a delimited text file with full precision, one row per line. The "
                     "delimiter may be 'comma' (default; tab for .tsv files), 'tab', 'space', 'semi', 'bar' "
                     "or any single character. Cell arrays, strings and char arrays are written as text, "
-                    "quoted when they contain the delimiter."),
+                    "quoted when they contain the delimiter. A file name ending in .xlsx writes an Excel "
+                    "workbook; 'Sheet' and 'Range' choose where."),
     "csvwrite": (["csvwrite(filename, A)", "csvwrite(filename, A, r, c)"],
                  "Writes a numeric matrix as comma-separated values with five significant digits; r and c "
                  "shift the data down and right, padding with zeros."),
@@ -2174,11 +2178,12 @@ HELP.update({
                  "(default five significant digits)."),
     "writecell": (["writecell(C, filename)", "writecell(C, filename, 'Delimiter', d)"],
                   "Writes a cell array of numbers and text to a delimited text file, one row of the cell "
-                  "array per line."),
+                  "array per line. A file name ending in .xlsx writes an Excel workbook."),
     "readcell": (["C = readcell(filename)", "C = readcell(filename, 'Delimiter', d)",
                   "C = readcell(filename, 'NumHeaderLines', n)"],
                  "Reads a delimited text file into a cell array: numeric fields become numbers, other "
-                 "fields char vectors and empty fields <missing>."),
+                 "fields char vectors and empty fields <missing>. Excel files (.xlsx) are read too, with "
+                 "the options 'Sheet' and 'Range'."),
     "readlines": (["lines = readlines(filename)", "lines = readlines(filename, 'EmptyLineRule', 'skip')",
                    "lines = readlines(filename, 'WhitespaceRule', 'trim')"],
                   "Reads a text file into a string column, one element per line (a final line break does "
@@ -2221,8 +2226,10 @@ HELP.update({
 })
 HELP["ode23s"] = HELP["ode23t"] = HELP["ode23tb"] = HELP["ode15s"]
 HELP["import"] = (["import pkg.*", "import pkg.name"],
-                  "Accepted for compatibility so that code importing packages still runs. mylab has no "
-                  "package namespaces, so the statement has no effect.")
+                  "Lets later code call functions and classes of a +pkg folder without the package "
+                  "name: after import geom.* (or import geom.area), area(x) means geom.area(x). Unlike in "
+                  "MATLAB the import stays in effect for the rest of the session, in every function. "
+                  "Imports of packages that do not exist (Java packages, for example) are ignored.")
 HELP.update({
     "bitget": ("b = bitget(a, bit)",
                "Value (0 or 1) of bit number bit (1 = least significant) of each non-negative integer in a. "

@@ -16,35 +16,41 @@ what mylab printed, and what you expected.
   - access control (`Access`, `GetAccess`, `SetAccess`: private, protected,
     immutable), abstract classes;
   - constructors, Static methods, inheritance (`obj@Parent`, `method@Parent`);
-  - operator overloading, custom `disp`/`display`, `delete`/`isvalid`.
+  - operator overloading, custom `disp`/`display`, `delete`/`isvalid`;
+  - object arrays (`objs(3) = Point(1, 2)`, `[objs.x]`, `Point.empty`);
+  - `enumeration` blocks, `events` with `notify` and `addlistener`;
+  - methods in separate files of an `@ClassName` folder, and functions and
+    classes in `+package` folders.
 - Nested functions sharing their parent's variables, `arguments` blocks,
   `f(Name=Value)` syntax, and Octave-style `endfunction`/`endif` block ends.
 - `MException` objects with MATLAB-style error identifiers;
   `warning('off', id)`.
 - `containers.Map`, `table` (joins, grouping, `readtable`/`writetable`),
-  sparse matrices, `datetime` and `duration`.
+  sparse matrices, `datetime`, `duration` and `categorical`.
+- `inputParser`, `onCleanup`, `RandStream`, `timer`.
 - Image reading, writing and processing; binary file I/O; animations.
-- About 1,100 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
+- JSON (`jsondecode`/`jsonencode`), WAV audio files and Excel `.xlsx` files.
+- About 1,250 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
 
 ## Not supported yet
 
-- **Object arrays:** you can't index classdef objects into arrays
-  (`objs(3) = Point(...)`). Use a cell array instead: `objs{3} = Point(...)`.
-- **classdef features:** events and listeners, enumerations,
-  `subsref`/`subsasgn` overloading, and methods defined in `@ClassName` folders.
-- **Other data types:** categorical, timetable, and `containers.Map` with
-  non-scalar keys.
+- **classdef features:** `subsref`/`subsasgn` overloading, old-style
+  classes without `classdef`, `private` folders, and classes derived from
+  built-in types such as `double` (except enumerations). Object arrays can't hold objects of different classes
+  unless you put them in a cell array.
+- **Other data types:** timetable, and `containers.Map` with non-scalar keys.
 - **Tables:** `rowfun`, `stack`/`unstack`. Table variables must be columns.
 - **GUIs:** `uicontrol`, `uifigure`, GUIDE and App Designer raise a clear
   error. `.fig` files can't be saved or opened.
-- **Input and output:** Excel files, audio, bit-field precisions (`'ubitN'`)
-  in `fread`/`fwrite`. `textscan` and `fscanf` handle common formats only.
+- **Input and output:** old binary Excel files (`.xls`), audio formats other
+  than WAV, HDF5 and XML files, bit-field precisions (`'ubitN'`) in
+  `fread`/`fwrite`. `textscan` and `fscanf` handle common formats only.
 - **Toolboxes:** only the parts listed in FUNCTIONS.md (image processing,
   signal processing, statistics, optimization). Simulink, Symbolic Math,
   Control System, deep learning and others are out of scope for now.
 - **Language corners:** `nargin('fname')`, `parfor` (runs as an ordinary
   `for` loop), `Repeating` and `Output` argument blocks, the `!command` shell
-  escape, compiled MEX files, `onCleanup`.
+  escape, compiled MEX files.
 
 ## Things that work differently
 
@@ -53,6 +59,45 @@ what mylab printed, and what you expected.
   - Indexing a single element (`S(i,j)`) returns a full scalar.
   - Functions without a sparse version work on the full matrix and return a
     full result; converting more than 2^28 elements is refused with an error.
+- **Object arrays:** growing an array (`objs(5) = obj`) fills the gap by
+  calling the constructor with no arguments, once per new element.
+- **`import`** stays in effect for the whole session, not only inside the
+  function that calls it.
+- **Enumerations:** each member is created once, the first time the class is
+  used. Classes derived from a number type (`classdef Level < uint8`) convert
+  with `double(x)` or `uint8(x)`; arithmetic on members needs that conversion.
+- **Events:** listeners run immediately, in the order they were added.
+  Property listeners support `PreSet` and `PostSet`.
+- **`onCleanup`** runs when its function returns or fails, or when the
+  variable is cleared. It does not run when the variable is overwritten, and
+  it is not tracked inside cells or structs.
+- **`timer`** has no background thread. `start(t)` runs the callbacks at once
+  without waiting for `Period`; an endless timer keeps running inside
+  `wait(t)` until a callback calls `stop(t)`.
+- **`inputParser`:** text that is exactly a parameter name, followed by a
+  complete list of name-value pairs, is read as that name even when an
+  optional positional argument could take it.
+- **Random streams:** `RandStream` accepts every generator name but always
+  uses the same generator. `s = rng` and `rng(s)` save and restore the state.
+- **Sound:** `sound`, `soundsc` and `audioplayer` play nothing. `audioread`
+  and `audiowrite` handle WAV files only.
+- **Excel:** `xlsread`, `xlswrite`, `readtable`, `writetable`, `readmatrix`,
+  `writematrix`, `readcell` and `writecell` work with `.xlsx` files. Install
+  `openpyxl` (`pip install mylab[excel]`) to keep formatting and other sheet
+  contents when writing; without it a built-in reader and writer handles
+  plain numbers, text and logical values. Dates are read as Excel serial
+  numbers. Formulas are read as their last saved value.
+- **Categorical arrays** support construction, comparison, indexing,
+  `categories`, `countcats`, category editing, sorting, tables and grouping.
+  Arithmetic-style functions such as `histogram` draw a bar chart of counts;
+  `min`/`max`/`median` of ordinal arrays are not available.
+- **Scattered interpolation:** `'natural'` uses linear interpolation.
+  `scatteredInterpolant` extrapolates with the plane of the nearest triangle,
+  which is close to MATLAB's result but not identical.
+- **`message`:** there is no message catalog, so `getString(message(id))`
+  returns the identifier and its arguments.
+- **`uistack`, `movegui`, `web`, `linkprop`, `brush`** and similar desktop
+  commands are accepted and do nothing.
 - **Dates:** `datetime` supports the time zones `'UTC'` and `'local'` only,
   and English month and day names. Plot axes show dates as serial numbers.
 - **Images:** `strel` returns a logical neighbourhood matrix, not an object.

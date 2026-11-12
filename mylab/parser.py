@@ -177,6 +177,9 @@ class Parser:
         method_attrs: dict[str, dict] = {}
         abstract: set[str] = set()
         static: set[str] = set()
+        events: list[str] = []
+        enums: list[tuple[str, list[A.Node]]] = []
+        declared: dict[str, dict] = {}
         self.skip_newlines()
         while not self.is_kw("end"):
             if self.tok.kind == "EOF":
@@ -209,18 +212,46 @@ class Parser:
                                  (k + 1 == len(sig) or (sig[k + 1].kind == "OP" and sig[k + 1].value == "("))]
                         if names and block_attrs.get("Abstract"):
                             abstract.add(names[0])
+                        elif names:
+                            declared[names[0]] = dict(block_attrs)  # body lives in @Class/name.m
                     self.skip_newlines()
                 self.next()
-            elif self._is_id("events", "enumeration"):
+            elif self._is_id("events"):
                 self.next()
                 self.parse_attributes()
-                depth = 1
-                while depth:
+                self.skip_newlines()
+                while not self.is_kw("end"):
                     if self.tok.kind == "EOF":
-                        raise self.error("missing 'end'")
-                    if self.is_kw("end"):
-                        depth -= 1
+                        raise self.error("missing 'end' for events block")
+                    if self.tok.kind == "ID":
+                        events.append(self.tok.value)
                     self.next()
+                    self.skip_newlines()
+                self.next()
+            elif self._is_id("enumeration"):
+                self.next()
+                self.parse_attributes()
+                self.skip_newlines()
+                while not self.is_kw("end"):
+                    if self.tok.kind == "EOF":
+                        raise self.error("missing 'end' for enumeration block")
+                    if self.is_op(",") or self.is_op(";"):
+                        self.next()
+                        self.skip_newlines()
+                        continue
+                    member = self._ident_name()
+                    member_args: list[A.Node] = []
+                    if self.is_op("("):
+                        self.next()
+                        while not self.is_op(")"):
+                            if self.is_op(","):
+                                self.next()
+                                continue
+                            member_args.append(self.parse_expr())
+                        self.next()
+                    enums.append((member, member_args))
+                    self.skip_newlines()
+                self.next()
             else:
                 raise self.error(f"unexpected {self._describe(self.tok)} in classdef")
             self.skip_newlines()
@@ -228,6 +259,9 @@ class Parser:
         cd = A.ClassDef(name, supers, attrs, props, methods, static)
         cd.method_attrs = method_attrs
         cd.abstract_methods = abstract
+        cd.events = events
+        cd.enums = enums
+        cd.declared_methods = declared
         cd.line = start.line
         return cd
 

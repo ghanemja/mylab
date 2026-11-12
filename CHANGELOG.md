@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Language
+- Object arrays of classdef objects: `objs(3) = Point(1, 2)`, `[a, b]`,
+  `[objs.x]`, `Point.empty`, loops, `arrayfun`, `numel`, deletion.
+- `enumeration` blocks (with or without a constructor, or derived from a
+  number type), `switch` on members, `enumeration('Name')`.
+- `events` blocks with `notify`, `addlistener`, `listener` and property
+  `PreSet`/`PostSet` listeners; `event.EventData` subclasses.
+- Methods in separate files of an `@ClassName` folder; functions and classes
+  in `+package` folders (`pkg.func(...)`, `pkg.Class(...)`, `@pkg.func`).
+- `onCleanup`, `inputParser`, `RandStream`, `timer`, `message`, System-object
+  `step`, `s = rng` / `rng(s)`, `rand('seed', n)`.
+
+### Library
+- Geometry: `pdist2`, `knnsearch`, `dsearchn`, `inpolygon`, `polyarea`,
+  `rectint`, `convhull`, `convhulln`, `delaunay`, `delaunayn`, `griddata`,
+  `scatteredInterpolant`, `sphere`, `cylinder`, `ellipsoid`.
+- N-D and statistics: `fftn`, `ifftn`, `convn`, `rcond`, `interpn`,
+  `interp3`, `datasample`, `mvnrnd`, `mvnpdf`, `pca`, `grp2idx`, `ksdensity`,
+  `random`, more samplers (`gamrnd`, `betarnd`, …), `spectrogram`, `ldl`.
+- `categorical` arrays, usable as table variables and grouping variables.
+- Files: `jsondecode`/`jsonencode`, `audioread`/`audiowrite`/`audioinfo`
+  (WAV), `xlsread`/`xlswrite` and Excel support in `readtable`,
+  `writetable`, `readmatrix`, `writematrix`, `readcell`, `writecell`.
+- Plots: `quiver3`, `surface`, `pcolor`, `surfl`, `trisurf`, `trimesh`,
+  `triplot`, `stem3`, `xline`, `yline`, `alpha`, `boxplot`, `gobjects`.
+
 ## 1.0.0
 
 First public release.

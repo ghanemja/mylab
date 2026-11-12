@@ -10,7 +10,7 @@ well with AI assistants.
   - lexer, parser and interpreter for the language;
   - N-D arrays, string arrays, cells, structs;
   - `classdef` classes, `containers.Map`, tables.
-- **Library:** about 1,100 functions, including image and signal processing,
+- **Library:** about 1,250 functions, including image and signal processing,
   statistics, optimization, sparse solvers, ODE solvers and plotting. Every function has help text.
 - **Ways to run it:**
   - the `mylab` command-line prompt and script runner;
@@ -35,9 +35,9 @@ well with AI assistants.
 
 ## Next
 
-- Object arrays, enumerations, events, and `@ClassName` folders.
-- categorical and timetable; date tick labels on plots.
-- Excel files and audio.
+- `subsref`/`subsasgn` overloading; object arrays of mixed classes.
+- timetable; date tick labels on plots.
+- HDF5 and XML files; audio formats other than WAV.
 - Faster function calls, and compiling loops that call user functions.
 - Real dialogs and `input()` in the browser app; a service worker for full
   offline use.

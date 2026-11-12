@@ -34,7 +34,8 @@ Changelog = "https://github.com/ghanemja/mylab/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 mcp = ["mcp>=1.2"]
 jupyter = ["ipykernel>=6"]
-dev = ["pytest>=7", "ruff>=0.4", "mcp>=1.2", "ipykernel>=6", "jupyter_client>=8"]
+excel = ["openpyxl>=3.1"]
+dev = ["pytest>=7", "ruff>=0.4", "mcp>=1.2", "ipykernel>=6", "jupyter_client>=8", "openpyxl>=3.1"]
 
 [project.scripts]
 mylab = "mylab.cli:main"

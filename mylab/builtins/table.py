@@ -32,7 +32,7 @@ def _height(v: Any) -> int:
 
 def _is_time(v: Any) -> bool:
     """A datetime or duration array (stored as one object holding a numeric ``data`` array)."""
-    return getattr(v, "kind", None) in ("datetime", "duration")
+    return getattr(v, "kind", None) in ("datetime", "duration", "categorical")
 
 
 def _as_column(v: Any) -> Any:

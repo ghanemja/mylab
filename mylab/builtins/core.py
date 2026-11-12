@@ -60,14 +60,28 @@ def _rng(interp):
     return rng
 
 
+def _legacy_seed(interp, args) -> bool:
+    """rand('seed', n), rand('state', n), randn('twister', n): the old way to seed the generator."""
+    if args and is_text(args[0]) and text(args[0]).lower() in ("seed", "state", "twister"):
+        seed = int(abs(float(np.real(num(args[1]).flat[0])))) % (2 ** 32) if len(args) > 1 else 0
+        interp.state["rng"] = np.random.default_rng(seed)
+        interp.state["rng_seed"] = seed
+        return True
+    return False
+
+
 @builtin("rand")
 def _rand(interp, args, nargout):
+    if _legacy_seed(interp, args):
+        return None
     shape, cls = dims_from_args(args, "rand")
     return cast_class(_rng(interp).random(shape), cls)
 
 
 @builtin("randn")
 def _randn(interp, args, nargout):
+    if _legacy_seed(interp, args):
+        return None
     shape, cls = dims_from_args(args, "randn")
     return cast_class(_rng(interp).standard_normal(shape), cls)
 
@@ -88,17 +102,6 @@ def _randperm(interp, args, nargout):
     if len(args) > 1:
         p = p[: to_int(args[1], "k")]
     return p.reshape(1, -1)
-
-
-@builtin("rng")
-def _rngf(interp, args, nargout):
-    if args and not is_text(args[0]):
-        interp.state["rng"] = np.random.default_rng(to_int(args[0], "seed"))
-    elif args and text(args[0]) in ("default",):
-        interp.state["rng"] = np.random.default_rng(0)
-    elif args and text(args[0]) == "shuffle":
-        interp.state["rng"] = np.random.default_rng()
-    return None
 
 
 @builtin("linspace")

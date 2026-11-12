@@ -158,6 +158,7 @@ class Interpreter:
         self.trace_hook: Callable[[A.Node, Frame], None] | None = None  # called before each statement
         self.jit_enabled = os.environ.get("MYLAB_JIT", "1") != "0"  # loop compiler (see jit.py)
         self.input_func: Callable[[str], str] = input
+        self.cleanup_count = 0  # live onCleanup objects; non-zero makes function exit look for them
 
     # -- public API -------------------------------------------------------------------
     @property
@@ -408,6 +409,8 @@ class Interpreter:
             base = self.lookup_existing(target.base, frame)
             if isinstance(base, Struct) and base.numel() > 1:
                 return base.numel()
+            if isinstance(base, MObject) and hasattr(base, "field_list"):
+                return int(base.data.size)
         if isinstance(target, A.CellIndex):
             base = self.lookup_existing(target.base, frame)
             if not isinstance(base, Cell):
@@ -432,8 +435,16 @@ class Interpreter:
 
     def _assign_list(self, target: A.Node, values: list, frame: Frame) -> None:
         if isinstance(target, (A.Field, A.DynField)):
-            base = self.lookup_existing(target.base, frame).copy()
+            base = self.lookup_existing(target.base, frame)
             name = self.field_name(target, frame)
+            if isinstance(base, MObject):  # an object array: set the property of each element
+                data = base.data.copy()
+                flat = data.reshape(-1, order="F")
+                for i, v in enumerate(values):
+                    flat[i] = flat[i].set_field(self, name, v)
+                self.assign(target.base, type(base)(flat.reshape(data.shape, order="F"), base.cls), frame)
+                return
+            base = base.copy()
             for i, v in enumerate(values):
                 base.set_field(i, name, v)
             self.assign(target.base, base, frame)
@@ -472,6 +483,13 @@ class Interpreter:
             columns = [Struct(data[:, j:j + 1].copy(), iterable.fields) for j in range(data.shape[1])]
         elif isinstance(iterable, (MString, FunctionHandle)):
             columns = [iterable]
+        elif isinstance(iterable, MObject) and not hasattr(iterable, "ndim"):
+            if hasattr(iterable, "field_list"):  # object array: one column per iteration
+                data = iterable.data.reshape((iterable.data.shape[0], -1), order="F")
+                columns = [iterable.index_get(self, [ix.COLON, np.array([[j + 1.0]])])
+                           for j in range(data.shape[1])] if data.size else []
+            else:
+                columns = [iterable]
         elif isinstance(iterable, StringArray):
             data = iterable.data.reshape((iterable.data.shape[0], -1), order="F")
             columns = [string_result(data[:, j:j + 1]) for j in range(data.shape[1])]
@@ -653,7 +671,11 @@ class Interpreter:
                 return value.empty_like().index_set(self, args, value)
             if all(isinstance(a, np.ndarray) and a.size == 1 and float(np.real(a.flat[0])) == 1 for a in args):
                 return value
-            raise MatlabError("Object arrays are not supported yet; use a cell array {obj1, obj2}.")
+            from .classdef import ObjectArray, UserObject
+            if isinstance(value, (UserObject, ObjectArray)):
+                return ObjectArray(np.empty((0, 0), dtype=object), value.cls).index_set(self, args, value)
+            raise MatlabError(f"Arrays of {value.class_name()} objects are not supported; "
+                              "use a cell array {obj1, obj2}.")
         if isinstance(target, (A.Field, A.DynField)):
             name = self.field_name(target, frame)
             if current is None or (isinstance(current, np.ndarray) and current.size == 0):
@@ -1003,9 +1025,15 @@ class Interpreter:
                 res = self.call_dotted(dotted, list, nargout, frame)
                 if res is not None:
                     return res
+            if t is A.DynField and type(node.base) is A.Ident and not frame.has(node.base.name):
+                cls = self.find_class(node.base.name)  # ClassName.(memberName)
+                if cls is not None:
+                    return cls.static_access(self, self.field_name(node, frame), [], nargout)
             base_val = self.eval(node.base, frame)
             name = self.field_name(node, frame)
             if isinstance(base_val, MObject):
+                if hasattr(base_val, "field_list"):
+                    return base_val.field_list(self, name)
                 return [base_val.get_field(self, name)]
             if isinstance(base_val, Struct):
                 if name not in base_val.fields:
@@ -1041,13 +1069,74 @@ class Interpreter:
         cls = self.find_class(head) if "." not in rest else None
         if cls is not None:
             return cls.static_access(self, rest, get_args(), nargout)
+        return self.call_package_member(dotted, get_args, nargout)
+
+    def find_package_member(self, dotted: str) -> tuple[A.Program, str, str, list[str]] | None:
+        """Resolve 'pkg.sub.name[.member]' to a file in +pkg/+sub folders on the path.
+
+        Returns (program, path, qualified name, remaining parts) or None.
+        """
+        parts = dotted.split(".")
+        dirs = list(self.path)
+        cwd = os.getcwd()
+        if cwd not in dirs:
+            dirs.append(cwd)
+        for d in dirs:
+            folder = d
+            for k in range(len(parts) - 1):
+                if "+" + parts[k] not in self._dir_listing(folder):
+                    break
+                folder = os.path.join(folder, "+" + parts[k])
+                listing = self._dir_listing(folder)
+                member = parts[k + 1]
+                if member + ".m" in listing:
+                    path = os.path.join(folder, member + ".m")
+                elif "@" + member in listing:
+                    path = os.path.join(folder, "@" + member, member + ".m")
+                else:
+                    continue
+                program = self._load_file(path)
+                if program is not None:
+                    return program, path, ".".join(parts[:k + 2]), parts[k + 2:]
         return None
+
+    def call_package_member(self, dotted: str, get_args, nargout: int) -> list[Any] | None:
+        found = self.find_package_member(dotted)
+        if found is None:
+            return None
+        program, path, qualified, rest = found
+        if program.classdefs:
+            cls = self._package_class(program, path, qualified)
+            if not rest:
+                return cls.construct(self, list(get_args()), nargout)
+            if len(rest) == 1:
+                return cls.static_access(self, rest[0], get_args(), nargout)
+            return None
+        if rest or not program.functions:
+            return None
+        main = next(iter(program.functions.values()))
+        return self.call_user_function(main, list(get_args()), nargout, program.functions, path)
+
+    def _package_class(self, program: A.Program, path: str, qualified: str):
+        cls = self.classes.get(qualified)
+        if cls is None:
+            from .classdef import ClassInfo
+            cd = next(iter(program.classdefs.values()))
+            cls = ClassInfo(cd, path, self, program.functions)
+            cls.full_name = qualified
+            self.classes[qualified] = cls
+        return cls
 
     def find_class(self, name: str):
         """A classdef class by name (defined in this session or in Name.m on the path)."""
         cls = self.classes.get(name)
         if cls is not None:
             return cls
+        if "." in name:
+            member = self.find_package_member(name)
+            if member is not None and member[0].classdefs and not member[3]:
+                return self._package_class(member[0], member[1], member[2])
+            return None
         found = self.find_file_function(name)
         if found is not None and found[0].classdefs:
             from .classdef import ClassInfo
@@ -1088,6 +1177,21 @@ class Interpreter:
         builtin = self.builtins.get(name)
         if builtin is not None:
             return self.call_builtin(name, builtin, args, nargout)
+        if "." in name:  # a handle to a package function or static method: @pkg.func
+            res = self.call_dotted(name, lambda: args, nargout, frame)
+            if res is not None:
+                return res
+        else:
+            for imported in self.state.get("imports", ()):  # import pkg.*  /  import pkg.name
+                if imported.endswith(".*"):
+                    full = imported[:-1] + name
+                elif imported.rsplit(".", 1)[-1] == name:
+                    full = imported
+                else:
+                    continue
+                res = self.call_package_member(full, lambda: args, nargout)
+                if res is not None:
+                    return res
         raise MatlabError(f"Unrecognized function or variable '{name}'.", "MATLAB:UndefinedFunction")
 
     def function_exists(self, name: str, frame: Frame | None = None) -> bool:
@@ -1202,6 +1306,13 @@ class Interpreter:
         finally:
             self.frames.pop()
 
+    def run_cleanups(self, frame: Frame, keep: list[str] | tuple = ()) -> None:
+        """Run the onCleanup objects a finished function leaves behind (not the ones it returns)."""
+        for name in list(frame.vars):
+            v = frame.vars[name]
+            if getattr(v, "is_cleanup", False) and name not in keep and name not in frame.globals:
+                v.run(self)
+
     def _enter(self) -> None:
         self.depth += 1
         if self.depth > self.max_depth:
@@ -1258,6 +1369,8 @@ class Interpreter:
             _CURRENT.pop()
             self.frames.pop()
             self._leave()
+            if self.cleanup_count:
+                self.run_cleanups(frame, fixed_out)
         results: list[Any] = []
         wanted = max(nargout, 1)
         for i, name in enumerate(fixed_out):
@@ -1290,7 +1403,8 @@ class Interpreter:
         if cached is not None and cached[0] == mtime:
             return cached[1]
         try:
-            names = frozenset(f for f in os.listdir(d) if f.endswith(".m"))
+            # .m files, plus class folders (@Name) and package folders (+name).
+            names = frozenset(f for f in os.listdir(d) if f.endswith(".m") or f[:1] in "@+")
         except OSError:
             names = frozenset()
         self._dir_cache[d] = (mtime, names)
@@ -1302,20 +1416,32 @@ class Interpreter:
         if cwd not in dirs:
             dirs.append(cwd)
         for d in dirs:
-            if name + ".m" not in self._dir_listing(d):
+            listing = self._dir_listing(d)
+            if name + ".m" in listing:
+                path = os.path.join(d, name + ".m")
+            elif "@" + name in listing:  # a class kept in an @Name folder
+                path = os.path.join(d, "@" + name, name + ".m")
+            else:
                 continue
-            path = os.path.join(d, name + ".m")
-            if os.path.isfile(path):
-                st = os.stat(path)
-                mtime = (st.st_mtime_ns, st.st_size)
-                cached = self._file_cache.get(path)
-                if cached and cached[0] == mtime:
-                    return cached[1], path
-                with open(path, encoding="utf-8") as fh:
-                    program = parse(fh.read())
-                self._file_cache[path] = (mtime, program)
+            program = self._load_file(path)
+            if program is not None:
                 return program, path
         return None
+
+    def _load_file(self, path: str) -> A.Program | None:
+        """Parse a .m file (cached until the file changes); None if it does not exist."""
+        try:
+            st = os.stat(path)
+        except OSError:
+            return None
+        mtime = (st.st_mtime_ns, st.st_size)
+        cached = self._file_cache.get(path)
+        if cached and cached[0] == mtime:
+            return cached[1]
+        with open(path, encoding="utf-8") as fh:
+            program = parse(fh.read())
+        self._file_cache[path] = (mtime, program)
+        return program
 
 
 # -- helpers --------------------------------------------------------------------------
@@ -1445,6 +1571,10 @@ def colon_range(start_v: Any, step_v: Any, stop_v: Any) -> np.ndarray:
 
 
 def switch_matches(subject: Any, option: Any) -> bool:
+    if isinstance(subject, MObject) or isinstance(option, MObject):
+        from .classdef import _same_object
+        same = _same_object(subject, option)
+        return values_equal(subject, option) if same is None else same
     if isinstance(subject, StringArray) or isinstance(option, StringArray):
         return values_equal(subject, option)
     if isinstance(subject, MString) or is_char(subject) or isinstance(option, MString) or is_char(option):
