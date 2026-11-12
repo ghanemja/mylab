@@ -254,9 +254,6 @@ end
 @pytest.mark.parametrize("expr", [
     "int8(1) + int16(1)",
     "uint8(1) .* int8(1)",
-    "int8(1) + single(1)",
-    "single(3) * int8(2)",
-    "int8(1) == int16(1)",
     "min(int8(1), int16(2))",
     "max(uint8(1), int8(2))",
     "int8(1):int16(3)",
@@ -371,3 +368,10 @@ def test_small_predicates_and_forms(m):
     m.run("c = char({'ab', 'c'}, 'xyz');")
     assert m.num("size(c)").tolist() == [[3, 3]]
     assert m.str("c(3, :)") == "xyz"
+
+
+def test_integer_with_single_and_mixed_comparisons_are_allowed():
+    from mylab.api import Session
+    r = Session().run("a = int8(5)*single(2.4); disp(class(a)); disp(a); disp(int8(1) == int16(1));"
+                      "disp(uint64(18446744073709551615) > int64(-1))")
+    assert r.error is None and r.output.split() == ["int8", "12", "1", "1"]

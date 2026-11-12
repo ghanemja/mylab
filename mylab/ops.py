@@ -76,8 +76,6 @@ def _result_type(a: np.ndarray, b: np.ndarray):
         if ka in "iu" and kb in "iu":
             if a.dtype != b.dtype:
                 raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
-        elif a.dtype in _SINGLE or b.dtype in _SINGLE:
-            raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
         return a.dtype if ka in "iu" else b.dtype
     if a.dtype in _SINGLE or b.dtype in _SINGLE:
         return np.float32
@@ -85,11 +83,52 @@ def _result_type(a: np.ndarray, b: np.ndarray):
 
 
 def check_integer_mix(a: np.ndarray, b: np.ndarray) -> None:
-    """Raise MATLAB's error for an integer combined with another integer class or with single."""
+    """Raise MATLAB's error for an integer combined with another integer class."""
     ka, kb = a.dtype.kind, b.dtype.kind
-    if (ka in "iu" or kb in "iu") and a.dtype != b.dtype and (
-            (ka in "iu" and kb in "iu") or a.dtype in _SINGLE or b.dtype in _SINGLE):
+    if ka in "iu" and kb in "iu" and a.dtype != b.dtype:
         raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
+
+
+def _exact(a: np.ndarray):
+    """Object array of exact Python numbers (ints and Fractions), or None if not possible."""
+    if a.dtype.kind in "iub":
+        return a.astype(object)
+    if a.dtype.kind != "f" or not np.all(np.isfinite(a)):
+        return None
+    from fractions import Fraction
+    out = np.empty(a.shape, dtype=object)
+    flat = out.reshape(-1)
+    for i, v in enumerate(a.reshape(-1).tolist()):
+        flat[i] = int(v) if v == int(v) else Fraction(v)
+    return out
+
+
+def _round_half_away(v) -> int:
+    n, d = (v.numerator, v.denominator) if not isinstance(v, int) else (v, 1)
+    q, r = divmod(abs(n), d)
+    q += 2 * r >= d
+    return q if n >= 0 else -q
+
+
+def _exact_int64(op: str, a: np.ndarray, b: np.ndarray, rtype):
+    """64-bit integer arithmetic without a wide float type: exact rational arithmetic."""
+    from fractions import Fraction
+    x, y = _exact(a), _exact(b)
+    if x is None or y is None:
+        return None
+    if op == ".\\":
+        x, y, op = y, x, "./"
+    if op == "./":
+        if any(v == 0 for v in y.flat):
+            return None
+        x = np.frompyfunc(Fraction, 1, 1)(x)
+    r = x + y if op == "+" else x - y if op == "-" else x * y if op == ".*" else x / y
+    info = np.iinfo(rtype)
+    out = np.empty(np.shape(r), dtype=rtype)
+    flat = out.reshape(-1)
+    for i, v in enumerate(np.asarray(r, dtype=object).reshape(-1)):
+        flat[i] = min(max(_round_half_away(v), info.min), info.max)
+    return out
 
 
 def to_single(a: np.ndarray) -> np.ndarray:
@@ -125,6 +164,12 @@ def _divide(a, b):
 def elementwise(op: str, a: np.ndarray, b: np.ndarray) -> np.ndarray:
     a, b = align(a, b)
     rtype = _result_type(a, b)
+    if (rtype is not None and WIDE_FLOAT is np.float64 and op != ".^"
+            and np.dtype(rtype).kind in "iu" and np.dtype(rtype).itemsize == 8):
+        _check_broadcast(a, b, op)
+        exact = _exact_int64(op, a, b, rtype)
+        if exact is not None:
+            return exact
     if rtype is not None:
         if np.dtype(rtype).kind in "iu":
             # Integer arithmetic is done in floating point and then rounded and saturated;
@@ -248,13 +293,14 @@ def compare(op: str, a: Any, b: Any) -> np.ndarray:
 def _common_for_compare(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Bring operands of different classes to one class the way MATLAB compares them."""
     kx, ky = x.dtype.kind, y.dtype.kind
-    if kx in "iu" and ky in "iu":
-        raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
     if kx in "iu" or ky in "iu":
-        if x.dtype in _SINGLE or y.dtype in _SINGLE:
-            raise MatlabError(_INT_MIX_MSG, "MATLAB:mixedClasses")
-        if (x if kx in "iu" else y).dtype.itemsize == 8 and WIDE_FLOAT is not float:
-            return x.astype(WIDE_FLOAT), y.astype(WIDE_FLOAT)  # exact for 64-bit integers
+        # Relational operators accept any mix of numeric classes and compare the exact values.
+        if any(v.dtype.kind in "iu" and v.dtype.itemsize == 8 for v in (x, y)):
+            if WIDE_FLOAT is not np.float64:
+                return x.astype(WIDE_FLOAT), y.astype(WIDE_FLOAT)  # exact for 64-bit integers
+            ex, ey = _exact(x), _exact(y)
+            if ex is not None and ey is not None:
+                return ex, ey
         return x, y
     if x.dtype in _SINGLE or y.dtype in _SINGLE:
         return to_single(x), to_single(y)  # a double is rounded to single before the comparison

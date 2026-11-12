@@ -19,12 +19,6 @@
    "why": "MATLAB compares complex numbers by real part for < and >; Octave compares by magnitude"
   }
  },
- "arith/integer_mixing_rules": {
-  "t3": {
-   "matlab": "1",
-   "why": "MATLAB refuses to combine an integer with a single; Octave allows it"
-  }
- },
  "arith/logical_arithmetic": {
   "l13": {
    "matlab": "[1 2 3]",

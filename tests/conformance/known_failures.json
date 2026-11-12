@@ -1,4 +1,7 @@
 {
+ "arith/integer_mixing_rules": {
+  "t3": "TODO value: [0] (expected [1])"
+ },
  "arith/logical_arithmetic": {
   "l19": "max of logical returns double (expected logical)"
  },

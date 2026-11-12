@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import os
+
 import numpy as np
 
 from .errors import MatlabError
@@ -444,7 +446,7 @@ def simplify(a: np.ndarray) -> np.ndarray:
 
 _LD = np.longdouble
 # x87 extended precision holds every 64-bit integer exactly; elsewhere fall back to double.
-WIDE_FLOAT = _LD if np.finfo(_LD).nmant >= 63 else np.float64
+WIDE_FLOAT = _LD if np.finfo(_LD).nmant >= 63 and not os.environ.get("MYLAB_NO_WIDE_FLOAT") else np.float64
 
 
 def saturate_int(a: np.ndarray, dtype) -> np.ndarray:
