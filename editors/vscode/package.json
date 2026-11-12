@@ -1,0 +1,217 @@
+{
+  "name": "mylab",
+  "displayName": "mylab — run MATLAB-language code for free",
+  "description": "Run, check and debug .m files with mylab, the free open-source interpreter for MATLAB-language code. Syntax colouring, problems as you type, help on hover, completion and sections.",
+  "version": "1.0.0",
+  "publisher": "mylab",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "homepage": "https://github.com/ghanemja/mylab/blob/main/docs/VSCODE.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ghanemja/mylab.git",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/ghanemja/mylab/issues"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Snippets",
+    "Education"
+  ],
+  "keywords": [
+    "matlab",
+    "octave",
+    "mylab",
+    "numerical computing",
+    "m-file"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:mylab-matlab",
+    "onLanguage:matlab"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted folder, mylab is only started from your own settings or PATH, never from the folder itself.",
+      "restrictedConfigurations": [
+        "mylab.executable"
+      ]
+    },
+    "virtualWorkspaces": {
+      "supported": "limited",
+      "description": "Syntax colouring, hover help and completion work everywhere. Running and checking code need files on this computer."
+    }
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "mylab-matlab",
+        "aliases": [
+          "MATLAB (mylab)",
+          "mylab"
+        ],
+        "extensions": [
+          ".m"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mylab-matlab",
+        "scopeName": "source.mylab-matlab",
+        "path": "./syntaxes/mylab.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "mylab-matlab",
+        "path": "./snippets/mylab.json"
+      },
+      {
+        "language": "matlab",
+        "path": "./snippets/mylab.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "mylab.runFile",
+        "title": "Run File",
+        "category": "mylab",
+        "icon": "$(play)"
+      },
+      {
+        "command": "mylab.runSelection",
+        "title": "Run Selection / Current Section",
+        "category": "mylab",
+        "icon": "$(run-below)"
+      },
+      {
+        "command": "mylab.debugFile",
+        "title": "Debug File",
+        "category": "mylab",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "mylab.openPrompt",
+        "title": "Open Interactive Prompt",
+        "category": "mylab",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "mylab.showHelp",
+        "title": "Show Help for Word Under Cursor",
+        "category": "mylab",
+        "icon": "$(question)"
+      },
+      {
+        "command": "mylab.checkFile",
+        "title": "Check File for Problems",
+        "category": "mylab"
+      },
+      {
+        "command": "mylab.stop",
+        "title": "Stop Running Program (Output Panel)",
+        "category": "mylab"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "mylab.runFile",
+          "when": "editorLangId =~ /^(mylab-matlab|matlab)$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mylab.runSelection",
+          "when": "editorLangId =~ /^(mylab-matlab|matlab)$/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mylab.debugFile",
+          "when": "editorLangId =~ /^(mylab-matlab|matlab)$/",
+          "group": "navigation@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "mylab.runSelection",
+          "when": "editorLangId =~ /^(mylab-matlab|matlab)$/",
+          "group": "mylab@1"
+        },
+        {
+          "command": "mylab.runFile",
+          "when": "editorLangId =~ /^(mylab-matlab|matlab)$/",
+          "group": "mylab@2"
+        },
+        {
+          "command": "mylab.showHelp",
+          "when": "editorLangId =~ /^(mylab-matlab|matlab)$/",
+          "group": "mylab@3"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "mylab.runFile",
+        "key": "ctrl+alt+enter",
+        "mac": "cmd+alt+enter",
+        "when": "editorTextFocus && editorLangId =~ /^(mylab-matlab|matlab)$/"
+      },
+      {
+        "command": "mylab.runSelection",
+        "key": "shift+enter",
+        "when": "editorTextFocus && !suggestWidgetVisible && !inlineSuggestionVisible && editorLangId =~ /^(mylab-matlab|matlab)$/"
+      },
+      {
+        "command": "mylab.debugFile",
+        "key": "ctrl+alt+shift+enter",
+        "mac": "cmd+alt+shift+enter",
+        "when": "editorTextFocus && editorLangId =~ /^(mylab-matlab|matlab)$/"
+      },
+      {
+        "command": "mylab.showHelp",
+        "key": "shift+f1",
+        "when": "editorTextFocus && editorLangId =~ /^(mylab-matlab|matlab)$/"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "mylab"
+      }
+    ],
+    "configuration": {
+      "title": "mylab",
+      "properties": {
+        "mylab.executable": {
+          "type": "string",
+          "default": "mylab",
+          "scope": "machine-overridable",
+          "markdownDescription": "The command that starts mylab: a name on your PATH, a full path, or a command line such as `python -m mylab`. If the default `mylab` is not found, the extension also looks in the workspace's `.venv` folder and tries `python -m mylab` with the Python interpreter selected in VS Code. Install mylab with `pip install mylab-lang`."
+        },
+        "mylab.checkOnType": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Check the file for problems while you type (after a short pause). When off, files are checked only when opened or saved."
+        },
+        "mylab.runInTerminal": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Run files and sections in a terminal panel, where a program can also read what you type (`input`). When off, the output goes to the **mylab** channel of the Output panel and the program gets no keyboard input. The debugger always uses a terminal."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test",
+    "package": "npx --yes @vscode/vsce package --no-dependencies",
+    "gen-data": "python ../../scripts/gen_editor_data.py"
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "for loop": {
+    "prefix": "for",
+    "body": ["for ${1:k} = ${2:1}:${3:n}", "\t$0", "end"],
+    "description": "for loop over a range"
+  },
+  "if": {
+    "prefix": "if",
+    "body": ["if ${1:condition}", "\t$0", "end"],
+    "description": "if block"
+  },
+  "if / else": {
+    "prefix": "ifelse",
+    "body": ["if ${1:condition}", "\t$2", "else", "\t$0", "end"],
+    "description": "if block with an else part"
+  },
+  "if / elseif / else": {
+    "prefix": "ifelseif",
+    "body": ["if ${1:condition}", "\t$2", "elseif ${3:condition}", "\t$4", "else", "\t$0", "end"],
+    "description": "if block with elseif and else parts"
+  },
+  "while loop": {
+    "prefix": "while",
+    "body": ["while ${1:condition}", "\t$0", "end"],
+    "description": "while loop"
+  },
+  "switch": {
+    "prefix": "switch",
+    "body": ["switch ${1:value}", "\tcase ${2:1}", "\t\t$3", "\totherwise", "\t\t$0", "end"],
+    "description": "switch block with a case and an otherwise part"
+  },
+  "function": {
+    "prefix": "function",
+    "body": ["function ${1:out} = ${2:${TM_FILENAME_BASE:name}}(${3:in})", "% ${4:What the function does.}", "\t$0", "end"],
+    "description": "function with one output; the name defaults to the file name"
+  },
+  "function with several outputs": {
+    "prefix": "functionn",
+    "body": ["function [${1:a}, ${2:b}] = ${3:${TM_FILENAME_BASE:name}}(${4:in})", "% ${5:What the function does.}", "\t$0", "end"],
+    "description": "function with several outputs"
+  },
+  "try / catch": {
+    "prefix": "try",
+    "body": ["try", "\t$1", "catch ${2:err}", "\t${0:disp(err.message);}", "end"],
+    "description": "try block that catches an error"
+  },
+  "section": {
+    "prefix": ["section", "%%"],
+    "body": ["%% ${1:Section title}", "$0"],
+    "description": "start a new section (run it with Shift+Enter)"
+  },
+  "anonymous function": {
+    "prefix": "anon",
+    "body": ["${1:f} = @(${2:x}) ${0:x.^2};"],
+    "description": "one-line function stored in a variable"
+  },
+  "fprintf": {
+    "prefix": "fprintf",
+    "body": ["fprintf('${1:%g}\\n', ${0:value});"],
+    "description": "print a formatted line"
+  }
+}

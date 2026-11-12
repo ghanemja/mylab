@@ -1,0 +1,76 @@
+name: VS Code extension
+
+# Tests the extension in editors/vscode on every push, checks that its bundled
+# function reference matches mylab's help entries, and builds the .vsix package.
+# The package of each run can be downloaded from the run's page ("Artifacts").
+# Releases are made by release.yml, which attaches the .vsix to the GitHub release.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node-version: ["20", "22"]
+        include:
+          - os: windows-latest
+            node-version: "20"
+          - os: macos-latest
+            node-version: "20"
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: node --test
+
+  data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: editors/vscode/data/functions.json must match mylab/help_data.py
+        run: python scripts/gen_editor_data.py --check
+
+  package:
+    needs: [test, data]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npx --yes @vscode/vsce package --no-dependencies
+      - name: The package must contain the extension's files and nothing from the tests
+        run: |
+          unzip -l *.vsix | tee listing.txt
+          for f in package.json readme.md changelog.md LICENSE.txt language-configuration.json \
+                   src/extension.js data/functions.json syntaxes/mylab.tmLanguage.json \
+                   snippets/mylab.json images/icon.png; do
+            grep -q "extension/$f" listing.txt || { echo "missing from the package: $f"; exit 1; }
+          done
+          if grep -E "extension/(test|test-support|tools|node_modules)/" listing.txt; then
+            echo "files that should not be in the package"; exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mylab-vscode
+          path: editors/vscode/*.vsix
+          if-no-files-found: error
