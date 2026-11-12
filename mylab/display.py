@@ -195,6 +195,8 @@ def _char_rows(a: np.ndarray) -> list[str]:
 # -- short summaries (inside cells / structs) -------------------------------------
 
 def summary(v: Any, in_cell: bool) -> str:
+    if hasattr(v, "summary_text"):
+        return v.summary_text(in_cell)
     if isinstance(v, MString):
         return f'"{v}"'
     if isinstance(v, StringArray):

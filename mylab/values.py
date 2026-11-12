@@ -280,6 +280,8 @@ def is_empty(v: Any) -> bool:
         return v.size == 0
     if isinstance(v, (Cell, Struct, StringArray)):
         return v.data.size == 0
+    if hasattr(v, "matlab_shape"):
+        return 0 in v.matlab_shape()
     return False
 
 
@@ -381,6 +383,8 @@ def to_numeric(v: Any, what: str = "operand") -> np.ndarray:
         raise MatlabError(f"Undefined operation for a struct {what}.")
     if isinstance(v, FunctionHandle):
         raise MatlabError(f"Undefined operation for a function handle {what}.")
+    if hasattr(v, "to_dense"):  # objects that stand for a numeric array (sparse matrices)
+        return to_numeric(v.to_dense(), what)
     return to_matlab(v)
 
 
@@ -463,6 +467,9 @@ def values_equal(a: Any, b: Any) -> bool:
         return all(values_equal(x[f], y[f]) for x, y in zip(a.data.flat, b.data.flat) for f in a.fields)
     if isinstance(a, FunctionHandle) or isinstance(b, FunctionHandle):
         return a is b
+    for x, y in ((a, b), (b, a)):
+        if hasattr(x, "object_equals"):  # array-like objects (sparse, datetime, duration) compare by value
+            return bool(x.object_equals(y))
     if hasattr(a, "isa_class") or hasattr(b, "isa_class"):
         from .builtins.objfuncs import objects_equal
         return objects_equal(a, b)

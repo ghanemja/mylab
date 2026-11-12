@@ -68,6 +68,8 @@ def _to_positions(idx: Any, extent: int, *, for_set: bool) -> tuple[np.ndarray, 
         if idx.size == 1 and idx.flat[0] == ":":
             return np.arange(extent), None
         raise MatlabError("Character arrays cannot be used as indices.")
+    if hasattr(idx, "to_dense"):  # a sparse (logical) index
+        idx = idx.to_dense()
     if not isinstance(idx, np.ndarray):
         raise MatlabError("Indices must be numeric or logical arrays.")
     if idx.dtype == bool:
