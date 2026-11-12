@@ -1,0 +1,6 @@
+{
+  "title": "Longest streak",
+  "points": 25,
+  "function": "longest_streak",
+  "timeout": 10
+}

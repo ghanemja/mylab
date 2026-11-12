@@ -1,0 +1,6 @@
+{
+  "format": "mylab-assignment-1",
+  "title": "Intro Assignment: First Functions",
+  "description": "Four short problems to practise writing functions: arithmetic on arrays, `if` statements, loops, and reading a data file.\n\nFor each problem, complete the starter file. **Do not change the function name or its inputs and outputs.** Press *Check my answers* as often as you like. Your teacher may run extra tests when grading, so read each problem statement carefully.",
+  "problems": ["p1_celsius", "p2_ticket_price", "p3_longest_streak", "p4_rain_summary"]
+}
