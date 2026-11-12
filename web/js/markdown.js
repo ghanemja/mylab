@@ -113,3 +113,10 @@ export function parseMarkdown(md) {
   flushList();
   return blocks;
 }
+
+/** Markdown -> an HTML string (for assignment prompts and report prose). Safe: see above. */
+export function renderMarkdown(md) {
+  return parseMarkdown(md)
+    .map((b) => (b.type === "code" ? `<pre class="md-code"><code>${escapeHtml(b.code)}</code></pre>` : b.html))
+    .join("\n");
+}

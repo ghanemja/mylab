@@ -1,21 +1,32 @@
 // mylab web app: wires the editor, files, command window, workspace, plots and assistant together.
+// Feature modules (projects, sharing, reports, step-through, assignments) plug into the `app` object.
 
 import { Engine } from "./engine.js";
-import { FileStore, prefs } from "./storage.js";
+import { ProjectStore, DEFAULT_PROJECT, newId, prefs } from "./storage.js";
 import { EXAMPLES } from "./examples.js";
 import { Assistant } from "./ai.js";
-
-const $ = (id) => document.getElementById(id);
-const isMac = /Mac|iPhone|iPad/.test(navigator.platform || "");
+import { $, el, icon, toast, isMac, downloadBlob, promptDialog, confirmDialog } from "./ui.js";
+import { parseHash, toStored, isImageName, mimeOf, formatSize } from "./codec.js";
+import { splitSections, sectionAt, sectionCode, tailCode } from "./sections.js";
+import { initProjects } from "./projects.js";
+import { initShare } from "./share.js";
+import { initPublish } from "./publish.js";
+import { initStepper } from "./stepper.js";
+import { initAssignments } from "./assignment.js";
 
 /* ================================================================== state */
 
 const state = {
-  files: new Map(), // name -> { content, modified }
-  docs: new Map(), // name -> CodeMirror.Doc
+  project: null, // { id, name, kind, meta, temp }
+  projects: [],
+  files: new Map(), // path -> { content: string | Uint8Array, modified }
+  docs: new Map(), // path -> CodeMirror.Doc (text files that have been opened)
   tabs: [],
   active: null,
+  collapsed: new Set(), // collapsed folders
   saveTimers: new Map(),
+  sent: new Map(), // path -> content last copied into the engine's working folder
+  fsReset: true, // wipe the engine's working folder on the next request (new project)
   lastError: null, // { message, line, where, code }
   variables: [],
   history: prefs.get("history", []),
@@ -25,51 +36,18 @@ const state = {
   errorMark: null,
   runStarted: 0,
   runTimer: null,
+  sectionView: null,
 };
 
-const store = new FileStore();
+const store = new ProjectStore();
 let editor;
 let engine;
 let assistant;
 
+/** Shared with the feature modules. Filled in below and by the modules' init functions. */
+const app = { state, store, prefs };
+
 /* ================================================================== helpers */
-
-function toast(msg, kind = "") {
-  const t = document.createElement("div");
-  t.className = "toast" + (kind ? " " + kind : "");
-  t.textContent = msg;
-  $("toasts").appendChild(t);
-  setTimeout(() => t.remove(), kind === "error" ? 5000 : 2600);
-}
-
-function el(tag, attrs = {}, ...children) {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === "class") e.className = v;
-    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
-    else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
-  }
-  for (const c of children) if (c != null) e.append(c);
-  return e;
-}
-
-function icon(name) {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "ic");
-  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  use.setAttribute("href", "#i-" + name);
-  svg.appendChild(use);
-  return svg;
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = el("a", { href: url, download: filename });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 function isFunctionFile(code) {
   for (const raw of code.split("\n")) {
@@ -81,75 +59,38 @@ function isFunctionFile(code) {
 }
 
 const VALID_NAME = /^[A-Za-z][A-Za-z0-9_]*\.m$/;
+const baseName = (p) => p.slice(p.lastIndexOf("/") + 1);
+const dirName = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+const isText = (path) => typeof (state.files.get(path) || {}).content === "string";
 
-function validateFileName(name, { current = null } = {}) {
-  name = name.trim();
-  if (!name) return { error: "Please enter a name." };
-  if (!/\.[A-Za-z0-9]+$/.test(name)) name += ".m";
-  if (/[\\/:*?"<>|]/.test(name) || name.startsWith(".")) return { error: "That name has characters that can't be used in file names." };
-  if (name.length > 80) return { error: "Please use a shorter name." };
-  if (name !== current && state.files.has(name)) return { error: `A file named ${name} already exists.` };
+function normalizePath(input) {
+  return String(input).trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
+}
+
+function validatePath(input, { current = null, addExt = true } = {}) {
+  let p = normalizePath(input);
+  if (!p) return { error: "Please enter a name." };
+  const parts = p.split("/");
+  if (addExt && !/\.[A-Za-z0-9]+$/.test(parts[parts.length - 1])) {
+    parts[parts.length - 1] += ".m";
+    p = parts.join("/");
+  }
+  if (parts.some((s) => /[:*?"<>|]/.test(s) || s.startsWith(".") || !s.trim())) return { error: "That name has characters that can't be used in file names." };
+  if (p.length > 160 || parts.some((s) => s.length > 80)) return { error: "Please use a shorter name." };
+  if (p !== current && state.files.has(p)) return { error: `A file named ${p} already exists.` };
+  for (const other of state.files.keys()) {
+    if (other === current) continue;
+    if (other.startsWith(p + "/")) return { error: `${p} is already a folder.` };
+    if (p.startsWith(other + "/")) return { error: `${other} is a file, so it can't be used as a folder.` };
+  }
+  const base = parts[parts.length - 1];
   const warn =
-    name.endsWith(".m") && !VALID_NAME.test(name)
+    base.endsWith(".m") && !VALID_NAME.test(base)
       ? "Tip: .m names should start with a letter and use only letters, digits and _, so the file can be called by name."
-      : "";
-  return { name, warn };
-}
-
-/* ================================================================== dialogs */
-
-function promptDialog({ title, text = "", value = "", okLabel = "OK", validate }) {
-  const dlg = $("dlg-prompt");
-  $("prompt-title").textContent = title;
-  $("prompt-text").textContent = text;
-  $("prompt-text").hidden = !text;
-  $("prompt-ok").textContent = okLabel;
-  const input = $("prompt-input");
-  const err = $("prompt-error");
-  input.value = value;
-  err.hidden = true;
-  return new Promise((resolve) => {
-    const onInput = () => {
-      const r = validate ? validate(input.value) : { name: input.value };
-      err.hidden = !(r.error || r.warn);
-      err.textContent = r.error || r.warn || "";
-      err.classList.toggle("muted", !r.error);
-      $("prompt-ok").disabled = !!r.error;
-    };
-    const onClose = () => {
-      dlg.removeEventListener("close", onClose);
-      input.removeEventListener("input", onInput);
-      if (dlg.returnValue !== "ok") return resolve(null);
-      const r = validate ? validate(input.value) : { name: input.value };
-      resolve(r.error ? null : r.name);
-    };
-    input.addEventListener("input", onInput);
-    dlg.addEventListener("close", onClose);
-    dlg.returnValue = "";
-    $("prompt-ok").disabled = false;
-    dlg.showModal();
-    onInput();
-    err.hidden = true; // don't nag before typing
-    const dot = value.lastIndexOf(".");
-    input.focus();
-    input.setSelectionRange(0, dot > 0 ? dot : value.length);
-  });
-}
-
-function confirmDialog({ title, text, okLabel = "OK" }) {
-  const dlg = $("dlg-confirm");
-  $("confirm-title").textContent = title;
-  $("confirm-text").textContent = text;
-  $("confirm-ok").textContent = okLabel;
-  return new Promise((resolve) => {
-    const onClose = () => {
-      dlg.removeEventListener("close", onClose);
-      resolve(dlg.returnValue === "ok");
-    };
-    dlg.addEventListener("close", onClose);
-    dlg.returnValue = "";
-    dlg.showModal();
-  });
+      : parts.length > 1 && current === null
+        ? `The file will be created in the folder ${parts.slice(0, -1).join("/")}.`
+        : "";
+  return { name: p, warn };
 }
 
 /* ================================================================== theme */
@@ -173,81 +114,297 @@ function toggleTheme() {
   updateThemeIcon();
 }
 
-/* ================================================================== files */
+/* ================================================================== projects */
 
-async function loadFiles() {
+async function loadProjects() {
   await store.init();
-  let list = await store.list();
+  state.projects = await store.listProjects();
   const seeded = prefs.get("seeded", false);
-  if (!list.length && !seeded) {
-    for (const ex of EXAMPLES) await store.put(ex.name, ex.content);
-    prefs.set("seeded", true);
-    list = await store.list();
-    if (!list.length) list = EXAMPLES.map((e) => ({ ...e, modified: Date.now() }));
+  if (!state.projects.some((p) => p.id === DEFAULT_PROJECT) && (!state.projects.length || !seeded)) {
+    const p = await store.putProject({ id: DEFAULT_PROJECT, name: "My files", kind: "files" });
+    if (!seeded) {
+      await store.putFiles(p.id, EXAMPLES.map((e) => ({ path: e.name, content: e.content })));
+      prefs.set("seeded", true);
+    }
+    state.projects = await store.listProjects();
   }
-  for (const f of list) state.files.set(f.name, { content: f.content, modified: f.modified });
+  sortProjects();
   $("storage-note").textContent = store.persistent
     ? "Files are saved in this browser."
     : "This browser blocks storage: files last only until you close the tab. Download them to keep them.";
-  if (!store.persistent) $("storage-note").classList.add("error-text");
+  $("storage-note").classList.toggle("error-text", !store.persistent);
+  const wanted = prefs.get("project", DEFAULT_PROJECT);
+  const first = state.projects.find((p) => p.id === wanted) || state.projects.find((p) => p.id === DEFAULT_PROJECT) || state.projects[0];
+  await switchProject(first.id, { initial: true });
 }
 
-function sortedNames() {
+function sortProjects() {
+  state.projects.sort((a, b) => (a.id === DEFAULT_PROJECT ? -1 : b.id === DEFAULT_PROJECT ? 1 : a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true })));
+}
+
+function sessionFor(id) {
+  const all = prefs.get("sessions", {});
+  if (all[id]) return all[id];
+  if (id === DEFAULT_PROJECT) return prefs.get("session", null) || { tabs: ["welcome.m"] };
+  return null;
+}
+
+function saveSession() {
+  if (!state.project || state.project.temp) return;
+  const all = prefs.get("sessions", {});
+  all[state.project.id] = { tabs: state.tabs, active: state.active, collapsed: [...state.collapsed] };
+  // Forget sessions of deleted projects.
+  for (const id of Object.keys(all)) if (!state.projects.some((p) => p.id === id)) delete all[id];
+  prefs.set("sessions", all);
+}
+
+/** Open another project. Returns false if it could not be opened. */
+async function switchProject(id, { initial = false, open = null } = {}) {
+  if (!initial && engine && engine.busy) {
+    toast("Wait for the running code to finish (or press Stop) before switching projects.");
+    return false;
+  }
+  const project = state.projects.find((p) => p.id === id);
+  if (!project) return false;
+  if (!initial) {
+    await flushAll();
+    saveSession();
+    app.exitStep && app.exitStep();
+  }
+  clearErrorMark();
+  for (const t of state.saveTimers.values()) clearTimeout(t);
+  state.saveTimers.clear();
+  state.project = project;
+  state.files.clear();
+  state.docs.clear();
+  state.sent.clear();
+  state.fsReset = true;
+  for (const f of await store.listFiles(id)) state.files.set(f.path, { content: f.content, modified: f.modified });
+  const session = sessionFor(id);
+  state.collapsed = new Set((session && session.collapsed) || []);
+  state.tabs = ((session && session.tabs) || []).filter((t) => isText(t));
+  if (!project.temp) prefs.set("project", id);
+  renderProjectHead();
+  renderFileList();
+  let first = open && state.files.has(open) ? open : session && isText(session.active) ? session.active : state.tabs[0];
+  if (!first) first = sortedPaths().find((p) => p.endsWith(".m")) || sortedPaths().find(isText);
+  if (first) openFile(first, { focus: false });
+  else showNoFile();
+  $("save-state").textContent = saveLabel();
+  app.onProjectChanged && app.onProjectChanged();
+  return true;
+}
+
+/** Create a project (optionally with files) and open it. Returns the project. */
+async function createProject({ name, kind = "files", meta = {}, temp = false, files = [], open = null, switchTo = true }) {
+  const project = await store.putProject({ id: newId(), name: uniqueProjectName(name), kind, meta, temp });
+  if (files.length) await store.putFiles(project.id, files);
+  state.projects.push(project);
+  sortProjects();
+  if (switchTo) await switchProject(project.id, { open });
+  return project;
+}
+
+function uniqueProjectName(name) {
+  name = (name || "Project").trim().slice(0, 60) || "Project";
+  const taken = new Set(state.projects.map((p) => p.name.toLowerCase()));
+  if (!taken.has(name.toLowerCase())) return name;
+  let n = 2;
+  while (taken.has(`${name} (${n})`.toLowerCase())) n++;
+  return `${name} (${n})`;
+}
+
+async function saveProjectRecord() {
+  await store.putProject(state.project);
+}
+
+async function deleteProject(id) {
+  const i = state.projects.findIndex((p) => p.id === id);
+  if (i < 0) return;
+  const wasCurrent = state.project && state.project.id === id;
+  state.projects.splice(i, 1);
+  await store.deleteProject(id);
+  if (!state.projects.length) {
+    state.projects.push(await store.putProject({ id: DEFAULT_PROJECT, name: "My files", kind: "files" }));
+  }
+  if (wasCurrent) {
+    state.docs.clear();
+    state.saveTimers.clear();
+    const next = state.projects.find((p) => p.id === prefs.get("project", DEFAULT_PROJECT) && !p.temp) || state.projects.find((p) => !p.temp) || state.projects[0];
+    await switchProject(next.id, { initial: true });
+  } else {
+    renderProjectHead();
+  }
+}
+
+const KIND_LABEL = { assignment: "Assignment", github: "From GitHub", shared: "Shared" };
+
+function renderProjectHead() {
+  const p = state.project;
+  $("project-name").textContent = p.name;
+  $("project-btn").title = `Project: ${p.name} — click to switch, create or import projects`;
+  const banner = $("temp-banner");
+  banner.hidden = !p.temp;
+  if (p.temp) {
+    $("temp-text").textContent =
+      p.kind === "shared"
+        ? "Shared code, opened from a link. This is a temporary copy: it is not saved and your own files are untouched."
+        : "Temporary project: it is not saved in this browser.";
+  }
+  document.body.dataset.project = p.kind || "files";
+}
+
+/* ================================================================== files */
+
+function sortedPaths() {
   return [...state.files.keys()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
+}
+
+function saveLabel() {
+  if (state.project && state.project.temp) return "Temporary (not saved)";
+  return store.persistent ? "Saved" : "Not saved (no storage)";
+}
+
+function fileIcon(path, f) {
+  if (typeof f.content !== "string") return isImageName(path) ? "image" : "data";
+  if (path.endsWith(".m")) return isFunctionFile(f.content) ? "fn" : "file";
+  return /\.(csv|tsv|dat|json)$/i.test(path) ? "table" : "text";
+}
+
+function buildTree() {
+  const root = { path: "", folders: new Map(), files: [] };
+  for (const path of sortedPaths()) {
+    const parts = path.split("/");
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!node.folders.has(parts[i])) node.folders.set(parts[i], { path: parts.slice(0, i + 1).join("/"), folders: new Map(), files: [] });
+      node = node.folders.get(parts[i]);
+    }
+    node.files.push(path);
+  }
+  return root;
 }
 
 function renderFileList() {
   const ul = $("file-list");
+  const scroll = ul.scrollTop;
   ul.innerHTML = "";
-  for (const name of sortedNames()) {
-    const f = state.files.get(name);
-    const li = el(
-      "li",
-      {
-        class: "file-item" + (name === state.active ? " active" : ""),
-        role: "option",
-        "aria-selected": name === state.active ? "true" : "false",
-        tabindex: "0",
-        title: name,
-        "data-name": name,
-        onclick: () => openFile(name),
-        onkeydown: (ev) => {
-          if (ev.key === "Enter") openFile(name);
-          if (ev.key === "Delete") deleteFile(name);
-          if (ev.key === "F2") renameFile(name);
-        },
-      },
-      icon(isFunctionFile(f.content) ? "fn" : "file"),
-      el("span", { class: "name" }, name),
-      el(
-        "span",
-        { class: "actions" },
-        el("button", { class: "btn icon sm ghost", title: "Rename", "aria-label": `Rename ${name}`, onclick: (e) => (e.stopPropagation(), renameFile(name)) }, icon("pencil")),
-        el("button", { class: "btn icon sm ghost", title: "Download", "aria-label": `Download ${name}`, onclick: (e) => (e.stopPropagation(), exportFile(name)) }, icon("download")),
-        el("button", { class: "btn icon sm ghost", title: "Delete", "aria-label": `Delete ${name}`, onclick: (e) => (e.stopPropagation(), deleteFile(name)) }, icon("trash"))
-      )
-    );
-    ul.appendChild(li);
-  }
+  const indent = (depth) => `padding-left:${8 + depth * 14}px`;
+  const act = (title, ic, fn, name) =>
+    el("button", { class: "btn icon sm ghost", title, "aria-label": `${title} ${name}`, onclick: (e) => (e.stopPropagation(), fn()) }, icon(ic));
+
+  const renderNode = (node, depth) => {
+    const folders = [...node.folders.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: "base", numeric: true }));
+    for (const [name, child] of folders) {
+      const open = !state.collapsed.has(child.path);
+      const toggle = () => {
+        if (state.collapsed.has(child.path)) state.collapsed.delete(child.path);
+        else state.collapsed.add(child.path);
+        renderFileList();
+        saveSession();
+      };
+      ul.appendChild(
+        el(
+          "li",
+          {
+            class: "folder-item" + (open ? " open" : ""),
+            role: "treeitem",
+            "aria-expanded": String(open),
+            tabindex: "0",
+            title: child.path + "/",
+            "data-folder": child.path,
+            style: indent(depth),
+            onclick: toggle,
+            onkeydown: (ev) => {
+              if (ev.key === "Enter" || ev.key === " ") (ev.preventDefault(), toggle());
+              if (ev.key === "Delete") deleteFolder(child.path);
+              if (ev.key === "F2") renameFolder(child.path);
+            },
+          },
+          icon("caret", "caret"),
+          icon("folder"),
+          el("span", { class: "name" }, name),
+          el(
+            "span",
+            { class: "actions" },
+            act("New file in", "plus", () => newFile(child.path), child.path),
+            act("Rename folder", "pencil", () => renameFolder(child.path), child.path),
+            act("Delete folder", "trash", () => deleteFolder(child.path), child.path)
+          )
+        )
+      );
+      if (open) renderNode(child, depth + 1);
+    }
+    for (const path of node.files) {
+      const f = state.files.get(path);
+      const name = baseName(path);
+      ul.appendChild(
+        el(
+          "li",
+          {
+            class: "file-item" + (path === state.active ? " active" : ""),
+            role: "treeitem",
+            "aria-selected": path === state.active ? "true" : "false",
+            tabindex: "0",
+            title: path + (typeof f.content === "string" ? "" : ` (${formatSize(f.content.length)})`),
+            "data-name": path,
+            style: indent(depth),
+            onclick: () => openFile(path),
+            onkeydown: (ev) => {
+              if (ev.key === "Enter") openFile(path);
+              if (ev.key === "Delete") deleteFile(path);
+              if (ev.key === "F2") renameFile(path);
+            },
+          },
+          icon(fileIcon(path, f)),
+          el("span", { class: "name" }, name),
+          el(
+            "span",
+            { class: "actions" },
+            path.endsWith(".m") ? null : act("Preview", "eye", () => viewFile(path), path),
+            act("Rename", "pencil", () => renameFile(path), path),
+            act("Download", "download", () => exportFile(path), path),
+            act("Delete", "trash", () => deleteFile(path), path)
+          )
+        )
+      );
+    }
+  };
+  renderNode(buildTree(), 0);
   if (!state.files.size) ul.appendChild(el("li", { class: "empty muted" }, "No files. Create one with +."));
+  ul.scrollTop = scroll;
 }
 
-function getDoc(name) {
-  let doc = state.docs.get(name);
+function getDoc(path) {
+  let doc = state.docs.get(path);
   if (!doc) {
-    const mode = name.endsWith(".m") ? "text/x-octave" : "text/plain";
-    doc = CodeMirror.Doc(state.files.get(name).content, mode);
-    state.docs.set(name, doc);
+    const mode = path.endsWith(".m") ? "text/x-octave" : "text/plain";
+    doc = CodeMirror.Doc(state.files.get(path).content, mode);
+    state.docs.set(path, doc);
   }
   return doc;
 }
 
-function openFile(name, { focus = true } = {}) {
-  if (!state.files.has(name)) return;
-  if (!state.tabs.includes(name)) state.tabs.push(name);
-  state.active = name;
+function liveContent(path) {
+  const doc = state.docs.get(path);
+  return doc ? doc.getValue() : state.files.get(path).content;
+}
+
+function expandTo(path) {
+  let changed = false;
+  const parts = path.split("/");
+  for (let i = 1; i < parts.length; i++) changed = state.collapsed.delete(parts.slice(0, i).join("/")) || changed;
+  return changed;
+}
+
+function openFile(path, { focus = true } = {}) {
+  if (!state.files.has(path)) return;
+  if (!isText(path)) return viewFile(path);
+  if (!state.tabs.includes(path)) state.tabs.push(path);
+  state.active = path;
   clearErrorMark();
-  editor.swapDoc(getDoc(name));
+  expandTo(path);
+  editor.swapDoc(getDoc(path));
   $("editor-empty")?.remove();
   editor.getWrapperElement().hidden = false;
   renderTabs();
@@ -255,14 +412,16 @@ function openFile(name, { focus = true } = {}) {
   saveSession();
   if (focus) editor.focus();
   editor.refresh();
+  updateSections(true);
+  app.onFileOpened && app.onFileOpened(path);
 }
 
-function closeTab(name) {
-  const i = state.tabs.indexOf(name);
+function closeTab(path) {
+  const i = state.tabs.indexOf(path);
   if (i < 0) return;
-  flushSave(name);
+  flushSave(path);
   state.tabs.splice(i, 1);
-  if (state.active === name) {
+  if (state.active === path) {
     const next = state.tabs[i] || state.tabs[i - 1];
     if (next) openFile(next);
     else showNoFile();
@@ -279,29 +438,34 @@ function showNoFile() {
       el(
         "div",
         { id: "editor-empty", class: "editor-empty muted" },
-        el("div", {}, "No file open. Pick one from the Files panel, or ", el("button", { class: "btn sm", onclick: newFile }, "create a new file"), ".")
+        el("div", {}, "No file open. Pick one from the Files panel, or ", el("button", { class: "btn sm", onclick: () => newFile() }, "create a new file"), ".")
       )
     );
   }
   renderFileList();
   renderTabs();
+  updateSections(true);
 }
 
 function renderTabs() {
   const box = $("tabs");
   box.innerHTML = "";
-  for (const name of state.tabs) {
+  const counts = new Map();
+  for (const t of state.tabs) counts.set(baseName(t), (counts.get(baseName(t)) || 0) + 1);
+  for (const path of state.tabs) {
+    const name = baseName(path);
     const tab = el(
       "button",
       {
-        class: "tab" + (name === state.active ? " active" : ""),
+        class: "tab" + (path === state.active ? " active" : ""),
         role: "tab",
-        "aria-selected": name === state.active ? "true" : "false",
-        title: name,
-        onclick: () => openFile(name),
-        onauxclick: (e) => e.button === 1 && closeTab(name),
+        "aria-selected": path === state.active ? "true" : "false",
+        title: path,
+        "data-name": path,
+        onclick: () => openFile(path),
+        onauxclick: (e) => e.button === 1 && closeTab(path),
       },
-      el("span", {}, name),
+      el("span", {}, counts.get(name) > 1 && dirName(path) ? el("span", { class: "tab-dir" }, dirName(path) + "/") : null, name),
       el(
         "span",
         {
@@ -311,7 +475,7 @@ function renderTabs() {
           title: "Close",
           onclick: (e) => {
             e.stopPropagation();
-            closeTab(name);
+            closeTab(path);
           },
         },
         icon("close")
@@ -323,172 +487,303 @@ function renderTabs() {
   if (activeTab) activeTab.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
-function saveSession() {
-  prefs.set("session", { tabs: state.tabs, active: state.active });
-}
-
-function scheduleSave(name) {
-  clearTimeout(state.saveTimers.get(name));
+function scheduleSave(path) {
+  clearTimeout(state.saveTimers.get(path));
   $("save-state").textContent = "Editing…";
   state.saveTimers.set(
-    name,
-    setTimeout(() => flushSave(name), 600)
+    path,
+    setTimeout(() => flushSave(path), 600)
   );
 }
 
-async function flushSave(name) {
-  clearTimeout(state.saveTimers.get(name));
-  state.saveTimers.delete(name);
-  const doc = state.docs.get(name);
-  const f = state.files.get(name);
+async function flushSave(path) {
+  clearTimeout(state.saveTimers.get(path));
+  state.saveTimers.delete(path);
+  const doc = state.docs.get(path);
+  const f = state.files.get(path);
   if (!doc || !f) return;
   const content = doc.getValue();
-  if (content === f.content) {
-    if (!state.saveTimers.size) $("save-state").textContent = store.persistent ? "Saved" : "Not saved (no storage)";
-    return;
+  if (content !== f.content) {
+    f.content = content;
+    f.modified = Date.now();
+    await store.putFile(state.project.id, path, content);
   }
-  f.content = content;
-  f.modified = Date.now();
-  await store.put(name, content);
-  if (!state.saveTimers.size) $("save-state").textContent = store.persistent ? "Saved" : "Not saved (no storage)";
+  if (!state.saveTimers.size) $("save-state").textContent = saveLabel();
 }
 
 async function flushAll() {
   await Promise.all([...state.docs.keys()].map((n) => flushSave(n)));
 }
 
-async function createFile(name, content, { open = true } = {}) {
-  state.files.set(name, { content, modified: Date.now() });
-  await store.put(name, content);
-  renderFileList();
-  if (open) openFile(name);
+/** Add or replace several files in the current project. files: [{ path, content }] */
+async function writeFiles(files, { render = true } = {}) {
+  if (!files.length) return;
+  const now = Date.now();
+  for (const f of files) {
+    state.files.set(f.path, { content: f.content, modified: now });
+    const doc = state.docs.get(f.path);
+    if (doc) {
+      if (typeof f.content === "string") {
+        if (doc.getValue() !== f.content) doc.setValue(f.content);
+      } else {
+        state.docs.delete(f.path);
+        if (state.tabs.includes(f.path)) closeTab(f.path);
+      }
+    }
+  }
+  await store.putFiles(state.project.id, files);
+  if (render) renderFileList();
 }
 
-async function newFile() {
-  let base = "untitled";
+async function createFile(path, content, { open = true } = {}) {
+  await writeFiles([{ path, content }]);
+  if (open) openFile(path);
+}
+
+async function newFile(folder = "") {
+  if (typeof folder !== "string") folder = "";
+  if (!folder && state.active) folder = dirName(state.active);
+  const prefix = folder ? folder + "/" : "";
   let n = 1;
-  while (state.files.has(`${base}${n > 1 ? n : ""}.m`)) n++;
-  const suggestion = `${base}${n > 1 ? n : ""}.m`;
-  const name = await promptDialog({
+  while (state.files.has(`${prefix}untitled${n > 1 ? n : ""}.m`)) n++;
+  const path = await promptDialog({
     title: "New file",
-    text: "Scripts and function files end in .m. A function file should have the same name as its function.",
-    value: suggestion,
+    text: "Scripts and function files end in .m. A function file should have the same name as its function. Use a / to put the file in a folder, for example homework1/solve.m.",
+    value: `${prefix}untitled${n > 1 ? n : ""}.m`,
     okLabel: "Create",
-    validate: (v) => validateFileName(v),
+    validate: (v) => validatePath(v),
   });
-  if (!name) return;
-  const fnName = name.replace(/\.m$/, "");
-  const template = /^[A-Za-z]\w*$/.test(fnName) ? `% ${fnName}.m\n\n` : "";
-  await createFile(name, template);
+  if (!path) return;
+  const fnName = baseName(path).replace(/\.m$/, "");
+  const template = path.endsWith(".m") && /^[A-Za-z]\w*$/.test(fnName) ? `% ${fnName}.m\n\n` : "";
+  await createFile(path, template);
   editor.setCursor(editor.lineCount(), 0);
 }
 
-async function renameFile(name) {
-  const newName = await promptDialog({
-    title: "Rename file",
-    value: name,
-    okLabel: "Rename",
-    validate: (v) => validateFileName(v, { current: name }),
-  });
-  if (!newName || newName === name) return;
-  await flushSave(name);
-  const f = state.files.get(name);
-  state.files.delete(name);
-  state.files.set(newName, f);
-  const doc = state.docs.get(name);
-  state.docs.delete(name);
-  if (doc) state.docs.set(newName, doc);
-  state.tabs = state.tabs.map((t) => (t === name ? newName : t));
-  if (state.active === name) state.active = newName;
-  await store.put(newName, f.content);
-  await store.remove(name);
+/** Move files to new paths (rename a file or a whole folder). moves: [[from, to]] */
+async function movePaths(moves) {
+  await flushAll();
+  const puts = [];
+  for (const [from, to] of moves) {
+    const f = state.files.get(from);
+    state.files.delete(from);
+    state.files.set(to, f);
+    const doc = state.docs.get(from);
+    state.docs.delete(from);
+    if (doc) state.docs.set(to, doc);
+    state.tabs = state.tabs.map((t) => (t === from ? to : t));
+    if (state.active === from) state.active = to;
+    puts.push({ path: to, content: f.content });
+  }
+  await store.putFiles(state.project.id, puts);
+  await store.removeFiles(state.project.id, moves.map((m) => m[0]));
   renderTabs();
   renderFileList();
   saveSession();
-  toast(`Renamed to ${newName}`);
 }
 
-async function deleteFile(name) {
+async function renameFile(path) {
+  const newPath = await promptDialog({
+    title: "Rename or move file",
+    text: "Change the name, or add a folder in front (folder/name.m) to move the file.",
+    value: path,
+    okLabel: "Rename",
+    validate: (v) => validatePath(v, { current: path }),
+  });
+  if (!newPath || newPath === path) return;
+  await movePaths([[path, newPath]]);
+  toast(`Renamed to ${newPath}`);
+}
+
+async function renameFolder(folder) {
+  const inside = sortedPaths().filter((p) => p.startsWith(folder + "/"));
+  const target = await promptDialog({
+    title: "Rename folder",
+    value: folder,
+    okLabel: "Rename",
+    selectAll: true,
+    validate: (v) => {
+      const p = normalizePath(v);
+      if (!p) return { error: "Please enter a name." };
+      if (p.split("/").some((s) => /[:*?"<>|]/.test(s) || s.startsWith(".") || !s.trim())) return { error: "That name has characters that can't be used in folder names." };
+      if (p !== folder && (p + "/").startsWith(folder + "/")) return { error: "A folder can't be moved into itself." };
+      if (p !== folder && [...state.files.keys()].some((o) => o === p || inside.some((i) => o === p + i.slice(folder.length)))) return { error: "Files with those names already exist there." };
+      return { name: p };
+    },
+  });
+  if (!target || target === folder) return;
+  if (state.collapsed.delete(folder)) state.collapsed.add(target);
+  await movePaths(inside.map((p) => [p, target + p.slice(folder.length)]));
+  toast(`Folder renamed to ${target}`);
+}
+
+async function removePaths(paths) {
+  for (const path of paths) {
+    clearTimeout(state.saveTimers.get(path));
+    state.saveTimers.delete(path);
+    state.files.delete(path);
+    state.docs.delete(path);
+  }
+  await store.removeFiles(state.project.id, paths);
+  const wasActive = paths.includes(state.active);
+  state.tabs = state.tabs.filter((t) => !paths.includes(t));
+  if (wasActive) {
+    if (state.tabs.length) openFile(state.tabs[state.tabs.length - 1]);
+    else showNoFile();
+  }
+  renderTabs();
+  renderFileList();
+  saveSession();
+}
+
+async function deleteFile(path) {
   const ok = await confirmDialog({
-    title: `Delete ${name}?`,
+    title: `Delete ${baseName(path)}?`,
     text: "The file will be removed from this browser. This can't be undone. You can download it first if you want a copy.",
     okLabel: "Delete",
   });
-  if (!ok) return;
-  clearTimeout(state.saveTimers.get(name));
-  state.saveTimers.delete(name);
-  state.files.delete(name);
-  state.docs.delete(name);
-  await store.remove(name);
-  if (state.tabs.includes(name)) {
-    const wasActive = state.active === name;
-    state.tabs = state.tabs.filter((t) => t !== name);
-    if (wasActive) {
-      if (state.tabs.length) openFile(state.tabs[state.tabs.length - 1]);
-      else showNoFile();
+  if (ok) await removePaths([path]);
+}
+
+async function deleteFolder(folder) {
+  const inside = sortedPaths().filter((p) => p.startsWith(folder + "/"));
+  const ok = await confirmDialog({
+    title: `Delete the folder ${folder}?`,
+    text: `The folder and the ${inside.length} file${inside.length === 1 ? "" : "s"} in it will be removed from this browser. This can't be undone.`,
+    okLabel: "Delete folder",
+  });
+  if (ok) await removePaths(inside);
+}
+
+function fileBlob(path) {
+  const content = liveContent(path);
+  return typeof content === "string" ? new Blob([content], { type: "text/plain;charset=utf-8" }) : new Blob([content], { type: mimeOf(path) });
+}
+
+async function exportFile(path) {
+  await flushSave(path);
+  downloadBlob(fileBlob(path), baseName(path));
+}
+
+/* ---------- viewer for images, tables and other data files ---------- */
+
+let viewerUrl = null;
+
+function parseCsvPreview(text, maxRows = 200, maxCols = 40) {
+  const sep = (text.split("\n", 1)[0].match(/\t/g) || []).length > (text.split("\n", 1)[0].match(/,/g) || []).length ? "\t" : ",";
+  const rows = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    if (rows.length >= maxRows) break;
+    const cells = [];
+    let cur = "";
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (quoted) {
+        if (c === '"' && line[i + 1] === '"') (cur += '"'), i++;
+        else if (c === '"') quoted = false;
+        else cur += c;
+      } else if (c === '"') quoted = true;
+      else if (c === sep) (cells.push(cur), (cur = ""));
+      else cur += c;
+    }
+    cells.push(cur);
+    rows.push(cells.slice(0, maxCols));
+  }
+  return rows;
+}
+
+function viewFile(path) {
+  const f = state.files.get(path);
+  if (!f) return;
+  const content = liveContent(path);
+  const body = $("viewer-body");
+  body.innerHTML = "";
+  if (viewerUrl) URL.revokeObjectURL(viewerUrl);
+  viewerUrl = null;
+  const size = typeof content === "string" ? new Blob([content]).size : content.length;
+  $("viewer-title").textContent = path;
+  $("viewer-meta").textContent = formatSize(size);
+  if (isImageName(path)) {
+    viewerUrl = URL.createObjectURL(fileBlob(path));
+    body.append(el("img", { src: viewerUrl, alt: path, class: "viewer-img" }));
+  } else if (typeof content === "string" && /\.(csv|tsv|dat)$/i.test(path)) {
+    const rows = parseCsvPreview(content);
+    const total = content.split(/\r?\n/).filter((l) => l.trim()).length;
+    body.append(
+      el("div", { class: "viewer-table" }, el("table", { class: "data-table" }, el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => el("td", {}, c))))))),
+      total > rows.length ? el("p", { class: "muted small" }, `Showing the first ${rows.length} of ${total} rows.`) : null
+    );
+  } else if (typeof content === "string") {
+    body.append(el("pre", { class: "var-body" }, content.length > 200000 ? content.slice(0, 200000) + "\n…" : content));
+  } else {
+    body.append(
+      el(
+        "p",
+        { class: "muted" },
+        /\.mat$/i.test(path)
+          ? "This is a MAT data file. Read it in your code with load('" + baseName(path) + "')."
+          : "This is a binary file, so it can't be shown as text. Your code can read it, and you can download it."
+      )
+    );
+  }
+  $("viewer-edit").hidden = typeof content !== "string";
+  $("viewer-edit").onclick = () => {
+    $("dlg-viewer").close();
+    openFile(path);
+  };
+  $("viewer-download").onclick = () => exportFile(path);
+  if (!$("dlg-viewer").open) $("dlg-viewer").showModal();
+}
+
+/* ---------- engine file sync ---------- */
+
+/** What the worker needs to mirror this project into its working folder (see worker.js). */
+function fsSpec() {
+  const files = [];
+  for (const path of state.files.keys()) {
+    const content = liveContent(path);
+    if (!state.fsReset && state.sent.get(path) === content) files.push({ path });
+    else {
+      files.push({ path, content });
+      state.sent.set(path, content);
     }
   }
-  renderTabs();
-  renderFileList();
-  saveSession();
+  const spec = { reset: state.fsReset, files };
+  state.fsReset = false;
+  return spec;
 }
 
-async function exportFile(name) {
-  await flushSave(name);
-  const f = state.files.get(name);
-  downloadBlob(new Blob([f.content], { type: "text/plain;charset=utf-8" }), name);
-}
-
-async function exportZip() {
-  await flushAll();
-  if (typeof JSZip === "undefined") {
-    toast("The zip library hasn't loaded yet. Check your connection and try again.", "error");
-    return;
+/** Files the code wrote: add them to the project so they show up in the tree. */
+async function applyWritten(files) {
+  if (!files) return;
+  for (const p of files.missing || []) state.sent.delete(p);
+  const written = (files.written || []).map((w) => ({ path: w.path, content: toStored(w.path, w.content), size: w.content.length, existed: state.files.has(w.path) }));
+  if (written.length) {
+    await writeFiles(written.map((w) => ({ path: w.path, content: w.content })));
+    for (const w of written) {
+      expandTo(w.path);
+      state.sent.set(w.path, liveContent(w.path));
+    }
+    renderFileList();
+    const note = el("div", { class: "entry file-note" }, written.length === 1 ? "Your code saved a file: " : `Your code saved ${written.length} files: `);
+    written.slice(0, 8).forEach((w, i) => {
+      if (i) note.append(", ");
+      note.append(el("button", { class: "linklike", type: "button", title: `Open ${w.path}`, onclick: () => openFile(w.path) }, w.path), ` (${formatSize(w.size)})`);
+    });
+    if (written.length > 8) note.append(` and ${written.length - 8} more`);
+    note.append(" → see the Files panel");
+    appendConsole(note);
   }
-  const zip = new JSZip();
-  for (const name of sortedNames()) zip.file(name, state.files.get(name).content);
-  const blob = await zip.generateAsync({ type: "blob" });
-  const d = new Date();
-  const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  downloadBlob(blob, `mylab-files-${stamp}.zip`);
-}
-
-const IMPORT_EXT = /\.(m|txt|csv|dat|json)$/i;
-
-async function importFiles(fileList) {
-  let count = 0;
-  let last = null;
-  for (const file of fileList) {
-    if (!IMPORT_EXT.test(file.name)) {
-      toast(`Skipped ${file.name}: only .m, .txt, .csv, .dat and .json files can be imported.`, "error");
-      continue;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast(`Skipped ${file.name}: files over 2 MB are not supported.`, "error");
-      continue;
-    }
-    const text = await file.text();
-    let name = file.name.replace(/[\\/:*?"<>|]/g, "_");
-    if (state.files.has(name)) {
-      const ok = await confirmDialog({ title: `Replace ${name}?`, text: `A file named ${name} already exists. Replace it with the imported one?`, okLabel: "Replace" });
-      if (!ok) continue;
-      const doc = state.docs.get(name);
-      if (doc) doc.setValue(text);
-    }
-    await createFile(name, text, { open: false });
-    last = name;
-    count++;
+  if ((files.skipped || []).length) {
+    printInfo(
+      "Not copied into your project (over 5 MB each or 20 MB together): " +
+        files.skipped.map((s) => `${s.path} (${formatSize(s.size)})`).join(", ") +
+        ". These files exist only until the engine restarts.",
+      "note"
+    );
   }
-  if (last) openFile(last);
-  if (count) toast(`Imported ${count} file${count > 1 ? "s" : ""}.`);
-}
-
-function allFilesForEngine() {
-  // Use the live editor contents, even if they haven't been saved yet.
-  return [...state.files.entries()].map(([name, f]) => ({
-    name,
-    content: state.docs.has(name) ? state.docs.get(name).getValue() : f.content,
-  }));
 }
 
 /* ================================================================== command window */
@@ -553,17 +848,19 @@ function banner(info) {
 
 /* ================================================================== running code */
 
-function setRunning(running) {
+const RUN_BUTTONS = ["btn-run-section", "btn-run-sel", "btn-step", "btn-publish"];
+
+function setRunning(running, label = "Running") {
   $("btn-run").hidden = running;
-  $("btn-run-sel").disabled = running || !engine.ready;
+  for (const id of RUN_BUTTONS) $(id).disabled = running || !engine.ready;
   $("btn-stop").hidden = !running;
   clearInterval(state.runTimer);
   if (running) {
     state.runStarted = performance.now();
-    setStatus("busy", "Running…");
+    setStatus("busy", `${label}…`);
     state.runTimer = setInterval(() => {
       const s = (performance.now() - state.runStarted) / 1000;
-      setStatus("busy", `Running… ${s.toFixed(0)} s`);
+      setStatus("busy", `${label}… ${s.toFixed(0)} s`);
     }, 1000);
   } else if (engine.ready) {
     setStatus("ready", "Ready");
@@ -573,6 +870,19 @@ function setRunning(running) {
 function setStatus(kind, text) {
   $("status").dataset.state = kind;
   $("status-text").textContent = text;
+}
+
+/** True when a new run may start; otherwise tells the user why not. */
+function canRun() {
+  if (!engine.ready) {
+    toast("The engine is still loading. Please wait a moment.");
+    return false;
+  }
+  if (engine.busy) {
+    toast("Code is already running. Press Stop to cancel it.");
+    return false;
+  }
+  return true;
 }
 
 function clearErrorMark() {
@@ -590,7 +900,7 @@ function clearErrorMark() {
 
 function markErrorLine(file, line) {
   clearErrorMark();
-  if (!state.files.has(file)) return;
+  if (!isText(file)) return;
   const doc = getDoc(file);
   if (line < 1 || line > doc.lineCount()) return;
   const handle = doc.addLineClass(line - 1, "background", "cm-error-line");
@@ -613,25 +923,34 @@ function errorLineOf(res) {
 }
 
 /**
+ * Where an error happened, as { file, line } in project terms.
+ * ctx: { file, lineOffset, codeLines, tailStart } describes the code that was sent.
+ */
+function locateError(res, ctx) {
+  let line = errorLineOf(res);
+  if (!line) return { file: null, line: null };
+  if (res.error_file && state.files.has(res.error_file)) return { file: res.error_file, line };
+  if (!ctx.file) return { file: null, line };
+  if (ctx.codeLines && line > ctx.codeLines && ctx.tailStart != null) return { file: ctx.file, line: ctx.tailStart + (line - ctx.codeLines) };
+  return { file: ctx.file, line: line + (ctx.lineOffset || 0) };
+}
+
+/**
  * Run code in the engine.
- * ctx: { kind: "file"|"selection"|"command", file, lineOffset, label }
+ * ctx: { kind: "file"|"section"|"selection"|"command", file, lineOffset, label, tail, tailStart }
  */
 async function runCode(code, ctx) {
-  if (!engine.ready) {
-    toast("The engine is still loading. Please wait a moment.");
-    return null;
-  }
-  if (engine.busy) {
-    toast("Code is already running. Press Stop to cancel it.");
-    return null;
-  }
+  if (!canRun()) return null;
+  app.exitStep && app.exitStep();
   clearErrorMark();
   if (ctx.kind === "command") printEcho(code);
   else printEcho(code, ctx.label);
   setRunning(true);
   let res;
+  const sent = ctx.tail ? code + "\n" + ctx.tail : code;
+  const runCtx = { ...ctx, codeLines: ctx.tail ? code.split("\n").length : 0 };
   try {
-    res = await engine.run(code, allFilesForEngine());
+    res = await engine.run(sent, { fs: fsSpec(), cwd: ctx.kind === "command" ? undefined : dirName(ctx.file || "") });
   } catch (e) {
     setRunning(false);
     if (String(e.message) !== "Stopped.") printError({ message: e.message });
@@ -640,18 +959,17 @@ async function runCode(code, ctx) {
   setRunning(false);
   printOut(res.output);
   if (res.error) {
-    let line = errorLineOf(res);
     const err = { message: res.error, line: null, where: "", file: null, code: ctx.kind === "command" ? code : null };
-    if (line && ctx.kind !== "command") {
-      line += ctx.lineOffset || 0;
-      err.line = line;
-      err.file = ctx.file;
-      err.where = ctx.file;
-      markErrorLine(ctx.file, line);
-      if (state.active === ctx.file) editor.scrollIntoView({ line: line - 1, ch: 0 }, 80);
+    const at = locateError(res, runCtx);
+    if (at.file) {
+      err.line = at.line;
+      err.file = at.file;
+      err.where = at.file;
+      markErrorLine(at.file, at.line);
+      if (state.active === at.file) editor.scrollIntoView({ line: at.line - 1, ch: 0 }, 80);
     } else if (ctx.kind === "command") {
       err.where = "Command Window";
-      err.line = line && code.includes("\n") ? line : null;
+      err.line = at.line && code.includes("\n") ? at.line : null;
     }
     printError(err);
     if (res.internal) console.warn(res.internal);
@@ -661,36 +979,79 @@ async function runCode(code, ctx) {
   }
   assistant.setLastError(state.lastError);
   if (res.figures && res.figures.length) addFigures(res.figures, ctx);
+  if (res.animations && res.animations.length) addFigures(res.animations, ctx, "gif");
   if (res.variables) renderVariables(res.variables);
+  await applyWritten(res.files);
   return res;
 }
 
-async function runActiveFile() {
+/** The active file if it is a script that can be run; otherwise explains why not. */
+function runnableFile() {
   if (!state.active) {
     toast("Open a file to run it.");
-    return;
+    return null;
   }
   const name = state.active;
   const code = editor.getValue();
   flushSave(name);
   if (!name.endsWith(".m")) {
     toast("Only .m files can be run.", "error");
-    return;
+    return null;
   }
   if (isFunctionFile(code)) {
-    const fn = name.replace(/\.m$/, "");
+    const fn = baseName(name).replace(/\.m$/, "");
     printInfo(
-      `${name} is a function file, so it needs to be called with inputs. Call it from the command window or a script, for example:  ${fn}(...)`,
+      `${baseName(name)} is a function file, so it needs to be called with inputs. Call it from the command window or a script, for example:  ${fn}(...)`,
       "note"
     );
     $("console-input").value = fn + "(";
     $("console-input").focus();
-    return;
+    return null;
   }
+  return { name, code };
+}
+
+function flashEditor() {
   editor.getWrapperElement().classList.remove("cm-run-flash");
   void editor.getWrapperElement().offsetWidth;
   editor.getWrapperElement().classList.add("cm-run-flash");
-  await runCode(code, { kind: "file", file: name, lineOffset: 0, label: `run ${name}` });
+}
+
+async function runActiveFile() {
+  const f = runnableFile();
+  if (!f) return null;
+  flashEditor();
+  return runCode(f.code, { kind: "file", file: f.name, lineOffset: 0, label: `run ${f.name}` });
+}
+
+async function runSection({ advance = false } = {}) {
+  const f = runnableFile();
+  if (!f) return null;
+  const split = splitSections(f.code);
+  if (!split.hasSections) return runActiveFile();
+  const cur = editor.getCursor().line;
+  const i = sectionAt(split, cur);
+  if (i < 0) {
+    toast("The cursor is in the functions at the end of the file. Put it in a section to run that section.");
+    return null;
+  }
+  const s = split.sections[i];
+  const title = s.title ? `“${s.title}”` : `${i + 1}`;
+  const label = `run section ${title} (lines ${s.start + 1}–${s.end}) of ${f.name}`;
+  if (advance) {
+    const next = split.sections[i + 1];
+    if (next) {
+      const line = Math.min(next.start + (next.header ? 1 : 0), editor.lineCount() - 1);
+      editor.setCursor({ line, ch: 0 });
+      editor.scrollIntoView({ line, ch: 0 }, 100);
+    }
+  }
+  return runCode(sectionCode(split, i), { kind: "section", file: f.name, lineOffset: s.start, label, tail: tailCode(split), tailStart: split.tailStart });
+}
+
+/** Ctrl+Enter: the section under the cursor when the file has sections, otherwise the file. */
+function runSmart() {
+  return state.sectionView && state.sectionView.split.hasSections ? runSection() : runActiveFile();
 }
 
 async function runSelection() {
@@ -741,6 +1102,52 @@ async function resetWorkspace() {
   } catch (e) {
     toast(e.message, "error");
   }
+}
+
+/* ================================================================== sections in the editor */
+
+function clearSectionMarks() {
+  const v = state.sectionView;
+  if (!v) return;
+  for (const [h, where, cls] of v.marks) {
+    try {
+      v.doc.removeLineClass(h, where, cls);
+    } catch {
+      /* line is gone */
+    }
+  }
+  v.marks = [];
+}
+
+/** Mark "%%" lines and tint the section that holds the cursor. */
+function updateSections(force = false) {
+  if (!editor) return;
+  const doc = editor.getDoc();
+  const isCode = !!state.active && state.active.endsWith(".m") && !editor.getWrapperElement().hidden;
+  let v = state.sectionView;
+  if (!isCode) {
+    clearSectionMarks();
+    state.sectionView = null;
+    $("btn-run-section").hidden = true;
+    return;
+  }
+  const gen = doc.changeGeneration();
+  const fresh = force || !v || v.doc !== doc || v.gen !== gen;
+  const split = fresh ? splitSections(doc.getValue()) : v.split;
+  const current = split.hasSections ? sectionAt(split, editor.getCursor().line) : -1;
+  if (!fresh && current === v.current) return;
+  editor.operation(() => {
+    clearSectionMarks();
+    v = state.sectionView = { doc, gen, split, current, marks: [] };
+    if (!split.hasSections) return;
+    split.sections.forEach((s, i) => {
+      if (s.header) v.marks.push([doc.addLineClass(s.start, "wrap", "cm-section-head"), "wrap", "cm-section-head"]);
+      if (i === current) {
+        for (let l = s.start; l < s.end && l < doc.lineCount(); l++) v.marks.push([doc.addLineClass(l, "wrap", "cm-section-cur"), "wrap", "cm-section-cur"]);
+      }
+    });
+  });
+  $("btn-run-section").hidden = !split.hasSections;
 }
 
 /* ================================================================== history & completion */
@@ -842,7 +1249,8 @@ function editorHint(cm) {
     let m;
     while ((m = re.exec(text))) if (m[0] !== prefix && m[0].startsWith(prefix)) words.add(m[0]);
     for (const n of state.files.keys()) {
-      const base = n.replace(/\.m$/, "");
+      if (!n.endsWith(".m")) continue;
+      const base = baseName(n).replace(/\.m$/, "");
       if (base.startsWith(prefix) && base !== prefix) words.add(base);
     }
     const finish = (extra) => {
@@ -861,6 +1269,7 @@ editorHint.async = false;
 function renderVariables(vars) {
   const before = new Map(state.variables.map((v) => [v.name, v.preview + v.size]));
   state.variables = vars || [];
+  if (app.stepActive && app.stepActive()) return; // the step-through view owns the table for now
   const tbody = $("var-table").querySelector("tbody");
   tbody.innerHTML = "";
   for (const v of state.variables) {
@@ -905,29 +1314,31 @@ async function showVariable(v) {
 
 /* ================================================================== plots */
 
-function addFigures(figs, ctx) {
+/** Add figures (base64 PNGs) or animations (base64 GIFs, type "gif") to the Plots panel. */
+function addFigures(figs, ctx, type = "png") {
   const box = $("plots");
   $("plots-empty").hidden = true;
-  const source = ctx.kind === "command" ? "Command Window" : ctx.file;
+  const source = ctx.kind === "command" ? "Command Window" : baseName(ctx.file || "figure");
   const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const word = type === "gif" ? "Animation" : "Figure";
   figs.forEach((b64, i) => {
     state.figureCount++;
     const n = state.figureCount;
-    const url = "data:image/png;base64," + b64;
-    const filename = `${(source || "figure").replace(/\.m$/, "").replace(/\W+/g, "_")}_${n}.png`;
-    const img = el("img", { src: url, alt: `Figure ${n} from ${source}`, loading: "lazy", onclick: () => enlargeFigure(url, filename) });
+    const url = `data:image/${type};base64,` + b64;
+    const filename = `${(source || "figure").replace(/\.m$/, "").replace(/\W+/g, "_")}_${n}.${type}`;
+    const img = el("img", { src: url, alt: `${word} ${n} from ${source}`, loading: "lazy", onclick: () => enlargeFigure(url, filename) });
     const card = el(
       "figure",
-      { class: "plot-card new", style: "margin:0" },
+      { class: "plot-card new" + (type === "gif" ? " animation" : ""), style: "margin:0", "data-type": type },
       img,
       el(
         "figcaption",
         { class: "plot-meta" },
-        el("span", {}, `Figure ${n}${figs.length > 1 ? ` (${i + 1}/${figs.length})` : ""} · ${source} · ${time}`),
+        el("span", {}, `${word} ${n}${figs.length > 1 ? ` (${i + 1}/${figs.length})` : ""} · ${source} · ${time}`),
         el("button", { class: "btn icon sm ghost", title: "Enlarge", "aria-label": "Enlarge", onclick: () => enlargeFigure(url, filename) }, icon("expand")),
         el(
           "a",
-          { class: "btn icon sm ghost", title: "Download PNG", "aria-label": "Download PNG", href: url, download: filename },
+          { class: "btn icon sm ghost", title: `Download ${type.toUpperCase()}`, "aria-label": `Download ${type.toUpperCase()}`, href: url, download: filename },
           icon("download")
         ),
         el("button", { class: "btn icon sm ghost", title: "Remove", "aria-label": "Remove plot", onclick: () => (card.remove(), updatePlotsEmpty()) }, icon("trash"))
@@ -939,8 +1350,9 @@ function addFigures(figs, ctx) {
   const cards = box.querySelectorAll(".plot-card");
   for (let i = 40; i < cards.length; i++) cards[i].remove();
   box.scrollTop = 0;
+  const what = type === "gif" ? `animation${figs.length > 1 ? "s" : ""}` : `figure${figs.length > 1 ? "s" : ""}`;
   const note = el("div", { class: "entry fig-note", onclick: () => $("plots").scrollIntoView({ block: "nearest" }) },
-    `${figs.length} figure${figs.length > 1 ? "s" : ""} drawn → see the Plots panel`);
+    `${figs.length} ${what} drawn → see the Plots panel`);
   appendConsole(note);
 }
 
@@ -952,6 +1364,7 @@ function enlargeFigure(url, filename) {
   $("figure-big").src = url;
   $("figure-dl").href = url;
   $("figure-dl").download = filename;
+  $("figure-dl").lastChild.textContent = /\.gif$/.test(filename) ? "Download GIF" : "Download PNG";
   $("dlg-figure").showModal();
 }
 
@@ -964,18 +1377,20 @@ function applySizes() {
   if (SIZES.files) root.setProperty("--files-w", SIZES.files + "px");
   if (SIZES.side) root.setProperty("--side-w", SIZES.side + "px");
   if (SIZES.ai) root.setProperty("--ai-w", SIZES.ai + "px");
+  if (SIZES.asg) root.setProperty("--asg-w", SIZES.asg + "px");
   if (SIZES.console) root.setProperty("--console-h", SIZES.console + "px");
   if (SIZES.workspace) root.setProperty("--workspace-h", SIZES.workspace + "px");
 }
 
 function setupGutters() {
-  const limits = { files: [140, 420], side: [220, 700], ai: [280, 720], console: [90, 900], workspace: [80, 900] };
+  const limits = { files: [140, 420], side: [220, 700], ai: [280, 720], asg: [220, 640], console: [90, 900], workspace: [80, 900] };
   document.querySelectorAll(".gutter").forEach((g) => {
     const key = g.dataset.resize;
     const target = {
       files: () => $("files-panel"),
       side: () => $("side"),
       ai: () => $("ai-panel"),
+      asg: () => $("asg-panel"),
       console: () => document.querySelector(".console-panel"),
       workspace: () => document.querySelector(".workspace-panel"),
     }[key];
@@ -986,7 +1401,7 @@ function setupGutters() {
       const [lo, hi] = limits[key];
       px = Math.round(Math.max(lo, Math.min(hi, px)));
       SIZES[key] = px;
-      const prop = { files: "--files-w", side: "--side-w", ai: "--ai-w", console: "--console-h", workspace: "--workspace-h" }[key];
+      const prop = { files: "--files-w", side: "--side-w", ai: "--ai-w", asg: "--asg-w", console: "--console-h", workspace: "--workspace-h" }[key];
       document.documentElement.style.setProperty(prop, px + "px");
       editor && editor.refresh();
     };
@@ -1076,7 +1491,7 @@ function onReady(info) {
   setStatus("ready", "Ready");
   document.body.dataset.engine = "ready";
   $("btn-run").disabled = false;
-  $("btn-run-sel").disabled = false;
+  for (const id of RUN_BUTTONS) $(id).disabled = false;
   const input = $("console-input");
   input.disabled = false;
   input.placeholder = "Type a command and press Enter";
@@ -1107,6 +1522,41 @@ function onFatal({ error }) {
   printError({ message: "The engine failed to load: " + error });
 }
 
+/* ================================================================== welcome */
+
+/** Make sure an example file exists in the current project (never overwrites) and open it. */
+async function openExample(name) {
+  const ex = EXAMPLES.find((e) => e.name === name);
+  if (!ex) return;
+  if (state.project.kind !== "files" || state.project.temp) await switchProject((state.projects.find((p) => p.id === DEFAULT_PROJECT) || state.projects.find((p) => !p.temp)).id);
+  if (!state.files.has(name)) await createFile(name, ex.content, { open: false });
+  openFile(name);
+}
+
+function showWelcome() {
+  $("dlg-welcome").showModal();
+}
+
+function setupWelcome() {
+  const dlg = $("dlg-welcome");
+  dlg.addEventListener("close", () => prefs.set("welcomed", 2));
+  const go = (fn) => () => {
+    dlg.close();
+    fn();
+  };
+  $("welcome-examples").addEventListener("click", go(() => openExample("welcome.m")));
+  $("welcome-github").addEventListener("click", go(() => app.openGithubDialog()));
+  $("welcome-assignment").addEventListener("click", go(() => app.openExampleAssignment()));
+  $("welcome-step").addEventListener(
+    "click",
+    go(async () => {
+      await openExample("step_demo.m");
+      if (engine.ready && !engine.busy) app.startStep();
+      else toast("When the engine has loaded, press “Step through” to walk through this file line by line.");
+    })
+  );
+}
+
 /* ================================================================== setup */
 
 function setupEditor() {
@@ -1115,6 +1565,7 @@ function setupEditor() {
     value: "",
     mode: "text/x-octave",
     lineNumbers: true,
+    gutters: ["bp-gutter", "CodeMirror-linenumbers"],
     indentUnit: 4,
     tabSize: 4,
     indentWithTabs: false,
@@ -1124,8 +1575,10 @@ function setupEditor() {
     lineWrapping: false,
     viewportMargin: 30,
     extraKeys: {
-      [`${mod}-Enter`]: () => runActiveFile(),
+      [`${mod}-Enter`]: () => runSmart(),
       [`Shift-${mod}-Enter`]: () => runSelection(),
+      "Alt-Enter": () => runSection({ advance: true }),
+      F5: () => runActiveFile(),
       [`${mod}-S`]: () => {
         if (state.active) flushSave(state.active).then(() => toast("Saved."));
       },
@@ -1143,6 +1596,12 @@ function setupEditor() {
     if (!state.active) return;
     scheduleSave(state.active);
     if (state.errorMark && state.errorMark.file === state.active && change.origin !== "setValue") clearErrorMark();
+  });
+  let sectionTimer = null;
+  editor.on("cursorActivity", () => updateSections());
+  editor.on("changes", () => {
+    clearTimeout(sectionTimer);
+    sectionTimer = setTimeout(() => updateSections(), 120);
   });
 }
 
@@ -1187,49 +1646,19 @@ function setupConsole() {
     $("completions").hidden = true;
   });
   // Clicking on empty console space focuses the prompt (unless text is being selected).
-  consoleOut().addEventListener("mouseup", () => {
+  consoleOut().addEventListener("mouseup", (e) => {
+    if (e.target.closest("button, a")) return;
     if (!getSelection().toString() && !input.disabled) input.focus();
-  });
-}
-
-function setupDragDrop() {
-  let depth = 0;
-  const overlay = $("drop-overlay");
-  const hasFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes("Files");
-  window.addEventListener("dragenter", (e) => {
-    if (!hasFiles(e)) return;
-    e.preventDefault();
-    depth++;
-    overlay.hidden = false;
-  });
-  window.addEventListener("dragover", (e) => {
-    if (hasFiles(e)) e.preventDefault();
-  });
-  window.addEventListener("dragleave", (e) => {
-    if (!hasFiles(e)) return;
-    depth = Math.max(0, depth - 1);
-    if (!depth) overlay.hidden = true;
-  });
-  window.addEventListener("drop", (e) => {
-    if (!hasFiles(e)) return;
-    e.preventDefault();
-    depth = 0;
-    overlay.hidden = true;
-    importFiles([...e.dataTransfer.files]);
   });
 }
 
 function setupButtons() {
   $("btn-run").addEventListener("click", runActiveFile);
+  $("btn-run-section").addEventListener("click", () => runSection());
   $("btn-run-sel").addEventListener("click", runSelection);
   $("btn-stop").addEventListener("click", stopRun);
-  $("btn-new").addEventListener("click", newFile);
+  $("btn-new").addEventListener("click", () => newFile());
   $("btn-import").addEventListener("click", () => $("file-input").click());
-  $("file-input").addEventListener("change", (e) => {
-    importFiles([...e.target.files]);
-    e.target.value = "";
-  });
-  $("btn-zip").addEventListener("click", exportZip);
   $("btn-clear-console").addEventListener("click", clearConsole);
   $("btn-reset").addEventListener("click", resetWorkspace);
   $("btn-clear-plots").addEventListener("click", () => {
@@ -1239,6 +1668,8 @@ function setupButtons() {
   $("btn-theme").addEventListener("click", toggleTheme);
   $("btn-keys").addEventListener("click", () => $("dlg-keys").showModal());
   $("btn-about").addEventListener("click", () => $("dlg-about").showModal());
+  $("foot-about").addEventListener("click", () => $("dlg-about").showModal());
+  $("foot-welcome").addEventListener("click", showWelcome);
   $("btn-ai").addEventListener("click", () => showAssistant());
   $("btn-ai-close").addEventListener("click", () => showAssistant(false));
   $("loader-hide").addEventListener("click", () => ($("loader").hidden = true));
@@ -1266,12 +1697,17 @@ function setupButtons() {
   );
   document.addEventListener("keydown", (e) => {
     const mod = isMac ? e.metaKey : e.ctrlKey;
+    const inField = document.activeElement === $("console-input") || document.activeElement === $("ai-input");
+    if (document.querySelector("dialog[open]")) return;
     if (e.altKey && (e.key === "n" || e.key === "N" || e.code === "KeyN")) {
       e.preventDefault();
       newFile();
-    } else if (mod && e.key === "Enter" && !editor.hasFocus() && document.activeElement !== $("console-input") && document.activeElement !== $("ai-input")) {
+    } else if (mod && e.key === "Enter" && !editor.hasFocus() && !inField) {
       e.preventDefault();
-      e.shiftKey ? runSelection() : runActiveFile();
+      e.shiftKey ? runSelection() : runSmart();
+    } else if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.shiftKey && !editor.hasFocus()) {
+      e.preventDefault();
+      runActiveFile();
     } else if (mod && (e.key === "e" || e.key === "E") && !e.shiftKey) {
       e.preventDefault();
       editor.focus();
@@ -1333,6 +1769,74 @@ function assistantContext() {
   return ctx;
 }
 
+/** Links such as #code=…, #project=…, #gh=owner/repo, #assignment=url (see docs/WEB.md). */
+async function handleHash() {
+  const params = parseHash(location.hash);
+  try {
+    if (params.assignment || params.assignmentdata) return await app.openAssignmentFromLink(params);
+    if (params.gh) return await app.openGithubLink(params.gh);
+    if (params.code || params.project) return await app.openSharedLink(params);
+  } catch (e) {
+    console.warn(e);
+    toast(e.message || String(e), "error");
+  }
+  return false;
+}
+
+function clearHash() {
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+}
+
+Object.defineProperty(app, "editor", { get: () => editor });
+Object.defineProperty(app, "engine", { get: () => engine });
+Object.assign(app, {
+  baseName,
+  dirName,
+  isText,
+  isFunctionFile,
+  sortedPaths,
+  liveContent,
+  fileBlob,
+  validatePath,
+  normalizePath,
+  getDoc,
+  openFile,
+  viewFile,
+  createFile,
+  writeFiles,
+  removePaths,
+  flushAll,
+  renderFileList,
+  renderProjectHead,
+  switchProject,
+  createProject,
+  deleteProject,
+  saveProjectRecord,
+  uniqueProjectName,
+  sortProjects,
+  fsSpec,
+  canRun,
+  runCode,
+  runActiveFile,
+  runnableFile,
+  stopRun,
+  setRunning,
+  setStatus,
+  printInfo,
+  printOut,
+  printError,
+  printEcho,
+  appendConsole,
+  addFigures,
+  renderVariables,
+  locateError,
+  markErrorLine,
+  clearErrorMark,
+  clearHash,
+  showWelcome,
+  openExample,
+});
+
 async function main() {
   updateThemeIcon();
   applySizes();
@@ -1340,7 +1844,7 @@ async function main() {
   setupConsole();
   setupButtons();
   setupGutters();
-  setupDragDrop();
+  setupWelcome();
 
   // Start the engine as early as possible; it loads while the files are read.
   engine = new Engine();
@@ -1350,8 +1854,11 @@ async function main() {
   engine.addEventListener("restarting", () => {
     document.body.dataset.engine = "loading";
     $("btn-run").disabled = true;
-    $("btn-run-sel").disabled = true;
+    for (const id of RUN_BUTTONS) $(id).disabled = true;
     setStatus("loading", "Restarting engine…");
+    // The new engine starts with an empty working folder.
+    state.sent.clear();
+    state.fsReset = true;
   });
 
   assistant = new Assistant({
@@ -1363,15 +1870,17 @@ async function main() {
   });
   if (prefs.get("aiOpen", false)) showAssistant(true);
 
-  await loadFiles();
-  renderFileList();
-  const session = prefs.get("session", null);
-  const tabs = (session && session.tabs ? session.tabs : ["welcome.m"]).filter((t) => state.files.has(t));
-  state.tabs = tabs;
-  const first = session && state.files.has(session.active) ? session.active : tabs[0] || sortedNames()[0];
-  if (first) openFile(first, { focus: false });
-  else showNoFile();
-  $("save-state").textContent = store.persistent ? "Saved" : "Not saved (no storage)";
+  initProjects(app);
+  initShare(app);
+  initPublish(app);
+  initStepper(app);
+  initAssignments(app);
+
+  await loadProjects();
+  document.body.dataset.files = "ready";
+  const fromLink = await handleHash();
+  window.addEventListener("hashchange", () => handleHash());
+  if (!fromLink && prefs.get("welcomed", 0) < 2) showWelcome();
 }
 
 main().catch((e) => {
@@ -1380,4 +1889,4 @@ main().catch((e) => {
 });
 
 // Exposed for automated tests and debugging.
-window.mylab = { state, get engine() { return engine; }, runCode, openFile, createFile };
+window.mylab = { app, state, get engine() { return engine; }, get editor() { return editor; }, runCode, openFile, createFile };
