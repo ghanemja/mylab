@@ -104,14 +104,41 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("script", nargs="?", help="a .m script or function file to run")
     parser.add_argument("-e", "--eval", metavar="CODE", help="run CODE and exit")
     parser.add_argument("--no-plots", action="store_true", help="do not open plot windows")
+    parser.add_argument("--debug", action="store_true",
+                        help="run the script in the debugger, pausing at the first line (type h for help)")
+    parser.add_argument("--check", metavar="FILE",
+                        help="check FILE for syntax errors and unknown functions without running it (JSON)")
+    parser.add_argument("--help-for", metavar="NAME", help="print the help text for a function and exit")
     parser.add_argument("--version", action="version", version=f"mylab {__version__}")
     args = parser.parse_args(argv)
     if args.no_plots:
         os.environ["MPLBACKEND"] = "Agg"
 
+    if args.check:
+        import json
+
+        from .lint import check_source
+        try:
+            with open(args.check, encoding="utf-8", errors="replace") as fh:
+                problems = check_source(fh.read(), args.check)
+        except OSError as e:
+            sys.stderr.write(f"mylab: {e}\n")
+            return 2
+        print(json.dumps({"ok": not any(p["severity"] == "error" for p in problems), "problems": problems}))
+        return 0
+    if args.help_for:
+        from .help import help_text
+        text = help_text(args.help_for, Interpreter())
+        sys.stdout.write(text)
+        return 0 if "not found" not in text else 1
+
     interp = Interpreter()
     if args.eval is None and args.script is None:
         return repl(interp)
+    if args.debug:
+        from .debugger import get_debugger
+        interp.state["debug_interactive"] = True
+        get_debugger(interp).attach(stop_at_start=True)
     try:
         if args.eval is not None:
             interp.execute(args.eval)

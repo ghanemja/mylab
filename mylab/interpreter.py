@@ -150,6 +150,7 @@ class Interpreter:
         self._dir_cache: dict[str, tuple[int, frozenset]] = {}
         self.state: dict[str, Any] = {}  # scratch space for builtins (tic, rng, figures...)
         self.classes: dict[str, Any] = {}  # classdef name -> ClassInfo
+        self.trace_hook: Callable[[A.Node, Frame], None] | None = None  # called before each statement
         self.input_func: Callable[[str], str] = input
 
     # -- public API -------------------------------------------------------------------
@@ -230,6 +231,8 @@ class Interpreter:
             self.exec_stmt(stmt, frame)
 
     def exec_stmt(self, stmt: A.Node, frame: Frame) -> None:
+        if self.trace_hook is not None:
+            self.trace_hook(stmt, frame)  # debuggers and tracers; may raise to stop the run
         try:
             self._exec(stmt, frame)
         except MatlabError as e:
