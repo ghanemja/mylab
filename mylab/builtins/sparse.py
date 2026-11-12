@@ -89,6 +89,8 @@ def _canon(m: Any) -> sp.csc_matrix:
             m = m.astype(np.complex128)
         if m.nnz == 0 or not np.any(m.data.imag):
             m = m.real.astype(np.float64)
+        else:
+            m.data = m.data.real + 1j * (m.data.imag + 0.0)  # no negative zeros in the display
     elif kind != "b" and m.dtype != np.float64:
         m = m.astype(np.float64)
     m.sum_duplicates()
@@ -146,6 +148,9 @@ class SparseMatrix(MObject):
     @property
     def dtype(self):
         return self._m.dtype
+
+    def astype(self, dtype) -> np.ndarray:
+        return self.to_dense().astype(dtype)
 
     def copy(self) -> "SparseMatrix":
         return SparseMatrix(self._m.copy(), canonical=True)
@@ -1635,6 +1640,83 @@ def _ilu_factors(m: sp.csc_matrix, drop_tol: float, fill: float):
     return f.L.tocsc(), f.U.tocsc(), _perm_matrix(row_order, rows=True)
 
 
+def _ilu0(m: sp.csc_matrix) -> tuple[sp.csc_matrix, sp.csc_matrix]:
+    """Incomplete LU with no fill-in: L (unit lower) and U keep the nonzero pattern of the matrix."""
+    csr = m.tocsr()
+    csr.sort_indices()
+    n = csr.shape[0]
+    indptr, indices = csr.indptr, csr.indices
+    data = csr.data.astype(complex if csr.dtype.kind == "c" else float)
+    diag_pos = np.full(n, -1, dtype=np.int64)
+    upper: list[dict] = [{} for _ in range(n)]  # finished rows of U beyond the diagonal: {column: position}
+    for i in range(n):
+        lo, hi = indptr[i], indptr[i + 1]
+        cols = indices[lo:hi]
+        where = {int(c): lo + t for t, c in enumerate(cols)}
+        for t in range(lo, hi):
+            k = int(indices[t])
+            if k >= i:
+                break
+            pivot = data[diag_pos[k]] if diag_pos[k] >= 0 else 0.0
+            if pivot == 0:
+                raise MatlabError("ilu: encountered a zero pivot.", "MATLAB:ilu:ZeroPivot")
+            factor = data[t] / pivot
+            data[t] = factor
+            for j, pos in upper[k].items():
+                hit = where.get(j)
+                if hit is not None:
+                    data[hit] -= factor * data[pos]
+        if i not in where or data[where[i]] == 0:
+            raise MatlabError("ilu: encountered a zero pivot.", "MATLAB:ilu:ZeroPivot")
+        diag_pos[i] = where[i]
+        upper[i] = {c: pos for c, pos in where.items() if c > i}
+    full = sp.csr_matrix((data, indices.copy(), indptr.copy()), shape=csr.shape)
+    return (sp.tril(full, -1) + sp.eye(n)).tocsc(), sp.triu(full).tocsc()
+
+
+def _ichol0(low: sp.csc_matrix) -> sp.csc_matrix:
+    """Incomplete Cholesky with no fill-in, for the lower triangle ``low`` of a symmetric matrix."""
+    csr = low.tocsr()
+    csr.sort_indices()
+    n = csr.shape[0]
+    indptr, indices = csr.indptr.tolist(), csr.indices.tolist()
+    data = csr.data.astype(complex if csr.dtype.kind == "c" else float)
+    is_complex = data.dtype.kind == "c"
+    data = data.tolist() if not is_complex else data
+    rows: list[dict] = [{} for _ in range(n)]  # finished rows below the diagonal: {column: value}
+    diag = [0.0] * n
+    for i in range(n):
+        lo, hi = indptr[i], indptr[i + 1]
+        current: dict = {}
+        acc = 0.0
+        d = None
+        for t in range(lo, hi):
+            k = int(indices[t])
+            if k == i:
+                d = data[t]
+                break
+            rk = rows[k]
+            small, big = (current, rk) if len(current) < len(rk) else (rk, current)
+            if not small:
+                dot = 0.0
+            elif is_complex:
+                dot = sum(v * np.conj(big[c]) for c, v in small.items() if c in big)
+                dot = dot if small is current else np.conj(dot)
+            else:
+                dot = sum(v * big[c] for c, v in small.items() if c in big)
+            val = (data[t] - dot) / diag[k]
+            data[t] = val
+            current[k] = val
+            acc += abs(val) ** 2
+        pivot = (complex(d).real if d is not None else 0.0) - acc
+        if d is None or not pivot > 0:
+            raise MatlabError("ichol: encountered a nonpositive pivot.", "MATLAB:ichol:Breakdown")
+        diag[i] = float(np.sqrt(pivot))
+        data[hi - 1] = diag[i]
+        rows[i] = current
+    return sp.csr_matrix((np.asarray(data), csr.indices.copy(), csr.indptr.copy()), shape=csr.shape).tocsc()
+
+
 def _setup_value(opts: Any, name: str, default: float) -> float:
     if isinstance(opts, Struct) and name in opts.fields:
         return float(np.real(to_numeric(opts.get_field(0, name)).flat[0]))
@@ -1657,7 +1739,8 @@ def _ilu(interp, args, nargout):
     drop = _setup_value(opts, "droptol", 0.0)
     try:
         if kind == "nofill":
-            L, U, P = _ilu_factors(m, 0.0, 1.0)
+            L, U = _ilu0(m)
+            P = sp.eye(m.shape[0], format="csc")
         else:
             L, U, P = _ilu_factors(m, drop, 10.0)
     except RuntimeError:
@@ -1683,17 +1766,16 @@ def _ichol(interp, args, nargout):
     sym = (low + sp.tril(m, -1).conj().T).tocsc()
     if shift:
         sym = sym + shift * sp.diags(sym.diagonal())
+    if kind == "nofill":
+        return SparseMatrix(_ichol0(sp.tril(sym).tocsc()))
     try:
-        L, U, P = _ilu_factors(sym.tocsc(), 0.0 if kind == "nofill" else drop, 1.0 if kind == "nofill" else 10.0)
+        L, U, P = _ilu_factors(sym.tocsc(), drop, 10.0)
     except RuntimeError:
         raise MatlabError("ichol: encountered a nonpositive pivot.", "MATLAB:ichol:Breakdown") from None
     d = np.real(U.diagonal())
     if np.any(d <= 0) or (P != sp.eye(n)).nnz:
         raise MatlabError("ichol: encountered a nonpositive pivot.", "MATLAB:ichol:Breakdown")
-    out = sp.tril(L @ sp.diags(np.sqrt(d)))
-    if kind == "nofill":  # keep the pattern of tril(A)
-        out = out.multiply(low != 0)
-    return SparseMatrix(out)
+    return SparseMatrix(sp.tril(L @ sp.diags(np.sqrt(d))))
 
 
 # -- orderings -----------------------------------------------------------------------------------------

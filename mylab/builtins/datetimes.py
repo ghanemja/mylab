@@ -268,7 +268,11 @@ def format_datetime(s: float, fmt: str, zone: str = "") -> str:
 @lru_cache(maxsize=256)
 def _parse_regex(fmt: str):
     parts, keys = [], []
-    for kind, n in _tokens(fmt):
+    toks = _tokens(fmt)
+    numeric = [t[0] != "lit" and (t[0] in "yudDHhmsS" or (t[0] in "ML" and t[1] <= 2)) for t in toks]
+    for pos, (kind, n) in enumerate(toks):
+        glued = (pos > 0 and numeric[pos - 1]) or (pos + 1 < len(toks) and numeric[pos + 1])
+        two = r"(\d{2})" if glued else r"(\d{1,2})"
         if kind == "lit":
             parts.append(r"\s+" if n.isspace() else re.escape(n))
             continue
@@ -276,10 +280,10 @@ def _parse_regex(fmt: str):
             pat = r"(\d{4})" if n == 4 else r"(\d{2})" if n == 2 else r"(-?\d+)"
             keys.append("yy" if n == 2 else "y")
         elif kind in "ML":
-            pat = r"(\d{2})" if n == 2 else r"(\d{1,2})" if n == 1 else r"([A-Za-z]{3})" if n == 3 else r"([A-Za-z]+)"
+            pat = two if n == 2 else r"(\d{1,2})" if n == 1 else r"([A-Za-z]{3})" if n == 3 else r"([A-Za-z]+)"
             keys.append("M" if n <= 2 else "Mname")
         elif kind == "d":
-            pat = r"(\d{2})" if n == 2 else r"(\d{1,2})"
+            pat = two if n == 2 else r"(\d{1,2})"
             keys.append("d")
         elif kind == "D":
             pat = r"(\d{1,3})"
@@ -288,13 +292,13 @@ def _parse_regex(fmt: str):
             pat = r"([A-Za-z]+)" if n >= 3 or kind == "E" else r"(\d{1,2})"
             keys.append("skip")
         elif kind in "Hh":
-            pat = r"(\d{2})" if n == 2 else r"(\d{1,2})"
+            pat = two if n == 2 else r"(\d{1,2})"
             keys.append(kind)
         elif kind == "m":
-            pat = r"(\d{2})" if n == 2 else r"(\d{1,2})"
+            pat = two if n == 2 else r"(\d{1,2})"
             keys.append("m")
         elif kind == "s":
-            pat = r"(\d{2})" if n == 2 else r"(\d{1,2})"
+            pat = two if n == 2 else r"(\d{1,2})"
             keys.append("s")
         elif kind == "S":
             pat = r"(\d{1,9})"
@@ -396,8 +400,9 @@ _AUTO_FORMATS = [
     "yyyy/MM/dd", "MM/dd/yyyy HH:mm:ss", "MM/dd/yyyy hh:mm:ss a", "MM/dd/yyyy HH:mm", "MM/dd/yyyy hh:mm a",
     "MM/dd/yyyy", "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy HH:mm", "dd/MM/yyyy", "dd.MM.yyyy HH:mm:ss", "dd.MM.yyyy HH:mm",
     "dd.MM.yyyy", "MMM dd, yyyy HH:mm:ss", "MMM dd, yyyy", "MMMM dd, yyyy HH:mm:ss", "MMMM dd, yyyy",
-    "dd MMM yyyy HH:mm:ss", "dd MMM yyyy", "dd MMMM yyyy", "MMM-dd-yyyy", "MMM dd yyyy", "yyyyMMdd'T'HHmmss",
-    "yyyy-MM-dd HH:mm:ss.S", "MM/dd/yy", "yyyy-M-d", "M/d/yyyy", "d-M-yyyy", "HH:mm:ss.S", "HH:mm:ss", "hh:mm:ss a",
+    "MMM dd, yyyy HH:mm", "MMMM dd, yyyy HH:mm", "dd MMM yyyy HH:mm:ss", "dd MMM yyyy HH:mm", "dd MMM yyyy",
+    "dd MMMM yyyy HH:mm:ss", "dd MMMM yyyy HH:mm", "dd MMMM yyyy", "MMM-dd-yyyy", "MMM dd yyyy",
+    "yyyyMMdd'T'HHmmss", "yyyy-MM-dd HH:mm:ss.S", "MM/dd/yy", "HH:mm:ss.S", "HH:mm:ss", "hh:mm:ss a",
     "hh:mm a", "HH:mm", "MMM yyyy", "MMMM yyyy", "MMM-yyyy", "yyyy-MM", "yyyyMMdd",
     "eee MMM dd HH:mm:ss yyyy", "eee, dd MMM yyyy HH:mm:ss",
 ]
@@ -477,7 +482,7 @@ class _TimeArray(MObject):
     """Shared behaviour of datetime and duration arrays: shape, indexing, concatenation, display."""
 
     kind = "time"
-    missing_text = "NaN"
+    fill_value = float("nan")  # what new elements get when an assignment grows the array
 
     def __init__(self, data: Any, fmt: str | None = None):
         a = np.asarray(data, dtype=float)
@@ -527,6 +532,11 @@ class _TimeArray(MObject):
             return []
         return [to_matlab(r) for r in res] if isinstance(res, tuple) else [to_matlab(res)]
 
+    def numeric_error(self, what: str) -> str:
+        return (f"A {self.kind} array cannot be used as a number here. Convert it first (for example with "
+                f"{'datenum or posixtime' if self.kind == 'datetime' else 'seconds, minutes, hours or days'}); "
+                f"for a range of {self.kind} values write colon(first, step, last).")
+
     def object_equals(self, other: Any) -> bool:
         if type(other) is not type(self):
             return False
@@ -543,7 +553,7 @@ class _TimeArray(MObject):
 
     def index_set(self, interp, args: list, value: Any) -> Any:
         vals = self.coerce(value)
-        return self.like(ix.set_(self.data.copy(), list(args), vals, lambda: np.nan))
+        return self.like(ix.set_(self.data.copy(), list(args), vals, lambda: self.fill_value))
 
     def index_delete(self, interp, args: list) -> Any:
         return self.like(ix.delete(self.data, list(args)))
@@ -699,15 +709,14 @@ _UNIT_LABEL = {"y": ("yr", "yrs"), "d": ("day", "days"), "h": ("hr", "hr"), "m":
 
 
 def _num_text(x: float) -> str:
-    if x == int(x) and abs(x) < 1e15:
-        return str(int(x)) if abs(x) < 1e5 else f"{x:.5g}".replace("e+0", "e+")
-    s = f"{x:.5g}"
-    return s
+    if x == int(x) and abs(x) < 1e5:
+        return str(int(x))
+    return f"{x:.5g}"
 
 
 def format_duration(s: float, fmt: str) -> str:
     if s != s:
-        return "NaN"
+        return f"NaN {_UNIT_LABEL[fmt][1]}" if fmt in _UNIT_SECONDS else "NaN"
     if fmt in _UNIT_SECONDS:
         x = s / _UNIT_SECONDS[fmt]
         if math.isinf(x):
@@ -759,6 +768,7 @@ def _check_duration_format(f: str) -> str:
 
 class DurationArray(_TimeArray):
     kind = "duration"
+    fill_value = 0.0
 
     def like(self, data: Any) -> "DurationArray":
         return DurationArray(data, self.fmt)
@@ -2126,8 +2136,13 @@ def _datevec(interp, args, nargout):
         secs = first.data.flatten(order="F")
     elif isinstance(first, DurationArray):
         secs = first.data.flatten(order="F") - EPOCH_DATENUM * DAY
+    elif _text_items(first) is not None:
+        items = _text_items(first)
+        fmt = _classic_to_modern(text(args[1])) if len(args) > 1 and is_text(args[1]) else None
+        secs = parse_texts(items[0], fmt)[0]
     else:
-        secs = np.round((_datenum_values(list(args)).flatten(order="F") - EPOCH_DATENUM) * DAY * 1e6) / 1e6
+        # serial date numbers resolve about 1e-5 s: snap to 0.1 ms so 10:30:45 does not come back as 44.99999
+        secs = np.round((_datenum_values(list(args)).flatten(order="F") - EPOCH_DATENUM) * DAY * 1e4) / 1e4
     parts = fields_from_seconds(secs)
     if nargout > 1:
         return tuple(p.reshape(-1, 1) for p in parts[:nargout])
@@ -2140,6 +2155,11 @@ builtin("datevec")(_datevec)
 @builtin("now")
 def _now(interp, args, nargout):
     return now_seconds() / DAY + EPOCH_DATENUM
+
+
+@builtin("date")
+def _date(interp, args, nargout):
+    return char(format_classic(math.floor(now_seconds() / DAY) * DAY, _CLASSIC_FORMATS[1]))
 
 
 @builtin("today")

@@ -385,6 +385,8 @@ def to_numeric(v: Any, what: str = "operand") -> np.ndarray:
         raise MatlabError(f"Undefined operation for a function handle {what}.")
     if hasattr(v, "to_dense"):  # objects that stand for a numeric array (sparse matrices)
         return to_numeric(v.to_dense(), what)
+    if hasattr(v, "numeric_error"):  # objects that must not be silently treated as numbers
+        raise MatlabError(v.numeric_error(what))
     return to_matlab(v)
 
 

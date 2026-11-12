@@ -129,6 +129,7 @@ HELP = {
                 "Splits dates into components. Each row of v is [year month day hour minute second]. t can "
                 "be serial date numbers, date text or datetimes."),
     "now": ("t = now", "The current local date and time as a serial date number. " + _DN),
+    "date": ("s = date", "Today's date as text in the form '15-Mar-2024'."),
     "today": ("t = today", "The current local date as a whole serial date number."),
     "clock": ("c = clock", "The current local date and time as [year month day hour minute seconds]."),
     "eomday": ("d = eomday(year, month)", "Last day of the given month, taking leap years into account: "
