@@ -91,10 +91,9 @@ def cast_class(a: np.ndarray, cls: str | None) -> np.ndarray:
 
 def default_dim(a: np.ndarray) -> int:
     """First non-singleton dimension (0-based axis)."""
-    if a.shape[0] != 1:
-        return 0
-    if a.shape[1] != 1:
-        return 1
+    for axis, n in enumerate(a.shape):
+        if n != 1:
+            return axis
     return 0
 
 

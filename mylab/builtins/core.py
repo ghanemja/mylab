@@ -104,11 +104,25 @@ def _rngf(interp, args, nargout):
 @builtin("linspace")
 def _linspace(interp, args, nargout):
     nargs(args, 2, 3, "linspace")
-    a, b = num(args[0]).flat[0], num(args[1]).flat[0]
-    n = to_int(args[2], "n") if len(args) > 2 else 100
+    va, vb = num(args[0]), num(args[1])
+    if va.size != 1 or vb.size != 1:
+        raise MatlabError("linspace: the end points must be scalars.")
+    single = np.float32 in (va.dtype, vb.dtype) or np.complex64 in (va.dtype, vb.dtype)
+    a = complex(va.flat[0]) if va.dtype.kind == "c" else float(va.flat[0])
+    b = complex(vb.flat[0]) if vb.dtype.kind == "c" else float(vb.flat[0])
+    n = 100
+    if len(args) > 2:
+        nv = np.real(num(args[2]))
+        if nv.size != 1 or np.isnan(nv.flat[0]):
+            raise MatlabError("linspace: the number of points must be a scalar.")
+        n = int(np.floor(min(float(nv.flat[0]), 2.0 ** 53)))  # a fractional count is rounded down
     if n == 1:
-        return np.array([[b]], dtype=complex if np.iscomplexobj(b) else float)
-    return np.linspace(a, b, max(n, 0)).reshape(1, -1)
+        r = np.array([[b]], dtype=complex if isinstance(b, complex) else float)
+    else:
+        r = np.linspace(a, b, max(n, 0)).reshape(1, -1)
+    if single:
+        r = r.astype(np.complex64 if r.dtype.kind == "c" else np.float32)
+    return r
 
 
 @builtin("logspace")
@@ -173,6 +187,7 @@ def _repmat(interp, args, nargout):
         reps = [r[0], r[0]] if len(r) == 1 else r
     else:
         reps = [to_int(a, "repetitions") for a in args[1:]]
+    reps = [max(r, 0) for r in reps]  # a negative count gives an empty result
     if isinstance(v, MString):
         if int(np.prod(reps)) == 1:
             return v
@@ -199,6 +214,8 @@ def _reshape(interp, args, nargout):
         unknown = None
         for k, a in enumerate(args[1:]):
             if isinstance(a, np.ndarray) and a.size == 0:
+                if unknown is not None:
+                    raise MatlabError("reshape: only one size may be [] (the one to be calculated).")
                 unknown = k
                 dims.append(1)
             else:
@@ -263,6 +280,9 @@ def _ndgrid(interp, args, nargout):
 def _diag(interp, args, nargout):
     a = args[0]
     k = to_int(args[1], "k") if len(args) > 1 else 0
+    if isinstance(a, np.ndarray) and a.shape == (0, 0):
+        n = abs(k)
+        return np.zeros((n, n), dtype=a.dtype)
     if a.shape[0] == 1 or a.shape[1] == 1:
         return np.diag(a.flatten(), k)
     return np.diag(a, k).reshape(-1, 1)
@@ -306,11 +326,20 @@ def _intmin(interp, args, nargout):
 
 @builtin("size")
 def _size(interp, args, nargout):
-    nargs(args, 1, 2, "size")
+    nargs(args, 1, None, "size")
     dims = shape_of(args[0])
-    if len(args) == 2:
-        want = [int(d) for d in num(args[1]).flatten()]
+    if len(args) >= 2:
+        if len(args) == 2:
+            want = [to_int(np.array([[d]]), "dimension") for d in np.real(num(args[1])).flatten()]
+        else:
+            want = [to_int(a, "dimension") for a in args[1:]]
+        if not want or any(d < 1 for d in want):
+            raise MatlabError("size: dimensions must be positive integers.")
         vals = [float(dims[d - 1]) if d <= len(dims) else 1.0 for d in want]
+        if nargout > 1:
+            if nargout != len(vals):
+                raise MatlabError("size: the number of outputs must match the number of dimensions asked for.")
+            return tuple(vals)
         return vals[0] if len(vals) == 1 else np.array([vals])
     if nargout <= 1:
         return np.array([[float(d) for d in dims]])
@@ -348,7 +377,7 @@ def _shape_pred(fn):
 
 builtin("isempty")(_shape_pred(lambda d: 0 in d))
 builtin("isscalar")(_shape_pred(lambda d: all(x == 1 for x in d)))
-builtin("isvector")(_shape_pred(lambda d: len(d) == 2 and (d[0] == 1 or d[1] == 1) and d[0] * d[1] >= 1))
+builtin("isvector")(_shape_pred(lambda d: len(d) == 2 and (d[0] == 1 or d[1] == 1)))
 builtin("isrow")(_shape_pred(lambda d: len(d) == 2 and d[0] == 1))
 builtin("iscolumn")(_shape_pred(lambda d: len(d) == 2 and d[1] == 1))
 builtin("ismatrix")(_shape_pred(lambda d: len(d) == 2))
@@ -432,7 +461,8 @@ builtin("ischar")(_type_pred(is_char))
 builtin("isstring")(_type_pred(lambda v: isinstance(v, (MString, StringArray))))
 builtin("iscell")(_type_pred(lambda v: isinstance(v, Cell)))
 builtin("isstruct")(_type_pred(lambda v: isinstance(v, Struct)))
-builtin("isreal")(_type_pred(lambda v: not (isinstance(v, np.ndarray) and v.dtype.kind == "c")))
+builtin("isreal")(_type_pred(lambda v: isinstance(v, (MString, StringArray)) or (
+    isinstance(v, np.ndarray) and v.dtype.kind != "c")))
 builtin("is_function_handle")(_type_pred(lambda v: isinstance(v, FunctionHandle)))
 builtin("istext")(_type_pred(lambda v: isinstance(v, (MString, StringArray)) or is_char(v)))
 
@@ -534,5 +564,15 @@ def _char_rows(rows: list[str]) -> np.ndarray:
 
 @builtin("cast")
 def _cast(interp, args, nargout):
-    return cast_class(num(args[0]), text(args[1]))
+    nargs(args, 2, 3, "cast")
+    cls = text(args[1])
+    if cls.lower() == "like":
+        if len(args) < 3:
+            raise MatlabError("cast: 'like' needs a prototype value, for example cast(x, 'like', p).")
+        cls = class_name(args[2])
+    elif len(args) > 2:
+        raise MatlabError("Too many input arguments for cast.")
+    if cls == "char":
+        return args[0] if is_char(args[0]) else codes_to_char(num(args[0]))
+    return cast_class(num(args[0]), cls)
 

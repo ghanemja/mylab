@@ -67,9 +67,25 @@ def _num2cell(interp, args, nargout):
             inner[0, 0] = v.data[idx]
             data[idx] = Cell(inner)
         return Cell(data)
+    if not isinstance(v, np.ndarray):
+        v = num(v)
+    if len(args) > 1:
+        # num2cell(A, dims): each cell holds a slice that spans the listed dimensions
+        dims = sorted({int(d) - 1 for d in np.real(num(args[1])).flatten()})
+        if not dims or dims[0] < 0:
+            raise MatlabError("num2cell: dimensions must be positive integers.")
+        from ..values import as_2d
+        nd = max(v.ndim, dims[-1] + 1)
+        full = v.reshape(v.shape + (1,) * (nd - v.ndim))
+        out_shape = tuple(1 if d in dims else full.shape[d] for d in range(nd))
+        data = np.empty(out_shape, dtype=object)
+        for idx in np.ndindex(out_shape):
+            sel = tuple(slice(None) if d in dims else slice(idx[d], idx[d] + 1) for d in range(nd))
+            data[idx] = as_2d(full[sel].copy())
+        return Cell(as_2d(data))
     data = np.empty(v.shape, dtype=object)
     for idx in np.ndindex(v.shape):
-        data[idx] = v[idx[0]:idx[0] + 1, idx[1]:idx[1] + 1].copy()
+        data[idx] = v[idx].reshape(1, 1).copy()
     return Cell(data)
 
 
@@ -254,7 +270,7 @@ def _legacy_cellfun(name, c):
         "isempty": lambda v: np.size(getattr(v, "data", v)) == 0 if not isinstance(v, str) else False,
         "length": lambda v: 0 if 0 in np.shape(getattr(v, "data", v)) else max(np.shape(getattr(v, "data", v))),
         "numel": lambda v: int(np.prod(np.shape(getattr(v, "data", v)))),
-        "isreal": lambda v: not (isinstance(v, np.ndarray) and v.dtype.kind == "c"),
+        "isreal": lambda v: isinstance(v, np.ndarray) and v.dtype.kind != "c",
         "islogical": lambda v: isinstance(v, np.ndarray) and v.dtype == bool,
         "ndims": lambda v: 2,
     }

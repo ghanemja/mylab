@@ -90,13 +90,23 @@ def _polyval(interp, args, nargout):
 
 @builtin("roots")
 def _roots(interp, args, nargout):
-    r = np.roots(fnum(args[0]).flatten())
-    return simplify(r.reshape(-1, 1)) if r.size else np.zeros((0, 1))
+    p = fnum(args[0])
+    if p.size and not (p.ndim == 2 and 1 in p.shape):
+        raise MatlabError("roots: the input must be a vector of polynomial coefficients.")
+    p = p.flatten()
+    if p.size and not np.all(np.isfinite(p)):
+        raise MatlabError("roots: the coefficients must not contain NaN or Inf.")
+    r = np.roots(p)
+    if not np.any(p):
+        return np.zeros((0, 0))  # empty or all-zero polynomial
+    return simplify(r.reshape(-1, 1))
 
 
 @builtin("poly")
 def _poly(interp, args, nargout):
     a = fnum(args[0])
+    if a.size == 0:
+        return np.array([[1.0]])
     if a.shape[0] == a.shape[1] and a.shape[0] > 1:
         return simplify(np.poly(a).reshape(1, -1))
     return simplify(np.poly(a.flatten()).reshape(1, -1))
@@ -104,7 +114,28 @@ def _poly(interp, args, nargout):
 
 @builtin("polyder")
 def _polyder(interp, args, nargout):
-    return np.polyder(fnum(args[0]).flatten()).reshape(1, -1)
+    nargs(args, 1, 2, "polyder")
+
+    def trim(p):
+        """Drop leading zeros; the zero polynomial is [0]."""
+        p = np.atleast_1d(p)
+        nz = np.nonzero(p)[0]
+        return p[nz[0]:] if nz.size else np.zeros(1, dtype=p.dtype)
+
+    def der(p):
+        p = np.atleast_1d(p)
+        return np.polyder(p) if p.size > 1 else np.zeros(1)
+
+    a = fnum(args[0]).flatten()
+    if len(args) == 1:
+        return simplify(der(a).reshape(1, -1))
+    b = fnum(args[1]).flatten()
+    if nargout < 2:  # derivative of the product a*b
+        return simplify(trim(der(np.convolve(a, b))).reshape(1, -1))
+    # derivative of the quotient a/b = q/d
+    q = np.polysub(np.convolve(der(a), b), np.convolve(a, der(b)))
+    d = np.convolve(b, b)
+    return simplify(trim(q).reshape(1, -1)), simplify(trim(d).reshape(1, -1))
 
 
 @builtin("polyint")
@@ -414,8 +445,22 @@ def _interp2(interp, args, nargout):
             raise MatlabError(f"Unknown interpolation method '{method}'.")
         if rgi_method == "cubic" and (x.size < 4 or y.size < 4):
             rgi_method = "linear"
-        f = RegularGridInterpolator((y, x), Z, method=rgi_method, bounds_error=False, fill_value=fill)
-        out = f(np.stack([yqf, xqf], axis=-1))
+        if rgi_method == "nearest":
+            def nearest(grid, q):
+                # index of the closest grid point; a query halfway between two points takes the upper one
+                hi = np.clip(np.searchsorted(grid, q, side="right"), 1, max(grid.size - 1, 1))
+                lo = hi - 1
+                if grid.size == 1:
+                    return np.zeros(q.shape, dtype=int)
+                return np.where(q - grid[lo] >= grid[hi] - q, hi, lo)
+
+            inside = (xqf >= x[0]) & (xqf <= x[-1]) & (yqf >= y[0]) & (yqf <= y[-1])
+            safe_x, safe_y = np.where(inside, xqf, x[0]), np.where(inside, yqf, y[0])
+            picked = Z[nearest(y, safe_y), nearest(x, safe_x)]
+            out = np.where(inside, picked, fill)
+        else:
+            f = RegularGridInterpolator((y, x), Z, method=rgi_method, bounds_error=False, fill_value=fill)
+            out = f(np.stack([yqf, xqf], axis=-1))
     return simplify(np.asarray(out).reshape(Xq.shape, order="F"))
 
 
@@ -666,6 +711,20 @@ def _integral(interp, args, nargout):
     for k in range(0, len(rest) - 1, 2):
         if is_text(rest[k]):
             opts[text(rest[k]).lower()] = float(fnum(rest[k + 1]).flat[0])
+    if opts.get("arrayvalued"):
+        from scipy.integrate import quad_vec
+        shape = []
+
+        def g(x):
+            v = _call_vector(interp, f, [np.array([[float(x)]])])
+            if not shape:
+                shape.append(v.shape)
+            elif v.shape != shape[0]:
+                raise MatlabError("integral: the function must return arrays of the same size.")
+            return v.flatten(order="F")
+
+        val, _err = quad_vec(g, a, b, epsabs=opts.get("abstol", 1e-10), epsrel=opts.get("reltol", 1e-6))
+        return simplify(np.asarray(val).reshape(shape[0], order="F"))
     val, _err = quad(lambda x: _call_scalar(interp, f, x), a, b,
                      epsabs=opts.get("abstol", 1e-10), epsrel=opts.get("reltol", 1e-6), limit=200)
     return val

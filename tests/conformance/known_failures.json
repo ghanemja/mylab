@@ -19,34 +19,11 @@
  "arith/integer_saturation": {
   "s18": "int64/uint64 values go through double: no saturation and precision loss above 2^53"
  },
- "arith/logical_arithmetic": {
-  "l19": "max of logical returns double (expected logical)"
- },
  "arith/single_double_mixing": {
   "m10": "single class is not propagated (result is double)",
   "m12": "single class is not propagated (result is double)",
   "m3": "single vs double comparison is done in double precision",
   "m9": "single class is not propagated (result is double)"
- },
- "bits/bit_operations": {
-  "b10": "bit functions return double for integer inputs and do not wrap to the type",
-  "b11": "bit functions return double for integer inputs and do not wrap to the type",
-  "b12": "bit functions return double for integer inputs and do not wrap to the type",
-  "b18": "bit functions return double for integer inputs and do not wrap to the type",
-  "b21": "bitshift with an array of shifts uses the wrong shift per element",
-  "b22": "bit functions return double for integer inputs and do not wrap to the type",
-  "b23": "bit functions return double for integer inputs and do not wrap to the type",
-  "b24": "bit functions return double for integer inputs and do not wrap to the type",
-  "b28": "bit functions return double for integer inputs and do not wrap to the type",
-  "b29": "bit functions return double for integer inputs and do not wrap to the type",
-  "b32": "bit functions return double for integer inputs and do not wrap to the type",
-  "b33": "bit functions return double for integer inputs and do not wrap to the type",
-  "b7": "bit functions return double for integer inputs and do not wrap to the type",
-  "b8": "bit functions return double for integer inputs and do not wrap to the type",
-  "b9": "bit functions return double for integer inputs and do not wrap to the type",
-  "c7": "bit functions return double for integer inputs and do not wrap to the type",
-  "c8": "bit functions return double for integer inputs and do not wrap to the type",
-  "t3": "bitand of two different integer classes is accepted"
  },
  "cells/arrayfun_forms": {
   "a18": "uniform output of cellfun/arrayfun loses an integer class",
@@ -60,9 +37,7 @@
   "q": "[q{1:2}] = deal(a, b) fails when q does not exist yet"
  },
  "cells/num2cell_cell2mat": {
-  "e1": "cell2mat of mixed classes does not raise an error",
-  "n11": "num2cell(A, dim) ignores dim",
-  "n12": "num2cell(A, dim) ignores dim"
+  "e1": "cell2mat of mixed classes does not raise an error"
  },
  "concat/empties": {
   "e20": "class of an empty operand is ignored in concatenation"
@@ -106,38 +81,6 @@
   "r5": "[varargout{1:nargout}] = f(...) does not forward nargout to f",
   "r6": "[varargout{1:nargout}] = f(...) does not forward nargout to f"
  },
- "elemath/complex_domain": {
-  "c1": "asin/acos/acosh of a real argument outside the domain take the wrong branch",
-  "c19": "asin/acos/acosh of a real argument outside the domain take the wrong branch",
-  "c2": "asin/acos/acosh of a real argument outside the domain take the wrong branch"
- },
- "elemath/complex_functions": {
-  "f35": "fix of a complex number raises a Python error"
- },
- "elemath/exp_log": {
-  "e19": "function is missing: realsqrt",
-  "e25": "[f, e] = log2(x) is not supported",
-  "e26": "[f, e] = log2(x) is not supported",
-  "e27": "function is missing: pow2",
-  "f25": "[f, e] = log2(x) is not supported",
-  "f26": "[f, e] = log2(x) is not supported"
- },
- "elemath/special_functions": {
-  "g3": "gamma of a negative integer is NaN (expected Inf)"
- },
- "find/find_forms": {
-  "f11": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
-  "f14": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
-  "s11": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
-  "s14": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)"
- },
- "find/find_nd_and_logical": {
-  "c9": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
-  "cv10": "third output of find for logical input is double (expected logical)",
-  "r9": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
-  "sr9": "find of [] or of a scalar zero returns the wrong empty size (expected 0x0)",
-  "v10": "third output of find for logical input is double (expected logical)"
- },
  "indexing/assign_shape_rules": {
   "t3": "A(1:2,1:2) = 1x4 vector is accepted (shape mismatch must raise an error)"
  },
@@ -147,13 +90,6 @@
  },
  "indexing/grow_vectors": {
   "g": "a 0x1 empty grows into a row by linear index (MATLAB keeps a column)"
- },
- "linalg/kron_tril_triu_diag": {
-  "d9": "diag([]) is 0x1 (expected 0x0)"
- },
- "linalg/norm_forms": {
-  "c22": "single class is not propagated (result is double)",
-  "n22": "single class is not propagated (result is double)"
  },
  "logic/isequal_forms": {
   "e25": "isequal of two handles to the same function is false",
@@ -180,62 +116,6 @@
   "r24": "function is missing: isStringScalar",
   "r25": "function is missing: convertStringsToChars"
  },
- "matlab_only/newer_functions": {
-  "v26": "function is missing: isoutlier",
-  "v27": "function is missing: standardizeMissing",
-  "v28": "function is missing: anynan",
-  "v29": "function is missing: allfinite",
-  "v30": "height/width do not accept plain arrays",
-  "v31": "height/width do not accept plain arrays",
-  "v34": "function is missing: uniquetol"
- },
- "misc/all_option_forms": {
-  "o10": "std/var ignore the 'all' option",
-  "o11": "std/var ignore the 'all' option",
-  "o16": "max ignores 'includenan'",
-  "o24": "cumsum ignores 'omitnan'",
-  "o27": "max ignores 'includenan'",
-  "o28": "max ignores 'includenan'",
-  "o30": "vecdim ([1 2]) is not supported in sum/max",
-  "o9": "vecdim ([1 2]) is not supported in sum/max"
- },
- "misc/utility_numbers": {
-  "d25": "function is missing: rat",
-  "d26": "function is missing: rat",
-  "n25": "function is missing: rat",
-  "n26": "function is missing: rat",
-  "u15": "lcm of integers returns double"
- },
- "numeric/cumulative_and_differences": {
-  "d3": "function is missing: del2"
- },
- "numeric/integral_quad": {
-  "q12": "integral with 'ArrayValued' returns only the first component"
- },
- "numeric/trapz_cumtrapz": {
-  "c4": "trapz/cumtrapz mishandle the dim argument",
-  "t11": "trapz/cumtrapz mishandle the dim argument",
-  "t12": "trapz/cumtrapz mishandle the dim argument",
-  "t13": "trapz with a scalar spacing fails",
-  "t4": "trapz/cumtrapz mishandle the dim argument",
-  "t7": "trapz([]) is 1x0 (expected 0)"
- },
- "poly/polyder_polyint": {
-  "d2": "polyder of a constant is empty (expected 0)",
-  "d4": "polyder(a, b) (product and quotient forms) is not supported",
-  "dd5": "polyder(a, b) (product and quotient forms) is not supported",
-  "n5": "polyder(a, b) (product and quotient forms) is not supported"
- },
- "poly/roots_poly": {
-  "p3": "poly([]) raises an internal error",
-  "r11": "roots of an empty or all-zero polynomial is 0x1 (expected 0x0)",
-  "r6": "roots of an empty or all-zero polynomial is 0x1 (expected 0x0)",
-  "s11": "roots of an empty or all-zero polynomial is 0x1 (expected 0x0)",
-  "s6": "roots of an empty or all-zero polynomial is 0x1 (expected 0x0)"
- },
- "poly/spline_pchip_interp2": {
-  "z5": "interp2 'nearest' rounds a tie down (expected up)"
- },
  "ranges/classes": {
   "c16": "single class is not propagated (result is double) by the colon operator",
   "c6": "single class is not propagated (result is double) by the colon operator"
@@ -243,176 +123,6 @@
  "ranges/in_loops": {
   "e1": "the loop variable stays undefined after a loop over an empty range",
   "se1": "the loop variable stays undefined after a loop over an empty range"
- },
- "ranges/linspace_logspace": {
-  "l13": "linspace rejects a non-integer point count (MATLAB floors it)",
-  "l15": "single class is not propagated (result is double)"
- },
- "reductions/any_all_forms": {
-  "a20": "reduction along a dimension beyond ndims raises a Python error"
- },
- "reductions/cumsum_cumprod": {
-  "c14": "reduction along a dimension beyond ndims raises a Python error"
- },
- "reductions/diff_forms": {
-  "d7": "diff of a scalar or an empty returns the wrong empty size",
-  "s7": "diff of a scalar or an empty returns the wrong empty size",
-  "s9": "diff of a scalar or an empty returns the wrong empty size"
- },
- "reductions/dot_cross_norm": {
-  "d5": "dot(A, B, dim) ignores dim"
- },
- "reductions/first_nonsingleton": {
-  "f9": "sum does not skip leading singleton dimensions of an N-D array"
- },
- "reductions/mean_classes": {
-  "c6": "mean ignores 'native'",
-  "c7": "mean ignores 'double'",
-  "c8": "median of integers returns double (expected the integer class)",
-  "v6": "mean ignores 'native'",
-  "v8": "median of integers returns double (expected the integer class)"
- },
- "reductions/min_max_classes": {
-  "c10": "max of logical returns double (expected logical)",
-  "c12": "single class is not propagated (result is double)",
-  "c4": "single class is not propagated (result is double)",
-  "c5": "max of logical returns double (expected logical)",
-  "t9": "min of two different integer classes is accepted"
- },
- "reductions/min_max_forms": {
-  "m10": "max of a non-0x0 empty returns 0x0",
-  "m11": "max of a non-0x0 empty returns 0x0",
-  "m18": "max of a non-0x0 empty returns 0x0"
- },
- "reductions/mode_forms": {
-  "c6": "mode with more than one output is not supported",
-  "f15": "mode with more than one output is not supported",
-  "f5": "mode with more than one output is not supported",
-  "f6": "mode with more than one output is not supported",
-  "m15": "mode with more than one output is not supported",
-  "m5": "mode with more than one output is not supported",
-  "m6": "mode with more than one output is not supported"
- },
- "reductions/nd_dims": {
-  "n15": "sum does not skip leading singleton dimensions of an N-D array"
- },
- "reductions/std_var_forms": {
-  "s10": "std/var of a 0x3 empty return a scalar (expected 1x3 NaN)",
-  "s9": "std/var reject a weight vector",
-  "v10": "std/var reject a weight vector",
-  "v11": "std/var reject a weight vector",
-  "v16": "std/var of a 0x3 empty return a scalar (expected 1x3 NaN)",
-  "v17": "reduction along a dimension beyond ndims raises a Python error"
- },
- "reductions/sum_classes": {
-  "c12": "sum of an empty integer array returns double",
-  "c5": "sum ignores or mishandles the 'double'/'native' option",
-  "c7": "sum ignores or mishandles the 'double'/'native' option",
-  "c8": "sum ignores or mishandles the 'double'/'native' option",
-  "v5": "sum ignores or mishandles the 'double'/'native' option",
-  "v7": "sum ignores or mishandles the 'double'/'native' option"
- },
- "rounding/gcd_lcm_factor_primes": {
-  "c5": "gcd/lcm of integers return double",
-  "g5": "gcd/lcm of integers return double",
-  "l3": "gcd/lcm of integers return double",
-  "n10": "nchoosek of a char vector returns double"
- },
- "rounding/mod_rem_integers": {
-  "c13": "single class is not propagated (result is double) by mod",
-  "c5": "mod/rem of integers return double (expected the integer class)",
-  "c6": "mod/rem of integers return double (expected the integer class)",
-  "i1": "mod/rem of integers return double (expected the integer class)",
-  "i10": "mod/rem of integers return double (expected the integer class)",
-  "i11": "mod/rem of integers return double (expected the integer class)",
-  "i12": "mod/rem of integers return double (expected the integer class)",
-  "i13": "single class is not propagated (result is double) by mod",
-  "i16": "mod/rem of integers return double (expected the integer class)",
-  "i2": "mod/rem of integers return double (expected the integer class)",
-  "i3": "mod/rem of integers return double (expected the integer class)",
-  "i4": "mod/rem of integers return double (expected the integer class)",
-  "i5": "mod/rem of integers return double (expected the integer class)",
-  "i6": "mod/rem of integers return double (expected the integer class)",
-  "i7": "mod/rem of integers return double (expected the integer class)",
-  "i8": "mod/rem of integers return double (expected the integer class)",
-  "i9": "mod/rem of integers return double (expected the integer class)"
- },
- "rounding/round_digits": {
-  "d7": "round(x, n, 'significant') ignores 'significant'",
-  "d8": "round(x, n, 'significant') ignores 'significant'"
- },
- "rounding/round_family": {
-  "r1": "round/ceil/fix lose the sign of a negative zero result",
-  "r14": "fix of a complex number raises a Python error",
-  "r18": "round(0.49999999999999994) is 1 (expected 0)",
-  "r19": "round/ceil/fix lose the sign of a negative zero result",
-  "r8": "round/ceil/fix lose the sign of a negative zero result",
-  "r9": "round/ceil/fix lose the sign of a negative zero result"
- },
- "sets/intersect_union": {
-  "a12": "intersect ignores 'rows'",
-  "b12": "intersect ignores 'rows'",
-  "b2": "third output of union lists all of B (expected only the elements taken from B)",
-  "c12": "intersect ignores 'rows'",
-  "c8": "union/intersect of a row and a column return a row (expected a column)",
-  "c9": "union/intersect of a row and a column return a row (expected a column)",
-  "sc8": "union/intersect of a row and a column return a row (expected a column)",
-  "sc9": "union/intersect of a row and a column return a row (expected a column)"
- },
- "sets/nan_in_set_operations": {
-  "n1": "FLAKY: set functions give a nondeterministic order when the inputs contain NaN (expected NaNs last)",
-  "n2": "FLAKY: set functions give a nondeterministic order when the inputs contain NaN (expected NaNs last)",
-  "n7": "FLAKY: set functions give a nondeterministic order when the inputs contain NaN (expected NaNs last)",
-  "n8": "unique merges NaNs (each NaN is distinct in MATLAB)"
- },
- "sets/setdiff_setxor": {
-  "d6": "setdiff ignores 'rows'",
-  "d9": "setdiff of char returns double"
- },
- "sets/unique_basic": {
-  "c13": "unique of logical returns double",
-  "u13": "unique of logical returns double",
-  "u6": "unique merges NaNs (each NaN is distinct in MATLAB)"
- },
- "sets/unique_options": {
-  "i6": "unique(A, 'rows', 'stable') ignores 'stable'",
-  "i8": "unique merges NaNs (each NaN is distinct in MATLAB)",
-  "j6": "unique(A, 'rows', 'stable') ignores 'stable'",
-  "u6": "unique(A, 'rows', 'stable') ignores 'stable'",
-  "u8": "unique merges NaNs (each NaN is distinct in MATLAB)"
- },
- "sizes/cat_kron_misc": {
-  "cp1": "function is missing: compan",
-  "iv1": "function is missing: invhilb"
- },
- "sizes/repmat_forms": {
-  "r18": "repmat with a negative count raises an error (expected an empty)",
-  "s18": "repmat with a negative count raises an error (expected an empty)"
- },
- "sizes/reshape_forms": {
-  "t3": "reshape with two [] placeholders is accepted"
- },
- "sizes/shape_predicates": {
-  "p2": "isvector of 1x0 and 0x1 is false (expected true)"
- },
- "sizes/size_forms": {
-  "c22": "[a, b] = size(A, [d1 d2]) is not supported",
-  "r22": "[a, b] = size(A, [d1 d2]) is not supported",
-  "s23": "size(A, d1, d2) is not supported"
- },
- "sorting/sort_basic": {
-  "s14": "reduction along a dimension beyond ndims raises a Python error"
- },
- "sorting/sort_complex_char_int": {
-  "s7": "sort of complex values with equal magnitude does not order by angle"
- },
- "sorting/sort_nan_inf": {
-  "i4": "descending sort does not put NaN first when Inf is present",
-  "s4": "descending sort does not put NaN first when Inf is present"
- },
- "sorting/sort_ties_stability": {
-  "c7": "sort of logical returns double",
-  "s7": "sort of logical returns double"
  },
  "strings/blanks_repmat_misc": {
   "b20": "strcat with a char matrix flattens it"
@@ -555,19 +265,5 @@
   "v4": "cell2struct of a 2-D cell along dimension 2 fails",
   "z4": "cell2struct of a 2-D cell along dimension 2 fails",
   "z5": "struct2cell of a struct array returns only the first element"
- },
- "types/cast_conversions": {
-  "c6": "cast(x, 'char') is not supported",
-  "c9": "cast(x, 'like', p) is not supported",
-  "k9": "cast(x, 'like', p) is not supported"
- },
- "types/is_functions": {
-  "q8": "isreal of a cell, struct or function handle is true (expected false)"
- },
- "types/mixed_class_operations": {
-  "c30": "single class is not propagated (result is double)",
-  "c32": "single class is not propagated (result is double)",
-  "c33": "single class is not propagated (result is double)",
-  "c42": "single class is not propagated (result is double)"
  }
 }
