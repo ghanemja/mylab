@@ -48,7 +48,26 @@ def _format_result(result, image_cls) -> list[Any]:
         parts.append(image_cls(data=gif, format="gif"))
     for png in result.figures:
         parts.append(image_cls(data=png, format="png"))
+    if getattr(result, "ui", None):
+        parts.append(_app_note(result.ui))
     return parts
+
+
+def _app_note(tree: dict) -> str:
+    """Text for app windows (uifigure, uicontrol): what is in them, and where a snapshot was saved."""
+    import tempfile
+
+    from .uiweb import outline, static_html
+    note = "The code built an app window. Its components:\n" + outline(tree)
+    try:
+        fd, path = tempfile.mkstemp(prefix="mylab-app-", suffix=".html")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(static_html(tree))
+        note += f"\nA static HTML snapshot was saved to {path}."
+    except OSError:
+        pass
+    return note + ("\nThe controls cannot be operated from here; to use the app, run the file with the mylab "
+                   "command (it opens in a web browser) or in the mylab web app.")
 
 
 def build_server():

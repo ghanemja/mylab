@@ -8,6 +8,8 @@
  *   "variables", "showVariable" {name}, "complete" {prefix}, "help" {name}, "reset"
  *   "lint"     { code, known }              problems in one file (mylab.lint.check_source)
  *   "helpIndex"                             { name: [usage lines, one-line description] }
+ *   "uiEvent"  { event }                    one user action in an app window (mylab.ui); runs callbacks
+ *   "uiClose"                               close every app window
  *   "inspect"  { name, path, row, rows, col, cols }  one page of a variable as a grid
  *   "csv"      { name, path, maxCells }     a variable as CSV text
  *
@@ -458,7 +460,32 @@ def _csv(name, path_json, max_cells):
         lines.append(",".join(([q(rownames[r])] if rownames else []) + [text(get(r, c)) for c in range(cols)]))
     return json.dumps({"csv": "\\n".join(lines) + "\\n", "truncated": rows > limit, "rows": min(rows, limit)})
 
+# -- app windows (uifigure, uicontrol): see mylab/ui.py --
+def _ui_event(event_json):
+    before = _scan()
+    del _messages[:]
+    try:
+        out = _session.ui_event(json.loads(event_json))
+    except Exception as e:  # engine bug: report it instead of killing the worker
+        out = {"output": "", "error": f"Internal error ({type(e).__name__}): {e}", "update": None,
+               "figures": [], "animations": [], "internal": traceback.format_exc()}
+    out["dialogs"] = list(_messages)
+    del _messages[:]
+    try:
+        out["variables"] = _vars()
+    except Exception:
+        out["variables"] = []
+    after = _scan()
+    out["_changed"] = [[p, v[1]] for p, v in after.items() if before.get(p) != v]
+    out["_present"] = list(after)
+    return json.dumps(out)
+
+def _ui_close():
+    _session.ui_close()
+    return "null"
+
 _api = {
+    "ui_event": _ui_event, "ui_close": _ui_close,
     "run": _run, "trace": _trace, "publish": _publish, "test": _test, "wipe": _wipe,
     "vars": lambda: json.dumps(_vars()), "show": _show,
     "complete": _complete, "help": _help, "reset": _reset, "cwd": _cwd,
@@ -672,6 +699,16 @@ const handlers = {
   },
   inspect({ name, path, row, rows, col, cols }) {
     return { result: JSON.parse(call("inspect", String(name), JSON.stringify(path || []), row || 0, rows || 50, col || 0, cols || 20)) };
+  },
+  // app windows
+  uiEvent({ event }) {
+    stdoutBuffer = [];
+    const out = withStdout(JSON.parse(call("ui_event", JSON.stringify(event || {}))));
+    const transfer = collectWritten(out);
+    return { result: out, transfer };
+  },
+  uiClose() {
+    return { result: JSON.parse(call("ui_close")) };
   },
   csv({ name, path, maxCells }) {
     return { result: JSON.parse(call("csv", String(name), JSON.stringify(path || []), maxCells || 200000)) };

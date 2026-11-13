@@ -476,8 +476,7 @@ class UIState:
         self.guidata: dict[int, Any] = {}             # id(figure node) -> data
         self.waiting: set[int] = set()                # figures inside uiwait
         self.wait_hook = None                         # callable(interp, figure node) run by uiwait
-        self.last_error: str | None = None
-        self.errors: list[str] = []
+        self.answers: dict[str, str] = {}             # dialog id -> button pressed (for a waiting uiconfirm)
 
 
 def state(interp) -> UIState:
@@ -1295,7 +1294,9 @@ class UIComponent(MObject):
             p.update(text=_txt(g("Text")), value=self.is_on())
             if k == "togglebutton":
                 p["toggle"] = True
-        elif k == "editfield":
+        if not _empty(self.props.get("ValueChangingFcn")):
+            p["live"] = True  # the front end also reports the value while it is being changed
+        if k == "editfield":
             p.update(value=_txt(g("Value")), placeholder=_txt(g("Placeholder")))
             if not _onoff(g("Editable")):
                 p["editable"] = False
@@ -1340,10 +1341,14 @@ class UIComponent(MObject):
             p["color"] = _css_color(g("Color")) or "#00ff00"
         elif k == "table":
             p.update(table_json(self))
+            if not _empty(self.props.get("CellSelectionCallback")) or not _empty(self.props.get("SelectionChangedFcn")):
+                p["selectable"] = True
         elif k == "image":
             p["src"] = image_source(g("ImageSource")) or ""
             p["scale"] = _txt(g("ScaleMethod")).lower()
             p["alt"] = _txt(g("AltText"))
+            if not _empty(self.props.get("ImageClickedFcn")):
+                p["clickable"] = True
         elif k == "datepicker":
             p["value"] = self._date_iso()
         return p
@@ -2468,6 +2473,9 @@ def _dialog_event(interp, ev: dict) -> None:
             d["cancelRequested"] = True
         return
     remove_dialog(interp, did)
+    st.answers[did] = choice
+    while len(st.answers) > 50:
+        st.answers.pop(next(iter(st.answers)))
     cb = obj
     if not _empty(cb):
         options = d.get("options") or ["OK"]

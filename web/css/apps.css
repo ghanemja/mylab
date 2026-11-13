@@ -1,0 +1,29 @@
+/* The App panel (js/uiapp.js) and the app builder (js/designer.js). Loaded by those modules. */
+
+/* ---------- App panel ---------- */
+.app-view {
+  position: fixed; z-index: 40; inset: 60px 20px 20px; display: flex; flex-direction: column; min-width: 0;
+  border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg); box-shadow: var(--shadow-lg); overflow: hidden;
+}
+.app-view-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; background: var(--panel); border-bottom: 1px solid var(--border); min-height: 42px; }
+.app-view-bar .spacer { flex: 1; }
+.app-view-title { margin: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.app-view-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.app-view-scroll { flex: 1; overflow: auto; padding: 16px; min-height: 0; }
+.app-view-stage { min-width: 0; }
+.app-view-wait { margin: 24px 4px; }
+.app-view-log {
+  margin: 14px 0 0; padding: 8px 10px; max-height: 22vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); font: 12px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.app-view-log .err { color: var(--error); }
+#btn-app[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+
+/* app-only view: the page shows nothing but the app */
+body[data-appmode] .topbar, body[data-appmode] .layout, body[data-appmode] .footbar { display: none !important; }
+body[data-appmode] .app-view { inset: 0; border: 0; border-radius: 0; box-shadow: none; }
+
+@media (max-width: 820px) {
+  .app-view { inset: 0; border: 0; border-radius: 0; }
+  .app-view-scroll { padding: 10px; }
+}

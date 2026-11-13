@@ -86,6 +86,8 @@ export class Engine extends EventTarget {
   inspect(name, opts = {}) { return this.background("inspect", { name, ...opts }); }
   csv(name, opts = {}) { return this.background("csv", { name, ...opts }); }
   reset() { return this.request("reset"); }
+  uiEvent(event) { return this.background("uiEvent", { event }); }
+  uiClose() { return this.background("uiClose"); }
 
   /** Resolves when the engine is usable (again); rejects if loading fails. */
   whenReady() {

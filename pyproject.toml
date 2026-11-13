@@ -48,6 +48,9 @@ mylab-grade = "mylab.grader:main"
 [tool.setuptools.packages.find]
 include = ["mylab*"]
 
+[tool.setuptools.package-data]
+"mylab.uiweb" = ["*.js", "*.css"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

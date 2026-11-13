@@ -30,6 +30,21 @@ WEB = ROOT / "web"
 WHEELS = WEB / "wheels"
 
 
+def sync_app_files() -> None:
+    """Copy the app renderer and the example apps into web/ (the copies are committed).
+
+    The renderer lives in the Python package (mylab/uiweb/) because `mylab app.m` serves it too.
+    """
+    copies = [(ROOT / "mylab" / "uiweb" / "uirender.js", WEB / "js" / "uirender.js"),
+              (ROOT / "mylab" / "uiweb" / "uirender.css", WEB / "css" / "uirender.css")]
+    copies += [(p, WEB / "samples" / "apps" / p.name) for p in sorted((ROOT / "examples" / "apps").glob("*.m"))]
+    for src, dest in copies:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if not dest.exists() or dest.read_bytes() != src.read_bytes():
+            shutil.copyfile(src, dest)
+            print(f"Updated {dest.relative_to(ROOT)}")
+
+
 def build_wheel() -> Path:
     """Build mylab as a wheel and copy it into web/wheels/. Returns the wheel path."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -88,6 +103,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--no-build", action="store_true", help="skip building the wheel (with --serve)")
     args = parser.parse_args(argv)
 
+    sync_app_files()
     if not args.no_build:
         build_wheel()
     if args.serve:

@@ -24,7 +24,8 @@ export function initShare(app) {
       }
       fragment = "project=" + (await encodePayload({ n: state.project.name.replace(/^Shared: /, ""), m: state.active, f: files }));
     }
-    return location.origin + location.pathname + "#" + fragment + (run ? "&run=1" : "");
+    const asApp = $("share-app") && $("share-app").checked; // "Open as app" (added by uiapp.js)
+    return location.origin + location.pathname + "#" + fragment + (asApp ? "&app=1" : run ? "&run=1" : "");
   }
 
   async function refresh() {
@@ -102,7 +103,9 @@ export function initShare(app) {
       opened = await app.createProject({ name: "Shared: " + name, kind: "shared", temp: true, meta: { payload, name }, files, open: main });
       toast("Opened shared code in a temporary project. Use “Keep a copy” to save it.");
     }
-    if (params.run === "1" || params.run === "true") {
+    if (params.app === "1" && app.openAsApp) {
+      app.openAsApp(opened.id);
+    } else if (params.run === "1" || params.run === "true") {
       app.engine.whenReady().then(
         () => {
           if (state.project.id === opened.id && !app.engine.busy) app.runActiveFile();

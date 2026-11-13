@@ -26,6 +26,24 @@ from .api import Session
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*$")
 
 
+APP_NOTE = ("This is a snapshot of the app window: its controls do not run code in a notebook. Run the file "
+            "with the mylab command, or open it in the mylab web app, to use the app.")
+
+
+def app_snapshot(tree: dict) -> dict:
+    """display_data content for app windows (uifigure, uicontrol): a static HTML picture and a note."""
+    import html
+
+    from .uiweb import outline, static_html
+    figures = tree.get("figures") or []
+    height = min(max(sum(f["props"].get("height", 300) + 60 for f in figures) + 70, 160), 900)
+    page = static_html(tree, APP_NOTE)
+    frame = (f'<iframe title="mylab app snapshot" srcdoc="{html.escape(page, quote=True)}" '
+             f'style="width: 100%; height: {height}px; border: 0;" sandbox="allow-scripts"></iframe>')
+    return {"data": {"text/html": frame, "text/plain": "App window (snapshot):\n" + outline(tree) + "\n" + APP_NOTE},
+            "metadata": {}}
+
+
 class MylabKernel(Kernel):
     implementation = "mylab"
     implementation_version = __version__
@@ -65,6 +83,8 @@ class MylabKernel(Kernel):
                     "data": {"image/png": base64.b64encode(png).decode("ascii"), "text/plain": "<Figure>"},
                     "metadata": {},
                 })
+            if result.ui:
+                self.send_response(self.iopub_socket, "display_data", app_snapshot(result.ui))
         if result.error:
             where = f" (line {result.error_line})" if result.error_line else ""
             message = f"Error{where}: {result.error}"
