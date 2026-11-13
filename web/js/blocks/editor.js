@@ -722,7 +722,6 @@ export class DiagramEditor {
     s.addEventListener("pointermove", (e) => this.onMove(e));
     s.addEventListener("pointerup", (e) => this.onUp(e));
     s.addEventListener("pointercancel", (e) => this.onUp(e, true));
-    s.addEventListener("dblclick", (e) => this.onDouble(e));
     s.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       this.openContext(e);
@@ -741,7 +740,17 @@ export class DiagramEditor {
       },
       { passive: false }
     );
-    s.addEventListener("keydown", (e) => this.onKey(e));
+    // Keys go through the window first (capture), so the diagram's keys win over the app-wide shortcuts
+    // while the canvas has the focus; keys the diagram does not use fall through to the app.
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.target !== s || e.isComposing) return;
+        this.onKey(e);
+        if (e.defaultPrevented) e.stopImmediatePropagation();
+      },
+      true
+    );
     this.resizeObs = new ResizeObserver(() => this.applyView());
     this.resizeObs.observe(s);
   }
@@ -776,6 +785,17 @@ export class DiagramEditor {
     if (e.button === 2) return;
     const h = this.hit(e);
     const w = this.toWorld(e);
+    // Double click or double tap. (The browser's own dblclick event is no help here: the first click
+    // redraws the block, and with the pointer captured the event would name the canvas, not the block.)
+    const now = performance.now(), last = this.lastDown;
+    const same = last && now - last.t < 420 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 8 && last.kind === h.kind && last.block === h.block;
+    this.lastDown = same ? null : { t: now, x: e.clientX, y: e.clientY, kind: h.kind, block: h.block };
+    if (same && e.button === 0 && h.kind !== "port" && h.kind !== "handle" && !(this.wire && this.wire.sticky)) {
+      this.cancelDrag();
+      this.pointers.delete(e.pointerId);
+      this.onDouble(e, h);
+      return;
+    }
     try {
       this.svg.setPointerCapture(e.pointerId);
     } catch {
@@ -1040,8 +1060,7 @@ export class DiagramEditor {
     delete this.svg.dataset.wire;
   }
 
-  onDouble(e) {
-    const h = this.hit(e);
+  onDouble(e, h) {
     if (h.kind === "block") {
       const b = this.block(h.block);
       if (h.onName && !this.readOnly) this.hooks.rename && this.hooks.rename(b);

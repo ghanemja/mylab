@@ -300,6 +300,7 @@ export function initBlocks(app) {
     }
     stopInput.value = ed.model.config.StopTime;
     renderCrumbs();
+    scheduleCheck();
   }
 
   function hide() {

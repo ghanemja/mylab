@@ -220,7 +220,7 @@ export function drawLine(route, index, opts = {}) {
   if (line.name) {
     // label on the longest of the first two segments
     let best = 0;
-    for (let i = 0; i < Math.min(pts.length - 1, 3); i++) {
+    for (let i = 0; i < pts.length - 1; i++) {
       if (Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) > Math.hypot(pts[best + 1][0] - pts[best][0], pts[best + 1][1] - pts[best][1]) + 12) best = i;
     }
     const p = pts[best], q = pts[best + 1];

@@ -40,7 +40,7 @@ export function routeLine(src, dst, boxes, via) {
   const [bs, bd] = boxes;
   // a free coordinate between the two blocks when they do not overlap on that axis, otherwise beyond both
   const lane = (lo, hi) =>
-    lo.max + 2 * GRID <= hi.min ? (lo.max + hi.min) / 2 : hi.max + 2 * GRID <= lo.min ? (hi.max + lo.min) / 2 : Math.max(lo.max, hi.max) + 2 * GRID;
+    lo.max + 2 * GRID <= hi.min ? (lo.max + hi.min) / 2 : hi.max + 2 * GRID <= lo.min ? (hi.max + lo.min) / 2 : Math.max(lo.max, hi.max) + 3 * GRID;
   if (srcH && dstH) {
     const forward = (b[0] - a[0]) * src.dx >= 0;
     if (src.dx === -dst.dx && forward) {
