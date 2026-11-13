@@ -47,7 +47,8 @@ well with AI assistants.
 
 ## Non-goals
 
-- Simulink.
+- Being a drop-in replacement for Simulink (mylab Blocks covers basic
+  block-diagram simulation; see BLOCKS.md).
 - Matching MATLAB's exact random-number streams or solver step sequences.
 - Copying MATLAB's look, documentation or branding (see
   [CLEANROOM.md](../CLEANROOM.md)).

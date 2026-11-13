@@ -20,6 +20,8 @@ processing, statistics, optimization, ODE solvers, tables, sparse matrices.
 → An AI assistant that can write, run and fix code. Use a free local model
 or your own API key. There is also an MCP server, so tools like Claude can
 run code directly.
+→ Symbolic math, app building with buttons and sliders, and block-diagram
+simulation.
 → Built for teaching: share code as a link, step through a program line by
 line, and auto-grade assignments (Gradescope export included).
 → Also works from the terminal, Jupyter and VS Code.
@@ -29,11 +31,12 @@ Two datasets come with it, for anyone building tools for this language:
 • MATLAB Corpus: an index of 200 permissively licensed repositories,
 29,114 files. mylab parses 99.1% of them.
 
-What it is not: it doesn't cover everything MATLAB does. There is no
-Simulink and no GUI builder, and many toolboxes are missing. Results are
-checked against GNU Octave (5,377 automated checks, all passing), not
-against MATLAB itself. If your code doesn't
-run, please open an issue; that is the most useful thing you can do.
+What it is not: a full replacement. Many toolboxes are missing. The
+block-diagram tool covers the basics but is not Simulink: of 82 public model
+files, 33 import fully and 14 run. Results are checked against GNU Octave
+(5,377 automated checks, all passing), not against MATLAB itself. If your
+code doesn't run, please open an issue; that is the most useful thing you
+can do.
 
 Try it: <web app link>
 Code: <GitHub link>
@@ -53,7 +56,7 @@ who can't buy a license.
 • AI assistant built in (local model or your own key)
 • Share links, step-through and autograding for classes
 
-It doesn't cover everything (no Simulink, many toolboxes missing), and it is
+It doesn't cover everything (many toolboxes are missing), and it is
 tested against GNU Octave rather than MATLAB. Bug reports are welcome.
 
 Try it: <web app link> · Code: <GitHub link>
