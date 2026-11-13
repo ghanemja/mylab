@@ -602,7 +602,7 @@ class DiscreteTimeIntegrator(Node):
                 fire = fire or _edge(self.reset, self.r_prev, u[self.reset_port])
             if fire:
                 ic = u[self.ic_port] if self.ic_port is not None else self.ic
-                self.state = np.array(np.broadcast_to(ic, np.broadcast_shapes(np.shape(ic), self.state.shape)), dtype=float)
+                self.state = np.array(np.broadcast_to(ic, np.broadcast_shapes(np.shape(ic), self.state.shape)), dtype=float)  # noqa: E501
         return [np.asarray(self._y(u[0]), float)]
 
     def update(self, t, u):

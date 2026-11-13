@@ -105,7 +105,12 @@ def _quat2rotm(q: np.ndarray) -> np.ndarray:
 def _rotm2quat(r: np.ndarray) -> np.ndarray:
     # the largest of the four candidates keeps the division well conditioned
     k = np.array(
-        [r[0, 0] + r[1, 1] + r[2, 2], r[0, 0] - r[1, 1] - r[2, 2], -r[0, 0] + r[1, 1] - r[2, 2], -r[0, 0] - r[1, 1] + r[2, 2]]
+        [
+            r[0, 0] + r[1, 1] + r[2, 2],
+            r[0, 0] - r[1, 1] - r[2, 2],
+            -r[0, 0] + r[1, 1] - r[2, 2],
+            -r[0, 0] - r[1, 1] + r[2, 2],
+        ]
     )
     i = int(np.argmax(k))
     s = 2 * np.sqrt(max(1 + k[i], 0.0))
@@ -266,7 +271,9 @@ builtin("rotz")(_rot_deg("Z", "rotz"))
 # -- code-generation directives: they do not change what the code computes -------------------------
 
 
-@builtin("coder.extrinsic", "coder.inline", "coder.varsize", "coder.cinclude", "coder.updateBuildInfo", "coder.columnMajor")
+@builtin(
+    "coder.extrinsic", "coder.inline", "coder.varsize", "coder.cinclude", "coder.updateBuildInfo", "coder.columnMajor"
+)
 def _coder_noop(interp, args, nargout):
     return None
 

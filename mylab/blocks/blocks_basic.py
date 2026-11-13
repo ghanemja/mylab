@@ -552,7 +552,7 @@ class Terminator(Node):
     is_sink = True
 
 
-@block("Viewer", "Sinks", "Stands for a display that mylab does not draw (video, 3-D animation); its inputs are ignored.", icon="view")
+@block("Viewer", "Sinks", "Stands for a display that mylab does not draw (video, 3-D animation); its inputs are ignored.", icon="view")  # noqa: E501
 class Viewer(Node):
     params = [P("NumInputPorts", "1", "Number of input ports", "text"), P("Kind", "", "What it showed", "text")]
     nin = ["int", "NumInputPorts"]

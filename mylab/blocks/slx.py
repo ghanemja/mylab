@@ -78,7 +78,7 @@ PARAM_MAP = {
 # Display-only sinks: nothing to compute. They become a Viewer block and a note.
 VIEWERS = {"videoviewer", "tovideodisplay", "uavanimation", "vrsink", "matrixviewer"}
 # Dashboard controls and gauges have no signal ports; the value they set is already in the block they point to.
-DASHBOARD = re.compile(r"(Slider|Knob|Gauge|Switch|Lamp|Button|Checkbox|EditField|ComboBox|RadioButton|Display|DashboardScope)Block$")
+DASHBOARD = re.compile(r"(Slider|Knob|Gauge|Switch|Lamp|Button|Checkbox|EditField|ComboBox|RadioButton|Display|DashboardScope)Block$")  # noqa: E501
 # Library links ("Reference" blocks) we can stand in for: SourceType or last part of SourceBlock -> (our type, fixed params).  # noqa: E501
 REFERENCE_MAP = {
     "comparetoconstant": ("CompareToConstant", {}),
@@ -329,7 +329,7 @@ class _Importer:
         # a library that is only a menu: its top-level blocks open other library files
         top = lib.find_block(parts[1:2])
         if top is not None and len(parts) > 2:
-            m = re.fullmatch(r"\s*(?:open(?:_system)?\(\s*['\"]([\w.-]+)['\"]\s*\)|([\w.-]+))\s*;?\s*", _params(top[0]).get("OpenFcn", ""))
+            m = re.fullmatch(r"\s*(?:open(?:_system)?\(\s*['\"]([\w.-]+)['\"]\s*\)|([\w.-]+))\s*;?\s*", _params(top[0]).get("OpenFcn", ""))  # noqa: E501
             other = (m.group(1) or m.group(2)) if m else None
             if other and other != parts[0]:
                 return self.resolve_link("/".join([other] + [q.replace("/", "//") for q in parts[2:]]), depth + 1)
@@ -477,7 +477,7 @@ class _Importer:
                     break
                 if k in VIEWERS:
                     target, fixed = "Viewer", {"NumInputPorts": str(ports[0] if ports else 1), "Kind": cand}
-                    self.notes.append(f"'{path}' ({cand}) only draws; it was replaced by a Viewer block that ignores its inputs.")
+                    self.notes.append(f"'{path}' ({cand}) only draws; it was replaced by a Viewer block that ignores its inputs.")  # noqa: E501
                     break
                 if k.endswith("coordinatetransformationconversion") and (ports or [1, 1])[:2] == [1, 1]:
                     expr = coordinate_conversion(p)
@@ -491,7 +491,7 @@ class _Importer:
                         self._count("converted")
                         self._count("total", len(made.system.blocks))
                         self._count("converted", len(made.system.blocks))
-                        self.notes.append(f"'{path}' ({cand}) was replaced by a subsystem with the same equations, built from mylab blocks.")
+                        self.notes.append(f"'{path}' ({cand}) was replaced by a subsystem with the same equations, built from mylab blocks.")  # noqa: E501
                         return made
             if target is None:
                 link = self.resolve_link(p.get("SourceBlock", "")) if self.root.depth < 12 else None
@@ -543,7 +543,7 @@ class _Importer:
                 choices = {}
                 for c in self._deref(sub).findall("Block"):
                     if c.get("BlockType") == "SubSystem":
-                        choices[re.sub(r"\s+", " ", c.get("Name", "")).strip()] = _params(c).get("VariantControl", "").strip()
+                        choices[re.sub(r"\s+", " ", c.get("Name", "")).strip()] = _params(c).get("VariantControl", "").strip()  # noqa: E501
                 blk.extra["variants"] = choices
                 if p.get("VariantControlMode", "").strip().lower() == "label" or p.get("LabelModeActiveChoice"):
                     blk.extra["variantLabel"] = p.get("LabelModeActiveChoice", "").strip()
@@ -581,7 +581,7 @@ class _Importer:
             return None
         elif _key(btype) in VIEWERS:
             target, fixed = "Viewer", {"NumInputPorts": str(ports[0] if ports else 1), "Kind": btype}
-            self.notes.append(f"'{path}' ({btype}) only draws; it was replaced by a Viewer block that ignores its inputs.")
+            self.notes.append(f"'{path}' ({btype}) only draws; it was replaced by a Viewer block that ignores its inputs.")  # noqa: E501
         elif btype == "Lookup_n-D":
             dims = (p.get("NumberOfTableDimensions") or "2").strip()
             if p.get("TableSource", "Dialog") == "Input port":

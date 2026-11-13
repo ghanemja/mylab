@@ -556,3 +556,27 @@ def test_save_model_and_load_model_helpers(tmp_path):
     path = str(tmp_path / "h.mlb.json")
     save_model(m, path)
     assert load_model(path).to_json() == m.to_json() and not m.dirty
+
+
+def test_the_web_app_runs_a_model_with_its_callbacks_and_reports_loops(s):
+    from mylab.blocks import web
+    from mylab.blocks.model import build
+
+    m = build(
+        "cb",
+        [("C", "Constant", {"Value": "level"}), ("S", "Sum", {"Inputs": "+-"}), ("K", "Gain"), ("Scope", "Scope")],
+        ["C/1 -> S/1", "S/1 -> K/1", "K/1 -> S/2", "K/1 -> Scope/1"],
+        StopTime="1",
+    )
+    m.callbacks["InitFcn"] = "level = 8;"
+    marks = web.check(s, {"model": m.dumps()})["diagnostics"]  # checking a model does not run its code
+    assert any("level" in d["message"] and d["level"] == "error" for d in marks)
+    out = web.run(s, {"model": m.dumps()})
+    assert out["ok"] and out["error"] is None, out
+    assert out["scopes"][0]["signals"][0][-1] == [4.0] or out["scopes"][0]["signals"][0][-1] == 4.0  # y = 8 - y
+    loop = [d for d in out["diagnostics"] if d["kind"] == "algebraic-loop"]
+    assert len(loop) == 1 and loop[0]["level"] == "warning"
+    m.callbacks["InitFcn"] = "level = no_such_thing;"
+    ok(s, "clear level")
+    out = web.run(s, {"model": m.dumps()})
+    assert not out["ok"] and "InitFcn callback stopped" in out["error"]["message"]

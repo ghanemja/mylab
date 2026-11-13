@@ -35,14 +35,18 @@ def test_conversions_round_trip(s):
     assert np.allclose(val(s, "quat2rotm(q)"), val(s, "R"))
     assert np.allclose(val(s, "norm(q)"), 1) and np.allclose(val(s, "quat2eul(eul2quat(e))"), [0.4, -0.7, 1.1])
     assert np.allclose(val(s, "tform2eul(T)"), [0.4, -0.7, 1.1]) and np.allclose(val(s, "tform2rotm(T)"), val(s, "R"))
-    assert np.allclose(val(s, "rotm2tform(R)"), val(s, "T")) and np.allclose(val(s, "quat2tform(tform2quat(T))"), val(s, "T"))
+    assert np.allclose(val(s, "rotm2tform(R)"), val(s, "T")) and np.allclose(
+        val(s, "quat2tform(tform2quat(T))"), val(s, "T")
+    )
     assert np.allclose(val(s, "rotm2eul(eul2rotm(e, 'XYZ'), 'XYZ')"), [0.4, -0.7, 1.1])
     assert np.allclose(val(s, "tform2trvec(trvec2tform([1 2 3]))"), [1, 2, 3])
     assert np.allclose(val(s, "trvec2tform([1 2 3])")[:, 3], [1, 2, 3, 1])
     a = val(s, "rotm2axang(axang2rotm([0 1 0 0.6]))")
     assert np.allclose(a, [0, 1, 0, 0.6])
     # the identity quaternion is [1 0 0 0]: the scalar part comes first
-    assert np.allclose(val(s, "eul2quat([0 0 0])"), [1, 0, 0, 0]) and np.allclose(val(s, "quat2rotm([1 0 0 0])"), np.eye(3))
+    assert np.allclose(val(s, "eul2quat([0 0 0])"), [1, 0, 0, 0]) and np.allclose(
+        val(s, "quat2rotm([1 0 0 0])"), np.eye(3)
+    )
 
 
 def test_angdiff_wraps_to_plus_minus_pi(s):
@@ -64,7 +68,9 @@ def test_code_generation_directives_do_nothing_when_code_is_run(s):
 
 
 def test_simsizes_makes_the_vector_a_level_1_s_function_returns(s):
-    r = s.run("z = simsizes; z.NumContStates = 2; z.NumOutputs = 3; z.NumInputs = 1; z.DirFeedthrough = 1; z.NumSampleTimes = 1; v = simsizes(z);")
+    r = s.run(
+        "z = simsizes; z.NumContStates = 2; z.NumOutputs = 3; z.NumInputs = 1; z.DirFeedthrough = 1; z.NumSampleTimes = 1; v = simsizes(z);"  # noqa: E501
+    )
     assert r.error is None, r.error
     assert list(val(s, "v").ravel()) == [2, 0, 3, 1, 0, 1, 1]
     assert val(s, "numel(fieldnames(simsizes))") >= 6

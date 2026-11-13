@@ -1883,7 +1883,7 @@ async function main() {
           <Block BlockType="Step" Name="Step" SID="1">${P("Position", "[40, 40, 70, 70]")}${P("Time", "0")}</Block>
           <Block BlockType="TransferFcn" Name="Plant" SID="2">${P("Position", "[130, 35, 220, 75]")}${P("Denominator", "[2 1]")}</Block>
           <Block BlockType="Scope" Name="Scope" SID="3">${P("Position", "[290, 40, 320, 70]")}</Block>
-          <Block BlockType="S-Function" Name="Custom" SID="4">${P("Ports", "[1, 1]")}${P("Position", "[130, 120, 220, 160]")}</Block>
+          <Block BlockType="ForIterator" Name="Custom" SID="4">${P("Ports", "[1, 1]")}${P("Position", "[130, 120, 220, 160]")}</Block>
           <Line>${P("Src", "1#out:1")}${P("Dst", "2#in:1")}</Line>
           <Line>${P("Src", "2#out:1")}${P("Points", "[30, 0]")}<Branch>${P("Dst", "3#in:1")}</Branch><Branch>${P("Points", "[0, 85]; [-130, 0]")}${P("Dst", "4#in:1")}</Branch></Line>
         </System></Model></ModelInformation>`);
@@ -1896,7 +1896,7 @@ async function main() {
       await page.evaluate(() => window.mylab.app.openFile("models/plant.slx"));
       await page.waitForSelector("#bd-dlg-notice[open]", { timeout: 60000 });
       const notice = await page.locator("#bd-dlg-notice").innerText();
-      check(/1 of 4 blocks have no equivalent/.test(notice) && /S-Function \(1\)/.test(notice), "the import should name the unsupported block: " + notice);
+      check(/1 of 4 blocks have no equivalent/.test(notice) && /ForIterator \(1\)/.test(notice), "the import should name the unsupported block: " + notice);
       await page.click("#bd-dlg-notice button[type='submit']");
       await page.waitForSelector(".bd-svg .bd-block[data-name='Plant']");
       check((await names()).join() === "Step,Plant,Scope,Custom" && (await model()).lines.length === 3, "imported blocks and lines: " + (await names()).join());
@@ -1904,7 +1904,7 @@ async function main() {
       n = await runs();
       await page.click("#bd-run");
       await waitRun(n);
-      await h.waitConsole(/there is no block type 'S-Function' in mylab Blocks/);
+      await h.waitConsole(/there is no block type 'ForIterator' in mylab Blocks/);
       await page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove()));
       await focusCanvas();
       const cu = await blockAt("Custom");

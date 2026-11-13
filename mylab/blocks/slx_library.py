@@ -25,7 +25,7 @@ def _sub(name: str, blocks: list, lines: list, mask: dict) -> Block:
 
 
 def kinematic_model(kind: str, name: str, p: dict) -> Block | None:
-    """Bicycle, unicycle, differential-drive or Ackermann vehicle: inputs -> state [x y theta ...] and its derivative."""
+    """Bicycle, unicycle, differential-drive or Ackermann vehicle: inputs -> state [x y theta ...] and its derivative."""  # noqa: E501
     inputs = p.get("VehicleInputs", "").lower()
     mask = {
         "L": p.get("WheelBase", "1"),
@@ -94,12 +94,30 @@ def kinematic_model(kind: str, name: str, p: dict) -> Block | None:
 
 
 _REP = {
-    "homogeneoustransformation": "tform", "eulerangles": "eul", "translationvector": "trvec", "quaternion": "quat",
-    "rotationmatrix": "rotm", "axisangle": "axang",
+    "homogeneoustransformation": "tform",
+    "eulerangles": "eul",
+    "translationvector": "trvec",
+    "quaternion": "quat",
+    "rotationmatrix": "rotm",
+    "axisangle": "axang",
 }
 _HAVE = {
-    "eul2rotm", "eul2tform", "eul2quat", "rotm2eul", "tform2eul", "quat2eul", "quat2rotm", "quat2tform", "rotm2quat",
-    "tform2quat", "rotm2tform", "tform2rotm", "trvec2tform", "tform2trvec", "axang2rotm", "rotm2axang",
+    "eul2rotm",
+    "eul2tform",
+    "eul2quat",
+    "rotm2eul",
+    "tform2eul",
+    "quat2eul",
+    "quat2rotm",
+    "quat2tform",
+    "rotm2quat",
+    "tform2quat",
+    "rotm2tform",
+    "tform2rotm",
+    "trvec2tform",
+    "tform2trvec",
+    "axang2rotm",
+    "rotm2axang",
 }
 
 

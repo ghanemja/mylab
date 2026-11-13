@@ -58,15 +58,25 @@ in this repository:
 
 ```bash
 python tools/fetch_models.py              # into ~/.cache/mylab-corpus-models (or $MYLAB_SLX_CACHE)
-python -m mylab.blocks.import_report ~/.cache/mylab-corpus-models
+python tools/fetch.py                     # the .m files of the same repositories, into ~/.cache/mylab-corpus
+python -m mylab.blocks.import_report ~/.cache/mylab-corpus-models --sources ~/.cache/mylab-corpus
 ```
 
 `fetch_models.py` fetches only the listed files at the pinned commits and
 checks each against its SHA-256. The report says, for every file, whether it
 was imported fully, imported with unsupported blocks (named and counted) or
-not at all, and whether the imported model then ran. `tests/test_blocks_slx.py`
-runs the same survey when the files are in the cache and is skipped otherwise.
-The files are read as data and nothing in them is executed.
+not at all, and whether the imported model then ran. With `--sources` the
+folders of the model's repository go on the search path and its set-up
+scripts are run when the model names variables that do not exist.
+`tests/test_blocks_slx.py` runs the same survey, and sanity checks on models
+with a known expected behaviour, when the files are in the cache
+(`$MYLAB_SLX_CACHE`, and `$MYLAB_CORPUS_CACHE` for the `.m` files); it is
+skipped otherwise.
+
+Importing reads the files as data and executes nothing. Simulating an
+imported model runs the code stored in it (callbacks, mask initialization,
+function blocks) and the repository's scripts **in the mylab interpreter**,
+with a time limit: none of it is run by Python or by the original product.
 
 ## How repositories were selected
 

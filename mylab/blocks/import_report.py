@@ -34,7 +34,9 @@ from .engine import Sim, SimError, compile_model, run_callbacks
 from .model import ModelError
 from .slx import import_slx
 
-MISSING = re.compile(r"(?:Unrecognized function or variable|Undefined function or variable|Undefined function) '([A-Za-z_]\w*)'")
+MISSING = re.compile(
+    r"(?:Unrecognized function or variable|Undefined function or variable|Undefined function) '([A-Za-z_]\w*)'"
+)
 
 
 class _TimeUp(BaseException):
@@ -102,7 +104,9 @@ def find_setup(missing: set[str], scripts: list[tuple[str, str]], model_path: st
     for path, text in scripts:
         if path in tried:
             continue
-        hits = sum(1 for name in missing if re.search(rf"^\s*{re.escape(name)}\s*(\.[\w.]+|\([^=\n]*\))?\s*=[^=]", text, re.M))
+        hits = sum(
+            1 for name in missing if re.search(rf"^\s*{re.escape(name)}\s*(\.[\w.]+|\([^=\n]*\))?\s*=[^=]", text, re.M)
+        )
         if not hits:
             continue
         base = os.path.splitext(os.path.basename(path))[0].lower()
@@ -222,7 +226,7 @@ def check_file(path: str, time_limit_s: float = 30.0, sources: str | None = None
                         if needs(messages + notes):
                             continue
                         missing = _missing_names(messages)
-                        if missing and all(MISSING.search(m) for m in messages):
+                        if missing:
                             row["simulate"] = "no: needs workspace variables or toolbox functions"
                             row["missing"] = sorted(missing)
                         elif any(e.get("kind") == "algebraic-loop" for e in errors):
@@ -249,8 +253,12 @@ def check_file(path: str, time_limit_s: float = 30.0, sources: str | None = None
                 if needs([exc.message]):
                     continue
                 missing = _missing_names([exc.message])
-                row["simulate"] = "no: needs workspace variables or toolbox functions" if missing else "no: simulation error"
-                if re.search(r"FileNotFoundError|No such file|Unable to (read|open|find) file|does not exist", exc.message):
+                row["simulate"] = (
+                    "no: needs workspace variables or toolbox functions" if missing else "no: simulation error"
+                )
+                if re.search(
+                    r"FileNotFoundError|No such file|Unable to (read|open|find) file|does not exist", exc.message
+                ):
                     row["simulate"] = "no: needs data files that are not available"
                 if missing:
                     row["missing"] = sorted(missing)
@@ -285,7 +293,11 @@ def survey(
         if sources:
             first = rel.replace(os.sep, "/").split("/")[0]
             cand = os.path.join(sources, first)
-            src = cand if os.path.isdir(cand) and "/" in rel.replace(os.sep, "/") else (sources if os.path.isdir(sources) else None)
+            src = (
+                cand
+                if os.path.isdir(cand) and "/" in rel.replace(os.sep, "/")
+                else (sources if os.path.isdir(sources) else None)
+            )
         row = check_file(f, time_limit, src)
         row["file"] = rel
         if not keep_results:
@@ -346,8 +358,10 @@ def defaults_table(root: str) -> list[dict]:
 
     listed: dict[tuple[str, str], Counter] = {}
     explicit: dict[tuple[str, str], Counter] = {}
-    files = [root] if os.path.isfile(root) else sorted(
-        os.path.join(d, f) for d, _dirs, fs in os.walk(root) for f in fs if f.lower().endswith(".slx")
+    files = (
+        [root]
+        if os.path.isfile(root)
+        else sorted(os.path.join(d, f) for d, _dirs, fs in os.walk(root) for f in fs if f.lower().endswith(".slx"))
     )
     for path in files:
         try:

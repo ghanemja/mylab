@@ -946,9 +946,9 @@ def test_direct_lookup_and_prelookup():
 
 
 def test_rate_limiter_dynamic_and_running_minimum():
-    r = apply("RateLimiterDynamic", {}, [2, ("Step", {"Time": "0", "After": "10"}), -1], stop="1", Solver="ode4", FixedStep="0.1")
+    r = apply("RateLimiterDynamic", {}, [2, ("Step", {"Time": "0", "After": "10"}), -1], stop="1", Solver="ode4", FixedStep="0.1")  # noqa: E501
     assert np.allclose(r.y[:, 0], 2 * r.t, atol=1e-9)  # rises by at most 2 per second
-    r = apply("MinMaxRunningResettable", {"Function": "min", "vinit": "5"}, [("SineWave", {"Frequency": "2*pi"}), 0], stop="1")
+    r = apply("MinMaxRunningResettable", {"Function": "min", "vinit": "5"}, [("SineWave", {"Frequency": "2*pi"}), 0], stop="1")  # noqa: E501
     assert r.y[-1, 0] == pytest.approx(-1, abs=1e-3) and r.y[0, 0] == 0
     r = apply(
         "MinMaxRunningResettable",
@@ -972,7 +972,8 @@ SFUN_L1 = """
 function [sys, x0, str, ts] = decay1(t, x, u, flag, rate)
 switch flag
     case 0
-        s = simsizes; s.NumContStates = 1; s.NumOutputs = 2; s.NumInputs = 1; s.DirFeedthrough = 1; s.NumSampleTimes = 1;
+        s = simsizes; s.NumContStates = 1; s.NumOutputs = 2; s.NumInputs = 1;
+        s.DirFeedthrough = 1; s.NumSampleTimes = 1;
         sys = simsizes(s); x0 = 0; str = []; ts = [0 0];
     case 1
         sys = rate * (u - x);
@@ -1057,7 +1058,7 @@ def test_s_functions_written_in_the_matlab_language(tmp_path):
 
 def test_options_added_for_imported_models():
     # a sine wave driven by an input signal instead of the simulation time
-    assert last("SineWave", {"TimeSource": "Use external signal", "Frequency": "1"}, [math.pi / 2])[0] == pytest.approx(1)
+    assert last("SineWave", {"TimeSource": "Use external signal", "Frequency": "1"}, [math.pi / 2])[0] == pytest.approx(1)  # noqa: E501
     # a transfer function that starts away from rest
     r = apply("TransferFcn", {"Numerator": "[1]", "Denominator": "[1 1]", "InitialStates": "2"}, [0], RelTol="1e-8")
     assert r.y[0, 0] == pytest.approx(2) and r.y[-1, 0] == pytest.approx(2 * math.exp(-1), abs=1e-5)

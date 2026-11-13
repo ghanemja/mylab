@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from .engine import Sim, SimError, compile_model
+from .engine import Sim, SimError, compile_model, run_callbacks
 from .blocks_basic import Display, Scope, XYGraph
 from .model import Model, ModelError
 
@@ -78,12 +78,16 @@ def run(session: Any, args: dict, emit: Callable | None = None) -> dict:
     out: dict = {"ok": False, "error": None, "diagnostics": [], "warnings": []}
     try:
         model = _model(args)
+        notes = run_callbacks(model, interp)  # the model's own set-up code (InitFcn and the like)
         comp = compile_model(model, interp, None, strict=False, config=args.get("config"))
+        for note in notes:
+            comp.problem("warning", note, None, kind="callback")
         out["diagnostics"] = comp.diagnostics
         errors = comp.errors()
         if errors:
             first = errors[0]
-            out["error"] = {"message": first["message"], "path": first.get("path"), "paths": first.get("paths") or []}
+            message = first["message"] + (" Earlier: " + notes[0] if notes else "")
+            out["error"] = {"message": message, "path": first.get("path"), "paths": first.get("paths") or []}
             return out
         scopes = [n for n in comp.order if isinstance(n, (Scope, XYGraph))]
         sent: dict = {}

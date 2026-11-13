@@ -61,8 +61,9 @@ the six examples there (*Example model: …*). The examples are also in the
   and redo any change. Ctrl+C, Ctrl+V and Ctrl+D copy, paste and duplicate.
 - **Problems.** A block with an input that is not connected gets an amber
   mark, and the port is highlighted. When the engine has loaded, it also
-  checks the model as you edit: algebraic loops, parameters that cannot be
-  evaluated and unknown blocks get a red mark. The counter in the toolbar
+  checks the model as you edit: parameters that cannot be evaluated and
+  unknown blocks get a red mark, the blocks of an algebraic loop an amber
+  one (the loop is solved by iteration). The counter in the toolbar
   lists all problems; choosing one shows the block.
 
 ### Running
@@ -219,7 +220,20 @@ control:
   is several lines with the same `from`. `points` (optional) lists corners of
   a hand-made route. `"log": true` records a named signal in `out.logsout`.
 - A block of type `Subsystem` has its own `blocks` and `lines`, and may have
-  `"mask": { "k": "2" }` for variables that the blocks inside can use.
+  `"mask": { "k": "2" }` for variables that the blocks inside can use, and
+  `"maskInit": "code"` for code that computes more such variables from them
+  when the model is compiled.
+- `"variants": { "Choice A": "MODE == 1", "Choice B": "MODE == 2" }` on a
+  subsystem makes it a variant subsystem: the names are subsystems inside,
+  and only the one whose condition holds in the workspace is used. Its ports
+  are wired by name to the In and Out blocks around it. Exactly one condition
+  must hold.
+- `"callbacks": { "InitFcn": "code" }` at the top level holds code that runs
+  in the workspace before a simulation: `PreLoadFcn` and `PostLoadFcn` once,
+  `InitFcn` and `StartFcn` before every run. An error in a callback does not
+  stop the run by itself; it is added to the error that follows from it.
+- `"library": true` marks a collection of blocks that other models link to;
+  it is not meant to be run.
 - The control inputs of conditionally run subsystems are the ports
   `"enable"` and `"trigger"`.
 
@@ -410,8 +424,15 @@ Notes:
    must run after the block that feeds it. Blocks with memory (Integrator,
    Unit Delay, Memory, a transfer function with more poles than zeros…) do
    not have this dependency. A cycle of such dependencies is an **algebraic
-   loop**. mylab does not solve algebraic loops: it reports the blocks in the
-   loop and how to break it.
+   loop**. mylab solves it at every step with Newton's method: it cuts the
+   loop at one or more signals, takes their values as unknowns, and iterates
+   until the values that go into the loop equal the ones that come out (to
+   about 1e-10). The blocks of the loop get a warning, because this costs
+   time and can fail: a loop may have no solution, or several. When the
+   iteration does not converge the run stops with an error that names the
+   blocks and the time. To make every loop an error instead, set
+   `AlgebraicLoop` to `error` (the *Solve algebraic loops* box in the
+   settings).
 3. **Sample times.** Continuous blocks run at every step. Discrete blocks run
    at their sample time (a period, or `[period offset]`) and hold their output
    in between; several rates can be mixed. A sample time of -1 takes the rate
@@ -523,7 +544,6 @@ python -m mylab.blocks.import_report folder_with_slx_files
 - State charts and flow charts.
 - Physical modelling (mechanical, electrical, hydraulic networks with
   two-way connections).
-- Solving algebraic loops (they are reported).
 - Signals that change size while the model runs; fixed-point and integer data
   types; complex signals; bus objects; frames.
 - Function-call subsystems, If and Switch Case action subsystems, For and

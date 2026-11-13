@@ -114,7 +114,9 @@ class SFunction(Node):
         try:
             res = self.call(0.0, np.zeros(0), np.zeros(0), 0, 4)
         except Exception as exc:
-            raise BlockError(f"the S-function '{self.name}' failed when asked for its sizes: {getattr(exc, 'message', exc)}") from None
+            raise BlockError(
+                f"the S-function '{self.name}' failed when asked for its sizes: {getattr(exc, 'message', exc)}"
+            ) from None
         sizes = np.ravel(np.asarray(res[0], float))
         if sizes.size < 7:
             raise BlockError(f"the S-function '{self.name}' did not return its sizes (use simsizes)")
@@ -122,10 +124,16 @@ class SFunction(Node):
         self.df = bool(sizes[5])
         x0 = np.ravel(np.asarray(res[1], float)) if len(res) > 1 else np.zeros(0)
         if x0.size != self.nc + self.nd:
-            raise BlockError(f"the S-function '{self.name}' has {self.nc + self.nd} states but gave {x0.size} initial values")
+            raise BlockError(
+                f"the S-function '{self.name}' has {self.nc + self.nd} states but gave {x0.size} initial values"
+            )
         self.x0c, self.xd = x0[: self.nc].copy(), x0[self.nc :].copy()
         self.nx = self.nc
-        ts = np.asarray(res[3], float).reshape(-1, 2) if len(res) > 3 and np.size(res[3]) >= 2 else np.array([[-1.0, 0.0]])
+        ts = (
+            np.asarray(res[3], float).reshape(-1, 2)
+            if len(res) > 3 and np.size(res[3]) >= 2
+            else np.array([[-1.0, 0.0]])
+        )
         self.ts = ts[0]
         if self.n_in() > 1 or self.n_out() > 1:
             raise BlockError("a level-1 S-function has one input port and one output port")
@@ -166,7 +174,9 @@ class SFunction(Node):
         if self.nd:
             xd = np.ravel(np.asarray(self.call(t, self._x(), self._u(u), 2, 1)[0], float))
             if xd.size != self.nd:
-                raise BlockError(f"the S-function '{self.name}' returned {xd.size} discrete states instead of {self.nd}")
+                raise BlockError(
+                    f"the S-function '{self.name}' returned {xd.size} discrete states instead of {self.nd}"
+                )
             self.xd = xd
 
 
@@ -208,7 +218,9 @@ class MSFunction(Node):
         return frame.vars
 
     def method(self, name: str) -> bool:
-        v = self.run("has = isfield(b.Methods, name); if has, f = b.Methods.(name); f(b); end", name=np.array([list(name)]))
+        v = self.run(
+            "has = isfield(b.Methods, name); if has, f = b.Methods.(name); f(b); end", name=np.array([list(name)])
+        )
         return bool(np.any(v["has"]))
 
     def init(self):
@@ -228,14 +240,16 @@ class MSFunction(Node):
             if prm:
                 self.run("for k = 1:numel(p), b.DialogPrm(k).Data = p{k}; end", p=Cell.from_list(prm))
             v = self.run(
-                "nin = b.NumInputPorts; nout = b.NumOutputPorts; nc = b.NumContStates; ts = b.SampleTimes; df = true(1, nin);"
+                "nin = b.NumInputPorts; nout = b.NumOutputPorts; nc = b.NumContStates; ts = b.SampleTimes; df = true(1, nin);"  # noqa: E501
                 "for k = 1:nin, if k <= numel(b.InputPort) && isfield(b.InputPort, 'DirectFeedthrough') && "
-                "~isempty(b.InputPort(k).DirectFeedthrough), df(k) = logical(b.InputPort(k).DirectFeedthrough); end, end"
+                "~isempty(b.InputPort(k).DirectFeedthrough), df(k) = logical(b.InputPort(k).DirectFeedthrough); end, end"  # noqa: E501
             )
         except BlockError:
             raise
         except Exception as exc:
-            raise BlockError(f"the setup of the S-function '{self.name}' failed: {getattr(exc, 'message', exc)}") from None
+            raise BlockError(
+                f"the setup of the S-function '{self.name}' failed: {getattr(exc, 'message', exc)}"
+            ) from None
         n_in, n_out = int(np.ravel(v["nin"])[0]), int(np.ravel(v["nout"])[0])
         if n_in != self.n_in() or n_out != self.n_out():
             raise BlockError(
@@ -271,7 +285,9 @@ class MSFunction(Node):
         return self.x0
 
     def load(self, t, u):
-        code = "b.CurrentTime = t; b.Major = major;" + "".join(f"b.InputPort({k + 1}).Data = u{k};" for k in range(len(u)))
+        code = "b.CurrentTime = t; b.Major = major;" + "".join(
+            f"b.InputPort({k + 1}).Data = u{k};" for k in range(len(u))
+        )
         names = {f"u{k}": to_value(v) for k, v in enumerate(u)}
         if self.nx:
             code += "b.ContStates.Data = x;"
@@ -289,7 +305,9 @@ class MSFunction(Node):
                 raise
             # nothing reads from this block, so the simulation does not depend on it
             self.broken = True
-            self.sim.note(f"'{self.path}': the display S-function '{self.name}' stopped ({getattr(exc, 'message', exc)}).")
+            self.sim.note(
+                f"'{self.path}': the display S-function '{self.name}' stopped ({getattr(exc, 'message', exc)})."
+            )
             return []
         n = self.n_out()
         if not n:
