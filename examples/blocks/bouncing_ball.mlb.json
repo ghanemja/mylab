@@ -1,0 +1,106 @@
+{
+  "format": "mylab-blocks-1",
+  "name": "bouncing_ball",
+  "description": "A ball dropped from 10 m. Each time the height reaches zero, the velocity integrator is reset to -0.8 times the velocity (the ball bounces and loses some speed). The solver finds each impact time exactly.",
+  "config": {
+    "StartTime": "0",
+    "StopTime": "10",
+    "Solver": "ode45",
+    "MaxStep": "0.05",
+    "RelTol": "1e-3",
+    "AbsTol": "1e-6",
+    "FixedStep": "auto",
+    "ZeroCrossings": "on"
+  },
+  "blocks": [
+    {
+      "name": "Gravity",
+      "type": "Constant",
+      "position": [40, 80, 60, 36],
+      "params": {
+        "Value": "-9.81"
+      }
+    },
+    {
+      "name": "Velocity",
+      "type": "Integrator",
+      "position": [190, 70, 60, 70],
+      "params": {
+        "ExternalReset": "rising",
+        "InitialConditionSource": "external"
+      }
+    },
+    {
+      "name": "Height",
+      "type": "Integrator",
+      "position": [330, 83, 50, 44],
+      "params": {
+        "InitialCondition": "10",
+        "LimitOutput": "on",
+        "LowerSaturationLimit": "0"
+      }
+    },
+    {
+      "name": "Scope",
+      "type": "Scope",
+      "position": [540, 75, 50, 60],
+      "params": {
+        "NumInputPorts": "2"
+      }
+    },
+    {
+      "name": "On the ground",
+      "type": "CompareToZero",
+      "position": [330, 190, 60, 40],
+      "rotation": 2,
+      "params": {
+        "relop": "<="
+      }
+    },
+    {
+      "name": "Bounce",
+      "type": "Gain",
+      "position": [330, 270, 60, 40],
+      "rotation": 2,
+      "params": {
+        "Gain": "-0.8"
+      }
+    }
+  ],
+  "lines": [
+    {
+      "from": ["Gravity", 1],
+      "to": ["Velocity", 1]
+    },
+    {
+      "from": ["Velocity", 1],
+      "to": ["Height", 1],
+      "name": "v"
+    },
+    {
+      "from": ["Height", 1],
+      "to": ["Scope", 1],
+      "name": "height"
+    },
+    {
+      "from": ["Velocity", 1],
+      "to": ["Scope", 2]
+    },
+    {
+      "from": ["Height", 1],
+      "to": ["On the ground", 1]
+    },
+    {
+      "from": ["On the ground", 1],
+      "to": ["Velocity", 2]
+    },
+    {
+      "from": ["Velocity", 1],
+      "to": ["Bounce", 1]
+    },
+    {
+      "from": ["Bounce", 1],
+      "to": ["Velocity", 3]
+    }
+  ]
+}

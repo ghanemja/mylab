@@ -1,0 +1,136 @@
+{
+  "format": "mylab-blocks-1",
+  "name": "mass_spring_damper",
+  "description": "A mass on a spring with a damper, pushed by a force that switches on at t = 1 s: m x'' + c x' + k x = F.",
+  "config": {
+    "StartTime": "0",
+    "StopTime": "15",
+    "Solver": "ode45",
+    "MaxStep": "auto",
+    "RelTol": "1e-3",
+    "AbsTol": "1e-6",
+    "FixedStep": "auto",
+    "ZeroCrossings": "on"
+  },
+  "blocks": [
+    {
+      "name": "Force",
+      "type": "Step",
+      "position": [40, 100, 50, 40],
+      "params": {
+        "Time": "1",
+        "After": "5"
+      }
+    },
+    {
+      "name": "Sum",
+      "type": "Sum",
+      "position": [140, 90, 40, 60],
+      "params": {
+        "Inputs": "+--"
+      }
+    },
+    {
+      "name": "Inverse mass",
+      "type": "Gain",
+      "position": [230, 100, 60, 40],
+      "params": {
+        "Gain": "1/2"
+      }
+    },
+    {
+      "name": "Velocity",
+      "type": "Integrator",
+      "position": [340, 98, 50, 44]
+    },
+    {
+      "name": "Position",
+      "type": "Integrator",
+      "position": [450, 98, 50, 44]
+    },
+    {
+      "name": "Scope",
+      "type": "Scope",
+      "position": [590, 90, 50, 60],
+      "params": {
+        "NumInputPorts": "2"
+      }
+    },
+    {
+      "name": "Damper c",
+      "type": "Gain",
+      "position": [340, 190, 60, 40],
+      "rotation": 2,
+      "params": {
+        "Gain": "1.5"
+      }
+    },
+    {
+      "name": "Spring k",
+      "type": "Gain",
+      "position": [340, 260, 60, 40],
+      "rotation": 2,
+      "params": {
+        "Gain": "20"
+      }
+    },
+    {
+      "name": "To Workspace",
+      "type": "ToWorkspace",
+      "position": [590, 180, 70, 36],
+      "params": {
+        "VariableName": "position"
+      }
+    }
+  ],
+  "lines": [
+    {
+      "from": ["Force", 1],
+      "to": ["Sum", 1],
+      "name": "F"
+    },
+    {
+      "from": ["Sum", 1],
+      "to": ["Inverse mass", 1]
+    },
+    {
+      "from": ["Inverse mass", 1],
+      "to": ["Velocity", 1],
+      "name": "a"
+    },
+    {
+      "from": ["Velocity", 1],
+      "to": ["Position", 1],
+      "name": "v"
+    },
+    {
+      "from": ["Position", 1],
+      "to": ["Scope", 1],
+      "name": "x"
+    },
+    {
+      "from": ["Velocity", 1],
+      "to": ["Scope", 2]
+    },
+    {
+      "from": ["Velocity", 1],
+      "to": ["Damper c", 1]
+    },
+    {
+      "from": ["Damper c", 1],
+      "to": ["Sum", 2]
+    },
+    {
+      "from": ["Position", 1],
+      "to": ["Spring k", 1]
+    },
+    {
+      "from": ["Spring k", 1],
+      "to": ["Sum", 3]
+    },
+    {
+      "from": ["Position", 1],
+      "to": ["To Workspace", 1]
+    }
+  ]
+}

@@ -30,7 +30,7 @@ def _edge(kind: str, prev, now) -> bool:
     if prev is None:
         return False
     up = bool(np.any((prev <= 0) & (now > 0)))
-    down = bool(np.any((prev >= 0) & (now < 0)))
+    down = bool(np.any((prev > 0) & (now <= 0)))
     return up if kind == "rising" else (down if kind == "falling" else up or down)
 
 
@@ -121,6 +121,15 @@ class Integrator(Node):
             if np.any(x > hi) or np.any(x < lo):
                 self.sim.set_state(self, np.clip(x, lo, hi))
                 x = self.x
+            self.sat = np.where((x >= hi) & (d > 0), 1.0, np.where((x <= lo) & (d < 0), -1.0, 0.0))
+
+    def settle(self, t, u):
+        """After states were reset in this step: decide again whether the limit holds the state."""
+        if self.limited:
+            x = self.x
+            hi = np.ravel(np.broadcast_to(self.hi, self.shape), order="F")
+            lo = np.ravel(np.broadcast_to(self.lo, self.shape), order="F")
+            d = np.ravel(np.broadcast_to(u[0], self.shape), order="F")
             self.sat = np.where((x >= hi) & (d > 0), 1.0, np.where((x <= lo) & (d < 0), -1.0, 0.0))
 
     def zc(self, t, u):

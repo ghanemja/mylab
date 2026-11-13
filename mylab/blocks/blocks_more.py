@@ -162,9 +162,10 @@ class BusCreator(Node):
     params = [P("Inputs", "2", "Number of inputs", "text")]
     nin = ["signs", "Inputs"]
 
+    names: list[str] = []  # set from the names of the incoming lines when the model is compiled
+
     def init(self):
         self.widths: list[int] = []
-        self.names: list[str] = []
 
     def out(self, t, u):
         self.widths = [v.size for v in u]
@@ -197,6 +198,7 @@ class BusSelector(Node):
 class Merge(Node):
     params = [P("Inputs", "2", "Number of inputs", "text"), P("InitialOutput", "0", "Initial output")]
     nin = ["int", "Inputs"]
+    time_varying = True
 
     def init(self):
         self.last = None
@@ -284,7 +286,7 @@ class Gate(Node):
         else:
             p = self.prev
             up = p is not None and bool(np.any((p <= 0) & (v > 0)))
-            down = p is not None and bool(np.any((p >= 0) & (v < 0)))
+            down = p is not None and bool(np.any((p > 0) & (v <= 0)))
             self.active = up if self.trigger_type == "rising" else (down if self.trigger_type == "falling" else up or down)
         return []
 
@@ -321,6 +323,7 @@ class HeldOutput(Node):
 @block("Fcn", "User-defined", "A formula in u (the input; u(1), u(2)... for a vector) and t. The result is one number.", icon="f(u)")
 class Fcn(Node):
     params = [P("Expr", "sin(u(1))", "Expression", "text")]
+    time_varying = True
 
     def init(self):
         expr = self.text("Expr")
@@ -347,6 +350,7 @@ class MATLABFunction(Node):
     params = [P("Script", _DEFAULT_SCRIPT, "Function code", "code")]
     nin = ["sig", "Script", "in"]
     nout = ["sig", "Script", "out"]
+    time_varying = True
 
     def init(self):
         self.ins, self.outs = signature(self.text("Script"))
@@ -369,6 +373,7 @@ class MATLABFunction(Node):
 class InterpretedFunction(Node):
     params = [P("MATLABFcn", "@(u) sin(u)", "Function handle, function name, or expression in u", "text"),
               ONOFF("Output1D", "on", "Treat the result as a 1-D vector")]
+    time_varying = True
 
     def init(self):
         self.fn = self.ctx.compile_callable(self.text("MATLABFcn"))

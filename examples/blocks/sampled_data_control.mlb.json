@@ -1,0 +1,128 @@
+{
+  "format": "mylab-blocks-1",
+  "name": "sampled_data_control",
+  "description": "A continuous plant controlled by a computer: the error is sampled every 0.2 s, a discrete PI controller computes the control signal, and it is held constant until the next sample.",
+  "config": {
+    "StartTime": "0",
+    "StopTime": "10",
+    "Solver": "ode45",
+    "MaxStep": "auto",
+    "RelTol": "1e-3",
+    "AbsTol": "1e-6",
+    "FixedStep": "auto",
+    "ZeroCrossings": "on"
+  },
+  "blocks": [
+    {
+      "name": "Reference",
+      "type": "Step",
+      "position": [40, 100, 50, 40],
+      "params": {
+        "Time": "0.5"
+      }
+    },
+    {
+      "name": "Error",
+      "type": "Sum",
+      "position": [130, 100, 40, 40],
+      "params": {
+        "Inputs": "+-"
+      }
+    },
+    {
+      "name": "Sampler",
+      "type": "ZeroOrderHold",
+      "position": [210, 98, 60, 44],
+      "params": {
+        "SampleTime": "0.2"
+      }
+    },
+    {
+      "name": "Kp",
+      "type": "Gain",
+      "position": [320, 60, 60, 40],
+      "params": {
+        "Gain": "1.2"
+      }
+    },
+    {
+      "name": "Integral",
+      "type": "DiscreteTimeIntegrator",
+      "position": [320, 140, 80, 44],
+      "params": {
+        "gainval": "1.5",
+        "SampleTime": "0.2"
+      }
+    },
+    {
+      "name": "Add",
+      "type": "Sum",
+      "position": [440, 98, 40, 44],
+      "params": {
+        "Inputs": "++"
+      }
+    },
+    {
+      "name": "Plant",
+      "type": "TransferFcn",
+      "position": [520, 95, 90, 50],
+      "params": {
+        "Numerator": "[1]",
+        "Denominator": "[1 1]"
+      }
+    },
+    {
+      "name": "Scope",
+      "type": "Scope",
+      "position": [690, 90, 50, 60],
+      "params": {
+        "NumInputPorts": "2"
+      }
+    }
+  ],
+  "lines": [
+    {
+      "from": ["Reference", 1],
+      "to": ["Error", 1]
+    },
+    {
+      "from": ["Error", 1],
+      "to": ["Sampler", 1]
+    },
+    {
+      "from": ["Sampler", 1],
+      "to": ["Kp", 1],
+      "name": "e[k]"
+    },
+    {
+      "from": ["Sampler", 1],
+      "to": ["Integral", 1]
+    },
+    {
+      "from": ["Kp", 1],
+      "to": ["Add", 1]
+    },
+    {
+      "from": ["Integral", 1],
+      "to": ["Add", 2]
+    },
+    {
+      "from": ["Add", 1],
+      "to": ["Plant", 1],
+      "name": "u"
+    },
+    {
+      "from": ["Plant", 1],
+      "to": ["Scope", 1],
+      "name": "y"
+    },
+    {
+      "from": ["Add", 1],
+      "to": ["Scope", 2]
+    },
+    {
+      "from": ["Plant", 1],
+      "to": ["Error", 2]
+    }
+  ]
+}

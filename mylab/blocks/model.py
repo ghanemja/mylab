@@ -161,9 +161,13 @@ class Model:
         self.file: str | None = None
         self.dirty = False
         self.notes: list[str] = []  # messages from an importer
+        self.description = ""
 
     def to_json(self) -> dict:
-        d: dict[str, Any] = {"format": FORMAT, "name": self.name, "config": dict(self.config)}
+        d: dict[str, Any] = {"format": FORMAT, "name": self.name}
+        if self.description:
+            d["description"] = self.description
+        d["config"] = dict(self.config)
         d.update(self.root.to_json())
         return d
 
@@ -175,6 +179,7 @@ class Model:
         if fmt != FORMAT:
             raise ModelError(f"Unknown model format '{fmt}'. This version of mylab reads '{FORMAT}'.")
         m = cls(str(name or d.get("name") or "untitled"))
+        m.description = str(d.get("description", ""))
         m.config.update({k: _text(v) for k, v in (d.get("config") or {}).items()})
         m.root = System.from_json(d)
         return m

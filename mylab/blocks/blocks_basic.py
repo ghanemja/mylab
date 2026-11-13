@@ -377,11 +377,17 @@ class Sink(Node):
         self.log_t: list[float] = []
         self.log_u: list[list] = [[] for _ in range(self.n_in())]
         self.count = 0
+        self.last_count = -2
 
     def out(self, t, u):
         if self.sim.logging:
+            if self.log_t and self.log_t[-1] == t and self.last_count == self.count - 1:
+                for k, v in enumerate(u):  # same instant again (after a state reset): keep the newer values
+                    self.log_u[k][-1] = np.ravel(v, order="F").copy()
+                return []
             if self.count % self.decimation == 0:
                 self.log_t.append(t)
+                self.last_count = self.count
                 for k, v in enumerate(u):
                     self.log_u[k].append(np.ravel(v, order="F").copy())
             self.count += 1
@@ -561,9 +567,32 @@ class Divide(Product):
     params = [P("Inputs", "*/", "List of * and /", "text"), Product.params[1]]
 
 
-elementwise("Abs", "Math", "Absolute value.", lambda u, b: np.abs(u), zc=lambda u, b: u, icon="|u|")
-elementwise("Sign", "Math", "Sign of the input: -1, 0 or 1.", lambda u, b: np.sign(u), zc=lambda u, b: u, aliases=("Signum",),
-            icon="sgn")
+@block("Abs", "Math", "Absolute value.", icon="|u|")
+class Abs(Node):
+    params = []
+    has_zc = True
+
+    def out(self, t, u):
+        v = u[0]
+        return [np.where(self.latched(lambda: v >= 0), v, -v)]
+
+    def zc(self, t, u):
+        return list(np.ravel(u[0]))
+
+
+@block("Sign", "Math", "Sign of the input: -1, 0 or 1.", aliases=("Signum",), icon="sgn")
+class Sign(Node):
+    params = []
+    has_zc = True
+
+    def out(self, t, u):
+        v = u[0]
+        return [self.latched(lambda: np.sign(v)) + 0.0 * v]
+
+    def zc(self, t, u):
+        return list(np.ravel(u[0]))
+
+
 elementwise("UnaryMinus", "Math", "Negates the input.", lambda u, b: -u, icon="−u")
 elementwise("Bias", "Math", "Adds a constant to the input.", lambda u, b: u + b.num("Bias"), [P("Bias", "0", "Bias")], icon="u+b")
 elementwise("SumOfElements", "Math", "Adds up the elements of a vector.", lambda u, b: np.array([np.sum(u)]),
@@ -725,7 +754,7 @@ class RelationalOperator(Node):
         self.op = _relop(self)
 
     def out(self, t, u):
-        return [self.op(u[0], u[1]).astype(float)]
+        return [self.latched(lambda: self.op(u[0], u[1]).astype(float))]
 
     def zc(self, t, u):
         return list(np.ravel(u[0] - u[1]))
@@ -741,7 +770,7 @@ class CompareToConstant(Node):
         self.op, self.c = _relop(self, "relop"), self.num("const")
 
     def out(self, t, u):
-        return [self.op(u[0], self.c).astype(float)]
+        return [self.latched(lambda: self.op(u[0], self.c).astype(float))]
 
     def zc(self, t, u):
         return list(np.ravel(u[0] - self.c))
@@ -818,7 +847,7 @@ class Switch(Node):
         self.th = self.num("Threshold") if self.mode != "~=" else np.zeros(1)
 
     def out(self, t, u):
-        c = u[1] >= self.th if self.mode == ">=" else (u[1] > self.th if self.mode == ">" else u[1] != 0)
+        c = self.latched(lambda: u[1] >= self.th if self.mode == ">=" else (u[1] > self.th if self.mode == ">" else u[1] != 0))
         return [np.where(c, u[0], u[2]).astype(float)]
 
     def zc(self, t, u):
@@ -891,10 +920,13 @@ class Saturation(Node):
             raise BlockError("the lower limit is above the upper limit")
 
     def out(self, t, u):
-        return [np.minimum(np.maximum(u[0], self.lo), self.hi)]
+        v = u[0]
+        side = self.latched(lambda: np.where(v >= self.hi, 1, np.where(v <= self.lo, -1, 0)) + 0 * (self.hi + self.lo).astype(int))
+        return [np.where(side > 0, self.hi, np.where(side < 0, self.lo, v)).astype(float)]
 
     def zc(self, t, u):
-        return list(np.ravel(u[0] - self.hi)) + list(np.ravel(u[0] - self.lo))
+        both = u[0] + 0.0 * (self.hi + self.lo)
+        return list(np.ravel(both - self.hi)) + list(np.ravel(both - self.lo))
 
 
 @block("SaturationDynamic", "Nonlinear", "Limits the middle input to the range given by the upper and lower inputs.",
@@ -917,10 +949,12 @@ class DeadZone(Node):
 
     def out(self, t, u):
         v = u[0]
-        return [np.where(v > self.hi, v - self.hi, np.where(v < self.lo, v - self.lo, 0.0))]
+        side = self.latched(lambda: np.where(v > self.hi, 1, np.where(v < self.lo, -1, 0)) + 0 * (self.hi + self.lo).astype(int))
+        return [np.where(side > 0, v - self.hi, np.where(side < 0, v - self.lo, 0.0))]
 
     def zc(self, t, u):
-        return list(np.ravel(u[0] - self.hi)) + list(np.ravel(u[0] - self.lo))
+        both = u[0] + 0.0 * (self.hi + self.lo)
+        return list(np.ravel(both - self.hi)) + list(np.ravel(both - self.lo))
 
 
 @block("Relay", "Nonlinear", "Switches on above one level and off below another (hysteresis).", icon="relay")
@@ -955,10 +989,25 @@ class Relay(Node):
 elementwise("Quantizer", "Nonlinear", "Rounds the input to a multiple of the quantization interval.",
             lambda u, b: b.num("QuantizationInterval") * np.sign(u) * np.floor(np.abs(u) / b.num("QuantizationInterval") + 0.5),
             [P("QuantizationInterval", "0.5", "Quantization interval")], icon="quant")
-elementwise("CoulombViscousFriction", "Nonlinear", "Friction: sign(u) * (gain*|u| + offset).",
-            lambda u, b: np.sign(u) * (b.num("gain") * np.abs(u) + b.num("offset")),
-            [P("offset", "[1 3 2 0]", "Coulomb friction (offset)"), P("gain", "1", "Viscous friction coefficient (gain)")],
-            zc=lambda u, b: u, title="Coulomb & Viscous Friction", icon="fric")
+
+
+@block("CoulombViscousFriction", "Nonlinear", "Friction: sign(u) * (gain*|u| + offset).", title="Coulomb & Viscous Friction",
+       icon="fric")
+class CoulombViscousFriction(Node):
+    params = [P("offset", "[1 3 2 0]", "Coulomb friction (offset)"), P("gain", "1", "Viscous friction coefficient (gain)")]
+    has_zc = True
+
+    def init(self):
+        self.offset, self.gain = self.num("offset"), self.num("gain")
+
+    def out(self, t, u):
+        v = u[0]
+        s = self.latched(lambda: np.sign(v))
+        return [np.asarray(self.gain * v + s * self.offset, float)]
+
+    def zc(self, t, u):
+        return list(np.ravel(u[0] + 0.0 * self.offset))
+
 
 
 @block("RateLimiter", "Nonlinear", "Limits how fast the output may rise and fall.", icon="rate")

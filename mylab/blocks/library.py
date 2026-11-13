@@ -168,6 +168,7 @@ class Node:
     nx = 0
     has_zc = False
     is_sink = False
+    time_varying = False     # the output can change even while all inputs are constant
 
     def __init__(self, path: str, raw: dict, ctx: Any):
         self.path = path
@@ -182,6 +183,7 @@ class Node:
         self.rate: Any = None
         self.stamp = -1
         self._cache: dict[str, Any] = {}
+        self._mode: Any = None
 
     # -- parameters -------------------------------------------------------------------
     def text(self, name: str) -> str:
@@ -267,6 +269,21 @@ class Node:
         if not isinstance(self.rate, tuple):
             raise BlockError("this block needs a discrete sample time (a positive SampleTime, or a discrete input)")
         return self.rate[0]
+
+    def latched(self, compute: Callable) -> Any:
+        """A mode (which side of a limit the input is on, a switch position...).
+
+        It is worked out afresh in major steps. While the solver locates zero
+        crossings, minor steps reuse the mode of the last major step, so the
+        equations stay smooth inside a step and change only at the located event.
+        """
+        sim = self.sim
+        if sim.minor and sim.latch and self._mode is not None:
+            return self._mode
+        mode = compute()
+        if not sim.minor:
+            self._mode = mode
+        return mode
 
     # -- behaviour (defaults) ---------------------------------------------------------
     def init(self) -> None:

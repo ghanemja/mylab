@@ -522,7 +522,10 @@ def _resolve_rates(comp: Compiled) -> None:
         if not timed:
             if partial and len(known) < len(srcs):
                 return False
-            spec[id(n)] = None
+            # fed only by constants: a block without memory is constant too and is computed once
+            plain = type(n).update is Node.update and not n.is_sink and not n.time_varying and n.n_out() > 0 and known \
+                and not n.conds and not n.has_zc
+            spec[id(n)] = "const" if plain else None
         else:
             spec[id(n)] = timed[0] if all(s == timed[0] for s in timed) else None
         return True
@@ -673,6 +676,7 @@ class Sim:
         self.cfg = cfg
         self.minor = True
         self.logging = False
+        self.latch = False
         self.initializing = True
         self.step_no = 0
         self.hits: set = set()
@@ -836,6 +840,7 @@ class Sim:
         self.x0 = x
         self.cont = [n for n in order if n.nx]
         self.zc_nodes = [n for n in order if n.has_zc]
+        self.settlers = [n for n in order if hasattr(n, "settle")]
         for n in order:
             if isinstance(n.rate, tuple):
                 self.rates.setdefault(n.rate, 0)
@@ -868,6 +873,12 @@ class Sim:
         for r in self.hits:
             while self.hit_time(r) <= t + tol:
                 self.rates[r] += 1
+        if self.x_dirty:
+            # States were reset: show the new values at this instant and let blocks adjust to them.
+            self.eval(t, x, True, True)
+            for n in self.settlers:
+                n.x = x[n.xo:n.xo + n.nx]
+                n.settle(t, self.gather(n))
         self.logging = False
         if self.on_step is not None:
             self.on_step(self, t)
@@ -951,6 +962,7 @@ class Sim:
         x = self.major(t, self.x0.copy())
         nx = x.size
         zc_on = use_zc and bool(self.zc_nodes)
+        self.latch = zc_on
         solver = None
         h_hint = None
         tiny_events = 0
