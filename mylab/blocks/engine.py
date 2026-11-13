@@ -24,32 +24,60 @@ from typing import Any, Callable
 
 import numpy as np
 
-from .library import INF, BlockError, Node, find_type, sig
+from .library import BlockError, Node, find_type, sig
 from .blocks_basic import Display, Inport, Outport, Scope, Sink, ToWorkspace, XYGraph
 from .blocks_more import BusCreator, Gate, HeldOutput
 from .model import Block, Model, System
 
 ZERO = np.zeros(1)
-VARIABLE = {"ode45": "RK45", "ode23": "RK23", "ode113": "DOP853", "ode15s": "BDF", "ode23s": "Radau", "ode23t": "Radau",
-            "ode23tb": "Radau", "auto": "RK45", "variablestepauto": "RK45", "variablestepdiscrete": "discrete",
-            "daessc": "BDF", "odeN": "RK45"}
+VARIABLE = {
+    "ode45": "RK45",
+    "ode23": "RK23",
+    "ode113": "DOP853",
+    "ode15s": "BDF",
+    "ode23s": "Radau",
+    "ode23t": "Radau",
+    "ode23tb": "Radau",
+    "auto": "RK45",
+    "variablestepauto": "RK45",
+    "variablestepdiscrete": "discrete",
+    "daessc": "BDF",
+    "odeN": "RK45",
+}
 # Fixed-step methods as (a, b, c) tableaus.
 FIXED = {
     "ode1": ([[]], [1.0], [0.0]),
     "ode2": ([[], [1.0]], [0.5, 0.5], [0.0, 1.0]),
     "ode3": ([[], [0.5], [0.0, 0.75]], [2 / 9, 1 / 3, 4 / 9], [0.0, 0.5, 0.75]),
     "ode4": ([[], [0.5], [0.0, 0.5], [0.0, 0.0, 1.0]], [1 / 6, 1 / 3, 1 / 3, 1 / 6], [0.0, 0.5, 0.5, 1.0]),
-    "ode5": ([[], [1 / 5], [3 / 40, 9 / 40], [44 / 45, -56 / 15, 32 / 9], [19372 / 6561, -25360 / 2187, 64448 / 6561, -212 / 729],
-              [9017 / 3168, -355 / 33, 46732 / 5247, 49 / 176, -5103 / 18656]],
-             [35 / 384, 0.0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84], [0.0, 1 / 5, 3 / 10, 4 / 5, 8 / 9, 1.0]),
+    "ode5": (
+        [
+            [],
+            [1 / 5],
+            [3 / 40, 9 / 40],
+            [44 / 45, -56 / 15, 32 / 9],
+            [19372 / 6561, -25360 / 2187, 64448 / 6561, -212 / 729],
+            [9017 / 3168, -355 / 33, 46732 / 5247, 49 / 176, -5103 / 18656],
+        ],
+        [35 / 384, 0.0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84],
+        [0.0, 1 / 5, 3 / 10, 4 / 5, 8 / 9, 1.0],
+    ),
 }
-FIXED_ALIASES = {"fixedstepauto": "ode3", "fixedstepdiscrete": "discrete", "ode8": "ode5", "ode14x": "ode5", "ode1be": "ode1"}
+FIXED_ALIASES = {
+    "fixedstepauto": "ode3",
+    "fixedstepdiscrete": "discrete",
+    "ode8": "ode5",
+    "ode14x": "ode5",
+    "ode1be": "ode1",
+}
 
 
 class SimError(Exception):
     """A simulation or compilation error. ``path`` names the block at fault, if any."""
 
-    def __init__(self, message: str, path: str | None = None, paths: list | None = None, diagnostics: list | None = None):
+    def __init__(
+        self, message: str, path: str | None = None, paths: list | None = None, diagnostics: list | None = None
+    ):
         super().__init__(message)
         self.message = message
         self.path = path
@@ -61,12 +89,14 @@ class SimError(Exception):
 # Evaluation of parameters and user code
 # =====================================================================================
 
+
 class Context:
     """Evaluates MATLAB expressions for block parameters, in the workspace plus mask variables."""
 
     def __init__(self, interp: Any = None, frame: Any = None, scope: dict | None = None, shared: dict | None = None):
         if interp is None:
             from ..interpreter import Interpreter
+
             interp = Interpreter(out=lambda s: None)
         self.interp = interp
         self.frame = frame
@@ -93,6 +123,7 @@ class Context:
     def _frames(self, extra: dict | None = None):
         """Workspaces to try, in order: the base workspace, then the caller's (both with mask variables on top)."""
         from ..interpreter import Frame
+
         interp = self.interp
         seen = []
         for src in (interp.base, self.frame):
@@ -114,6 +145,7 @@ class Context:
 
     def _eval_node(self, node: Any, extra: dict | None = None) -> Any:
         from ..errors import MatlabError
+
         interp = self.interp
         last: Exception | None = None
         for frame in self._frames(extra):
@@ -131,6 +163,7 @@ class Context:
         from .. import ast as A
         from ..errors import MatlabError
         from ..parser import parse
+
         program = parse(expr)
         if len(program.body) != 1 or not isinstance(program.body[0], A.ExprStmt):
             raise MatlabError("a single expression is expected")
@@ -149,6 +182,7 @@ class Context:
     def compile_expr(self, expr: str, names: list[str]) -> Callable:
         """A function of the named variables that evaluates ``expr`` (other names come from the workspace)."""
         from ..interpreter import Frame
+
         try:
             node = self._parse_expr(expr)
         except Exception as exc:
@@ -167,10 +201,12 @@ class Context:
                 return interp.eval(node, frame)
             finally:
                 interp.frames.pop()
+
         return call
 
     def compile_function(self, code: str) -> Callable:
         from ..parser import parse
+
         try:
             program = parse(code)
         except Exception as exc:
@@ -183,10 +219,12 @@ class Context:
 
         def call(args, nout):
             return interp.call_user_function(main, args, nout, functions, None)
+
         return call
 
     def compile_callable(self, text: str) -> Callable:
         from ..values import FunctionHandle
+
         interp = self.interp
         text = text.strip()
         if text.startswith("@"):
@@ -208,11 +246,21 @@ class Context:
 # Compilation
 # =====================================================================================
 
+
 class _Sys:
     """One (sub)system while flattening."""
 
-    def __init__(self, system: System, prefix: str, parent: "_Sys | None", block: Block | None, conds: list, ctx: Context):
-        self.system, self.prefix, self.parent, self.block, self.conds, self.ctx = system, prefix, parent, block, conds, ctx
+    def __init__(
+        self, system: System, prefix: str, parent: "_Sys | None", block: Block | None, conds: list, ctx: Context
+    ):
+        self.system, self.prefix, self.parent, self.block, self.conds, self.ctx = (
+            system,
+            prefix,
+            parent,
+            block,
+            conds,
+            ctx,
+        )
         self.gated = False
         self.into = {(ln.dst[0], ln.dst[1]): ln for ln in system.lines}
         self.children: dict[str, _Sys] = {}
@@ -238,7 +286,9 @@ class Compiled:
         self.by_path: dict[str, Node] = {}
         self.taps: dict[str, LogTap] = {}
 
-    def problem(self, level: str, message: str, path: str | None = None, port: int | None = None, kind: str = "") -> None:
+    def problem(
+        self, level: str, message: str, path: str | None = None, port: int | None = None, kind: str = ""
+    ) -> None:
         d = {"level": level, "message": message, "path": path, "kind": kind}
         if port is not None:
             d["port"] = port
@@ -259,6 +309,7 @@ def port_count(block: Block, kind: str) -> int:
     params = {p.name: p.default for p in cls.params}
     params.update(block.params)
     from .library import count_ports
+
     return count_ports(cls.nin if kind == "in" else cls.nout, params)
 
 
@@ -270,8 +321,9 @@ def _port_number(system: System, block: Block, type_name: str) -> int:
         return same.index(block) + 1
 
 
-def compile_model(model: Model, interp: Any = None, frame: Any = None, strict: bool = True,
-                  config: dict | None = None) -> Compiled:
+def compile_model(
+    model: Model, interp: Any = None, frame: Any = None, strict: bool = True, config: dict | None = None
+) -> Compiled:
     """Flatten, check and sort a model. With ``strict`` the first error is raised as :class:`SimError`."""
     ctx = Context(interp, frame)
     comp = Compiled(model, ctx)
@@ -293,7 +345,9 @@ def compile_model(model: Model, interp: Any = None, frame: Any = None, strict: b
             cls = find_type(b.type)
             path = sy.path(b.name)
             if cls is None:
-                comp.problem("error", f"'{path}': there is no block type '{b.type}' in mylab Blocks.", path, kind="type")
+                comp.problem(
+                    "error", f"'{path}': there is no block type '{b.type}' in mylab Blocks.", path, kind="type"
+                )
                 continue
             kind = cls.type
             if kind == "Subsystem":
@@ -304,7 +358,9 @@ def compile_model(model: Model, interp: Any = None, frame: Any = None, strict: b
                     it = getattr(find_type(ib.type), "type", "")
                     if it in ("EnablePort", "TriggerPort"):
                         which = "enable" if it == "EnablePort" else "trigger"
-                        g = Gate(f"{path}/{ib.name}", which, ib.params.get("TriggerType", "rising").strip().lower(), ctx)
+                        g = Gate(
+                            f"{path}/{ib.name}", which, ib.params.get("TriggerType", "rising").strip().lower(), ctx
+                        )
                         g.conds = list(sy.conds)
                         comp.nodes.append(g)
                         gates.append((g, sy, b.name, which))
@@ -318,8 +374,13 @@ def compile_model(model: Model, interp: Any = None, frame: Any = None, strict: b
                         try:
                             scope[name] = sy.ctx.child(scope).evaluate(str(expr))
                         except Exception as exc:
-                            comp.problem("error", f"'{path}': mask parameter {name} = '{expr}' cannot be evaluated: "
-                                         f"{getattr(exc, 'message', exc)}", path, kind="param")
+                            comp.problem(
+                                "error",
+                                f"'{path}': mask parameter {name} = '{expr}' cannot be evaluated: "
+                                f"{getattr(exc, 'message', exc)}",
+                                path,
+                                kind="param",
+                            )
                     child_ctx = sy.ctx.child(scope)
                 child = _Sys(inner, path, sy, b, conds, child_ctx)
                 child.gated = gated
@@ -376,7 +437,10 @@ def compile_model(model: Model, interp: Any = None, frame: Any = None, strict: b
             if child is None:
                 return None
             for ob in child.system.blocks:
-                if getattr(find_type(ob.type), "type", "") == "Outport" and _port_number(child.system, ob, "Outport") == port:
+                if (
+                    getattr(find_type(ob.type), "type", "") == "Outport"
+                    and _port_number(child.system, ob, "Outport") == port
+                ):
                     held = node_of.get((id(child), ob.name))
                     return (held, 0) if held is not None else source(child, ob.name, 1, seen)
             return None
@@ -385,8 +449,12 @@ def compile_model(model: Model, interp: Any = None, frame: Any = None, strict: b
         if kind == "From":
             hit = find_goto(sy, b.params.get("GotoTag", "A").strip())
             if hit is None:
-                comp.problem("error", f"'{sy.path(name)}': there is no Goto block with the tag "
-                             f"'{b.params.get('GotoTag', 'A')}'.", sy.path(name), kind="goto")
+                comp.problem(
+                    "error",
+                    f"'{sy.path(name)}': there is no Goto block with the tag '{b.params.get('GotoTag', 'A')}'.",
+                    sy.path(name),
+                    kind="goto",
+                )
                 return None
             return source(hit[0], hit[1].name, 1, seen)
         return None
@@ -431,20 +499,48 @@ def compile_model(model: Model, interp: Any = None, frame: Any = None, strict: b
         for ln in sy.system.lines:
             for end, what in ((ln.src, "starts"), (ln.dst, "ends")):
                 if end[0] not in names:
-                    comp.problem("error", f"A line {what} at '{sy.path(end[0])}', which does not exist.", sy.prefix or None,
-                                 kind="line")
+                    comp.problem(
+                        "error",
+                        f"A line {what} at '{sy.path(end[0])}', which does not exist.",
+                        sy.prefix or None,
+                        kind="line",
+                    )
             if ln.dst in seen_dst:
-                comp.problem("error", f"Input {ln.dst[1]} of '{sy.path(ln.dst[0])}' has more than one line going into it.",
-                             sy.path(ln.dst[0]), kind="line")
+                comp.problem(
+                    "error",
+                    f"Input {ln.dst[1]} of '{sy.path(ln.dst[0])}' has more than one line going into it.",
+                    sy.path(ln.dst[0]),
+                    kind="line",
+                )
             seen_dst.add(ln.dst)
             outs[ln.src] = outs.get(ln.src, 0) + 1
             sb, db = sy.system.block(ln.src[0]), sy.system.block(ln.dst[0])
-            if sb is not None and isinstance(ln.src[1], int) and ln.src[1] > port_count(sb, "out") and find_type(sb.type):
-                comp.problem("error", f"A line starts at output {ln.src[1]} of '{sy.path(sb.name)}', "
-                             f"which has {port_count(sb, 'out')} output(s).", sy.path(sb.name), kind="line")
-            if db is not None and isinstance(ln.dst[1], int) and ln.dst[1] > port_count(db, "in") and find_type(db.type):
-                comp.problem("error", f"A line ends at input {ln.dst[1]} of '{sy.path(db.name)}', "
-                             f"which has {port_count(db, 'in')} input(s).", sy.path(db.name), kind="line")
+            if (
+                sb is not None
+                and isinstance(ln.src[1], int)
+                and ln.src[1] > port_count(sb, "out")
+                and find_type(sb.type)
+            ):
+                comp.problem(
+                    "error",
+                    f"A line starts at output {ln.src[1]} of '{sy.path(sb.name)}', "
+                    f"which has {port_count(sb, 'out')} output(s).",
+                    sy.path(sb.name),
+                    kind="line",
+                )
+            if (
+                db is not None
+                and isinstance(ln.dst[1], int)
+                and ln.dst[1] > port_count(db, "in")
+                and find_type(db.type)
+            ):
+                comp.problem(
+                    "error",
+                    f"A line ends at input {ln.dst[1]} of '{sy.path(db.name)}', "
+                    f"which has {port_count(db, 'in')} input(s).",
+                    sy.path(db.name),
+                    kind="line",
+                )
         for b in sy.system.blocks:
             if find_type(b.type) is None:
                 continue
@@ -454,17 +550,30 @@ def compile_model(model: Model, interp: Any = None, frame: Any = None, strict: b
             child = sy.children.get(b.name)
             if child is not None and child.gated:
                 for which in ("enable", "trigger"):
-                    has = any(getattr(find_type(ib.type), "type", "") == ("EnablePort" if which == "enable" else "TriggerPort")
-                              for ib in child.system.blocks)
+                    has = any(
+                        getattr(find_type(ib.type), "type", "")
+                        == ("EnablePort" if which == "enable" else "TriggerPort")
+                        for ib in child.system.blocks
+                    )
                     if has and (b.name, which) not in sy.into:
                         unconnected.add((sy.path(b.name), which))
             for k in range(port_count(b, "out")):
                 if (b.name, k + 1) not in outs:
-                    comp.problem("info", f"Output {k + 1} of '{sy.path(b.name)}' is not connected.", sy.path(b.name), k + 1,
-                                 "unconnected-output")
+                    comp.problem(
+                        "info",
+                        f"Output {k + 1} of '{sy.path(b.name)}' is not connected.",
+                        sy.path(b.name),
+                        k + 1,
+                        "unconnected-output",
+                    )
     for path, port in sorted(unconnected, key=str):
-        comp.problem("warning", f"Input {port} of '{path}' is not connected; it is read as zero.", path,
-                     port if isinstance(port, int) else None, "unconnected-input")
+        comp.problem(
+            "warning",
+            f"Input {port} of '{path}' is not connected; it is read as zero.",
+            path,
+            port if isinstance(port, int) else None,
+            "unconnected-input",
+        )
 
     # -- parameters --------------------------------------------------------------------
     bad: set[int] = set()
@@ -523,8 +632,15 @@ def _resolve_rates(comp: Compiled) -> None:
             if partial and len(known) < len(srcs):
                 return False
             # fed only by constants: a block without memory is constant too and is computed once
-            plain = type(n).update is Node.update and not n.is_sink and not n.time_varying and n.n_out() > 0 and known \
-                and not n.conds and not n.has_zc
+            plain = (
+                type(n).update is Node.update
+                and not n.is_sink
+                and not n.time_varying
+                and n.n_out() > 0
+                and known
+                and not n.conds
+                and not n.has_zc
+            )
             spec[id(n)] = "const" if plain else None
         else:
             spec[id(n)] = timed[0] if all(s == timed[0] for s in timed) else None
@@ -613,16 +729,24 @@ def _sort(comp: Compiled) -> None:
                 break
             chain.append(nxt[0])
         paths = [nodes[i].path for i in chain]
-        comp.diagnostics.append({
-            "level": "error", "kind": "algebraic-loop", "path": paths[0], "paths": paths,
-            "message": "Algebraic loop: " + " -> ".join(f"'{p}'" for p in paths + paths[:1]) +
-                       ". Each of these blocks needs the output of the one before it at the same instant, so there is "
-                       "no order to compute them in. Break the loop with a block that has memory (Integrator, Unit Delay, "
-                       "Memory, Transfer Fcn with more poles than zeros)."})
+        comp.diagnostics.append(
+            {
+                "level": "error",
+                "kind": "algebraic-loop",
+                "path": paths[0],
+                "paths": paths,
+                "message": "Algebraic loop: "
+                + " -> ".join(f"'{p}'" for p in paths + paths[:1])
+                + ". Each of these blocks needs the output of the one before it at the same instant, so there is "
+                "no order to compute them in. Break the loop with a block that has memory (Integrator, Unit Delay, "
+                "Memory, Transfer Fcn with more poles than zeros).",
+            }
+        )
     if loops:
         return
     # Kahn's algorithm, keeping the model's block order where the dependencies allow it.
     import heapq
+
     ready = [i for i in range(len(nodes)) if indeg[i] == 0]
     heapq.heapify(ready)
     order = []
@@ -647,6 +771,7 @@ def diagnose(model: Model, interp: Any = None, frame: Any = None) -> list[dict]:
 # =====================================================================================
 # Simulation
 # =====================================================================================
+
 
 class SimResult:
     def __init__(self):
@@ -686,8 +811,10 @@ class Sim:
         self.xwork = np.zeros(0)
         self.t0, self.tf = self.ctx.t0, self.ctx.tf
         if not (math.isfinite(self.t0) and math.isfinite(self.tf)):
-            raise SimError("StartTime and StopTime must be finite numbers. To run until a condition is met, use a "
-                           "Stop Simulation block and a StopTime that is large enough.")
+            raise SimError(
+                "StartTime and StopTime must be finite numbers. To run until a condition is met, use a "
+                "Stop Simulation block and a StopTime that is large enough."
+            )
         if self.tf < self.t0:
             raise SimError(f"StopTime ({self.tf:g}) is before StartTime ({self.t0:g}).")
         for n in self.order:
@@ -705,7 +832,7 @@ class Sim:
         self.stop_requested = path
 
     def set_state(self, node: Node, values: np.ndarray) -> None:
-        self.xwork[node.xo:node.xo + node.nx] = values
+        self.xwork[node.xo : node.xo + node.nx] = values
         self.x_dirty = True
 
     @staticmethod
@@ -743,7 +870,7 @@ class Sim:
                 if r is not None and (minor or r == "const" or r not in hits):
                     continue
             if n.nx:
-                n.x = x[n.xo:n.xo + n.nx]
+                n.x = x[n.xo : n.xo + n.nx]
             try:
                 n.y = n.out(t, self.gather(n))
             except Exception as exc:
@@ -757,19 +884,24 @@ class Sim:
         for n in self.cont:
             if n.conds and not self.active(n):
                 continue
-            n.x = x[n.xo:n.xo + n.nx]
+            n.x = x[n.xo : n.xo + n.nx]
             try:
                 d = n.der(t, self.gather(n))
             except Exception as exc:
                 raise self._fail(n, exc) from None
             if np.size(d) != n.nx:
-                raise SimError(f"'{n.path}': the input has {np.size(d)} elements but the block has {n.nx} states.", n.path)
-            dx[n.xo:n.xo + n.nx] = d
+                raise SimError(
+                    f"'{n.path}': the input has {np.size(d)} elements but the block has {n.nx} states.", n.path
+                )
+            dx[n.xo : n.xo + n.nx] = d
         if not np.all(np.isfinite(dx)):
             k = int(np.flatnonzero(~np.isfinite(dx))[0])
             who = next((n for n in self.cont if n.xo <= k < n.xo + n.nx), None)
-            raise SimError(f"The derivative of '{who.path if who else '?'}' is not finite at t = {t:g} "
-                           "(division by zero, or the solution is growing without bound).", who.path if who else None)
+            raise SimError(
+                f"The derivative of '{who.path if who else '?'}' is not finite at t = {t:g} "
+                "(division by zero, or the solution is growing without bound).",
+                who.path if who else None,
+            )
         return dx
 
     def zc_values(self, t: float, x: np.ndarray) -> np.ndarray:
@@ -779,7 +911,7 @@ class Sim:
                 g += [0.0] * getattr(n, "zc_len", 0)
                 continue
             if n.nx:
-                n.x = x[n.xo:n.xo + n.nx]
+                n.x = x[n.xo : n.xo + n.nx]
             try:
                 v = n.zc(t, self.gather(n))
             except Exception as exc:
@@ -794,7 +926,7 @@ class Sim:
         for n in order:
             n.setup(None)
         x = np.zeros(0)
-        for attempt in range(8):
+        for _attempt in range(8):
             off = 0
             for n in order:
                 n.xo = off  # type: ignore[attr-defined]
@@ -805,7 +937,7 @@ class Sim:
                     x0 = np.asarray(n.initial_state(), float)  # type: ignore[attr-defined]
                     if x0.size != n.nx:
                         raise SimError(f"'{n.path}': the initial state has the wrong size.", n.path)
-                    x[n.xo:n.xo + n.nx] = x0
+                    x[n.xo : n.xo + n.nx] = x0
             self.eval(self.t0, x, True)
             self.eval(self.t0, x, True)  # second pass: inputs that come from blocks later in the order
             changed = False
@@ -826,7 +958,7 @@ class Sim:
             if fn is not None and n.nx:
                 v = fn(self.gather(n))
                 if v is not None:
-                    x[n.xo:n.xo + n.nx] = v
+                    x[n.xo : n.xo + n.nx] = v
                     late = True
         if late:
             self.eval(self.t0, x, True)
@@ -865,7 +997,7 @@ class Sim:
         for n in self.order:
             if n.stamp == step:
                 if n.nx:
-                    n.x = x[n.xo:n.xo + n.nx]
+                    n.x = x[n.xo : n.xo + n.nx]
                 try:
                     n.update(t, self.gather(n))
                 except Exception as exc:
@@ -877,7 +1009,7 @@ class Sim:
             # States were reset: show the new values at this instant and let blocks adjust to them.
             self.eval(t, x, True, True)
             for n in self.settlers:
-                n.x = x[n.xo:n.xo + n.nx]
+                n.x = x[n.xo : n.xo + n.nx]
                 n.settle(t, self.gather(n))
         self.logging = False
         if self.on_step is not None:
@@ -912,8 +1044,10 @@ class Sim:
         self.solver_name = name
         if key in FIXED or key == "discrete":
             if key == "discrete" and nx:
-                raise SimError(f"The solver '{name}' is for models without continuous states, but this model has "
-                               f"{nx} (for example in '{self.cont[0].path}'). Choose ode45 or ode4.")
+                raise SimError(
+                    f"The solver '{name}' is for models without continuous states, but this model has "
+                    f"{nx} (for example in '{self.cont[0].path}'). Choose ode45 or ode4."
+                )
             fastest = min((r[0] for r in self.rates), default=None)
             h = setting("FixedStep", fastest if fastest else (span / 50 if span > 0 else 1.0))
             if h <= 0:
@@ -922,11 +1056,14 @@ class Sim:
             return
         method = VARIABLE.get(key)
         if method is None:
-            raise SimError(f"Unknown solver '{name}'. Variable-step: ode45, ode23, ode113, ode15s, ode23s. "
-                           "Fixed-step: ode1 (Euler), ode2, ode3, ode4 (Runge-Kutta), ode5.")
+            raise SimError(
+                f"Unknown solver '{name}'. Variable-step: ode45, ode23, ode113, ode15s, ode23s. "
+                "Fixed-step: ode1 (Euler), ode2, ode3, ode4 (Runge-Kutta), ode5."
+            )
         if method == "discrete" and nx:
-            raise SimError(f"The solver '{name}' is for models without continuous states, but this model has {nx}. "
-                           "Choose ode45.")
+            raise SimError(
+                f"The solver '{name}' is for models without continuous states, but this model has {nx}. Choose ode45."
+            )
         hmax = setting("MaxStep", span / 50 if span > 0 else 1.0)
         rtol, atol = setting("RelTol", 1e-3), setting("AbsTol", 1e-6)
         if hmax <= 0 or rtol <= 0 or atol <= 0:
@@ -951,13 +1088,21 @@ class Sim:
                     ks.append(self.deriv(t + c[i] * h, xi))
                 x = x + h * sum((b[i] * ks[i] for i in range(len(b))), np.zeros(nx))
                 if not np.all(np.isfinite(x)):
-                    raise SimError(f"The states are no longer finite at t = {t + h:g}. The step size {h:g} may be too "
-                                   "large for this model; try a smaller FixedStep or a variable-step solver.")
+                    raise SimError(
+                        f"The states are no longer finite at t = {t + h:g}. The step size {h:g} may be too "
+                        "large for this model; try a smaller FixedStep or a variable-step solver."
+                    )
 
     def run_variable(self, method: str, hmax: float, rtol: float, atol: float, use_zc: bool) -> None:
         from scipy import integrate
-        cls = {"RK45": integrate.RK45, "RK23": integrate.RK23, "DOP853": integrate.DOP853, "BDF": integrate.BDF,
-               "Radau": integrate.Radau}.get(method, integrate.RK45)
+
+        cls = {
+            "RK45": integrate.RK45,
+            "RK23": integrate.RK23,
+            "DOP853": integrate.DOP853,
+            "BDF": integrate.BDF,
+            "Radau": integrate.Radau,
+        }.get(method, integrate.RK45)
         t = self.t0
         x = self.major(t, self.x0.copy())
         nx = x.size
@@ -971,8 +1116,10 @@ class Sim:
         while t < self.tf - eps and not self.stop_requested:
             steps += 1
             if steps > 2_000_000:
-                raise SimError(f"The simulation needs more than two million steps (it reached t = {t:g}). "
-                               "Loosen the tolerances, raise MaxStep, or shorten the run.")
+                raise SimError(
+                    f"The simulation needs more than two million steps (it reached t = {t:g}). "
+                    "Loosen the tolerances, raise MaxStep, or shorten the run."
+                )
             # State of things just after the major step at t: derivative and zero-crossing values.
             f0 = self.deriv(t, x) if nx else None
             g0 = self.zc_values(t, x) if zc_on else None
@@ -996,8 +1143,10 @@ class Sim:
                         solver = cls(self.deriv, t, x, bound, max_step=hmax, rtol=rtol, atol=atol)
                 message = solver.step()
                 if solver.status == "failed":
-                    raise SimError(f"The solver could not continue at t = {solver.t:g}: {message or 'step size too small'}. "
-                                   "The model may be stiff (try ode15s) or have a discontinuity without a zero crossing.")
+                    raise SimError(
+                        f"The solver could not continue at t = {solver.t:g}: {message or 'step size too small'}. "
+                        "The model may be stiff (try ode15s) or have a discontinuity without a zero crossing."
+                    )
                 t1, x1 = float(solver.t), np.array(solver.y)
                 dense = solver.dense_output()
                 h_hint = getattr(solver, "h_abs", None)
@@ -1010,9 +1159,11 @@ class Sim:
                     event = True
                     tiny_events = tiny_events + 1 if t1 - t <= 1e-9 * max(1.0, abs(t)) else 0
                     if tiny_events > 500:
-                        raise SimError(f"More than 500 zero crossings in a row near t = {t1:g}. A signal is switching "
-                                       "back and forth infinitely fast (chattering). Add hysteresis (for example a Relay "
-                                       "with different switch-on and switch-off points) or stop the simulation earlier.")
+                        raise SimError(
+                            f"More than 500 zero crossings in a row near t = {t1:g}. A signal is switching "
+                            "back and forth infinitely fast (chattering). Add hysteresis (for example a Relay "
+                            "with different switch-on and switch-off points) or stop the simulation earlier."
+                        )
             x_new = self.major(t1, x1)
             if event or self.x_dirty or nx == 0:
                 solver = None
@@ -1052,9 +1203,13 @@ class Sim:
                 continue
             if isinstance(n, Scope):
                 names = getattr(n, "in_names", [])
-                res.scopes[n.path] = {"t": np.array(n.log_t), "title": n.text("Title"),
-                                      "signals": [{"name": names[k] if k < len(names) else "", "data": n.data(k)}
-                                                  for k in range(len(n.log_u))]}
+                res.scopes[n.path] = {
+                    "t": np.array(n.log_t),
+                    "title": n.text("Title"),
+                    "signals": [
+                        {"name": names[k] if k < len(names) else "", "data": n.data(k)} for k in range(len(n.log_u))
+                    ],
+                }
             elif isinstance(n, XYGraph):
                 res.xy[n.path] = {"t": np.array(n.log_t), "x": n.data(0), "y": n.data(1)}
             elif isinstance(n, ToWorkspace):
@@ -1088,12 +1243,19 @@ def _external(spec: Any, n_ports: int) -> dict:
     t, d = m[:, 0], m[:, 1:]
     fns = {}
     for k in range(d.shape[1]):
-        fns[k + 1] = (lambda tq, _c=d[:, k]: np.array([np.interp(tq, t, _c)]))
+        fns[k + 1] = lambda tq, _c=d[:, k]: np.array([np.interp(tq, t, _c)])
     return fns
 
 
-def simulate(model: Model, interp: Any = None, frame: Any = None, config: dict | None = None,
-             on_step: Callable | None = None, external_input: Any = None, keep_states: bool = False) -> SimResult:
+def simulate(
+    model: Model,
+    interp: Any = None,
+    frame: Any = None,
+    config: dict | None = None,
+    on_step: Callable | None = None,
+    external_input: Any = None,
+    keep_states: bool = False,
+) -> SimResult:
     """Compile and run a model; returns the logged data."""
     comp = compile_model(model, interp, frame, strict=True, config=config)
     if external_input is not None:
@@ -1107,6 +1269,7 @@ def simulate(model: Model, interp: Any = None, frame: Any = None, config: dict |
 # =====================================================================================
 # Linearization and trimming
 # =====================================================================================
+
 
 class _Plant:
     """dx/dt = f(x, u), y = g(x, u) of a model at its start time, for linearize and trim."""
@@ -1122,7 +1285,7 @@ class _Plant:
         self.u = np.zeros(self.nu)
         ext = self.comp.ctx.shared["ext"]
         for k, n in enumerate(self.ins):
-            ext[n.port] = (lambda t, _k=k: self.u[_k:_k + 1])
+            ext[n.port] = lambda t, _k=k: self.u[_k : _k + 1]
         self.t = self.sim.t0
         self.sim.initializing = True  # evaluate every block, whatever its sample time
         self.ny = sum(np.size(self.sim.gather(n)[0]) for n in self.outs) if self.outs else 0
@@ -1144,8 +1307,10 @@ def linearize(model: Model, interp: Any = None, frame: Any = None, x0: Any = Non
     x = plant.sim.x0.copy() if x0 is None else np.ravel(np.asarray(x0, float))
     u = np.zeros(plant.nu) if u0 is None else np.ravel(np.asarray(u0, float))
     if x.size != plant.nx or u.size != plant.nu:
-        raise SimError(f"The model has {plant.nx} continuous states and {plant.nu} inputs, but the operating point has "
-                       f"{x.size} states and {u.size} inputs.")
+        raise SimError(
+            f"The model has {plant.nx} continuous states and {plant.nu} inputs, but the operating point has "
+            f"{x.size} states and {u.size} inputs."
+        )
     nx, nu = plant.nx, plant.nu
     _, y0 = plant(x, u)
     ny = y0.size
@@ -1174,12 +1339,15 @@ def linearize(model: Model, interp: Any = None, frame: Any = None, x0: Any = Non
 def trim(model: Model, interp: Any = None, frame: Any = None, x0: Any = None, u0: Any = None) -> dict:
     """A steady state: states x and inputs u for which all derivatives are zero (least squares from a guess)."""
     from scipy import optimize
+
     plant = _Plant(model, interp, frame)
     x = plant.sim.x0.copy() if x0 is None else np.ravel(np.asarray(x0, float))
     u = np.zeros(plant.nu) if u0 is None else np.ravel(np.asarray(u0, float))
     if x.size != plant.nx or u.size != plant.nu:
-        raise SimError(f"The model has {plant.nx} continuous states and {plant.nu} inputs, but the guess has "
-                       f"{x.size} states and {u.size} inputs.")
+        raise SimError(
+            f"The model has {plant.nx} continuous states and {plant.nu} inputs, but the guess has "
+            f"{x.size} states and {u.size} inputs."
+        )
     nx = plant.nx
     if nx == 0:
         _, y = plant(x, u)

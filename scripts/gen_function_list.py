@@ -34,6 +34,7 @@ SECTIONS = {
     "audio": "Audio files",
     "excel": "Excel files",
     "plotmore": "More plot types",
+    "blockdiagram": "Block diagrams (mylab Blocks)",
 }
 
 

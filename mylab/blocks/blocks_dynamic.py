@@ -10,8 +10,11 @@ import numpy as np
 from .library import ONOFF, SAMPLE, BlockError, Node, P, block, sig
 
 _RESET = ["none", "rising", "falling", "either", "level"]
-_LIMITS = [ONOFF("LimitOutput", "off", "Limit the output"), P("UpperSaturationLimit", "inf", "Upper limit"),
-           P("LowerSaturationLimit", "-inf", "Lower limit")]
+_LIMITS = [
+    ONOFF("LimitOutput", "off", "Limit the output"),
+    P("UpperSaturationLimit", "inf", "Upper limit"),
+    P("LowerSaturationLimit", "-inf", "Lower limit"),
+]
 
 
 def _fit(value: np.ndarray, shape) -> np.ndarray:
@@ -38,13 +41,21 @@ def _edge(kind: str, prev, now) -> bool:
 # Continuous
 # =====================================================================================
 
-@block("Integrator", "Continuous", "Integrates its input over time. Optional limits, reset input and external initial value.",
-       icon="∫")
+
+@block(
+    "Integrator",
+    "Continuous",
+    "Integrates its input over time. Optional limits, reset input and external initial value.",
+    icon="∫",
+)
 class Integrator(Node):
-    params = [P("InitialCondition", "0", "Initial value"),
-              P("ExternalReset", "none", "Reset input", options=_RESET),
-              P("InitialConditionSource", "internal", "Initial value from", options=["internal", "external"]),
-              *_LIMITS, ONOFF("ShowStatePort", "off", "Show a second output with the state")]
+    params = [
+        P("InitialCondition", "0", "Initial value"),
+        P("ExternalReset", "none", "Reset input", options=_RESET),
+        P("InitialConditionSource", "internal", "Initial value from", options=["internal", "external"]),
+        *_LIMITS,
+        ONOFF("ShowStatePort", "off", "Show a second output with the state"),
+    ]
     nin = ["sum", 1, ["if", "ExternalReset", "none", 0, 1], ["if", "InitialConditionSource", "external", 1, 0]]
     nout = ["sum", 1, ["if", "ShowStatePort", "on", 1, 0]]
     df = False
@@ -156,10 +167,16 @@ class LTI(Node):
         n = self.A.shape[0] if self.A.size else 0
         if n == 0:
             self.A, self.B, self.C = np.zeros((0, 0)), np.zeros((0, self.D.shape[1])), np.zeros((self.D.shape[0], 0))
-        if self.A.shape != (n, n) or self.B.shape[0] != n or self.C.shape[1] != n or \
-                self.D.shape != (self.C.shape[0], self.B.shape[1]):
-            raise BlockError(f"the matrices do not fit together: A is {self.A.shape}, B {self.B.shape}, C {self.C.shape}, "
-                             f"D {self.D.shape}")
+        if (
+            self.A.shape != (n, n)
+            or self.B.shape[0] != n
+            or self.C.shape[1] != n
+            or self.D.shape != (self.C.shape[0], self.B.shape[1])
+        ):
+            raise BlockError(
+                f"the matrices do not fit together: A is {self.A.shape}, B {self.B.shape}, C {self.C.shape}, "
+                f"D {self.D.shape}"
+            )
         self.n_states = n
         x0 = np.zeros(n) if x0 is None else np.ravel(x0)
         if x0.size == 1 and n != 1:
@@ -195,6 +212,7 @@ class ContinuousLTI(LTI):
 
 def _tf(node: Node, num_name: str, den_name: str, inverse_powers: bool = False):
     from scipy import signal
+
     num, den = np.atleast_1d(node.num(num_name)), np.atleast_1d(node.num(den_name))
     if den.size == 0 or den[0] == 0 and not inverse_powers:
         den = np.trim_zeros(den, "f")
@@ -213,8 +231,13 @@ def _tf(node: Node, num_name: str, den_name: str, inverse_powers: bool = False):
     return signal.tf2ss(num, den)
 
 
-@block("TransferFcn", "Continuous", "Linear transfer function given by numerator and denominator coefficients in s.",
-       title="Transfer Fcn", icon="tf")
+@block(
+    "TransferFcn",
+    "Continuous",
+    "Linear transfer function given by numerator and denominator coefficients in s.",
+    title="Transfer Fcn",
+    icon="tf",
+)
 class TransferFcn(ContinuousLTI):
     params = [P("Numerator", "[1]", "Numerator coefficients"), P("Denominator", "[1 1]", "Denominator coefficients")]
 
@@ -224,19 +247,31 @@ class TransferFcn(ContinuousLTI):
 
 @block("StateSpace", "Continuous", "Linear system dx/dt = Ax + Bu, y = Cx + Du.", title="State-Space", icon="ss")
 class StateSpace(ContinuousLTI):
-    params = [P("A", "1", "A"), P("B", "1", "B"), P("C", "1", "C"), P("D", "1", "D"),
-              P("InitialCondition", "0", "Initial states")]
+    params = [
+        P("A", "1", "A"),
+        P("B", "1", "B"),
+        P("C", "1", "C"),
+        P("D", "1", "D"),
+        P("InitialCondition", "0", "Initial states"),
+    ]
 
     def init(self):
         self.set_system(self.mat("A"), self.mat("B"), self.mat("C"), self.mat("D"), self.num("InitialCondition"))
 
 
-@block("ZeroPole", "Continuous", "Linear transfer function given by its zeros, poles and gain.", title="Zero-Pole", icon="zpk")
+@block(
+    "ZeroPole",
+    "Continuous",
+    "Linear transfer function given by its zeros, poles and gain.",
+    title="Zero-Pole",
+    icon="zpk",
+)
 class ZeroPole(ContinuousLTI):
     params = [P("Zeros", "[1]", "Zeros"), P("Poles", "[0 -1]", "Poles"), P("Gain", "1", "Gain")]
 
     def init(self):
         from scipy import signal
+
         z = np.ravel(np.asarray(self.value("Zeros"))) if self.text("Zeros") not in ("[]", "") else np.zeros(0)
         p = np.ravel(np.asarray(self.value("Poles")))
         if z.size > p.size:
@@ -252,18 +287,28 @@ class ZeroPole(ContinuousLTI):
             self.set_system(*signal.tf2ss(np.atleast_1d(num), den))
 
 
-@block("PIDController", "Continuous", "PID controller with filtered derivative, output limits and anti-windup.",
-       title="PID Controller", aliases=("PID", "PID1dof"), icon="PID")
+@block(
+    "PIDController",
+    "Continuous",
+    "PID controller with filtered derivative, output limits and anti-windup.",
+    title="PID Controller",
+    aliases=("PID", "PID1dof"),
+    icon="PID",
+)
 class PIDController(Node):
-    params = [P("Controller", "PID", "Controller", options=["PID", "PI", "PD", "P", "I"]),
-              P("Form", "Parallel", "Form", options=["Parallel", "Ideal"]),
-              P("P", "1", "Proportional (P)"), P("I", "1", "Integral (I)"), P("D", "0", "Derivative (D)"),
-              P("N", "100", "Derivative filter coefficient (N)"),
-              P("InitialConditionForIntegrator", "0", "Integrator initial value"),
-              P("InitialConditionForFilter", "0", "Filter initial value"),
-              *_LIMITS,
-              P("AntiWindupMode", "none", "Anti-windup", options=["none", "back-calculation", "clamping"]),
-              P("Kb", "1", "Back-calculation coefficient (Kb)")]
+    params = [
+        P("Controller", "PID", "Controller", options=["PID", "PI", "PD", "P", "I"]),
+        P("Form", "Parallel", "Form", options=["Parallel", "Ideal"]),
+        P("P", "1", "Proportional (P)"),
+        P("I", "1", "Integral (I)"),
+        P("D", "0", "Derivative (D)"),
+        P("N", "100", "Derivative filter coefficient (N)"),
+        P("InitialConditionForIntegrator", "0", "Integrator initial value"),
+        P("InitialConditionForFilter", "0", "Filter initial value"),
+        *_LIMITS,
+        P("AntiWindupMode", "none", "Anti-windup", options=["none", "back-calculation", "clamping"]),
+        P("Kb", "1", "Back-calculation coefficient (Kb)"),
+    ]
     sample = "cont"
     nx = 2
 
@@ -316,7 +361,12 @@ class PIDController(Node):
         return np.array([di, d])
 
 
-@block("Derivative", "Continuous", "Approximate time derivative of the input (difference between solver steps).", icon="d/dt")
+@block(
+    "Derivative",
+    "Continuous",
+    "Approximate time derivative of the input (difference between solver steps).",
+    icon="d/dt",
+)
 class Derivative(Node):
     params = []
     sample = "cont"
@@ -382,6 +432,7 @@ class TransportDelay(Node):
 # Discrete
 # =====================================================================================
 
+
 class Held(Node):
     """A block that outputs a stored value and replaces it at the end of the step."""
 
@@ -445,8 +496,13 @@ class Delay(Node):
             self.buf.append(np.array(u[0], dtype=float, copy=True))
 
 
-@block("ZeroOrderHold", "Discrete", "Samples the input at its sample time and holds the value in between.",
-       title="Zero-Order Hold", icon="zoh")
+@block(
+    "ZeroOrderHold",
+    "Discrete",
+    "Samples the input at its sample time and holds the value in between.",
+    title="Zero-Order Hold",
+    icon="zoh",
+)
 class ZeroOrderHold(Node):
     params = [SAMPLE("1")]
     sample = "param"
@@ -455,8 +511,13 @@ class ZeroOrderHold(Node):
         return [np.array(u[0], copy=True)]
 
 
-@block("RateTransition", "Discrete", "Passes a signal between parts that run at different sample times (samples and holds).",
-       title="Rate Transition", icon="rt")
+@block(
+    "RateTransition",
+    "Discrete",
+    "Passes a signal between parts that run at different sample times (samples and holds).",
+    title="Rate Transition",
+    icon="rt",
+)
 class RateTransition(ZeroOrderHold):
     params = [P("OutPortSampleTime", "-1", "Output sample time (s); -1 takes it from the input")]
 
@@ -464,12 +525,27 @@ class RateTransition(ZeroOrderHold):
         return self.read_sample("OutPortSampleTime")
 
 
-@block("DiscreteTimeIntegrator", "Discrete", "Integrates in steps of the sample time: forward Euler, backward Euler or trapezoidal.",
-       title="Discrete-Time Integrator", aliases=("DiscreteIntegrator",), icon="KTs/(z−1)")
+@block(
+    "DiscreteTimeIntegrator",
+    "Discrete",
+    "Integrates in steps of the sample time: forward Euler, backward Euler or trapezoidal.",
+    title="Discrete-Time Integrator",
+    aliases=("DiscreteIntegrator",),
+    icon="KTs/(z−1)",
+)
 class DiscreteTimeIntegrator(Node):
-    params = [P("IntegratorMethod", "Integration: Forward Euler", "Method",
-                options=["Integration: Forward Euler", "Integration: Backward Euler", "Integration: Trapezoidal"]),
-              P("gainval", "1.0", "Gain"), P("InitialCondition", "0", "Initial value"), *_LIMITS, SAMPLE("1")]
+    params = [
+        P(
+            "IntegratorMethod",
+            "Integration: Forward Euler",
+            "Method",
+            options=["Integration: Forward Euler", "Integration: Backward Euler", "Integration: Trapezoidal"],
+        ),
+        P("gainval", "1.0", "Gain"),
+        P("InitialCondition", "0", "Initial value"),
+        *_LIMITS,
+        SAMPLE("1"),
+    ]
     sample = "param"
 
     def init(self):
@@ -511,10 +587,19 @@ class DiscreteTimeIntegrator(Node):
         self.state = np.asarray(np.clip(s, self.lo, self.hi) if self.limited else s, float)
 
 
-@block("DiscreteDerivative", "Discrete", "Difference between this sample and the last, divided by the sample time.",
-       title="Discrete Derivative", icon="K(z−1)/Tsz")
+@block(
+    "DiscreteDerivative",
+    "Discrete",
+    "Difference between this sample and the last, divided by the sample time.",
+    title="Discrete Derivative",
+    icon="K(z−1)/Tsz",
+)
 class DiscreteDerivative(Node):
-    params = [P("gainval", "1.0", "Gain"), P("ICPrevScaledInput", "0", "Initial value of the previous input"), SAMPLE("-1")]
+    params = [
+        P("gainval", "1.0", "Gain"),
+        P("ICPrevScaledInput", "0", "Initial value of the previous input"),
+        SAMPLE("-1"),
+    ]
     sample = "param"
 
     def init(self):
@@ -544,26 +629,49 @@ class DiscreteLTI(LTI):
         self.state = self.A @ self.state + self.B @ self._u(u)
 
 
-@block("DiscreteTransferFcn", "Discrete", "Discrete transfer function given by numerator and denominator coefficients in z.",
-       title="Discrete Transfer Fcn", icon="tf(z)")
+@block(
+    "DiscreteTransferFcn",
+    "Discrete",
+    "Discrete transfer function given by numerator and denominator coefficients in z.",
+    title="Discrete Transfer Fcn",
+    icon="tf(z)",
+)
 class DiscreteTransferFcn(DiscreteLTI):
-    params = [P("Numerator", "[1]", "Numerator coefficients"), P("Denominator", "[1 0.5]", "Denominator coefficients"), SAMPLE("1")]
+    params = [
+        P("Numerator", "[1]", "Numerator coefficients"),
+        P("Denominator", "[1 0.5]", "Denominator coefficients"),
+        SAMPLE("1"),
+    ]
 
     def init(self):
         self.set_system(*_tf(self, "Numerator", "Denominator"))
 
 
-@block("DiscreteFilter", "Discrete", "Discrete filter given by numerator and denominator coefficients in 1/z.",
-       title="Discrete Filter", icon="filt")
+@block(
+    "DiscreteFilter",
+    "Discrete",
+    "Discrete filter given by numerator and denominator coefficients in 1/z.",
+    title="Discrete Filter",
+    icon="filt",
+)
 class DiscreteFilter(DiscreteLTI):
-    params = [P("Numerator", "[1]", "Numerator coefficients"), P("Denominator", "[1 0.5]", "Denominator coefficients"), SAMPLE("1")]
+    params = [
+        P("Numerator", "[1]", "Numerator coefficients"),
+        P("Denominator", "[1 0.5]", "Denominator coefficients"),
+        SAMPLE("1"),
+    ]
 
     def init(self):
         self.set_system(*_tf(self, "Numerator", "Denominator", inverse_powers=True))
 
 
-@block("DiscreteFir", "Discrete", "Discrete FIR filter: a weighted sum of the latest input samples.", title="Discrete FIR Filter",
-       icon="fir")
+@block(
+    "DiscreteFir",
+    "Discrete",
+    "Discrete FIR filter: a weighted sum of the latest input samples.",
+    title="Discrete FIR Filter",
+    icon="fir",
+)
 class DiscreteFir(DiscreteLTI):
     params = [P("Coefficients", "[0.5 0.5]", "Coefficients"), SAMPLE("1")]
 
@@ -573,11 +681,22 @@ class DiscreteFir(DiscreteLTI):
         self.set_system(*_tf(self, "Numerator", "Denominator", inverse_powers=True))
 
 
-@block("DiscreteStateSpace", "Discrete", "Discrete linear system x[k+1] = Ax[k] + Bu[k], y[k] = Cx[k] + Du[k].",
-       title="Discrete State-Space", icon="ss(z)")
+@block(
+    "DiscreteStateSpace",
+    "Discrete",
+    "Discrete linear system x[k+1] = Ax[k] + Bu[k], y[k] = Cx[k] + Du[k].",
+    title="Discrete State-Space",
+    icon="ss(z)",
+)
 class DiscreteStateSpace(DiscreteLTI):
-    params = [P("A", "1", "A"), P("B", "1", "B"), P("C", "1", "C"), P("D", "1", "D"),
-              P("InitialCondition", "0", "Initial states"), SAMPLE("1")]
+    params = [
+        P("A", "1", "A"),
+        P("B", "1", "B"),
+        P("C", "1", "C"),
+        P("D", "1", "D"),
+        P("InitialCondition", "0", "Initial states"),
+        SAMPLE("1"),
+    ]
 
     def init(self):
         self.set_system(self.mat("A"), self.mat("B"), self.mat("C"), self.mat("D"), self.num("InitialCondition"))

@@ -41,7 +41,7 @@ class Demux(Node):
             raise BlockError(f"the input has {v.size} elements but the output widths add up to {sum(widths)}")
         res, k = [], 0
         for w in widths:
-            res.append(v[k:k + w])
+            res.append(v[k : k + w])
             k += w
         return res
 
@@ -87,7 +87,9 @@ class _Indexed(Node):
                 try:
                     v = sig(self.ctx.evaluate(expr))
                 except Exception as exc:
-                    raise BlockError(f"the index '{expr}' cannot be evaluated: {getattr(exc, 'message', exc)}") from None
+                    raise BlockError(
+                        f"the index '{expr}' cannot be evaluated: {getattr(exc, 'message', exc)}"
+                    ) from None
                 if "starting" in opt:
                     raise BlockError("the 'Starting index' options are not supported; use an index vector")
                 self.idx.append(v.astype(int) - (0 if self.zero_based else 1))
@@ -110,16 +112,27 @@ class _Indexed(Node):
             a = a.reshape(-1, 1)
         rows = np.arange(a.shape[0]) if self.idx[0] is None else self.idx[0]
         cols = np.arange(a.shape[1]) if self.idx[1] is None else self.idx[1]
-        if rows.size and (rows.min() < 0 or rows.max() >= a.shape[0]) or cols.size and (cols.min() < 0 or cols.max() >= a.shape[1]):
+        if (
+            rows.size
+            and (rows.min() < 0 or rows.max() >= a.shape[0])
+            or cols.size
+            and (cols.min() < 0 or cols.max() >= a.shape[1])
+        ):
             raise BlockError(f"an index is outside the input, which is {a.shape[0]}x{a.shape[1]}")
         return np.ix_(rows, cols)
 
 
-_INDEX_PARAMS = [P("NumberOfDimensions", "1", "Number of dimensions", options=["1", "2"]),
-                 P("IndexMode", "One-based", "Index numbering", options=["One-based", "Zero-based"]),
-                 P("IndexOptions", "Index vector (dialog)", "Index option per dimension (Select all, Index vector (dialog), "
-                   "Index vector (port))", "text"),
-                 P("Indices", "[1 3]", "Indices, one expression per dimension", "text")]
+_INDEX_PARAMS = [
+    P("NumberOfDimensions", "1", "Number of dimensions", options=["1", "2"]),
+    P("IndexMode", "One-based", "Index numbering", options=["One-based", "Zero-based"]),
+    P(
+        "IndexOptions",
+        "Index vector (dialog)",
+        "Index option per dimension (Select all, Index vector (dialog), Index vector (port))",
+        "text",
+    ),
+    P("Indices", "[1 3]", "Indices, one expression per dimension", "text"),
+]
 
 
 @block("Selector", "Routing", "Picks elements of a vector (or rows and columns of a matrix) by index.", icon="u(i)")
@@ -157,7 +170,9 @@ class Assignment(_Indexed):
         return [sig(y)]
 
 
-@block("BusCreator", "Routing", "Groups signals under their names so a Bus Selector can pick them out again.", icon="bus")
+@block(
+    "BusCreator", "Routing", "Groups signals under their names so a Bus Selector can pick them out again.", icon="bus"
+)
 class BusCreator(Node):
     params = [P("Inputs", "2", "Number of inputs", "text")]
     nin = ["signs", "Inputs"]
@@ -190,11 +205,16 @@ class BusSelector(Node):
                 raise BlockError(f"the bus has no signal '{name}'; it has: {', '.join(src.names)}")
             k = src.names.index(name)
             start = sum(src.widths[:k])
-            res.append(v[start:start + src.widths[k]])
+            res.append(v[start : start + src.widths[k]])
         return res
 
 
-@block("Merge", "Routing", "Outputs whichever input was computed most recently (for conditionally run subsystems).", icon="mrg")
+@block(
+    "Merge",
+    "Routing",
+    "Outputs whichever input was computed most recently (for conditionally run subsystems).",
+    icon="mrg",
+)
 class Merge(Node):
     params = [P("Inputs", "2", "Number of inputs", "text"), P("InitialOutput", "0", "Initial output")]
     nin = ["int", "Inputs"]
@@ -218,12 +238,18 @@ class Merge(Node):
 
 # -- structure-only blocks: the simulator removes them when it flattens the model -------
 
+
 class Virtual(Node):
     virtual = True
 
 
-@block("Subsystem", "Routing", "A group of blocks shown as one block. Double-click to look inside.", aliases=("SubSystem",),
-       icon="sub")
+@block(
+    "Subsystem",
+    "Routing",
+    "A group of blocks shown as one block. Double-click to look inside.",
+    aliases=("SubSystem",),
+    icon="sub",
+)
 class Subsystem(Virtual):
     params = []
     nin = "system"
@@ -242,16 +268,26 @@ class From(Virtual):
     nin = 0
 
 
-@block("EnablePort", "Routing", "Put inside a subsystem: the subsystem only runs while its enable input is positive.",
-       title="Enable", icon="en")
+@block(
+    "EnablePort",
+    "Routing",
+    "Put inside a subsystem: the subsystem only runs while its enable input is positive.",
+    title="Enable",
+    icon="en",
+)
 class EnablePort(Virtual):
     params = []
     nin = 0
     nout = 0
 
 
-@block("TriggerPort", "Routing", "Put inside a subsystem: the subsystem runs once each time its trigger input crosses zero.",
-       title="Trigger", icon="trg")
+@block(
+    "TriggerPort",
+    "Routing",
+    "Put inside a subsystem: the subsystem runs once each time its trigger input crosses zero.",
+    title="Trigger",
+    icon="trg",
+)
 class TriggerPort(Virtual):
     params = [P("TriggerType", "rising", "Trigger on", options=["rising", "falling", "either"])]
     nin = 0
@@ -287,7 +323,9 @@ class Gate(Node):
             p = self.prev
             up = p is not None and bool(np.any((p <= 0) & (v > 0)))
             down = p is not None and bool(np.any((p > 0) & (v <= 0)))
-            self.active = up if self.trigger_type == "rising" else (down if self.trigger_type == "falling" else up or down)
+            self.active = (
+                up if self.trigger_type == "rising" else (down if self.trigger_type == "falling" else up or down)
+            )
         return []
 
     def update(self, t, u):
@@ -320,7 +358,13 @@ class HeldOutput(Node):
 # User-defined functions
 # =====================================================================================
 
-@block("Fcn", "User-defined", "A formula in u (the input; u(1), u(2)... for a vector) and t. The result is one number.", icon="f(u)")
+
+@block(
+    "Fcn",
+    "User-defined",
+    "A formula in u (the input; u(1), u(2)... for a vector) and t. The result is one number.",
+    icon="f(u)",
+)
 class Fcn(Node):
     params = [P("Expr", "sin(u(1))", "Expression", "text")]
     time_varying = True
@@ -344,8 +388,13 @@ class Fcn(Node):
 _DEFAULT_SCRIPT = "function y = fcn(u)\ny = u;\n"
 
 
-@block("MATLABFunction", "User-defined", "Runs a function you write in the MATLAB language; its inputs and outputs become ports.",
-       title="MATLAB Function", icon="fcn")
+@block(
+    "MATLABFunction",
+    "User-defined",
+    "Runs a function you write in the MATLAB language; its inputs and outputs become ports.",
+    title="MATLAB Function",
+    icon="fcn",
+)
 class MATLABFunction(Node):
     params = [P("Script", _DEFAULT_SCRIPT, "Function code", "code")]
     nin = ["sig", "Script", "in"]
@@ -368,11 +417,19 @@ class MATLABFunction(Node):
             raise BlockError(f"{getattr(exc, 'message', exc)}{where}") from None
 
 
-@block("InterpretedFunction", "User-defined", "Calls a function handle or a named function with the input: y = f(u).",
-       title="Interpreted Function", aliases=("MATLABFcn", "InterpretedMATLABFunction", "InterpretedMATLABFcn"), icon="@f")
+@block(
+    "InterpretedFunction",
+    "User-defined",
+    "Calls a function handle or a named function with the input: y = f(u).",
+    title="Interpreted Function",
+    aliases=("MATLABFcn", "InterpretedMATLABFunction", "InterpretedMATLABFcn"),
+    icon="@f",
+)
 class InterpretedFunction(Node):
-    params = [P("MATLABFcn", "@(u) sin(u)", "Function handle, function name, or expression in u", "text"),
-              ONOFF("Output1D", "on", "Treat the result as a 1-D vector")]
+    params = [
+        P("MATLABFcn", "@(u) sin(u)", "Function handle, function name, or expression in u", "text"),
+        ONOFF("Output1D", "on", "Treat the result as a 1-D vector"),
+    ]
     time_varying = True
 
     def init(self):

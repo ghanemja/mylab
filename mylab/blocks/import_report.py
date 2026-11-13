@@ -30,7 +30,14 @@ class _TimeUp(Exception):
 
 def check_file(path: str, time_limit: float = 20.0) -> dict:
     """Import one file and try to simulate it. Returns a plain dict."""
-    row: dict = {"file": path, "import": "failed", "blocks": 0, "unsupported": {}, "simulate": "not tried", "detail": ""}
+    row: dict = {
+        "file": path,
+        "import": "failed",
+        "blocks": 0,
+        "unsupported": {},
+        "simulate": "not tried",
+        "detail": "",
+    }
     try:
         model = import_slx(path)
     except ModelError as exc:
@@ -60,8 +67,12 @@ def check_file(path: str, time_limit: float = 20.0) -> dict:
         errors = comp.errors()
         if errors:
             msgs = " | ".join(e["message"] for e in errors[:3])
-            missing = [e for e in errors if e.get("kind") == "param" and
-                       any(w in e["message"] for w in ("Unrecognized", "Undefined", "not defined", "cannot be evaluated"))]
+            missing = [
+                e
+                for e in errors
+                if e.get("kind") == "param"
+                and any(w in e["message"] for w in ("Unrecognized", "Undefined", "not defined", "cannot be evaluated"))
+            ]
             if len(missing) == len(errors):
                 row["simulate"] = "no: needs workspace variables or toolbox functions"
             elif any(e.get("kind") == "algebraic-loop" for e in errors):
@@ -116,8 +127,13 @@ def summarize(rows: list[dict]) -> dict:
             missing[label] += v
             labels.add(label)
         files_with.update(labels)
-    return {"files": len(rows), "import": dict(imp), "simulate": dict(simc),
-            "unsupported_blocks": dict(missing.most_common()), "unsupported_files": dict(files_with.most_common())}
+    return {
+        "files": len(rows),
+        "import": dict(imp),
+        "simulate": dict(simc),
+        "unsupported_blocks": dict(missing.most_common()),
+        "unsupported_files": dict(files_with.most_common()),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

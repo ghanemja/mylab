@@ -31,47 +31,89 @@ MAX_MEMBERS = 5000
 
 # Their block type -> ours, where the names differ (the rest is found through the library's aliases).
 TYPE_MAP = {
-    "Sin": "SineWave", "Saturate": "Saturation", "Signum": "Sign", "Logic": "LogicalOperator", "Math": "MathFunction",
-    "Trigonometry": "TrigonometricFunction", "Polyval": "Polynomial", "Stop": "StopSimulation", "SubSystem": "Subsystem",
-    "DiscreteIntegrator": "DiscreteTimeIntegrator", "MultiPortSwitch": "MultiportSwitch", "MATLABFcn": "InterpretedFunction",
-    "Record": "Scope", "Lookup": "LookupTable1D", "Lookup2D": "LookupTable2D", "DiscretePulseGenerator": "PulseGenerator",
-    "ToWorkspace": "ToWorkspace", "DigitalClock": "Clock", "SignalConversion": "DataTypeConversion",
-    "SignalSpecification": "DataTypeConversion", "InitialCondition": "DataTypeConversion", "Concatenate": "Concatenate",
-    "DiscreteFir": "DiscreteFir", "Sum": "Sum",
+    "Sin": "SineWave",
+    "Saturate": "Saturation",
+    "Signum": "Sign",
+    "Logic": "LogicalOperator",
+    "Math": "MathFunction",
+    "Trigonometry": "TrigonometricFunction",
+    "Polyval": "Polynomial",
+    "Stop": "StopSimulation",
+    "SubSystem": "Subsystem",
+    "DiscreteIntegrator": "DiscreteTimeIntegrator",
+    "MultiPortSwitch": "MultiportSwitch",
+    "MATLABFcn": "InterpretedFunction",
+    "Record": "Scope",
+    "Lookup": "LookupTable1D",
+    "Lookup2D": "LookupTable2D",
+    "DiscretePulseGenerator": "PulseGenerator",
+    "ToWorkspace": "ToWorkspace",
+    "DigitalClock": "Clock",
+    "SignalConversion": "DataTypeConversion",
+    "SignalSpecification": "DataTypeConversion",
+    "InitialCondition": "DataTypeConversion",
+    "Concatenate": "Concatenate",
+    "DiscreteFir": "DiscreteFir",
+    "Sum": "Sum",
 }
 # Parameter names that differ: {our type: {their name: our name}}.
 PARAM_MAP = {
-    "Memory": {"X0": "InitialCondition"}, "UnitDelay": {"X0": "InitialCondition"},
-    "StateSpace": {"X0": "InitialCondition"}, "DiscreteStateSpace": {"X0": "InitialCondition"},
+    "Memory": {"X0": "InitialCondition"},
+    "UnitDelay": {"X0": "InitialCondition"},
+    "StateSpace": {"X0": "InitialCondition"},
+    "DiscreteStateSpace": {"X0": "InitialCondition"},
     "LookupTable1D": {"InputValues": "BreakpointsForDimension1"},
     "LookupTable2D": {"RowIndex": "BreakpointsForDimension1", "ColumnIndex": "BreakpointsForDimension2"},
-    "Polynomial": {"coefs": "Coefs"}, "ManualSwitch": {"CurrentSetting": "sw"},
+    "Polynomial": {"coefs": "Coefs"},
+    "ManualSwitch": {"CurrentSetting": "sw"},
     "Ramp": {"slope": "Slope", "start": "Start", "X0": "InitialOutput"},
     "TransportDelay": {"InitialOutput": "InitialOutput"},
 }
-# Library links ("Reference" blocks) we can stand in for: SourceType or last part of SourceBlock -> (our type, fixed params).
+# Library links ("Reference" blocks) we can stand in for: SourceType or last part of SourceBlock -> (our type, fixed params).  # noqa: E501
 REFERENCE_MAP = {
-    "comparetoconstant": ("CompareToConstant", {}), "comparetozero": ("CompareToZero", {}),
-    "bandlimitedwhitenoise": ("BandLimitedWhiteNoise", {}), "ramp": ("Ramp", {}),
-    "repeatingsequencestair": ("RepeatingSequenceStair", {}), "repeatingtable": ("RepeatingSequence", {}),
+    "comparetoconstant": ("CompareToConstant", {}),
+    "comparetozero": ("CompareToZero", {}),
+    "bandlimitedwhitenoise": ("BandLimitedWhiteNoise", {}),
+    "ramp": ("Ramp", {}),
+    "repeatingsequencestair": ("RepeatingSequenceStair", {}),
+    "repeatingtable": ("RepeatingSequence", {}),
     "repeatingsequence": ("RepeatingSequence", {}),
-    "radianstodegrees": ("Gain", {"Gain": "180/pi"}), "degreestoradians": ("Gain", {"Gain": "pi/180"}),
-    "pid1dof": ("PIDController", {}), "pidcontroller": ("PIDController", {}), "saturationdynamic": ("SaturationDynamic", {}),
-    "chirp": ("Chirp", {}), "chirpsignal": ("Chirp", {}), "xyscope": ("XYGraph", {}), "xygraph": ("XYGraph", {}),
-    "discretederivative": ("DiscreteDerivative", {}), "transpose": ("MathFunction", {"Operator": "transpose"}),
-    "coulombviscousfriction": ("CoulombViscousFriction", {}), "coulombicandviscousfriction": ("CoulombViscousFriction", {}),
+    "radianstodegrees": ("Gain", {"Gain": "180/pi"}),
+    "degreestoradians": ("Gain", {"Gain": "pi/180"}),
+    "pid1dof": ("PIDController", {}),
+    "pidcontroller": ("PIDController", {}),
+    "saturationdynamic": ("SaturationDynamic", {}),
+    "chirp": ("Chirp", {}),
+    "chirpsignal": ("Chirp", {}),
+    "xyscope": ("XYGraph", {}),
+    "xygraph": ("XYGraph", {}),
+    "discretederivative": ("DiscreteDerivative", {}),
+    "transpose": ("MathFunction", {"Operator": "transpose"}),
+    "coulombviscousfriction": ("CoulombViscousFriction", {}),
+    "coulombicandviscousfriction": ("CoulombViscousFriction", {}),
 }
 # Defaults of their block types that differ from ours, for files that do not list their defaults.
 IMPORT_DEFAULTS = {
-    "Demux": {"Outputs": "4"}, "Mux": {"Inputs": "4"},
+    "Demux": {"Outputs": "4"},
+    "Mux": {"Inputs": "4"},
     "DiscretePulseGenerator": {"PulseType": "Sample based", "PulseWidth": "1", "SampleTime": "1"},
 }
 # Blocks whose port count is one parameter: the count saved in the file wins over a default.
-COUNTED = {"Mux": ("Inputs", 0), "Demux": ("Outputs", 1), "BusCreator": ("Inputs", 0), "Merge": ("Inputs", 0),
-           "Concatenate": ("NumInputs", 0), "Scope": ("NumInputPorts", 0)}
+COUNTED = {
+    "Mux": ("Inputs", 0),
+    "Demux": ("Outputs", 1),
+    "BusCreator": ("Inputs", 0),
+    "Merge": ("Inputs", 0),
+    "Concatenate": ("NumInputs", 0),
+    "Scope": ("NumInputPorts", 0),
+}
 SILENT = {"cmblock", "modelinfo", "docblock"}  # notes on the canvas: no ports, nothing to simulate
-SOLVERS = {"variablestepauto": "ode45", "fixedstepauto": "ode3", "variablestepdiscrete": "VariableStepDiscrete",
-           "fixedstepdiscrete": "FixedStepDiscrete"}
+SOLVERS = {
+    "variablestepauto": "ode45",
+    "fixedstepauto": "ode3",
+    "variablestepdiscrete": "VariableStepDiscrete",
+    "fixedstepdiscrete": "FixedStepDiscrete",
+}
 
 
 def _key(s: str) -> str:
@@ -83,7 +125,9 @@ class _Archive:
         try:
             self.zip = zipfile.ZipFile(path)
         except (zipfile.BadZipFile, OSError) as exc:
-            raise ModelError(f"{path} is not a readable .slx file ({exc}). Old-style .mdl text files are not supported.") from None
+            raise ModelError(
+                f"{path} is not a readable .slx file ({exc}). Old-style .mdl text files are not supported."
+            ) from None
         infos = self.zip.infolist()
         if len(infos) > MAX_MEMBERS or sum(i.file_size for i in infos) > MAX_TOTAL:
             raise ModelError("The .slx file is too large to import.")
@@ -142,6 +186,7 @@ class _Stats:
 class _Importer:
     def __init__(self, path: str, root: "_Importer | None" = None):
         import os
+
         self.path = os.path.abspath(path)
         self.arc = _Archive(path)
         self.root = root or self
@@ -183,6 +228,7 @@ class _Importer:
     def library(self, name: str) -> "_Importer | None":
         """The importer of a library file named ``name``.slx found near the model, or None."""
         import os
+
         root = self.root
         if name in root.libs:
             return root.libs[name]
@@ -195,7 +241,7 @@ class _Importer:
                 for _level in range(5):  # the model's folder, then up to four folders above it
                     for folder, dirs, files in os.walk(here):
                         dirs[:] = [d for d in dirs if not d.startswith(".")]
-                        if folder[len(here):].count(os.sep) >= 5:
+                        if folder[len(here) :].count(os.sep) >= 5:
                             dirs[:] = []
                         for f in files:
                             seen += 1
@@ -226,8 +272,9 @@ class _Importer:
             if sys_el is None:
                 return None
             want = re.sub(r"\s+", " ", part).strip()
-            el = next((b for b in sys_el.findall("Block")
-                       if re.sub(r"\s+", " ", b.get("Name", "")).strip() == want), None)
+            el = next(
+                (b for b in sys_el.findall("Block") if re.sub(r"\s+", " ", b.get("Name", "")).strip() == want), None
+            )
             if el is None:
                 return None
             if i < len(parts) - 1:
@@ -257,15 +304,24 @@ class _Importer:
         if st.unsupported:
             n = sum(st.unsupported.values())
             listing = ", ".join(f"{k} ({v})" for k, v in st.unsupported.most_common())
-            notes.insert(0, f"{n} of {st.total} blocks have no equivalent in mylab Blocks and were kept as "
-                            f"placeholders: {listing}. The model cannot be simulated until they are replaced.")
+            notes.insert(
+                0,
+                f"{n} of {st.total} blocks have no equivalent in mylab Blocks and were kept as "
+                f"placeholders: {listing}. The model cannot be simulated until they are replaced.",
+            )
         if st.skipped_lines:
-            notes.append(f"{st.skipped_lines} connection(s) of kinds mylab Blocks does not have (physical "
-                         "connections, action ports, state ports) were left out.")
+            notes.append(
+                f"{st.skipped_lines} connection(s) of kinds mylab Blocks does not have (physical "
+                "connections, action ports, state ports) were left out."
+            )
         model.notes = notes
         model.import_report = {  # type: ignore[attr-defined]
-            "blocks": st.total, "converted": st.converted, "unsupported": dict(st.unsupported),
-            "notes": notes, "skipped_lines": st.skipped_lines, "linked": st.linked,
+            "blocks": st.total,
+            "converted": st.converted,
+            "unsupported": dict(st.unsupported),
+            "notes": notes,
+            "skipped_lines": st.skipped_lines,
+            "linked": st.linked,
             "libraries": sorted(k for k, v in self.libs.items() if v is not None),
         }
         return model
@@ -378,9 +434,22 @@ class _Importer:
                 if link is None:
                     return unsupported(f"Library link: {src_block or src_type}")
                 lib, lib_el, lib_prefix = link
-                keep = {k: v for k, v in own.items() if k not in (
-                    "SourceBlock", "SourceType", "LibraryVersion", "SourceProductName", "SourceProductBaseCode", "ZOrder",
-                    "ContentPreviewEnabled", "Ports", "Position")}
+                keep = {
+                    k: v
+                    for k, v in own.items()
+                    if k
+                    not in (
+                        "SourceBlock",
+                        "SourceType",
+                        "LibraryVersion",
+                        "SourceProductName",
+                        "SourceProductBaseCode",
+                        "ZOrder",
+                        "ContentPreviewEnabled",
+                        "Ports",
+                        "Position",
+                    )
+                }
                 self.root.depth += 1
                 try:
                     inner = lib.block(lib_el, prefix, lib_prefix, keep)
@@ -407,7 +476,9 @@ class _Importer:
                 return unsupported("Variant Subsystem")
             sub = el.find("System")
             blk.type = "Subsystem"
-            blk.system = self.system(self._deref(sub), path + "/", chart_prefix + name + "/") if sub is not None else System()
+            blk.system = (
+                self.system(self._deref(sub), path + "/", chart_prefix + name + "/") if sub is not None else System()
+            )
             mask = el.find("Mask")
             if mask is not None and _key(mask.findtext("Type") or "") in SILENT:
                 return None
@@ -523,10 +594,12 @@ class _Importer:
                 q["SaveFormat"] = "Timeseries"
         elif kind == "MathFunction":
             from .blocks_basic import _MATH
+
             if q.get("Operator", "exp") not in _MATH:
                 return f"Math Function ({q.get('Operator')})"
         elif kind == "TrigonometricFunction":
             from .blocks_basic import _TRIG
+
             if q.get("Operator", "sin") not in _TRIG:
                 return f"Trigonometric Function ({q.get('Operator')})"
         elif kind == "LogicalOperator":
@@ -542,19 +615,31 @@ class _Importer:
                 return "Discrete PID Controller"
             aw = _key(p.get("AntiWindupMode", "none"))
             q["AntiWindupMode"] = {"backcalculation": "back-calculation", "clamping": "clamping"}.get(aw, "none")
-            if p.get("ExternalReset", "none") != "none" or _key(p.get("InitialConditionSource", "internal")) != "internal":
+            if (
+                p.get("ExternalReset", "none") != "none"
+                or _key(p.get("InitialConditionSource", "internal")) != "internal"
+            ):
                 return "PID Controller with a reset or external initial value"
         elif kind == "RateTransition":
             if "OutPortSampleTime" not in q:
                 q["OutPortSampleTime"] = "-1"
         elif kind == "Concatenate":
-            if q.get("Mode", "Vector") == "Multidimensional array" and q.get("ConcatenateDimension", "1").strip() not in ("1", "2"):
+            if q.get("Mode", "Vector") == "Multidimensional array" and q.get(
+                "ConcatenateDimension", "1"
+            ).strip() not in ("1", "2"):
                 return "Concatenate along a third dimension"
         elif kind == "FromWorkspace":
-            if _key(q.get("OutputAfterFinalValue", "Extrapolation")) not in ("extrapolation", "settingtozero", "holdingfinalvalue"):
+            if _key(q.get("OutputAfterFinalValue", "Extrapolation")) not in (
+                "extrapolation",
+                "settingtozero",
+                "holdingfinalvalue",
+            ):
                 return f"From Workspace ({q.get('OutputAfterFinalValue')})"
         elif kind == "Delay":
-            if p.get("DelayLengthSource", "Dialog") != "Dialog" or p.get("InitialConditionSource", "Dialog") != "Dialog":
+            if (
+                p.get("DelayLengthSource", "Dialog") != "Dialog"
+                or p.get("InitialConditionSource", "Dialog") != "Dialog"
+            ):
                 return "Delay with inputs for its length or initial value"
         elif kind == "ManualSwitch":
             if "sw" in q:
@@ -610,10 +695,15 @@ class _Importer:
     @staticmethod
     def _port_xy(sy: System, name: str, port: Any, out: bool, boxes: dict) -> tuple:
         from .engine import port_count
+
         x, y, w, h = boxes.get(name, (0, 0, 30, 30))
         b = sy.block(name)
-        n = max(port_count(b, "out" if out else "in") if b is not None and find_type(b.type) else
-                (b.extra.get("ports", [1, 1])[1 if out else 0] if b is not None else 1), 1)
+        n = max(
+            port_count(b, "out" if out else "in")
+            if b is not None and find_type(b.type)
+            else (b.extra.get("ports", [1, 1])[1 if out else 0] if b is not None else 1),
+            1,
+        )
         k = port if isinstance(port, int) else 1
         rot = b.rot if b is not None else 0
         frac = (min(k, n) - 0.5) / n
@@ -629,6 +719,7 @@ class _Importer:
 def import_slx(path: str, name: str | None = None) -> Model:
     """Read an ``.slx`` file into a :class:`Model`. See ``model.notes`` for what was not converted."""
     import os
+
     base = name or os.path.splitext(os.path.basename(path))[0]
     base = re.sub(r"\W", "_", base) or "model"
     model = _Importer(path).run(base)

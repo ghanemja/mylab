@@ -32,8 +32,11 @@ def _clean(a: np.ndarray) -> list:
     a = np.asarray(a, dtype=float)
     if np.all(np.isfinite(a)):
         return np.round(a, 12).tolist()
-    return [None if not np.isfinite(v) else float(v) for v in a.ravel()] if a.ndim == 1 else \
-        [[None if not np.isfinite(v) else float(v) for v in row] for row in a]
+    return (
+        [None if not np.isfinite(v) else float(v) for v in a.ravel()]
+        if a.ndim == 1
+        else [[None if not np.isfinite(v) else float(v) for v in row] for row in a]
+    )
 
 
 def check(session: Any, args: dict) -> dict:
@@ -43,7 +46,11 @@ def check(session: Any, args: dict) -> dict:
         comp = compile_model(model, session.interp, None, strict=False)
         return {"diagnostics": comp.diagnostics}
     except (ModelError, SimError, ValueError) as exc:
-        return {"diagnostics": [{"level": "error", "message": str(getattr(exc, "message", exc)), "path": None, "kind": "model"}]}
+        return {
+            "diagnostics": [
+                {"level": "error", "message": str(getattr(exc, "message", exc)), "path": None, "kind": "model"}
+            ]
+        }
 
 
 def _scope_chunk(nodes: list, sent: dict) -> list:
@@ -81,14 +88,26 @@ def run(session: Any, args: dict, emit: Callable | None = None) -> dict:
         scopes = [n for n in comp.order if isinstance(n, (Scope, XYGraph))]
         sent: dict = {}
         last = [time.time()]
-        meta = [{"path": n.path, "kind": "xy" if isinstance(n, XYGraph) else "scope", "title": n.text("Title") if isinstance(n, Scope) else "",
-                 "names": list(getattr(n, "in_names", [])), "stairs": isinstance(n.rate, tuple)} for n in scopes]
+        meta = [
+            {
+                "path": n.path,
+                "kind": "xy" if isinstance(n, XYGraph) else "scope",
+                "title": n.text("Title") if isinstance(n, Scope) else "",
+                "names": list(getattr(n, "in_names", [])),
+                "stairs": isinstance(n.rate, tuple),
+            }
+            for n in scopes
+        ]
 
         def tick(sim: Sim, t: float) -> None:
             now = time.time()
             if emit is not None and now - last[0] >= 0.08:
                 last[0] = now
-                emit(json.dumps({"kind": "progress", "t": t, "t0": sim.t0, "tf": sim.tf, "scopes": _scope_chunk(scopes, sent)}))
+                emit(
+                    json.dumps(
+                        {"kind": "progress", "t": t, "t0": sim.t0, "tf": sim.tf, "scopes": _scope_chunk(scopes, sent)}
+                    )
+                )
 
         sim = Sim(comp, args.get("config"), tick)
         if emit is not None:
@@ -97,7 +116,9 @@ def run(session: Any, args: dict, emit: Callable | None = None) -> dict:
         res = sim.result()
         out["scopes"] = _scope_chunk(scopes, sent)
         out["meta"] = meta
-        out["displays"] = {n.path: _clean(np.ravel(getattr(n, "last", np.zeros(0)))) for n in comp.order if isinstance(n, Display)}
+        out["displays"] = {
+            n.path: _clean(np.ravel(getattr(n, "last", np.zeros(0)))) for n in comp.order if isinstance(n, Display)
+        }
         out["warnings"] = list(dict.fromkeys(res.warnings))
         out["steps"] = res.steps
         out["t_end"] = float(res.t[-1]) if res.t.size else 0.0
@@ -105,6 +126,7 @@ def run(session: Any, args: dict, emit: Callable | None = None) -> dict:
         out["solver"] = res.solver
         # the results also go to the workspace, so ordinary plotting code works on them
         from ..builtins.blockdiagram import result_struct
+
         struct, variables = result_struct(res)
         base = interp.base
         base.set("out", struct)
@@ -125,6 +147,7 @@ def run(session: Any, args: dict, emit: Callable | None = None) -> dict:
 def import_slx(session: Any, args: dict) -> dict:
     """Convert a .slx file of the project into model JSON text."""
     from .slx import import_slx as read
+
     path = str(args.get("path", ""))
     root = os.path.realpath(str(args.get("root") or os.getcwd()))
     full = os.path.realpath(os.path.join(root, path))
@@ -135,13 +158,19 @@ def import_slx(session: Any, args: dict) -> dict:
     except ModelError as exc:
         return {"error": str(exc)}
     rep = getattr(model, "import_report", {})
-    return {"model": model.dumps(), "name": model.name, "notes": model.notes, "blocks": rep.get("blocks", 0),
-            "unsupported": rep.get("unsupported", {})}
+    return {
+        "model": model.dumps(),
+        "name": model.name,
+        "notes": model.notes,
+        "blocks": rep.get("blocks", 0),
+        "unsupported": rep.get("unsupported", {}),
+    }
 
 
 def validate(session: Any, args: dict) -> dict:
     """Check parameter expressions typed into a dialog: {name: error text or None}."""
     from .engine import Context
+
     ctx = Context(session.interp)
     result = {}
     for name, expr in (args.get("values") or {}).items():

@@ -17,11 +17,20 @@ EXTENSIONS = (".mlb.json", ".slx", ".json")
 
 # -- state ---------------------------------------------------------------------------------------
 
+
 def _state(interp) -> dict:
     st = interp.state.get("blockdiagram")
     if st is None:
-        st = interp.state["blockdiagram"] = {"models": {}, "current": None, "block": None, "handles": {}, "ids": {},
-                                             "next": 1000.0, "options": {}, "opened": []}
+        st = interp.state["blockdiagram"] = {
+            "models": {},
+            "current": None,
+            "block": None,
+            "handles": {},
+            "ids": {},
+            "next": 1000.0,
+            "options": {},
+            "opened": [],
+        }
     return st
 
 
@@ -36,11 +45,13 @@ def _handle(interp, key: tuple) -> float:
 
 def _blocks():
     from .. import blocks
+
     return blocks
 
 
 def _wrap(fn):
     """Turn model and simulation errors into MATLAB errors."""
+
     def run(interp, args, nargout):
         b = _blocks()
         try:
@@ -52,6 +63,7 @@ def _wrap(fn):
             raise err from None
         except b.ModelError as exc:
             raise MatlabError(str(exc), "mylab:blocks:model") from None
+
     run.__name__ = fn.__name__
     run.__doc__ = fn.__doc__
     return run
@@ -74,7 +86,7 @@ def _model_name(name: str) -> str:
     base = os.path.basename(name)
     for ext in EXTENSIONS + (".mdl",):
         if base.lower().endswith(ext):
-            return base[:-len(ext)]
+            return base[: -len(ext)]
     return base
 
 
@@ -85,8 +97,11 @@ def _model(interp, name: str, load: bool = True):
     if m is None and load:
         path = _find_file(interp, name)
         if path is None:
-            raise MatlabError(f"There is no model named '{key}'. Create it with new_system('{key}'), or put "
-                              f"{key}.mlb.json in the current folder.", "mylab:blocks:noModel")
+            raise MatlabError(
+                f"There is no model named '{key}'. Create it with new_system('{key}'), or put "
+                f"{key}.mlb.json in the current folder.",
+                "mylab:blocks:noModel",
+            )
         m = _blocks().load_model(path)
         m.name = key
         st["models"][key] = m
@@ -167,13 +182,16 @@ def _pairs(args: list, what: str) -> list[tuple[str, Any]]:
 
 # -- models --------------------------------------------------------------------------------------
 
+
 @builtin("new_system")
 @_wrap
 def _new_system(interp, args, nargout):
     st = _state(interp)
     name = text(args[0]) if args else "untitled"
     if not name.replace("_", "a").isalnum() or name[0].isdigit():
-        raise MatlabError(f"'{name}' is not a valid model name. Use letters, digits and underscores, starting with a letter.")
+        raise MatlabError(
+            f"'{name}' is not a valid model name. Use letters, digits and underscores, starting with a letter."
+        )
     if name in st["models"]:
         raise MatlabError(f"A model named '{name}' is already open. Close it first with close_system('{name}', 0).")
     m = _blocks().Model(name)
@@ -202,8 +220,10 @@ def _open_system(interp, args, nargout):
     st["opened"].append(t[1].name + ("/" + t[2] if t[0] == "block" else ""))
     if not interp.state.get("blocks_ui") and not st.get("noted"):
         st["noted"] = True
-        interp.out("open_system: the diagram editor is part of the mylab web app. The model is loaded and can be "
-                   "changed and simulated from code.\n")
+        interp.out(
+            "open_system: the diagram editor is part of the mylab web app. The model is loaded and can be "
+            "changed and simulated from code.\n"
+        )
     return None
 
 
@@ -277,11 +297,16 @@ def _gcb(interp, args, nargout):
 
 # -- blocks and lines ----------------------------------------------------------------------------
 
+
 def _set_block_param(m, system, b, name: str, value: Any) -> None:
     low = name.lower()
     if low == "position":
-        p = np.ravel(np.asarray(value if not is_text(value) else [float(x) for x in text(value).strip("[]").replace(",", " ").split()],
-                                float))
+        p = np.ravel(
+            np.asarray(
+                value if not is_text(value) else [float(x) for x in text(value).strip("[]").replace(",", " ").split()],
+                float,
+            )
+        )
         if p.size != 4:
             raise MatlabError("Position needs four numbers: [left top right bottom].")
         b.pos = [float(p[0]), float(p[1]), float(p[2] - p[0]), float(p[3] - p[1])]
@@ -308,13 +333,28 @@ def _set_block_param(m, system, b, name: str, value: Any) -> None:
             raise MatlabError("Set mask parameters by name, e.g. set_param(block, 'm', '2').")
         elif b.system is not None and isinstance(b.extra.get("mask"), dict) and name in b.extra["mask"]:
             b.extra["mask"][name] = _as_text(value)
-        elif low in ("showname", "namelocation", "backgroundcolor", "foregroundcolor", "fontsize", "zorder", "priority",
-                     "tag", "description", "sampletime", "outdatatypestr", "linkstatus", "commented"):
+        elif low in (
+            "showname",
+            "namelocation",
+            "backgroundcolor",
+            "foregroundcolor",
+            "fontsize",
+            "zorder",
+            "priority",
+            "tag",
+            "description",
+            "sampletime",
+            "outdatatypestr",
+            "linkstatus",
+            "commented",
+        ):
             b.extra.setdefault("other", {})[name] = _as_text(value)
         else:
             have = ", ".join(p.name for p in (cls.params if cls else [])) or "none"
-            raise MatlabError(f"The block '{b.name}' ({b.type}) has no parameter '{name}'. Its parameters are: {have}.",
-                              "mylab:blocks:noParam")
+            raise MatlabError(
+                f"The block '{b.name}' ({b.type}) has no parameter '{name}'. Its parameters are: {have}.",
+                "mylab:blocks:noParam",
+            )
     m.dirty = True
 
 
@@ -335,7 +375,9 @@ def _add_block(interp, args, nargout):
     opts = [(k, v) for k, v in opts if k.lower() not in ("makenameunique", "copyoption")]
     if system.block(name) is not None:
         if not unique:
-            raise MatlabError(f"There is already a block named '{name}' in '{'/'.join(parts[:-1])}'.", "mylab:blocks:exists")
+            raise MatlabError(
+                f"There is already a block named '{name}' in '{'/'.join(parts[:-1])}'.", "mylab:blocks:exists"
+            )
         name = system.unique_name(name)
     cls = B.find_type(src)
     src_parts = B.model.split_path(src)
@@ -345,8 +387,11 @@ def _add_block(interp, args, nargout):
         b = other.copy()
         b.name = name
     elif cls is None:
-        raise MatlabError(f"There is no block '{src}' in the mylab Blocks library. Block names are listed in docs/BLOCKS.md "
-                          "(for example 'blocks/Gain' or 'simulink/Continuous/Integrator').", "mylab:blocks:noBlock")
+        raise MatlabError(
+            f"There is no block '{src}' in the mylab Blocks library. Block names are listed in docs/BLOCKS.md "
+            "(for example 'blocks/Gain' or 'simulink/Continuous/Integrator').",
+            "mylab:blocks:noBlock",
+        )
     else:
         b = B.Block(name, cls.type, {})
         if cls.type == "Subsystem":
@@ -392,8 +437,9 @@ def _endpoint(interp, m, system, sys_rel: str, spec: Any, out: bool) -> tuple[st
     if isinstance(p, int):
         n = B.engine.port_count(b, "out" if out else "in")
         if not 1 <= p <= n:
-            raise MatlabError(f"'{name}' has {n} {'output' if out else 'input'} port(s); there is no port {p}.",
-                              "mylab:blocks:noPort")
+            raise MatlabError(
+                f"'{name}' has {n} {'output' if out else 'input'} port(s); there is no port {p}.", "mylab:blocks:noPort"
+            )
     return name, p
 
 
@@ -403,8 +449,13 @@ def _add_line(interp, args, nargout):
     nargs(args, 3, None, "add_line")
     B = _blocks()
     m, system, rel = _system(interp, args[0])
-    if not is_text(args[1]) and np.asarray(args[1]).ndim == 2 and np.asarray(args[1]).shape[1] == 2 \
-            and np.asarray(args[1]).shape[0] > 1 and len(args) == 2:
+    if (
+        not is_text(args[1])
+        and np.asarray(args[1]).ndim == 2
+        and np.asarray(args[1]).shape[1] == 2
+        and np.asarray(args[1]).shape[0] > 1
+        and len(args) == 2
+    ):
         raise MatlabError("add_line with a list of points is not supported; name the ports instead.")
     _pairs(list(args[3:]), "add_line")  # 'autorouting', 'on' and friends are accepted
     src = _endpoint(interp, m, system, rel, args[1], True)
@@ -524,12 +575,20 @@ def _get_param(interp, args, nargout):
         for k, v in m.config.items():
             if k.lower() == low or (low == "solvername" and k == "Solver"):
                 return char(v)
-        raise MatlabError(f"The model has no setting '{name}'. Settings: {', '.join(m.config)}.", "mylab:blocks:noParam")
+        raise MatlabError(
+            f"The model has no setting '{name}'. Settings: {', '.join(m.config)}.", "mylab:blocks:noParam"
+        )
     if t[0] == "port":
         _, _, rel, kind, p = t
-        return {"parent": char(f"{m.name}/{rel}"), "portnumber": float(p) if isinstance(p, int) else char(str(p)),
-                "porttype": char("outport" if kind == "out" else "inport")}.get(low) if low in (
-                    "parent", "portnumber", "porttype") else _no_param(name)
+        return (
+            {
+                "parent": char(f"{m.name}/{rel}"),
+                "portnumber": float(p) if isinstance(p, int) else char(str(p)),
+                "porttype": char("outport" if kind == "out" else "inport"),
+            }.get(low)
+            if low in ("parent", "portnumber", "porttype")
+            else _no_param(name)
+        )
     if t[0] != "block":
         raise MatlabError("get_param works on models, blocks and ports.")
     system, b = m.find(t[2])
@@ -561,13 +620,22 @@ def _get_param(interp, args, nargout):
         outs = [_handle(interp, ("port", m.name, t[2], "out", k + 1)) for k in range(B.engine.port_count(b, "out"))]
         extra = {}
         for which, kind in (("Enable", "EnablePort"), ("Trigger", "TriggerPort")):
-            has = b.system is not None and any(getattr(B.find_type(x.type), "type", "") == kind for x in b.system.blocks)
-            extra[which] = np.array([[_handle(interp, ("port", m.name, t[2], "in", which.lower()))]]) if has else np.zeros((1, 0))
-        return Struct.scalar({"Inport": np.array([ins], dtype=float).reshape(1, -1),
-                              "Outport": np.array([outs], dtype=float).reshape(1, -1), **extra})
+            has = b.system is not None and any(
+                getattr(B.find_type(x.type), "type", "") == kind for x in b.system.blocks
+            )
+            extra[which] = (
+                np.array([[_handle(interp, ("port", m.name, t[2], "in", which.lower()))]]) if has else np.zeros((1, 0))
+            )
+        return Struct.scalar(
+            {
+                "Inport": np.array([ins], dtype=float).reshape(1, -1),
+                "Outport": np.array([outs], dtype=float).reshape(1, -1),
+                **extra,
+            }
+        )
     if low == "dialogparameters":
         return Struct.scalar({p.name: char(p.label) for p in (cls.params if cls else [])})
-    for p in (cls.params if cls else []):
+    for p in cls.params if cls else []:
         if p.name.lower() == low:
             return char(b.params.get(p.name, p.default))
     if b.system is not None and isinstance(b.extra.get("mask"), dict) and name in b.extra["mask"]:
@@ -576,8 +644,10 @@ def _get_param(interp, args, nargout):
     if low in other:
         return char(other[low])
     have = ", ".join(p.name for p in (cls.params if cls else [])) or "none"
-    raise MatlabError(f"The block '{b.name}' ({b.type}) has no parameter '{name}'. Its parameters are: {have}.",
-                      "mylab:blocks:noParam")
+    raise MatlabError(
+        f"The block '{b.name}' ({b.type}) has no parameter '{name}'. Its parameters are: {have}.",
+        "mylab:blocks:noParam",
+    )
 
 
 def _no_param(name: str):
@@ -587,8 +657,13 @@ def _no_param(name: str):
 def _lines_struct(system) -> Struct:
     data = np.empty((len(system.lines), 1), dtype=object)
     for i, ln in enumerate(system.lines):
-        data[i, 0] = {"SrcBlock": char(ln.src[0]), "SrcPort": char(str(ln.src[1])), "DstBlock": char(ln.dst[0]),
-                      "DstPort": char(str(ln.dst[1])), "Name": char(ln.name)}
+        data[i, 0] = {
+            "SrcBlock": char(ln.src[0]),
+            "SrcPort": char(str(ln.src[1])),
+            "DstBlock": char(ln.dst[0]),
+            "DstPort": char(str(ln.dst[1])),
+            "Name": char(ln.name),
+        }
     return Struct(data, ["SrcBlock", "SrcPort", "DstBlock", "DstPort", "Name"])
 
 
@@ -598,8 +673,11 @@ def _find_system(interp, args, nargout):
     B = _blocks()
     st = _state(interp)
     args = list(args)
-    if not args or (is_text(args[0]) and text(args[0]).lower() in ("searchdepth", "type", "blocktype", "name", "regexp",
-                                                                    "lookundermasks", "followlinks")):
+    if not args or (
+        is_text(args[0])
+        and text(args[0]).lower()
+        in ("searchdepth", "type", "blocktype", "name", "regexp", "lookundermasks", "followlinks")
+    ):
         roots = list(st["models"])
     else:
         roots = [text(args.pop(0))] if is_text(args[0]) else [_target(interp, args.pop(0))[1].name]
@@ -612,8 +690,17 @@ def _find_system(interp, args, nargout):
             depth = int(np.asarray(v).flat[0]) if not is_text(v) else int(text(v))
         elif low == "type":
             want_type = text(v).lower()
-        elif low in ("lookundermasks", "followlinks", "regexp", "casesensitive", "findall", "firstresultonly",
-                     "matchfilter", "variants", "includecommented"):
+        elif low in (
+            "lookundermasks",
+            "followlinks",
+            "regexp",
+            "casesensitive",
+            "findall",
+            "firstresultonly",
+            "matchfilter",
+            "variants",
+            "includecommented",
+        ):
             continue
         else:
             filters.append((low, _as_text(v)))
@@ -651,12 +738,14 @@ def _find_system(interp, args, nargout):
 
 # -- simulation ----------------------------------------------------------------------------------
 
+
 def _timeseries(t: np.ndarray, data: np.ndarray) -> Struct:
     return Struct.scalar({"Time": t.reshape(-1, 1), "Data": data})
 
 
 def _field(name: str, used: set) -> str:
     import re
+
     f = re.sub(r"\W", "_", name)
     if not f or not f[0].isalpha():
         f = "x" + f
@@ -679,10 +768,20 @@ def result_struct(res) -> tuple[Struct, dict]:
         if fmt == "array":
             v: Any = w["data"]
         elif fmt.startswith("structure"):
-            sigs = Struct.scalar({"values": w["data"], "dimensions": float(w["data"].shape[1]) if w["data"].ndim > 1 else 1.0,
-                                  "label": char("")})
-            v = Struct.scalar({"time": w["t"].reshape(-1, 1) if fmt == "structurewithtime" else np.zeros((0, 0)),
-                               "signals": sigs, "blockName": char(w["path"])})
+            sigs = Struct.scalar(
+                {
+                    "values": w["data"],
+                    "dimensions": float(w["data"].shape[1]) if w["data"].ndim > 1 else 1.0,
+                    "label": char(""),
+                }
+            )
+            v = Struct.scalar(
+                {
+                    "time": w["t"].reshape(-1, 1) if fmt == "structurewithtime" else np.zeros((0, 0)),
+                    "signals": sigs,
+                    "blockName": char(w["path"]),
+                }
+            )
         else:
             v = _timeseries(w["t"], w["data"])
         variables[name] = v
@@ -698,7 +797,9 @@ def result_struct(res) -> tuple[Struct, dict]:
         out["scopes"] = Struct.scalar(scopes)
     if res.displays:
         used = set()
-        out["displays"] = Struct.scalar({_field(p.split("/")[-1], used): np.atleast_2d(v) for p, v in res.displays.items()})
+        out["displays"] = Struct.scalar(
+            {_field(p.split("/")[-1], used): np.atleast_2d(v) for p, v in res.displays.items()}
+        )
     info = {"Solver": char(res.solver), "Steps": float(res.steps), "StoppedBy": char(res.stopped_by or "")}
     out["SimulationMetadata"] = Struct.scalar(info)
     return Struct.scalar(out), variables
@@ -726,9 +827,25 @@ def _sim_config(interp, m, args: list) -> tuple[dict, dict]:
             extra["external_input"] = np.asarray(v, float)
         elif low == "externalinput":
             extra["external_input"] = np.asarray(interp.eval_expression(text(v)), float)
-        elif low in ("savestate", "saveoutput", "savetime", "saveformat", "srcworkspace", "returnworkspaceoutputs",
-                     "simulationmode", "loadexternalinput", "outputsavename", "statesavename", "timesavename",
-                     "signallogging", "limitdatapoints", "debug", "trace", "dstworkspace", "fastrestart"):
+        elif low in (
+            "savestate",
+            "saveoutput",
+            "savetime",
+            "saveformat",
+            "srcworkspace",
+            "returnworkspaceoutputs",
+            "simulationmode",
+            "loadexternalinput",
+            "outputsavename",
+            "statesavename",
+            "timesavename",
+            "signallogging",
+            "limitdatapoints",
+            "debug",
+            "trace",
+            "dstworkspace",
+            "fastrestart",
+        ):
             if low == "savestate":
                 extra["keep_states"] = _as_text(v).lower() == "on"
         elif low in ("solvername", "solver"):
@@ -810,9 +927,16 @@ def _linmod(interp, args, nargout):
     u0 = np.asarray(args[2], float) if len(args) > 2 and np.size(args[2]) else None
     r = _blocks().linearize(m, interp, interp.frame, x0, u0)
     if nargout <= 1:
-        return Struct.scalar({"a": r["A"], "b": r["B"], "c": r["C"], "d": r["D"],
-                              "StateName": _cellstr(r["states"]), "OperPoint": Struct.scalar(
-                                  {"x": r["x"].reshape(-1, 1), "u": r["u"].reshape(-1, 1)})})
+        return Struct.scalar(
+            {
+                "a": r["A"],
+                "b": r["B"],
+                "c": r["C"],
+                "d": r["D"],
+                "StateName": _cellstr(r["states"]),
+                "OperPoint": Struct.scalar({"x": r["x"].reshape(-1, 1), "u": r["u"].reshape(-1, 1)}),
+            }
+        )
     return (r["A"], r["B"], r["C"], r["D"])[:nargout]
 
 
@@ -824,7 +948,7 @@ def _trim(interp, args, nargout):
     x0 = np.asarray(args[1], float) if len(args) > 1 and np.size(args[1]) else None
     u0 = np.asarray(args[2], float) if len(args) > 2 and np.size(args[2]) else None
     r = _blocks().trim(m, interp, interp.frame, x0, u0)
-    return tuple(r[k].reshape(-1, 1) for k in ("x", "u", "y", "dx"))[:max(nargout, 1)]
+    return tuple(r[k].reshape(-1, 1) for k in ("x", "u", "y", "dx"))[: max(nargout, 1)]
 
 
 def _unused() -> None:  # keep the imports that only type checkers see

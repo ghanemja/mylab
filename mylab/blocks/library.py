@@ -79,6 +79,7 @@ def block(type_name: str, category: str, doc: str, title: str = "", aliases: tup
         for a in (type_name, cls.title) + tuple(aliases):
             ALIASES.setdefault(_key(a), type_name)
         return cls
+
     return deco
 
 
@@ -162,13 +163,13 @@ class Node:
     params: list[P] = []
     nin: Any = 1
     nout: Any = 1
-    df: Any = True           # direct feedthrough: True, False, or a list per input
-    sample = "inherit"       # "inherit", "cont", "const" or "param" (reads SampleTime)
+    df: Any = True  # direct feedthrough: True, False, or a list per input
+    sample = "inherit"  # "inherit", "cont", "const" or "param" (reads SampleTime)
     virtual = False
     nx = 0
     has_zc = False
     is_sink = False
-    time_varying = False     # the output can change even while all inputs are constant
+    time_varying = False  # the output can change even while all inputs are constant
 
     def __init__(self, path: str, raw: dict, ctx: Any):
         self.path = path
@@ -308,8 +309,17 @@ class Node:
         return INF
 
 
-def elementwise(type_name: str, category: str, doc: str, fn: Callable, params: list | None = None, zc: Callable | None = None,
-                title: str = "", aliases: tuple = (), icon: str = ""):
+def elementwise(
+    type_name: str,
+    category: str,
+    doc: str,
+    fn: Callable,
+    params: list | None = None,
+    zc: Callable | None = None,
+    title: str = "",
+    aliases: tuple = (),
+    icon: str = "",
+):
     """Register a block with one input and one output: y = fn(u, block)."""
     plist = params or []
     zc_fn = zc
@@ -332,11 +342,19 @@ def catalog() -> dict:
     """Everything the editor needs to know about the block types, as plain data."""
     out = []
     for name, cls in TYPES.items():
-        out.append({
-            "type": name, "title": cls.title, "category": cls.category, "doc": cls.doc, "icon": cls.icon,
-            "params": [p.to_json() for p in cls.params], "in": cls.nin, "out": cls.nout,
-            "sink": cls.is_sink,
-        })
+        out.append(
+            {
+                "type": name,
+                "title": cls.title,
+                "category": cls.category,
+                "doc": cls.doc,
+                "icon": cls.icon,
+                "params": [p.to_json() for p in cls.params],
+                "in": cls.nin,
+                "out": cls.nout,
+                "sink": cls.is_sink,
+            }
+        )
     out.sort(key=lambda d: (CATEGORIES.index(d["category"]), d["title"]))
     return {"categories": CATEGORIES, "blocks": out}
 

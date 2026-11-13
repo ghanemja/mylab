@@ -36,6 +36,7 @@ CLOCK = ("Clock", {})
 
 # -- the catalog ----------------------------------------------------------------------------------
 
+
 def test_library_has_at_least_seventy_documented_blocks():
     cat = catalog()
     assert len(cat["blocks"]) >= 70
@@ -49,23 +50,37 @@ def test_library_has_at_least_seventy_documented_blocks():
 
 def test_every_block_type_is_exercised_by_this_file():
     import re
+
     src = open(__file__, encoding="utf-8").read()
     used = set(re.findall(r'"([A-Z][A-Za-z0-9]+)"', src))
     missing = sorted(t for t in TYPES if t not in used)
     assert missing == []
 
 
-@pytest.mark.parametrize("name,expected", [
-    ("simulink/Continuous/Integrator", "Integrator"), ("built-in/Gain", "Gain"), ("simulink/Continuous/Transfer Fcn", "TransferFcn"),
-    ("simulink/Math Operations/Sum", "Sum"), ("simulink/Sources/Sine Wave", "SineWave"), ("simulink/Sinks/Out1", "Outport"),
-    ("simulink/Sources/In1", "Inport"), ("simulink/Sinks/To Workspace", "ToWorkspace"), ("blocks/Unit Delay", "UnitDelay"),
-    ("simulink/Discontinuities/Dead Zone", "DeadZone"), ("simulink/Continuous/PID Controller", "PIDController"),
-    ("simulink/Signal Routing/Mux", "Mux"), ("simulink/Discrete/Zero-Order Hold", "ZeroOrderHold"),
-    ("simulink/User-Defined Functions/MATLAB Function", "MATLABFunction"), ("simulink/Sinks/XY Graph", "XYGraph"),
-    ("simulink/Lookup Tables/1-D Lookup Table", "LookupTable1D"), ("simulink/Discontinuities/Coulomb &\nViscous Friction",
-                                                                   "CoulombViscousFriction"),
-    ("simulink/Logic and Bit Operations/Relational Operator", "RelationalOperator"), ("Subsystem", "Subsystem"),
-])
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("simulink/Continuous/Integrator", "Integrator"),
+        ("built-in/Gain", "Gain"),
+        ("simulink/Continuous/Transfer Fcn", "TransferFcn"),
+        ("simulink/Math Operations/Sum", "Sum"),
+        ("simulink/Sources/Sine Wave", "SineWave"),
+        ("simulink/Sinks/Out1", "Outport"),
+        ("simulink/Sources/In1", "Inport"),
+        ("simulink/Sinks/To Workspace", "ToWorkspace"),
+        ("blocks/Unit Delay", "UnitDelay"),
+        ("simulink/Discontinuities/Dead Zone", "DeadZone"),
+        ("simulink/Continuous/PID Controller", "PIDController"),
+        ("simulink/Signal Routing/Mux", "Mux"),
+        ("simulink/Discrete/Zero-Order Hold", "ZeroOrderHold"),
+        ("simulink/User-Defined Functions/MATLAB Function", "MATLABFunction"),
+        ("simulink/Sinks/XY Graph", "XYGraph"),
+        ("simulink/Lookup Tables/1-D Lookup Table", "LookupTable1D"),
+        ("simulink/Discontinuities/Coulomb &\nViscous Friction", "CoulombViscousFriction"),
+        ("simulink/Logic and Bit Operations/Relational Operator", "RelationalOperator"),
+        ("Subsystem", "Subsystem"),
+    ],
+)
 def test_familiar_library_paths_are_aliases(name, expected):
     assert find_type(name).type == expected
 
@@ -88,6 +103,7 @@ def test_port_rules():
 
 # -- sources --------------------------------------------------------------------------------------
 
+
 def test_constant_scalar_vector_matrix():
     assert np.allclose(last("Constant", {"Value": "7"}), 7)
     assert np.allclose(last("Constant", {"Value": "[1 2 3]"}), [1, 2, 3])
@@ -108,12 +124,16 @@ def test_sine_wave_and_chirp():
     r = apply("SineWave", {"Amplitude": "2", "Bias": "1", "Frequency": "3", "Phase": "0.5"}, stop="4")
     assert np.allclose(r.y[:, 0], 2 * np.sin(3 * r.t + 0.5) + 1)
     r = apply("Chirp", {"f1": "1", "T": "2", "f2": "3"}, stop="2", MaxStep="0.001")
-    assert np.allclose(r.y[:, 0], np.cos(2 * np.pi * (r.t + 0.5 * r.t ** 2)))
+    assert np.allclose(r.y[:, 0], np.cos(2 * np.pi * (r.t + 0.5 * r.t**2)))
 
 
 def test_pulse_generator_edges_are_exact():
-    r = apply("PulseGenerator", {"Amplitude": "5", "Period": "0.4", "PulseWidth": "25", "PhaseDelay": "0.1"}, stop="1.3",
-              MaxStep="1")
+    r = apply(
+        "PulseGenerator",
+        {"Amplitude": "5", "Period": "0.4", "PulseWidth": "25", "PhaseDelay": "0.1"},
+        stop="1.3",
+        MaxStep="1",
+    )
     y, t = r.y[:, 0], r.t
     phase = np.mod(t - 0.1, 0.4)
     expect = np.where((t >= 0.1 - 1e-12) & (phase < 0.1 - 1e-9), 5.0, 0.0)
@@ -122,8 +142,18 @@ def test_pulse_generator_edges_are_exact():
     for edge in (0.1, 0.2, 0.5, 0.6, 0.9, 1.0):
         assert np.any(np.abs(t - edge) < 1e-12)
     # integral of the pulse train: three full pulses of area 0.5
-    r = simulate(build("pi", [("P", "PulseGenerator", {"Amplitude": "5", "Period": "0.4", "PulseWidth": "25", "PhaseDelay": "0.1"}),
-                              ("I", "Integrator"), ("O", "Outport")], ["P/1 -> I/1", "I/1 -> O/1"], StopTime="1.3"))
+    r = simulate(
+        build(
+            "pi",
+            [
+                ("P", "PulseGenerator", {"Amplitude": "5", "Period": "0.4", "PulseWidth": "25", "PhaseDelay": "0.1"}),
+                ("I", "Integrator"),
+                ("O", "Outport"),
+            ],
+            ["P/1 -> I/1", "I/1 -> O/1"],
+            StopTime="1.3",
+        )
+    )
     assert r.y[-1, 0] == pytest.approx(1.5, abs=1e-9)
 
 
@@ -159,11 +189,20 @@ def test_random_sources_are_repeatable_and_have_the_right_statistics():
 def test_from_workspace_matrix_and_struct():
     s = Session()
     s.run("simin = [0 0; 1 2; 3 0]; ts.Time = [0; 2]; ts.Data = [1 10; 3 30];")
-    m = build("fw", [("A", "FromWorkspace", {"VariableName": "simin"}),
-                     ("B", "FromWorkspace", {"VariableName": "ts", "OutputAfterFinalValue": "Holding final value"}),
-                     ("C", "FromWorkspace", {"VariableName": "[0 5; 1 7]", "Interpolate": "off"}),
-                     ("O1", "Outport"), ("O2", "Outport", {"Port": "2"}), ("O3", "Outport", {"Port": "3"})],
-              ["A/1 -> O1/1", "B/1 -> O2/1", "C/1 -> O3/1"], StopTime="4", MaxStep="0.25")
+    m = build(
+        "fw",
+        [
+            ("A", "FromWorkspace", {"VariableName": "simin"}),
+            ("B", "FromWorkspace", {"VariableName": "ts", "OutputAfterFinalValue": "Holding final value"}),
+            ("C", "FromWorkspace", {"VariableName": "[0 5; 1 7]", "Interpolate": "off"}),
+            ("O1", "Outport"),
+            ("O2", "Outport", {"Port": "2"}),
+            ("O3", "Outport", {"Port": "3"}),
+        ],
+        ["A/1 -> O1/1", "B/1 -> O2/1", "C/1 -> O3/1"],
+        StopTime="4",
+        MaxStep="0.25",
+    )
     r = simulate(m, s.interp)
     assert np.allclose(r.y[:, 0], np.interp(r.t, [0, 1, 3], [0, 2, 0]) - np.maximum(r.t - 3, 0))  # extrapolates
     assert np.allclose(r.y[:, 1], np.interp(r.t, [0, 2], [1, 3]))
@@ -183,8 +222,13 @@ def test_repeating_sequences():
 
 
 def test_root_inport_takes_external_input():
-    m = build("ext", [("In", "Inport"), ("K", "Gain", {"Gain": "2"}), ("O", "Outport")], ["In/1 -> K/1", "K/1 -> O/1"],
-              StopTime="2", MaxStep="0.1")
+    m = build(
+        "ext",
+        [("In", "Inport"), ("K", "Gain", {"Gain": "2"}), ("O", "Outport")],
+        ["In/1 -> K/1", "K/1 -> O/1"],
+        StopTime="2",
+        MaxStep="0.1",
+    )
     assert np.all(simulate(m).y == 0)
     r = simulate(m, external_input=np.array([[0, 0], [2, 4.0]]))
     assert np.allclose(r.y[:, 0], 4 * r.t)
@@ -192,16 +236,37 @@ def test_root_inport_takes_external_input():
 
 # -- sinks ----------------------------------------------------------------------------------------
 
+
 def test_scope_to_workspace_display_xy_graph_terminator():
-    m = build("sinks", [("S", "SineWave"), ("C", "Clock"), ("Scope", "Scope", {"NumInputPorts": "2"}),
-                        ("W", "ToWorkspace", {"VariableName": "wave", "Decimation": "2"}), ("D", "Display"),
-                        ("XY", "XYGraph"), ("T", "Terminator")],
-              ["S/1 -> Scope/1 : wave", "C/1 -> Scope/2", "S/1 -> W/1", "S/1 -> D/1", "C/1 -> XY/1", "S/1 -> XY/2", "C/1 -> T/1"],
-              StopTime="2", MaxStep="0.1")
+    m = build(
+        "sinks",
+        [
+            ("S", "SineWave"),
+            ("C", "Clock"),
+            ("Scope", "Scope", {"NumInputPorts": "2"}),
+            ("W", "ToWorkspace", {"VariableName": "wave", "Decimation": "2"}),
+            ("D", "Display"),
+            ("XY", "XYGraph"),
+            ("T", "Terminator"),
+        ],
+        [
+            "S/1 -> Scope/1 : wave",
+            "C/1 -> Scope/2",
+            "S/1 -> W/1",
+            "S/1 -> D/1",
+            "C/1 -> XY/1",
+            "S/1 -> XY/2",
+            "C/1 -> T/1",
+        ],
+        StopTime="2",
+        MaxStep="0.1",
+    )
     r = simulate(m)
     sc = r.scopes["Scope"]
     assert len(sc["signals"]) == 2 and sc["signals"][0]["name"] == "wave"
-    assert np.allclose(sc["signals"][0]["data"][:, 0], np.sin(sc["t"])) and np.allclose(sc["signals"][1]["data"][:, 0], sc["t"])
+    assert np.allclose(sc["signals"][0]["data"][:, 0], np.sin(sc["t"])) and np.allclose(
+        sc["signals"][1]["data"][:, 0], sc["t"]
+    )
     w = r.workspace["wave"]
     assert w["t"].size == (r.t.size + 1) // 2 and np.allclose(w["data"][:, 0], np.sin(w["t"]))
     assert r.displays["D"][0] == pytest.approx(math.sin(2))
@@ -210,14 +275,19 @@ def test_scope_to_workspace_display_xy_graph_terminator():
 
 
 def test_named_logged_line():
-    m = build("logs", [("S", "SineWave"), ("K", "Gain", {"Gain": "2"}), ("T", "Terminator")], ["S/1 -> K/1 : raw", "K/1 -> T/1"],
-              StopTime="1")
+    m = build(
+        "logs",
+        [("S", "SineWave"), ("K", "Gain", {"Gain": "2"}), ("T", "Terminator")],
+        ["S/1 -> K/1 : raw", "K/1 -> T/1"],
+        StopTime="1",
+    )
     m.root.lines[0].log = True
     r = simulate(m)
     assert np.allclose(r.logs["raw"]["data"][:, 0], np.sin(r.logs["raw"]["t"]))
 
 
 # -- math -----------------------------------------------------------------------------------------
+
 
 def test_gain_modes():
     assert last("Gain", {"Gain": "3"}, [4]) == 12
@@ -236,7 +306,9 @@ def test_sum_product_divide():
     assert last("Product", {"Inputs": "3"}, [2, 3, 4]) == 24
     assert last("Product", {"Inputs": "*/"}, [9, 3]) == 3
     assert last("Divide", {}, [9, 2]) == 4.5
-    assert np.allclose(last("Product", {"Inputs": "2", "Multiplication": "Matrix(*)"}, ["[1 2; 3 4]", "[1; 1]"]), [3, 7])
+    assert np.allclose(
+        last("Product", {"Inputs": "2", "Multiplication": "Matrix(*)"}, ["[1 2; 3 4]", "[1; 1]"]), [3, 7]
+    )
     with pytest.raises(SimError, match=r"only contain \+ and -"):
         last("Sum", {"Inputs": "+*"}, [1, 2])
 
@@ -268,7 +340,9 @@ def test_math_function_and_trigonometry():
     assert last("TrigonometricFunction", {"Operator": "cos"}, [0]) == 1
     assert last("TrigonometricFunction", {"Operator": "atan2"}, [1, -1]) == pytest.approx(3 * math.pi / 4)
     assert last("TrigonometricFunction", {"Operator": "asinh"}, [1]) == pytest.approx(math.asinh(1))
-    assert np.allclose(last("TrigonometricFunction", {"Operator": "sincos"}, [0.3], n_out=2), [math.sin(0.3), math.cos(0.3)])
+    assert np.allclose(
+        last("TrigonometricFunction", {"Operator": "sincos"}, [0.3], n_out=2), [math.sin(0.3), math.cos(0.3)]
+    )
     with pytest.raises(SimError, match="unknown function"):
         last("MathFunction", {"Operator": "gamma"}, [1])
 
@@ -288,8 +362,9 @@ def test_sqrt_minmax_rounding():
 
 
 def test_reshape_and_concatenate():
-    assert np.allclose(last("Reshape", {"OutputDimensionality": "Customize", "OutputDimensions": "[2 2]"}, ["[1 2 3 4]"]),
-                       [1, 2, 3, 4])
+    assert np.allclose(
+        last("Reshape", {"OutputDimensionality": "Customize", "OutputDimensions": "[2 2]"}, ["[1 2 3 4]"]), [1, 2, 3, 4]
+    )
     assert np.allclose(last("Reshape", {}, ["[1 2; 3 4]"]), [1, 3, 2, 4])
     assert np.allclose(last("Concatenate", {"NumInputs": "3"}, [1, "[2 3]", 4]), [1, 2, 3, 4])
     r = last("Concatenate", {"Mode": "Multidimensional array", "ConcatenateDimension": "2"}, ["[1; 2]", "[3; 4]"])
@@ -300,8 +375,16 @@ def test_reshape_and_concatenate():
 
 # -- logic ----------------------------------------------------------------------------------------
 
+
 def test_relational_and_compare_blocks():
-    for op, expect in (("==", [0, 1, 0]), ("~=", [1, 0, 1]), ("<", [1, 0, 0]), ("<=", [1, 1, 0]), (">=", [0, 1, 1]), (">", [0, 0, 1])):
+    for op, expect in (
+        ("==", [0, 1, 0]),
+        ("~=", [1, 0, 1]),
+        ("<", [1, 0, 0]),
+        ("<=", [1, 1, 0]),
+        (">=", [0, 1, 1]),
+        (">", [0, 0, 1]),
+    ):
         assert np.array_equal(last("RelationalOperator", {"Operator": op}, ["[1 2 3]", 2]), expect)
         assert np.array_equal(last("CompareToConstant", {"relop": op, "const": "2"}, ["[1 2 3]"]), expect)
         assert np.array_equal(last("CompareToZero", {"relop": op}, ["[-1 0 1]"]), expect)
@@ -309,8 +392,14 @@ def test_relational_and_compare_blocks():
 
 def test_logical_and_bitwise_operators():
     a, b = "[0 0 1 1]", "[0 1 0 1]"
-    table = {"AND": [0, 0, 0, 1], "OR": [0, 1, 1, 1], "NAND": [1, 1, 1, 0], "NOR": [1, 0, 0, 0], "XOR": [0, 1, 1, 0],
-             "NXOR": [1, 0, 0, 1]}
+    table = {
+        "AND": [0, 0, 0, 1],
+        "OR": [0, 1, 1, 1],
+        "NAND": [1, 1, 1, 0],
+        "NOR": [1, 0, 0, 0],
+        "XOR": [0, 1, 1, 0],
+        "NXOR": [1, 0, 0, 1],
+    }
     for op, expect in table.items():
         assert np.array_equal(last("LogicalOperator", {"Operator": op}, [a, b]), expect)
     assert np.array_equal(last("LogicalOperator", {"Operator": "NOT"}, [a]), [1, 1, 0, 0])
@@ -332,13 +421,16 @@ def test_switches():
 
 
 def test_hit_crossing_fires_once_per_crossing():
-    r = apply("HitCrossing", {"HitCrossingOffset": "0.5"}, [("SineWave", {"Frequency": "2*pi"})], stop="2", MaxStep="0.05")
+    r = apply(
+        "HitCrossing", {"HitCrossingOffset": "0.5"}, [("SineWave", {"Frequency": "2*pi"})], stop="2", MaxStep="0.05"
+    )
     assert int(np.sum(r.y)) == 4
     hits = r.t[r.y[:, 0] == 1]
     assert np.allclose(hits, [1 / 12, 5 / 12, 13 / 12, 17 / 12], atol=1e-8)
 
 
 # -- nonlinear ------------------------------------------------------------------------------------
+
 
 def static_map(block_type, params):
     r = apply(block_type, params, [("Ramp", {"Slope": "1", "InitialOutput": "-2"})], stop="4", MaxStep="0.05")
@@ -370,8 +462,13 @@ def test_quantizer_friction_and_dynamic_saturation():
 
 
 def test_relay_hysteresis_map():
-    r = apply("Relay", {"OnSwitchValue": "0.5", "OffSwitchValue": "-0.5", "OnOutputValue": "2", "OffOutputValue": "-2"},
-              [("SineWave", {})], stop="7", MaxStep="0.05")
+    r = apply(
+        "Relay",
+        {"OnSwitchValue": "0.5", "OffSwitchValue": "-0.5", "OnOutputValue": "2", "OffOutputValue": "-2"},
+        [("SineWave", {})],
+        stop="7",
+        MaxStep="0.05",
+    )
     u, y = np.sin(r.t), r.y[:, 0]
     assert set(np.unique(y)) == {-2.0, 2.0}
     assert np.all(y[u > 0.5 + 1e-6] == 2) and np.all(y[u < -0.5 - 1e-6] == -2)
@@ -380,8 +477,13 @@ def test_relay_hysteresis_map():
 
 
 def test_rate_limiter_and_backlash():
-    r = apply("RateLimiter", {"RisingSlewLimit": "2", "FallingSlewLimit": "-1"}, [("Step", {"Time": "0.2", "After": "1"})],
-              stop="2", MaxStep="0.01")
+    r = apply(
+        "RateLimiter",
+        {"RisingSlewLimit": "2", "FallingSlewLimit": "-1"},
+        [("Step", {"Time": "0.2", "After": "1"})],
+        stop="2",
+        MaxStep="0.01",
+    )
     expect = np.clip(2 * (r.t - 0.2), 0, 1)
     assert np.max(np.abs(r.y[:, 0] - expect)) < 0.021
     r = apply("Backlash", {"BacklashWidth": "1"}, [("SineWave", {"Amplitude": "2"})], stop="8", MaxStep="0.01")
@@ -407,6 +509,7 @@ def test_lookup_tables():
 
 # -- continuous blocks not covered by the validation file -----------------------------------------
 
+
 def test_integrator_initial_value_and_state_port():
     r = apply("Integrator", {"InitialCondition": "3", "ShowStatePort": "on"}, [2], n_out=2, stop="2")
     assert np.allclose(r.y[:, 0], 3 + 2 * r.t) and np.allclose(r.y[:, 1], r.y[:, 0])
@@ -417,9 +520,13 @@ def test_integrator_initial_value_and_state_port():
 def test_derivative_transport_delay_and_lti_blocks_run():
     assert last("Derivative", {}, [CLOCK], stop="1") == pytest.approx(1)
     assert last("TransportDelay", {"DelayTime": "0.25"}, [CLOCK], stop="1") == pytest.approx(0.75)
-    assert last("TransferFcn", {"Numerator": "[2]", "Denominator": "[1 1]"}, [1], stop="20") == pytest.approx(2, abs=1e-3)
+    assert last("TransferFcn", {"Numerator": "[2]", "Denominator": "[1 1]"}, [1], stop="20") == pytest.approx(
+        2, abs=1e-3
+    )
     assert last("StateSpace", {"A": "-1", "B": "1", "C": "3", "D": "0"}, [1], stop="20") == pytest.approx(3, abs=1e-3)
-    assert last("ZeroPole", {"Zeros": "[]", "Poles": "[-1 -2]", "Gain": "4"}, [1], stop="25") == pytest.approx(2, abs=1e-3)
+    assert last("ZeroPole", {"Zeros": "[]", "Poles": "[-1 -2]", "Gain": "4"}, [1], stop="25") == pytest.approx(
+        2, abs=1e-3
+    )
     assert last("PIDController", {"Controller": "P", "P": "3"}, [2]) == 6
     with pytest.raises(SimError, match="scalar input"):
         last("PIDController", {}, ["[1 2]"])
@@ -429,10 +536,13 @@ def test_derivative_transport_delay_and_lti_blocks_run():
 
 # -- discrete blocks ------------------------------------------------------------------------------
 
+
 def test_unit_delay_memory_delay():
     r = apply("UnitDelay", {"InitialCondition": "-1", "SampleTime": "0.25"}, [CLOCK], stop="1", MaxStep="1")
     assert np.allclose(r.t, [0, 0.25, 0.5, 0.75, 1.0]) and np.allclose(r.y[:, 0], [-1, 0, 0.25, 0.5, 0.75])
-    r = apply("Delay", {"DelayLength": "3", "InitialCondition": "9", "SampleTime": "0.25"}, [CLOCK], stop="1", MaxStep="1")
+    r = apply(
+        "Delay", {"DelayLength": "3", "InitialCondition": "9", "SampleTime": "0.25"}, [CLOCK], stop="1", MaxStep="1"
+    )
     assert np.allclose(r.y[:, 0], [9, 9, 9, 0, 0.25])
     r = apply("Memory", {"InitialCondition": "5"}, [CLOCK], stop="1", Solver="ode1", FixedStep="0.25")
     assert np.allclose(r.y[:, 0], [5, 0, 0.25, 0.5, 0.75])
@@ -440,8 +550,13 @@ def test_unit_delay_memory_delay():
 
 def test_zero_order_hold_and_rate_transition():
     for kind, p in (("ZeroOrderHold", {"SampleTime": "0.3"}), ("RateTransition", {"OutPortSampleTime": "0.3"})):
-        m = build("zoh", [("C", "Clock"), ("H", kind, p), ("Sc", "Scope"), ("O", "Outport")],
-                  ["C/1 -> H/1", "H/1 -> O/1", "C/1 -> Sc/1"], StopTime="1", MaxStep="0.05")
+        m = build(
+            "zoh",
+            [("C", "Clock"), ("H", kind, p), ("Sc", "Scope"), ("O", "Outport")],
+            ["C/1 -> H/1", "H/1 -> O/1", "C/1 -> Sc/1"],
+            StopTime="1",
+            MaxStep="0.05",
+        )
         r = simulate(m)
         o = r.outports[0]
         assert np.allclose(o["t"], [0, 0.3, 0.6, 0.9]) and np.allclose(o["data"][:, 0], [0, 0.3, 0.6, 0.9])
@@ -450,16 +565,27 @@ def test_zero_order_hold_and_rate_transition():
 
 def test_discrete_time_integrator_methods():
     def run(method):
-        return apply("DiscreteTimeIntegrator", {"IntegratorMethod": method, "SampleTime": "0.5", "gainval": "2",
-                                                "InitialCondition": "1"}, [CLOCK], stop="2", MaxStep="1").y[:, 0]
+        return apply(
+            "DiscreteTimeIntegrator",
+            {"IntegratorMethod": method, "SampleTime": "0.5", "gainval": "2", "InitialCondition": "1"},
+            [CLOCK],
+            stop="2",
+            MaxStep="1",
+        ).y[:, 0]
+
     u = np.arange(5) * 0.5
     fwd = 1 + np.concatenate([[0], np.cumsum(2 * 0.5 * u[:-1])])
     assert np.allclose(run("Integration: Forward Euler"), fwd)
     assert np.allclose(run("Integration: Backward Euler"), 1 + np.cumsum(2 * 0.5 * u))
     trap = 1 + np.concatenate([[0], np.cumsum(2 * 0.5 * (u[:-1] + u[1:]) / 2)])
     assert np.allclose(run("Integration: Trapezoidal"), trap)
-    r = apply("DiscreteTimeIntegrator", {"SampleTime": "0.5", "LimitOutput": "on", "UpperSaturationLimit": "1.2"}, [1], stop="3",
-              MaxStep="1")
+    r = apply(
+        "DiscreteTimeIntegrator",
+        {"SampleTime": "0.5", "LimitOutput": "on", "UpperSaturationLimit": "1.2"},
+        [1],
+        stop="3",
+        MaxStep="1",
+    )
     assert np.max(r.y) == pytest.approx(1.2)
 
 
@@ -467,12 +593,26 @@ def test_discrete_transfer_function_filter_fir_state_space():
     step = [1]
     # y[k+1] = 0.5 y[k] + u[k]
     expect = [0, 1, 1.5, 1.75, 1.875]
-    r = apply("DiscreteTransferFcn", {"Numerator": "[1]", "Denominator": "[1 -0.5]", "SampleTime": "1"}, step, stop="4", MaxStep="4")
+    r = apply(
+        "DiscreteTransferFcn",
+        {"Numerator": "[1]", "Denominator": "[1 -0.5]", "SampleTime": "1"},
+        step,
+        stop="4",
+        MaxStep="4",
+    )
     assert np.allclose(r.y[:, 0], expect)
-    r = apply("DiscreteStateSpace", {"A": "0.5", "B": "1", "C": "1", "D": "0", "SampleTime": "1"}, step, stop="4", MaxStep="4")
+    r = apply(
+        "DiscreteStateSpace", {"A": "0.5", "B": "1", "C": "1", "D": "0", "SampleTime": "1"}, step, stop="4", MaxStep="4"
+    )
     assert np.allclose(r.y[:, 0], expect)
     # in powers of 1/z: y[k] = 0.5 y[k-1] + u[k]
-    r = apply("DiscreteFilter", {"Numerator": "[1]", "Denominator": "[1 -0.5]", "SampleTime": "1"}, step, stop="4", MaxStep="4")
+    r = apply(
+        "DiscreteFilter",
+        {"Numerator": "[1]", "Denominator": "[1 -0.5]", "SampleTime": "1"},
+        step,
+        stop="4",
+        MaxStep="4",
+    )
     assert np.allclose(r.y[:, 0], [1, 1.5, 1.75, 1.875, 1.9375])
     r = apply("DiscreteFir", {"Coefficients": "[0.5 0.3 0.2]", "SampleTime": "1"}, [CLOCK], stop="4", MaxStep="4")
     assert np.allclose(r.y[:, 0], [0, 0.5, 1.3, 2.3, 3.3])
@@ -481,6 +621,7 @@ def test_discrete_transfer_function_filter_fir_state_space():
 
 
 # -- routing --------------------------------------------------------------------------------------
+
 
 def test_mux_demux_selector_assignment():
     assert np.allclose(last("Mux", {"Inputs": "3"}, [1, "[2 3]", 4]), [1, 2, 3, 4])
@@ -501,11 +642,20 @@ def test_mux_demux_selector_assignment():
 
 
 def test_bus_creator_and_selector_use_signal_names():
-    m = build("bus", [("a", "Constant", {"Value": "1"}), ("b", "Constant", {"Value": "[2 3]"}), ("c", "Constant", {"Value": "4"}),
-                      ("BC", "BusCreator", {"Inputs": "3"}), ("BS", "BusSelector", {"OutputSignals": "speed,signal3"}),
-                      ("O1", "Outport"), ("O2", "Outport", {"Port": "2"})],
-              ["a/1 -> BC/1 : pos", "b/1 -> BC/2 : speed", "c/1 -> BC/3", "BC/1 -> BS/1", "BS/1 -> O1/1", "BS/2 -> O2/1"],
-              StopTime="1")
+    m = build(
+        "bus",
+        [
+            ("a", "Constant", {"Value": "1"}),
+            ("b", "Constant", {"Value": "[2 3]"}),
+            ("c", "Constant", {"Value": "4"}),
+            ("BC", "BusCreator", {"Inputs": "3"}),
+            ("BS", "BusSelector", {"OutputSignals": "speed,signal3"}),
+            ("O1", "Outport"),
+            ("O2", "Outport", {"Port": "2"}),
+        ],
+        ["a/1 -> BC/1 : pos", "b/1 -> BC/2 : speed", "c/1 -> BC/3", "BC/1 -> BS/1", "BS/1 -> O1/1", "BS/2 -> O2/1"],
+        StopTime="1",
+    )
     assert np.allclose(simulate(m).y[-1], [2, 3, 4])
     m.root.block("BS").params["OutputSignals"] = "nope,pos"
     with pytest.raises(SimError, match="no signal 'nope'.*pos, speed, signal3"):
@@ -513,21 +663,42 @@ def test_bus_creator_and_selector_use_signal_names():
 
 
 def test_goto_from_in_one_system():
-    m = build("gf", [("C", "Clock"), ("G", "Goto", {"GotoTag": "t"}), ("F", "From", {"GotoTag": "t"}), ("O", "Outport")],
-              ["C/1 -> G/1", "F/1 -> O/1"], StopTime="1")
+    m = build(
+        "gf",
+        [("C", "Clock"), ("G", "Goto", {"GotoTag": "t"}), ("F", "From", {"GotoTag": "t"}), ("O", "Outport")],
+        ["C/1 -> G/1", "F/1 -> O/1"],
+        StopTime="1",
+    )
     r = simulate(m)
     assert np.allclose(r.y[:, 0], r.t)
 
 
 def enabled_model(kind, port_block, params=None):
-    inner = ([("In", "Inport"), ("ctl", port_block, params or {}), ("K", "Gain", {"Gain": "2"}),
-              ("Int", "Integrator"), ("Out", "Outport"), ("Out2", "Outport", {"Port": "2"})],
-             ["In/1 -> K/1", "K/1 -> Out/1", "In/1 -> Int/1", "Int/1 -> Out2/1"])
-    return build("en", [("C", "Clock"), ("P", "PulseGenerator", {"Period": "1", "PulseWidth": "50", "Amplitude": "2"}),
-                        ("bias", "Bias", {"Bias": "-1"}), ("S", "Subsystem", {}, inner), ("O1", "Outport"),
-                        ("O2", "Outport", {"Port": "2"})],
-                 ["C/1 -> S/1", "P/1 -> bias/1", f"bias/1 -> S/{kind}", "S/1 -> O1/1", "S/2 -> O2/1"], StopTime="2",
-                 MaxStep="0.01")
+    inner = (
+        [
+            ("In", "Inport"),
+            ("ctl", port_block, params or {}),
+            ("K", "Gain", {"Gain": "2"}),
+            ("Int", "Integrator"),
+            ("Out", "Outport"),
+            ("Out2", "Outport", {"Port": "2"}),
+        ],
+        ["In/1 -> K/1", "K/1 -> Out/1", "In/1 -> Int/1", "Int/1 -> Out2/1"],
+    )
+    return build(
+        "en",
+        [
+            ("C", "Clock"),
+            ("P", "PulseGenerator", {"Period": "1", "PulseWidth": "50", "Amplitude": "2"}),
+            ("bias", "Bias", {"Bias": "-1"}),
+            ("S", "Subsystem", {}, inner),
+            ("O1", "Outport"),
+            ("O2", "Outport", {"Port": "2"}),
+        ],
+        ["C/1 -> S/1", "P/1 -> bias/1", f"bias/1 -> S/{kind}", "S/1 -> O1/1", "S/2 -> O2/1"],
+        StopTime="2",
+        MaxStep="0.01",
+    )
 
 
 def test_enabled_subsystem_holds_outputs_and_states():
@@ -538,7 +709,7 @@ def test_enabled_subsystem_holds_outputs_and_states():
     off = (t > 0.5 + 1e-9) & (t < 1 - 1e-9)
     assert np.allclose(y[off], 1.0)  # held at the last value: 2 * 0.5
     assert np.allclose(x[off], 0.125)  # integral of t over [0, 0.5], frozen while disabled
-    assert x[-1] == pytest.approx(0.125 + (1.5 ** 2 - 1) / 2, abs=1e-6)
+    assert x[-1] == pytest.approx(0.125 + (1.5**2 - 1) / 2, abs=1e-6)
 
 
 def test_triggered_subsystem_runs_once_per_edge():
@@ -554,13 +725,35 @@ def test_triggered_subsystem_runs_once_per_edge():
 
 def test_merge_takes_the_branch_that_ran():
     def branch(gain):
-        return ([("In", "Inport"), ("en", "EnablePort"), ("K", "Gain", {"Gain": gain}), ("Out", "Outport")],
-                ["In/1 -> K/1", "K/1 -> Out/1"])
-    m = build("mrg", [("C", "Clock"), ("S", "SineWave", {"Frequency": "2*pi"}), ("neg", "Gain", {"Gain": "-1"}),
-                      ("A", "Subsystem", {}, branch("1")), ("B", "Subsystem", {}, branch("-1")),
-                      ("M", "Merge"), ("O", "Outport")],
-              ["C/1 -> A/1", "C/1 -> B/1", "S/1 -> A/enable", "S/1 -> neg/1", "neg/1 -> B/enable", "A/1 -> M/1", "B/1 -> M/2",
-               "M/1 -> O/1"], StopTime="2", MaxStep="0.01")
+        return (
+            [("In", "Inport"), ("en", "EnablePort"), ("K", "Gain", {"Gain": gain}), ("Out", "Outport")],
+            ["In/1 -> K/1", "K/1 -> Out/1"],
+        )
+
+    m = build(
+        "mrg",
+        [
+            ("C", "Clock"),
+            ("S", "SineWave", {"Frequency": "2*pi"}),
+            ("neg", "Gain", {"Gain": "-1"}),
+            ("A", "Subsystem", {}, branch("1")),
+            ("B", "Subsystem", {}, branch("-1")),
+            ("M", "Merge"),
+            ("O", "Outport"),
+        ],
+        [
+            "C/1 -> A/1",
+            "C/1 -> B/1",
+            "S/1 -> A/enable",
+            "S/1 -> neg/1",
+            "neg/1 -> B/enable",
+            "A/1 -> M/1",
+            "B/1 -> M/2",
+            "M/1 -> O/1",
+        ],
+        StopTime="2",
+        MaxStep="0.01",
+    )
     r = simulate(m)
     t, y = r.t, r.y[:, 0]
     pos = np.sin(2 * np.pi * t) > 1e-3
@@ -570,6 +763,7 @@ def test_merge_takes_the_branch_that_ran():
 
 # -- user-defined ---------------------------------------------------------------------------------
 
+
 def test_fcn_block():
     assert last("Fcn", {"Expr": "u(1)^2 + 3*u(2)"}, ["[2 5]"]) == 19
     assert last("Fcn", {"Expr": "u[1]*2"}, [4]) == 8
@@ -577,19 +771,30 @@ def test_fcn_block():
     assert np.allclose(r.y[:, 0], math.sin(1) + r.t)
     s = Session()
     s.run("gain = 7;")
-    m = build("f", [("C", "Constant", {"Value": "2"}), ("F", "Fcn", {"Expr": "gain*u"}), ("O", "Outport")],
-              ["C/1 -> F/1", "F/1 -> O/1"], StopTime="1")
+    m = build(
+        "f",
+        [("C", "Constant", {"Value": "2"}), ("F", "Fcn", {"Expr": "gain*u"}), ("O", "Outport")],
+        ["C/1 -> F/1", "F/1 -> O/1"],
+        StopTime="1",
+    )
     assert simulate(m, s.interp).y[-1, 0] == 14
     with pytest.raises(SimError, match="not valid"):
         last("Fcn", {"Expr": "u +* 2"}, [1])
 
 
 def test_matlab_function_block_runs_interpreter_code():
-    code = "function [s, p] = both(a, b)\n% sum and product\ns = a + b;\nif a > b\n    p = a * b;\nelse\n    p = -a * b;\nend\n"
+    code = "function [s, p] = both(a, b)\n% sum and product\ns = a + b;\nif a > b\n    p = a * b;\nelse\n    p = -a * b;\nend\n"  # noqa: E501
     assert np.allclose(last("MATLABFunction", {"Script": code}, [3, 4], n_out=2), [7, -12])
     assert np.allclose(last("MATLABFunction", {"Script": "function y = f(u)\ny = cumsum(u);"}, ["[1 2 3]"]), [1, 3, 6])
     counter = "function y = count(u)\npersistent n\nif isempty(n), n = 0; end\nn = n + u;\ny = n;\n"
-    r = apply("MATLABFunction", {"Script": counter}, [("PulseGenerator", {"Period": "1"})], stop="3", Solver="ode1", FixedStep="0.5")
+    r = apply(
+        "MATLABFunction",
+        {"Script": counter},
+        [("PulseGenerator", {"Period": "1"})],
+        stop="3",
+        Solver="ode1",
+        FixedStep="0.5",
+    )
     assert r.y[-1, 0] >= 3
     with pytest.raises(SimError) as info:
         last("MATLABFunction", {"Script": "function y = f(u)\ny = undefined_thing(u);"}, [1])
@@ -601,9 +806,18 @@ def test_matlab_function_block_runs_interpreter_code():
 def test_matlab_function_block_in_a_feedback_loop():
     # x' = f(x) with f written as code: logistic growth, exact solution known
     code = "function dx = rhs(x)\nr = 2; K = 5;\ndx = r * x * (1 - x / K);\n"
-    m = build("logi", [("F", "MATLABFunction", {"Script": code}), ("Int", "Integrator", {"InitialCondition": "0.5"}),
-                       ("O", "Outport")], ["Int/1 -> F/1", "F/1 -> Int/1", "Int/1 -> O/1"], StopTime="4", RelTol="1e-8",
-              AbsTol="1e-10")
+    m = build(
+        "logi",
+        [
+            ("F", "MATLABFunction", {"Script": code}),
+            ("Int", "Integrator", {"InitialCondition": "0.5"}),
+            ("O", "Outport"),
+        ],
+        ["Int/1 -> F/1", "F/1 -> Int/1", "Int/1 -> O/1"],
+        StopTime="4",
+        RelTol="1e-8",
+        AbsTol="1e-10",
+    )
     r = simulate(m)
     exact = 5 / (1 + (5 / 0.5 - 1) * np.exp(-2 * r.t))
     assert np.max(np.abs(r.y[:, 0] - exact)) < 1e-6
@@ -615,15 +829,44 @@ def test_interpreted_function_block():
     assert last("InterpretedFunction", {"MATLABFcn": "u(1)*u(2)"}, ["[3 4]"]) == 12
     s = Session()
     s.run("h = @(u) 10*u;")
-    m = build("h", [("C", "Constant", {"Value": "2"}), ("F", "InterpretedFunction", {"MATLABFcn": "h"}), ("O", "Outport")],
-              ["C/1 -> F/1", "F/1 -> O/1"], StopTime="1")
+    m = build(
+        "h",
+        [("C", "Constant", {"Value": "2"}), ("F", "InterpretedFunction", {"MATLABFcn": "h"}), ("O", "Outport")],
+        ["C/1 -> F/1", "F/1 -> O/1"],
+        StopTime="1",
+    )
     assert simulate(m, s.interp).y[-1, 0] == 20
 
 
 def test_structure_blocks_are_in_the_catalog():
-    for name in ("Subsystem", "Inport", "Outport", "EnablePort", "TriggerPort", "Goto", "From", "Scope", "ToWorkspace", "Display",
-                 "XYGraph", "Terminator", "StopSimulation", "Ground", "Clock", "Chirp", "Merge", "HitCrossing", "Derivative",
-                 "TransportDelay", "TransferFcn", "ZeroPole", "StateSpace", "Memory", "UnitDelay", "Delay"):
+    for name in (
+        "Subsystem",
+        "Inport",
+        "Outport",
+        "EnablePort",
+        "TriggerPort",
+        "Goto",
+        "From",
+        "Scope",
+        "ToWorkspace",
+        "Display",
+        "XYGraph",
+        "Terminator",
+        "StopSimulation",
+        "Ground",
+        "Clock",
+        "Chirp",
+        "Merge",
+        "HitCrossing",
+        "Derivative",
+        "TransportDelay",
+        "TransferFcn",
+        "ZeroPole",
+        "StateSpace",
+        "Memory",
+        "UnitDelay",
+        "Delay",
+    ):
         assert find_type(name) is not None
 
 

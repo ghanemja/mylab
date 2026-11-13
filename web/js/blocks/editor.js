@@ -347,13 +347,14 @@ export class DiagramEditor {
   }
 
   /** Select the nearest block in a direction (Alt+arrow). */
-  neighbour(dx, dy) {
-    const cur = this.selectedBlocks()[0];
+  neighbour(dx, dy, add = false) {
+    const picked = this.selectedBlocks();
+    const cur = picked[picked.length - 1];
     if (!cur) return this.cycle(1);
     const c = [cur.position[0] + cur.position[2] / 2, cur.position[1] + cur.position[3] / 2];
     let best = null, score = Infinity;
     for (const b of this.sys().blocks) {
-      if (b === cur) continue;
+      if (b === cur || (add && this.sel.has(b.name))) continue;
       const ox = b.position[0] + b.position[2] / 2 - c[0], oy = b.position[1] + b.position[3] / 2 - c[1];
       const along = ox * dx + oy * dy, across = Math.abs(ox * dy) + Math.abs(oy * dx);
       if (along <= 1) continue;
@@ -361,7 +362,7 @@ export class DiagramEditor {
       if (s < score) [best, score] = [b, s];
     }
     if (best) {
-      this.select([best.name]);
+      this.select([best.name], { add });
       this.reveal(best.name);
     }
     return !!best;
@@ -625,7 +626,7 @@ export class DiagramEditor {
    */
   connectSelected() {
     const list = this.ordered().filter((b) => this.sel.has(b.name));
-    if (list.length < 2) return "Select two blocks (Shift+click, or Tab then Shift+Tab with Shift held) to connect them.";
+    if (list.length < 2) return "Select two or more blocks to connect them (Shift+click, or Alt+Shift+arrow keys).";
     let made = 0;
     for (let i = 0; i < list.length - 1; i++) {
       const a = list[i], b = list[i + 1];
@@ -1123,7 +1124,7 @@ export class DiagramEditor {
     if (arrows[k]) {
       const [dx, dy] = arrows[k];
       if (e.altKey && k === "ArrowUp" && !this.sel.size) this.leave();
-      else if (e.altKey) this.neighbour(dx, dy);
+      else if (e.altKey) this.neighbour(dx, dy, e.shiftKey);
       else if (this.sel.size && !this.readOnly) this.moveSelection(dx * (e.shiftKey ? 1 : GRID), dy * (e.shiftKey ? 1 : GRID));
       else {
         this.view.x -= dx * 40;

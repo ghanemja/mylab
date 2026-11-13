@@ -30,6 +30,12 @@ what mylab printed, and what you expected.
 - `inputParser`, `onCleanup`, `RandStream`, `timer`.
 - Image reading, writing and processing; binary file I/O; animations.
 - JSON (`jsondecode`/`jsonencode`), WAV audio files and Excel `.xlsx` files.
+- Block-diagram models (mylab Blocks): `sim`, `new_system`, `add_block`,
+  `add_line`, `set_param`, `get_param`, `find_system`, `linmod`, `trim` and a
+  library of 96 blocks, with a diagram editor in the web app and import of
+  simple `.slx` files. See [BLOCKS.md](BLOCKS.md) for what is covered and
+  what is not (no code generation, state charts, physical modelling,
+  S-functions or algebraic-loop solving; `.mdl` files are not read).
 - About 1,250 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
 
 ## Not supported yet

@@ -38,8 +38,16 @@ class ModelError(Exception):
 class Block:
     __slots__ = ("name", "type", "params", "pos", "rot", "flip", "system", "extra")
 
-    def __init__(self, name: str, type: str, params: dict | None = None, pos: list | None = None,
-                 rot: int = 0, flip: bool = False, system: "System | None" = None):
+    def __init__(
+        self,
+        name: str,
+        type: str,
+        params: dict | None = None,
+        pos: list | None = None,
+        rot: int = 0,
+        flip: bool = False,
+        system: "System | None" = None,
+    ):
         self.name = name
         self.type = type
         self.params: dict[str, str] = dict(params or {})
@@ -68,8 +76,14 @@ class Block:
     def from_json(cls, d: dict) -> "Block":
         if not isinstance(d, dict) or "name" not in d or "type" not in d:
             raise ModelError("Every block needs a name and a type.")
-        b = cls(str(d["name"]), str(d["type"]), {k: _text(v) for k, v in (d.get("params") or {}).items()},
-                d.get("position"), int(d.get("rotation", 0)) % 4, bool(d.get("flip", False)))
+        b = cls(
+            str(d["name"]),
+            str(d["type"]),
+            {k: _text(v) for k, v in (d.get("params") or {}).items()},
+            d.get("position"),
+            int(d.get("rotation", 0)) % 4,
+            bool(d.get("flip", False)),
+        )
         if "blocks" in d or "lines" in d or b.type == "Subsystem":
             b.system = System.from_json(d)
         known = {"name", "type", "position", "rotation", "flip", "params", "blocks", "lines"}
@@ -103,8 +117,9 @@ class Line:
     @classmethod
     def from_json(cls, d: dict) -> "Line":
         try:
-            return cls(tuple(d["from"]), tuple(d["to"]), str(d.get("name", "")), d.get("points"),
-                       bool(d.get("log", False)))
+            return cls(
+                tuple(d["from"]), tuple(d["to"]), str(d.get("name", "")), d.get("points"), bool(d.get("log", False))
+            )
         except (KeyError, TypeError, IndexError):
             raise ModelError('Every line needs "from": [block, port] and "to": [block, port].') from None
 
@@ -174,7 +189,7 @@ class Model:
     @classmethod
     def from_json(cls, d: dict, name: str | None = None) -> "Model":
         if not isinstance(d, dict) or "blocks" not in d:
-            raise ModelError("This is not a mylab Blocks model (no \"blocks\" list).")
+            raise ModelError('This is not a mylab Blocks model (no "blocks" list).')
         fmt = d.get("format", FORMAT)
         if fmt != FORMAT:
             raise ModelError(f"Unknown model format '{fmt}'. This version of mylab reads '{FORMAT}'.")
@@ -250,11 +265,16 @@ def build(name: str, blocks: list, lines: list, **config: str) -> Model:
     ``lines`` holds strings like ``"Step/1 -> Sum/1"``; add ``" : label"``
     to name the signal.
     """
+
     def system(bl: list, ll: list) -> System:
         sy = System()
         for k, item in enumerate(bl):
-            b = Block(item[0], item[1], {key: _text(v) for key, v in (item[2] if len(item) > 2 and item[2] else {}).items()},
-                      [60 + 120 * (k % 6), 60 + 100 * (k // 6), 0, 0])
+            b = Block(
+                item[0],
+                item[1],
+                {key: _text(v) for key, v in (item[2] if len(item) > 2 and item[2] else {}).items()},
+                [60 + 120 * (k % 6), 60 + 100 * (k // 6), 0, 0],
+            )
             if len(item) > 3:
                 b.system = system(*item[3])
             elif item[1] == "Subsystem":
@@ -279,11 +299,13 @@ def _json(v: Any, indent: int = 0) -> str:
     if isinstance(v, dict):
         if not v:
             return "{}"
-        items = [f'{pad}  {json.dumps(k)}: {_json(x, indent + 2)}' for k, x in v.items()]
+        items = [f"{pad}  {json.dumps(k)}: {_json(x, indent + 2)}" for k, x in v.items()]
         return "{\n" + ",\n".join(items) + "\n" + pad + "}"
     if isinstance(v, list):
-        if all(not isinstance(x, (dict, list)) or (isinstance(x, list) and all(not isinstance(y, (dict, list)) for y in x))
-               for x in v):
+        if all(
+            not isinstance(x, (dict, list)) or (isinstance(x, list) and all(not isinstance(y, (dict, list)) for y in x))
+            for x in v
+        ):
             return json.dumps(v)
         return "[\n" + ",\n".join(f"{pad}  {_json(x, indent + 2)}" for x in v) + "\n" + pad + "]"
     return json.dumps(v)
@@ -293,6 +315,7 @@ def load_model(path: str) -> Model:
     """Read a model file. ``.slx`` files go through the importer."""
     if path.lower().endswith(".slx"):
         from .slx import import_slx
+
         return import_slx(path)
     if path.lower().endswith(".mdl"):
         raise ModelError("mylab cannot read .mdl files. Save the model as .slx, or rebuild it in mylab Blocks.")
@@ -302,7 +325,7 @@ def load_model(path: str) -> Model:
     except json.JSONDecodeError as exc:
         raise ModelError(f"{os.path.basename(path)} is not valid JSON: {exc}") from None
     base = os.path.basename(path)
-    name = base[:-len(EXTENSION)] if base.endswith(EXTENSION) else os.path.splitext(base)[0]
+    name = base[: -len(EXTENSION)] if base.endswith(EXTENSION) else os.path.splitext(base)[0]
     m = Model.from_json(data, name)
     m.file = path
     return m
