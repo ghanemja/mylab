@@ -261,6 +261,7 @@ export function initBlocks(app) {
     view.hidden = false;
     document.body.dataset.blocks = "on";
     if (fresh) {
+      status.textContent = "";
       dock.closeAll();
       ed.setDiagnostics([]);
       ed.displays = new Map();

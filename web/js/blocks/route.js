@@ -33,10 +33,14 @@ export function simplify(pts) {
 export function routeLine(src, dst, boxes, via) {
   const p0 = [src.x, src.y], p1 = [dst.x, dst.y];
   if (via && via.length) return simplify(throughPoints(p0, src, via, p1, dst));
-  const a = [src.x + src.dx * STUB, src.y + src.dy * STUB];
-  const b = [dst.x + dst.dx * STUB, dst.y + dst.dy * STUB];
-  const mid = [];
   const srcH = src.dx !== 0, dstH = dst.dx !== 0;
+  // blocks that sit close together, facing each other, get shorter stubs instead of a detour
+  let stub = STUB;
+  if (srcH && dstH && src.dx === -dst.dx && (dst.x - src.x) * src.dx > 0) stub = Math.min(STUB, ((dst.x - src.x) * src.dx) / 2);
+  if (!srcH && !dstH && src.dy === -dst.dy && (dst.y - src.y) * src.dy > 0) stub = Math.min(STUB, ((dst.y - src.y) * src.dy) / 2);
+  const a = [src.x + src.dx * stub, src.y + src.dy * stub];
+  const b = [dst.x + dst.dx * stub, dst.y + dst.dy * stub];
+  const mid = [];
   const [bs, bd] = boxes;
   // a free coordinate between the two blocks when they do not overlap on that axis, otherwise beyond both
   const lane = (lo, hi) =>
@@ -88,7 +92,21 @@ export function routeLine(src, dst, boxes, via) {
 function throughPoints(p0, src, via, p1, dst) {
   const pts = [p0];
   let horizontal = src.dx !== 0; // direction of the segment being drawn
-  const all = [...via.map((p) => [p[0], p[1]]), null];
+  const fixed = via.map((p) => [p[0], p[1]]);
+  // Corners that were made for slightly different port positions (imported files, resized blocks) are
+  // moved onto the port's line, so the path does not end in a small jog.
+  const pull = (list, port, axis) => {
+    const first = list[0];
+    if (!first || Math.abs(first[axis] - port[axis]) > 16 || first[axis] === port[axis]) return;
+    const from = first[axis];
+    for (const q of list) {
+      if (q[axis] !== from) break;
+      q[axis] = port[axis];
+    }
+  };
+  pull(fixed, p0, src.dx !== 0 ? 1 : 0);
+  pull(fixed.slice().reverse(), p1, dst.dx !== 0 ? 1 : 0);
+  const all = [...fixed, null];
   for (let i = 0; i < all.length; i++) {
     const cur = pts[pts.length - 1];
     const last = all[i] === null;
