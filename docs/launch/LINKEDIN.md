@@ -15,7 +15,7 @@ What you get:
 
 → It runs in the browser. Open a link and start typing. Nothing to install,
 and your code stays on your machine.
-→ About 1,370 functions: linear algebra, plotting, signal and image
+→ About 1,390 functions: linear algebra, plotting, signal and image
 processing, statistics, optimization, ODE solvers, tables, sparse matrices.
 → An AI assistant that can write, run and fix code. Use a free local model
 or your own API key. There is also an MCP server, so tools like Claude can
@@ -49,7 +49,7 @@ I built a free, open-source tool that runs MATLAB-language code, for people
 who can't buy a license.
 
 • Runs in the browser, nothing to install
-• About 1,370 functions, plots included
+• About 1,390 functions, plots included
 • AI assistant built in (local model or your own key)
 • Share links, step-through and autograding for classes
 

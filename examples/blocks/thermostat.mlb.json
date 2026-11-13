@@ -1,0 +1,138 @@
+{
+  "format": "mylab-blocks-1",
+  "name": "thermostat",
+  "description": "A room heated by a heater that a thermostat switches on below 19 degrees and off above 21 degrees (a relay with hysteresis). The temperature settles into a steady up-and-down cycle.",
+  "config": {
+    "StartTime": "0",
+    "StopTime": "60",
+    "Solver": "ode45",
+    "MaxStep": "auto",
+    "RelTol": "1e-3",
+    "AbsTol": "1e-6",
+    "FixedStep": "auto",
+    "ZeroCrossings": "on"
+  },
+  "blocks": [
+    {
+      "name": "Set point",
+      "type": "Constant",
+      "position": [40, 100, 60, 36],
+      "params": {
+        "Value": "20"
+      }
+    },
+    {
+      "name": "Error",
+      "type": "Sum",
+      "position": [150, 98, 40, 40],
+      "params": {
+        "Inputs": "+-"
+      }
+    },
+    {
+      "name": "Thermostat",
+      "type": "Relay",
+      "position": [240, 96, 60, 44],
+      "params": {
+        "OnSwitchValue": "1",
+        "OffSwitchValue": "-1"
+      }
+    },
+    {
+      "name": "Heater",
+      "type": "Gain",
+      "position": [350, 98, 60, 40],
+      "params": {
+        "Gain": "30"
+      }
+    },
+    {
+      "name": "Outside",
+      "type": "Constant",
+      "position": [350, 30, 60, 36],
+      "params": {
+        "Value": "5"
+      }
+    },
+    {
+      "name": "Heat flow",
+      "type": "Sum",
+      "position": [470, 88, 40, 60],
+      "params": {
+        "Inputs": "++-"
+      }
+    },
+    {
+      "name": "Rate",
+      "type": "Gain",
+      "position": [550, 98, 60, 40],
+      "params": {
+        "Gain": "1/10"
+      }
+    },
+    {
+      "name": "Room",
+      "type": "Integrator",
+      "position": [660, 96, 50, 44],
+      "params": {
+        "InitialCondition": "15"
+      }
+    },
+    {
+      "name": "Scope",
+      "type": "Scope",
+      "position": [790, 88, 50, 60],
+      "params": {
+        "NumInputPorts": "2"
+      }
+    }
+  ],
+  "lines": [
+    {
+      "from": ["Set point", 1],
+      "to": ["Error", 1]
+    },
+    {
+      "from": ["Error", 1],
+      "to": ["Thermostat", 1]
+    },
+    {
+      "from": ["Thermostat", 1],
+      "to": ["Heater", 1],
+      "name": "on/off"
+    },
+    {
+      "from": ["Heater", 1],
+      "to": ["Heat flow", 2]
+    },
+    {
+      "from": ["Outside", 1],
+      "to": ["Heat flow", 1]
+    },
+    {
+      "from": ["Heat flow", 1],
+      "to": ["Rate", 1]
+    },
+    {
+      "from": ["Rate", 1],
+      "to": ["Room", 1]
+    },
+    {
+      "from": ["Room", 1],
+      "to": ["Scope", 1],
+      "name": "temperature"
+    },
+    {
+      "from": ["Thermostat", 1],
+      "to": ["Scope", 2]
+    },
+    {
+      "from": ["Room", 1],
+      "to": ["Error", 2]
+    },
+    {
+      "from": ["Room", 1],
+      "to": ["Heat flow", 3]
+    }
+  ]
+}

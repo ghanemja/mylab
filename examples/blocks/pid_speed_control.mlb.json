@@ -1,0 +1,107 @@
+{
+  "format": "mylab-blocks-1",
+  "name": "pid_speed_control",
+  "description": "Speed control of a motor with a PID controller. The controller output is limited, with anti-windup.",
+  "config": {
+    "StartTime": "0",
+    "StopTime": "10",
+    "Solver": "ode45",
+    "MaxStep": "auto",
+    "RelTol": "1e-3",
+    "AbsTol": "1e-6",
+    "FixedStep": "auto",
+    "ZeroCrossings": "on"
+  },
+  "blocks": [
+    {
+      "name": "Reference",
+      "type": "Step",
+      "position": [40, 100, 50, 40],
+      "params": {
+        "Time": "0.5"
+      }
+    },
+    {
+      "name": "Error",
+      "type": "Sum",
+      "position": [140, 100, 40, 40],
+      "params": {
+        "Inputs": "+-"
+      }
+    },
+    {
+      "name": "PID",
+      "type": "PIDController",
+      "position": [230, 96, 70, 48],
+      "params": {
+        "P": "2",
+        "I": "3",
+        "D": "0.05",
+        "N": "50",
+        "LimitOutput": "on",
+        "UpperSaturationLimit": "2",
+        "LowerSaturationLimit": "-2",
+        "AntiWindupMode": "clamping"
+      }
+    },
+    {
+      "name": "Motor",
+      "type": "TransferFcn",
+      "position": [350, 95, 90, 50],
+      "params": {
+        "Numerator": "[1]",
+        "Denominator": "[0.8 1]"
+      }
+    },
+    {
+      "name": "Scope",
+      "type": "Scope",
+      "position": [530, 90, 50, 60],
+      "params": {
+        "NumInputPorts": "2"
+      }
+    },
+    {
+      "name": "To Workspace",
+      "type": "ToWorkspace",
+      "position": [530, 190, 70, 36],
+      "params": {
+        "VariableName": "speed"
+      }
+    }
+  ],
+  "lines": [
+    {
+      "from": ["Reference", 1],
+      "to": ["Error", 1],
+      "name": "r"
+    },
+    {
+      "from": ["Error", 1],
+      "to": ["PID", 1],
+      "name": "e"
+    },
+    {
+      "from": ["PID", 1],
+      "to": ["Motor", 1],
+      "name": "u"
+    },
+    {
+      "from": ["Motor", 1],
+      "to": ["Scope", 1],
+      "name": "speed"
+    },
+    {
+      "from": ["PID", 1],
+      "to": ["Scope", 2]
+    },
+    {
+      "from": ["Motor", 1],
+      "to": ["Error", 2]
+    },
+    {
+      "from": ["Motor", 1],
+      "to": ["To Workspace", 1]
+    }
+  ]
+}

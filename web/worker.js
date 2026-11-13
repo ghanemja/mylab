@@ -484,8 +484,18 @@ def _ui_close():
     _session.ui_close()
     return "null"
 
+# -- mylab Blocks: the diagram editor's requests (see mylab/blocks/web.py) --
+def _blocks(op, args_json, cwd, emit):
+    from mylab.blocks import web
+    _enter(_session, cwd)
+    out = json.loads(web.handle(_session, op, args_json, emit))
+    if op == "run":
+        out["variables"] = _vars()
+    return json.dumps(out)
+
 _api = {
     "ui_event": _ui_event, "ui_close": _ui_close,
+    "blocks": _blocks,
     "run": _run, "trace": _trace, "publish": _publish, "test": _test, "wipe": _wipe,
     "vars": lambda: json.dumps(_vars()), "show": _show,
     "complete": _complete, "help": _help, "reset": _reset, "cwd": _cwd,
@@ -644,6 +654,14 @@ function withStdout(out) {
 }
 
 const handlers = {
+  // mylab Blocks: op is "run", "check", "validate" or "import_slx"; scope data is streamed as "event" messages.
+  blocks({ op, args, fs, cwd }) {
+    syncFiles(fs);
+    stdoutBuffer = [];
+    const emit = (text) => self.postMessage({ type: "event", name: "blocks", data: JSON.parse(text) });
+    const out = withStdout(JSON.parse(call("blocks", String(op), JSON.stringify(args || {}), cwd === undefined ? null : cwd, emit)));
+    return { result: out };
+  },
   run({ code, fs, cwd }) {
     syncFiles(fs);
     stdoutBuffer = [];

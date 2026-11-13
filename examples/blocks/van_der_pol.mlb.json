@@ -1,0 +1,102 @@
+{
+  "format": "mylab-blocks-1",
+  "name": "van_der_pol",
+  "description": "The Van der Pol oscillator x'' = mu (1 - x^2) x' - x with mu = 1. Whatever the start values, the motion ends up on the same closed curve (a limit cycle); the XY Graph shows it.",
+  "config": {
+    "StartTime": "0",
+    "StopTime": "25",
+    "Solver": "ode45",
+    "MaxStep": "0.05",
+    "RelTol": "1e-3",
+    "AbsTol": "1e-6",
+    "FixedStep": "auto",
+    "ZeroCrossings": "on"
+  },
+  "blocks": [
+    {
+      "name": "Equation",
+      "type": "Fcn",
+      "position": [60, 100, 150, 44],
+      "params": {
+        "Expr": "1*(1 - u(1)^2)*u(2) - u(1)"
+      }
+    },
+    {
+      "name": "x'",
+      "type": "Integrator",
+      "position": [270, 100, 50, 44],
+      "params": {
+        "InitialCondition": "0"
+      }
+    },
+    {
+      "name": "x",
+      "type": "Integrator",
+      "position": [380, 100, 50, 44],
+      "params": {
+        "InitialCondition": "0.5"
+      }
+    },
+    {
+      "name": "Scope",
+      "type": "Scope",
+      "position": [530, 92, 50, 60],
+      "params": {
+        "NumInputPorts": "2"
+      }
+    },
+    {
+      "name": "XY Graph",
+      "type": "XYGraph",
+      "position": [530, 200, 50, 60]
+    },
+    {
+      "name": "Mux",
+      "type": "Mux",
+      "position": [270, 210, 10, 60],
+      "rotation": 2,
+      "params": {
+        "Inputs": "2"
+      }
+    }
+  ],
+  "lines": [
+    {
+      "from": ["Equation", 1],
+      "to": ["x'", 1]
+    },
+    {
+      "from": ["x'", 1],
+      "to": ["x", 1]
+    },
+    {
+      "from": ["x", 1],
+      "to": ["Scope", 1],
+      "name": "x"
+    },
+    {
+      "from": ["x'", 1],
+      "to": ["Scope", 2]
+    },
+    {
+      "from": ["x", 1],
+      "to": ["XY Graph", 1]
+    },
+    {
+      "from": ["x'", 1],
+      "to": ["XY Graph", 2]
+    },
+    {
+      "from": ["x", 1],
+      "to": ["Mux", 1]
+    },
+    {
+      "from": ["x'", 1],
+      "to": ["Mux", 2]
+    },
+    {
+      "from": ["Mux", 1],
+      "to": ["Equation", 1]
+    }
+  ]
+}

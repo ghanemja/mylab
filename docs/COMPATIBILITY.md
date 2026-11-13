@@ -32,7 +32,13 @@ what mylab printed, and what you expected.
 - JSON (`jsondecode`/`jsonencode`), WAV audio files and Excel `.xlsx` files.
 - Symbolic math with `syms`, `sym`, `diff`, `int`, `solve`, `dsolve` and
   related functions, when SymPy is installed; see [SYMBOLIC.md](SYMBOLIC.md).
-- About 1,370 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
+- About 1,390 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
+- Block-diagram models (mylab Blocks): `sim`, `new_system`, `add_block`,
+  `add_line`, `set_param`, `get_param`, `find_system`, `linmod`, `trim` and a
+  library of 96 blocks, with a diagram editor in the web app and import of
+  simple `.slx` files. See [BLOCKS.md](BLOCKS.md) for what is covered and
+  what is not (no code generation, state charts, physical modelling,
+  S-functions or algebraic-loop solving; `.mdl` files are not read).
 
 ## Not supported yet
 

@@ -1561,6 +1561,417 @@ async function main() {
     await page.evaluate(() => history.replaceState(null, "", location.pathname));
     await h.switchTo("My files");
 
+    /* ---------------- mylab Blocks: block diagrams ---------------- */
+    {
+      const B = "window.mylab.app.blocks";
+      const model = () => page.evaluate(() => JSON.parse(window.mylab.app.blocks.editor.text()));
+      const names = async () => (await model()).blocks.map((b) => b.name);
+      const centre = (sel) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, sel);
+      const blockAt = (name) => centre(`.bd-svg .bd-block[data-name="${name}"] .bd-body`);
+      const portAt = (block, kind, port) => centre(`.bd-svg .bd-port[data-block="${block}"][data-kind="${kind}"][data-port="${port}"] .bd-port-dot`);
+      const runs = () => page.evaluate(() => Number(document.querySelector("#blocks-view").dataset.runs || 0));
+      const waitRun = async (n) => {
+        await page.waitForFunction((k) => Number(document.querySelector("#blocks-view").dataset.runs || 0) > k, n, { timeout: 120000 });
+        await waitIdle();
+      };
+      const finals = (scope = "Scope") => page.evaluate((s) => JSON.parse(document.querySelector(`.scope-panel[data-scope="${s}"]`).dataset.final), scope);
+      const problems = () => page.evaluate(() => Number(document.querySelector("#blocks-view").dataset.problems));
+      const drag = async (from, to) => {
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2 + 7, { steps: 4 });
+        await page.mouse.move(to.x, to.y, { steps: 4 });
+        await page.mouse.up();
+      };
+      const focusCanvas = () => page.evaluate(() => window.mylab.app.blocks.editor.svg.focus());
+      const closeDialog = (id) => page.waitForFunction((d) => !document.getElementById(d), id);
+
+      // A. An example model: open, run with the app's Run button, read the scope
+      await page.evaluate(() => window.mylab.app.blocks.openExample("mass_spring_damper"));
+      await page.waitForSelector(".bd-svg .bd-block[data-name='Position']");
+      check(await page.locator("#blocks-view").isVisible(), "a model file should open in the diagram editor");
+      check((await page.locator(".bd-svg .bd-block").count()) === 9 && (await page.locator(".bd-svg .bd-line").count()) === 11, "the example should show 9 blocks and 11 lines");
+      check((await problems()) === 0, "the example should have no problems");
+      check(await page.evaluate(() => window.mylab.state.files.has("models/mass_spring_damper.mlb.json")), "the example is a file of the project");
+      let n = await runs();
+      await page.click("#btn-run");
+      await page.waitForSelector(".scope-panel[data-scope='Scope']");
+      await waitRun(n);
+      let fin = await finals();
+      check(Math.abs(fin[0][0] - 0.25) < 0.01 && Math.abs(fin[1][0]) < 0.01, "mass-spring-damper should settle at F/k = 0.25 with zero velocity: " + JSON.stringify(fin));
+      const drawn = await page.evaluate(() => {
+        const cv = document.querySelector(".scope-panel[data-scope='Scope'] canvas");
+        const g = cv.getContext("2d");
+        const d = g.getImageData(0, 0, cv.width, cv.height).data;
+        const bg = [d[0], d[1], d[2]];
+        let blue = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i + 2] > 150 && d[i] < 90 && Math.abs(d[i] - bg[0]) > 60) blue++;
+        return { blue, points: Number(cv.parentElement.dataset.points), tEnd: Number(cv.parentElement.dataset.tEnd), label: cv.getAttribute("aria-label") };
+      });
+      check(drawn.blue > 300 && drawn.points > 50 && drawn.tEnd === 15, "the scope should draw the curve up to t = 15: " + JSON.stringify(drawn));
+      check(/final values 0\.24/.test(drawn.label), "the scope canvas should describe its data for screen readers: " + drawn.label);
+      await h.waitConsole(/Simulation finished: \d+ steps to t = 15 with ode45\. Results are in the workspace: out, tout, yout, position\./);
+      check((await h.varValue("position")) !== null && (await page.locator("#var-table tr[data-name='out']").count()) === 1, "the results should be in the workspace");
+      ok("an example model opens as a diagram, runs with the Run button, and its scope ends at the right value");
+      await shot(page, "blocks-editor.png");
+
+      // scope: cursor readout, zoom, CSV and PNG export
+      const cvBox = await page.locator(".scope-panel[data-scope='Scope'] canvas").boundingBox();
+      await page.mouse.move(cvBox.x + cvBox.width * 0.5, cvBox.y + cvBox.height * 0.3);
+      await page.waitForFunction(() => /^t = [\d.]+\s+x = /.test(document.querySelector(".scope-readout").textContent));
+      await drag({ x: cvBox.x + cvBox.width * 0.3, y: cvBox.y + 30 }, { x: cvBox.x + cvBox.width * 0.6, y: cvBox.y + 30 });
+      check(await page.evaluate(() => { const p = window.mylab.app.blocks.dock.panels.get("Scope"); return p.view && p.view.x1 - p.view.x0 < 8; }), "dragging across the scope should zoom in");
+      await page.locator(".scope-panel[data-scope='Scope'] canvas").dblclick();
+      check(await page.evaluate(() => window.mylab.app.blocks.dock.panels.get("Scope").view === null), "double-click should show everything again");
+      const [csvDl] = await Promise.all([page.waitForEvent("download"), page.click(".scope-panel[data-scope='Scope'] button[title='Save the data as CSV']")]);
+      const csv = fs.readFileSync(await csvDl.path(), "utf8").trim().split("\n");
+      check(csv[0] === "t,x,input 2" && csv.length === drawn.points + 1 && Math.abs(Number(csv[csv.length - 1].split(",")[1]) - fin[0][0]) < 1e-9, "scope CSV: " + csv[0] + " / " + csv.length);
+      const [pngDl] = await Promise.all([page.waitForEvent("download"), page.click(".scope-panel[data-scope='Scope'] button[title='Save the plot as PNG']")]);
+      check(fs.readFileSync(await pngDl.path()).subarray(1, 4).toString() === "PNG", "the scope should export a PNG");
+      ok("scope: cursor readout, zoom by dragging, CSV and PNG export");
+
+      // the results work with ordinary plotting code
+      const figsBefore = await page.locator("#plots figure").count();
+      await input.fill("plot(position.Time, position.Data); xend = out.scopes.Scope.Data(end, 1);");
+      await input.press("Enter");
+      await waitIdle();
+      await page.waitForFunction((k) => document.querySelectorAll("#plots figure").length > k, figsBefore);
+      check(Math.abs(Number(await h.varValue("xend")) - 0.2487) < 0.01, "out.scopes should hold the scope data: " + (await h.varValue("xend")));
+      ok("simulation results are workspace variables that plot() can use");
+
+      // B. Build a model: palette, drag, ports
+      await page.evaluate(() => window.mylab.createFile("models/build.mlb.json", ""));
+      await page.waitForFunction(() => window.mylab.app.blocks.current === "models/build.mlb.json" && window.mylab.app.blocks.editor.model.blocks.length === 0);
+      check(/This diagram is empty/.test(await page.locator(".bd-hint").innerText()), "an empty diagram should say how to start");
+      await page.fill("#bd-search", "const");
+      check((await page.locator(".bd-pal-item").count()) >= 1 && (await page.locator(".bd-pal-item").first().getAttribute("data-type")) === "Constant", "palette search should find Constant");
+      await page.locator(".bd-pal-item[data-type='Constant']").click();
+      check((await names()).join() === "Constant", "clicking a palette item adds the block: " + (await names()).join());
+      await page.fill("#bd-search", "gain");
+      const svgBox = await page.locator(".bd-svg").boundingBox();
+      await drag(await centre(".bd-pal-item[data-type='Gain']"), { x: svgBox.x + svgBox.width * 0.75, y: svgBox.y + svgBox.height * 0.3 });
+      check((await names()).join() === "Constant,Gain", "dragging from the palette adds the block: " + (await names()).join());
+      const gainBox = await blockAt("Gain");
+      check(Math.abs(gainBox.x - (svgBox.x + svgBox.width * 0.75)) < 12 && Math.abs(gainBox.y - (svgBox.y + svgBox.height * 0.3)) < 12, "the block should land where it was dropped");
+      // add a Scope by name with the keyboard
+      await focusCanvas();
+      await page.keyboard.press("a");
+      await page.waitForSelector("#bd-dlg-add[open]");
+      await page.keyboard.type("scop");
+      check(/^Scope/.test(await page.locator("#bd-dlg-add .bd-pick-item.active").innerText()), "typing in the add-block list should find Scope");
+      await page.keyboard.press("Enter");
+      await closeDialog("bd-dlg-add");
+      check((await names()).join() === "Constant,Gain,Scope", "the add-block dialog adds the block: " + (await names()).join());
+      // error markers for unconnected inputs, before the engine is asked
+      check((await page.locator(".bd-svg .bd-block[data-name='Gain'].has-warning").count()) === 1 && (await page.locator(".bd-svg .bd-port.open").count()) === 2, "unconnected inputs should be marked");
+      check(/Input 1 is not connected/.test(await page.locator(".bd-svg .bd-block[data-name='Gain'] .bd-marker title").textContent()), "the marker should say what is wrong");
+      check((await problems()) === 2 && (await page.locator("#bd-problems").isVisible()), "the toolbar should count the problems: " + (await problems()));
+      await page.click("#bd-problems");
+      await page.waitForSelector("#bd-problems-menu");
+      check(/'Gain': Input 1 is not connected/.test(await page.locator("#bd-problems-menu").innerText()), "the problem list should name the block");
+      await page.locator("#bd-problems-menu .menu-item", { hasText: "'Scope'" }).click();
+      check(await page.evaluate(() => [...window.mylab.app.blocks.editor.sel].join() === "Scope"), "choosing a problem selects its block");
+      ok("palette search, click and drag add blocks; unconnected inputs get a marker and are listed");
+      // connect by dragging from port to port, and by clicking one port and then the other
+      await page.evaluate(() => window.mylab.app.blocks.editor.fit());
+      await drag(await portAt("Constant", "out", 1), await portAt("Gain", "in", 1));
+      check(JSON.stringify((await model()).lines) === '[{"from":["Constant",1],"to":["Gain",1]}]', "dragging between ports makes a line: " + JSON.stringify((await model()).lines));
+      const gOut = await portAt("Gain", "out", 1);
+      await page.mouse.click(gOut.x, gOut.y);
+      check(await page.evaluate(() => !!window.mylab.app.blocks.editor.wire && window.mylab.app.blocks.editor.wire.sticky), "a click on a port should start a line");
+      const sIn = await portAt("Scope", "in", 1);
+      await page.mouse.move(sIn.x, sIn.y, { steps: 3 });
+      await page.mouse.click(sIn.x, sIn.y);
+      check((await model()).lines.length === 2 && (await page.locator(".bd-svg .bd-line").count()) === 2, "click-click should make the second line");
+      check((await problems()) === 0 && (await page.locator(".bd-svg .bd-port.open").count()) === 0, "connected inputs lose their marker");
+      // a line needs an output and an input
+      await drag(await portAt("Constant", "out", 1), await portAt("Gain", "out", 1));
+      await page.waitForSelector(".toast.error");
+      check(/Both of these are outputs/.test(await page.locator(".toast.error").last().innerText()) && (await model()).lines.length === 2, "output to output must be refused");
+      await page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove()));
+      ok("lines are drawn by dragging port to port or by click and click; wrong connections are refused");
+
+      // parameters: validation, then run and change
+      let gc = await blockAt("Gain");
+      await page.mouse.dblclick(gc.x, gc.y);
+      await page.waitForSelector("#bd-dlg-params[open]");
+      await page.fill("#bd-p-Gain", "3*(");
+      await page.click("#bd-dlg-params button[type='submit']");
+      await page.waitForSelector("#bd-p-Gain[aria-invalid='true']");
+      check(/is not closed/.test(await page.locator("#bd-p-Gain-note").innerText()), "a broken expression must be refused: " + (await page.locator("#bd-p-Gain-note").innerText()));
+      await page.fill("#bd-p-Gain", "nosuchvar*2");
+      await page.click("#bd-dlg-params button[type='submit']");
+      await page.waitForFunction(() => /Cannot be evaluated right now/.test(document.querySelector("#bd-p-Gain-note").textContent));
+      check((await page.locator("#bd-dlg-params button[type='submit']").innerText()) === "Save anyway", "values that cannot be evaluated yet should need a second confirmation");
+      await shot(page, "blocks-parameters.png", "#bd-dlg-params");
+      await page.fill("#bd-p-Gain", "3");
+      await page.click("#bd-dlg-params button[type='submit']");
+      await closeDialog("bd-dlg-params");
+      check((await model()).blocks[1].params.Gain === "3", "the dialog should store the new gain");
+      n = await runs();
+      await page.click("#bd-run");
+      await waitRun(n);
+      fin = await finals();
+      check(fin[0][0] === 3, "constant 1 times gain 3 should give 3: " + JSON.stringify(fin));
+      // change the constant with the keyboard only, and run with F5
+      await focusCanvas();
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Tab");
+      check(await page.evaluate(() => [...window.mylab.app.blocks.editor.sel].join() === "Constant"), "Tab should select the first block");
+      check(/Constant, Constant, 0 inputs, 1 output/.test(await page.locator(".bd-live").innerText()), "the selection should be announced: " + (await page.locator(".bd-live").innerText()));
+      await page.keyboard.press("Enter");
+      await page.waitForSelector("#bd-dlg-params[open]");
+      await page.fill("#bd-p-Value", "2");
+      await page.keyboard.press("Enter");
+      await closeDialog("bd-dlg-params");
+      n = await runs();
+      await page.keyboard.press("F5");
+      await waitRun(n);
+      check((await finals())[0][0] === 6, "after changing the constant to 2 the scope should end at 6: " + JSON.stringify(await finals()));
+      ok("the parameter dialog validates expressions; changing a gain and running again changes the result");
+
+      // undo and redo
+      await focusCanvas();
+      await page.keyboard.press("Control+z");
+      check(((await model()).blocks[0].params || {}).Value === undefined, "undo should take the parameter change back");
+      await page.keyboard.press("Control+y");
+      check((await model()).blocks[0].params.Value === "2", "redo should bring it back");
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      check(await page.evaluate(() => [...window.mylab.app.blocks.editor.sel].join() === "Gain"), "Tab should go through the blocks from left to right");
+      const before = (await model()).blocks[1].position.slice();
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      check((await model()).blocks[1].position[1] === before[1] + 20, "arrow keys move the selected block");
+      await page.keyboard.press("Delete");
+      check((await names()).join() === "Constant,Scope" && (await model()).lines.length === 0, "Delete removes the block and its lines");
+      await page.keyboard.press("Control+z");
+      check((await names()).join() === "Constant,Gain,Scope" && (await model()).lines.length === 2, "undo restores the block and its lines");
+      await page.keyboard.press("Control+z");
+      await page.keyboard.press("Control+z");
+      check((await model()).blocks[1].position[1] === before[1], "undo goes back step by step");
+      check(/"Gain": "3"/.test(await page.evaluate(() => window.mylab.app.liveContent("models/build.mlb.json"))), "every change is written to the model file");
+      // copy, paste, rotate, connect from the keyboard
+      const g1 = await blockAt("Gain");
+      await page.mouse.click(g1.x, g1.y);
+      await page.keyboard.press("Control+c");
+      await page.keyboard.press("Control+v");
+      check((await names()).join() === "Constant,Gain,Scope,Gain1", "paste adds a copy with a new name: " + (await names()).join());
+      await page.keyboard.press("r");
+      check((await model()).blocks[3].rotation === 1, "R rotates the selected block");
+      await page.keyboard.press("Shift+R");
+      await page.keyboard.press("c");
+      await page.waitForSelector("#bd-dlg-connect[open]");
+      await page.keyboard.type("constant");
+      check(/Constant → Gain1 input 1/.test(await page.locator("#bd-dlg-connect .bd-pick-item.active").innerText()), "the connect list should offer Constant → Gain1");
+      await page.keyboard.press("Enter");
+      await closeDialog("bd-dlg-connect");
+      check((await model()).lines.some((l) => l.from[0] === "Constant" && l.to[0] === "Gain1"), "C connects blocks from the keyboard");
+      check((await page.locator(".bd-svg .bd-branch").count()) >= 1, "a branch should be drawn with a dot");
+      await page.keyboard.press("Delete");
+      ok("undo, redo, arrow keys, delete, copy and paste, rotate and connecting all work from the keyboard");
+
+      // C. Subsystems: make one from a block, look inside, come back
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(500); // not a double click on the block that was clicked a moment ago
+      const g2 = await blockAt("Gain");
+      await page.mouse.click(g2.x, g2.y);
+      await page.keyboard.press("Control+g");
+      check((await names()).join() === "Constant,Scope,Subsystem", "Ctrl+G makes a subsystem: " + (await names()).join());
+      let m = await model();
+      const sub = m.blocks.find((b) => b.name === "Subsystem");
+      check(sub.blocks.map((b) => b.type).sort().join() === "Gain,Inport,Outport" && sub.lines.length === 2 && m.lines.length === 2, "the subsystem should hold the gain between an In and an Out block");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector(".bd-svg .bd-block[data-name='Gain']");
+      check((await page.locator(".bd-crumb.here").innerText()) === "Subsystem" && (await page.locator(".bd-svg .bd-block").count()) === 3, "Enter should show the inside of the subsystem");
+      await shot(page, "blocks-subsystem.png", "#editor");
+      await page.keyboard.press("Escape");
+      await page.waitForSelector(".bd-svg .bd-block[data-name='Subsystem']");
+      check(await page.locator(".bd-crumbs").isHidden() && (await page.evaluate(() => [...window.mylab.app.blocks.editor.sel].join())) === "Subsystem", "Escape should lead back to the parent, with the subsystem selected");
+      const sc = await blockAt("Subsystem");
+      await page.mouse.dblclick(sc.x, sc.y);
+      await page.waitForSelector(".bd-crumb.here");
+      await page.locator(".bd-crumbs .bd-crumb").first().click();
+      await page.waitForSelector(".bd-svg .bd-block[data-name='Subsystem']");
+      n = await runs();
+      await page.click("#bd-run");
+      await waitRun(n);
+      check((await finals())[0][0] === 6, "the model with the subsystem should give the same result: " + JSON.stringify(await finals()));
+      ok("subsystems: make one from a selection, enter with Enter or double-click, leave with Escape or the breadcrumb");
+
+      // D. Errors from the engine are shown on the blocks
+      await page.evaluate(() => {
+        const ed = window.mylab.app.blocks.editor;
+        const m = JSON.parse(ed.text());
+        m.blocks.push({ name: "Sum", type: "Sum", position: [300, 200, 40, 40], params: { Inputs: "+-" } }, { name: "K", type: "Gain", position: [400, 200, 60, 40], params: {} }, { name: "T", type: "Terminator", position: [520, 200, 50, 36], params: {} });
+        m.lines.push({ from: ["Constant", 1], to: ["Sum", 1] }, { from: ["Sum", 1], to: ["K", 1] }, { from: ["K", 1], to: ["Sum", 2] }, { from: ["K", 1], to: ["T", 1] });
+        window.mylab.editor.setValue(JSON.stringify(m));
+      });
+      await page.waitForSelector(".bd-svg .bd-block[data-name='Sum']");
+      await page.waitForSelector(".bd-svg .bd-block[data-name='Sum'].has-error", { timeout: 20000 });
+      check((await page.locator(".bd-svg .bd-block.has-error").count()) === 2, "both blocks of the algebraic loop should be marked while editing");
+      n = await runs();
+      await page.click("#bd-run");
+      await waitRun(n);
+      await h.waitConsole(/Algebraic loop: 'Sum' -> 'K' -> 'Sum'/);
+      check(/Memory/.test(await page.locator("#console-out .err").last().innerText()), "the error should say how to break the loop");
+      check(/did not run/.test(await page.locator("#bd-progress").innerText()), "the toolbar should say that the model did not run");
+      ok("an algebraic loop is reported with its blocks, on the canvas and in the command window");
+      await page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove()));
+
+      // E. The file as text, and back
+      await page.click("#bd-text");
+      await page.waitForSelector("#bd-textbar:not([hidden])");
+      check(await page.locator("#blocks-view").isHidden() && /"format":\s*"mylab-blocks-1"/.test(await page.evaluate(() => window.mylab.editor.getValue())), "the text view should show the JSON");
+      await page.click("#bd-show-diagram");
+      check(await page.locator("#blocks-view").isVisible(), "Show the diagram should bring the diagram back");
+      // other files still open as text, and the diagram comes back with its tab
+      await h.openFile("welcome.m");
+      check(await page.locator("#blocks-view").isHidden(), "a .m file should show the code editor");
+      await page.click(".tab[data-name='models/build.mlb.json']");
+      check(await page.locator("#blocks-view").isVisible(), "the diagram should come back with its tab");
+      ok("a model can be seen as text; other files are not affected");
+
+      // F. Keyboard only: three blocks, connected and run without the mouse
+      await page.evaluate(() => window.mylab.createFile("models/keys.mlb.json", ""));
+      await page.waitForFunction(() => window.mylab.app.blocks.current === "models/keys.mlb.json");
+      await focusCanvas();
+      for (const word of ["step", "integrator", "scope"]) {
+        await page.keyboard.press("a");
+        await page.waitForSelector("#bd-dlg-add[open]");
+        await page.keyboard.type(word);
+        await page.keyboard.press("Enter");
+        await closeDialog("bd-dlg-add");
+      }
+      check((await names()).join() === "Step,Integrator,Scope", "blocks added by name: " + (await names()).join());
+      const xs = (await model()).blocks.map((b) => b.position[0]);
+      check(xs[0] < xs[1] && xs[1] < xs[2], "each new block should be placed to the right of the one before: " + xs.join());
+      await page.keyboard.press("Control+a");
+      await page.keyboard.press("c");
+      check((await model()).lines.length === 2, "C should connect the selected blocks in a chain: " + JSON.stringify((await model()).lines));
+      await page.keyboard.press("Escape");
+      n = await runs();
+      await page.keyboard.press("F5");
+      await waitRun(n);
+      check(Math.abs((await finals())[0][0] - 9) < 1e-6, "the integral of a step at t = 1 is 9 at t = 10: " + JSON.stringify(await finals()));
+      await page.locator(".scope-panel canvas").focus();
+      await page.keyboard.press("ArrowLeft");
+      check(/^t = 10\s+signal = 9/.test(await page.locator(".scope-readout").innerText()), "arrow keys move the scope cursor: " + (await page.locator(".scope-readout").innerText()));
+      ok("a model can be built, connected and run with the keyboard alone");
+
+      // G. Importing a small .slx file made here
+      const slx = await page.evaluate(async () => {
+        const zip = new JSZip();
+        const P = (n, v) => `<P Name="${n}">${v}</P>`;
+        zip.file("simulink/blockdiagram.xml", `<?xml version="1.0" encoding="utf-8"?><ModelInformation Version="1.0"><Model><System>
+          <Block BlockType="Step" Name="Step" SID="1">${P("Position", "[40, 40, 70, 70]")}${P("Time", "0")}</Block>
+          <Block BlockType="TransferFcn" Name="Plant" SID="2">${P("Position", "[130, 35, 220, 75]")}${P("Denominator", "[2 1]")}</Block>
+          <Block BlockType="Scope" Name="Scope" SID="3">${P("Position", "[290, 40, 320, 70]")}</Block>
+          <Block BlockType="S-Function" Name="Custom" SID="4">${P("Ports", "[1, 1]")}${P("Position", "[130, 120, 220, 160]")}</Block>
+          <Line>${P("Src", "1#out:1")}${P("Dst", "2#in:1")}</Line>
+          <Line>${P("Src", "2#out:1")}${P("Points", "[30, 0]")}<Branch>${P("Dst", "3#in:1")}</Branch><Branch>${P("Points", "[0, 85]; [-130, 0]")}${P("Dst", "4#in:1")}</Branch></Line>
+        </System></Model></ModelInformation>`);
+        const bytes = await zip.generateAsync({ type: "uint8array" });
+        await window.mylab.app.writeFiles([{ path: "models/plant.slx", content: bytes }]);
+        window.mylab.app.renderFileList();
+        return bytes.length;
+      });
+      check(slx > 200, "the test .slx file was not made");
+      await page.evaluate(() => window.mylab.app.openFile("models/plant.slx"));
+      await page.waitForSelector("#bd-dlg-notice[open]", { timeout: 60000 });
+      const notice = await page.locator("#bd-dlg-notice").innerText();
+      check(/1 of 4 blocks have no equivalent/.test(notice) && /S-Function \(1\)/.test(notice), "the import should name the unsupported block: " + notice);
+      await page.click("#bd-dlg-notice button[type='submit']");
+      await page.waitForSelector(".bd-svg .bd-block[data-name='Plant']");
+      check((await names()).join() === "Step,Plant,Scope,Custom" && (await model()).lines.length === 3, "imported blocks and lines: " + (await names()).join());
+      check((await page.locator(".bd-svg .bd-block.unknown[data-name='Custom']").count()) === 1 && (await page.locator(".bd-svg .bd-block[data-name='Custom'] .bd-port").count()) === 2, "the unsupported block should be a placeholder with its ports");
+      n = await runs();
+      await page.click("#bd-run");
+      await waitRun(n);
+      await h.waitConsole(/there is no block type 'S-Function' in mylab Blocks/);
+      await page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove()));
+      await focusCanvas();
+      const cu = await blockAt("Custom");
+      await page.mouse.click(cu.x, cu.y);
+      await page.keyboard.press("Delete");
+      n = await runs();
+      await page.click("#bd-run");
+      await waitRun(n);
+      check(Math.abs((await finals())[0][0] - (1 - Math.exp(-5))) < 2e-3, "the imported model should run once the unsupported block is gone: " + JSON.stringify(await finals()));
+      ok("a .slx file is converted to a model; unsupported blocks are named, shown as placeholders and reported when running");
+
+      // H. Themes and a narrow window (stills for the docs)
+      await page.fill("#bd-search", "");
+      await page.evaluate(() => window.mylab.app.blocks.openExample("thermostat"));
+      await page.waitForSelector(".bd-svg .bd-block[data-name='Thermostat']");
+      n = await runs();
+      await page.click("#bd-run");
+      await waitRun(n);
+      fin = await finals();
+      check(fin[0][0] > 18.9 && fin[0][0] < 21.1 && (fin[1][0] === 0 || fin[1][0] === 1), "the thermostat should keep the room between 19 and 21 degrees: " + JSON.stringify(fin));
+      const themeBefore = await page.evaluate(() => document.documentElement.dataset.theme || "");
+      for (const [theme, file] of [["dark", "blocks-dark.png"], ["hc", "blocks-contrast.png"]]) {
+        await page.evaluate((t) => (document.documentElement.dataset.theme = t), theme);
+        await page.evaluate(() => window.mylab.app.blocks.dock.redraw());
+        await page.waitForTimeout(150);
+        const colours = await page.evaluate(() => {
+          const cs = (sel, prop) => getComputedStyle(document.querySelector(sel))[prop];
+          return { body: cs(".bd-svg .bd-body", "fill"), line: cs(".bd-svg .bd-line-path", "stroke"), canvas: cs(".bd-canvas", "backgroundColor") };
+        });
+        check(colours.line !== colours.canvas && colours.body !== colours.line, `${theme} theme: lines and blocks must stand out: ` + JSON.stringify(colours));
+        await shot(page, file, "#editor");
+      }
+      await page.evaluate((t) => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }, themeBefore);
+      await page.setViewportSize({ width: 800, height: 900 });
+      await page.evaluate(() => window.mylab.app.blocks.editor.fit());
+      await page.waitForTimeout(200);
+      const narrow = await page.evaluate(() => {
+        const v = document.querySelector("#blocks-view").getBoundingClientRect();
+        const tb = document.querySelector(".bd-toolbar");
+        const cut = [...tb.querySelectorAll("button:not([hidden])")].filter((b) => { const r = b.getBoundingClientRect(); return r.right > v.right + 1 || r.left < v.left - 1; }).length;
+        const cv = document.querySelector(".bd-svg").getBoundingClientRect();
+        return { cut, overflow: document.documentElement.scrollWidth - window.innerWidth, canvas: [Math.round(cv.width), Math.round(cv.height)] };
+      });
+      check(narrow.cut === 0 && narrow.overflow <= 1 && narrow.canvas[0] > 300 && narrow.canvas[1] > 120, "at 800 px every tool must stay reachable and the canvas usable: " + JSON.stringify(narrow));
+      await shot(page, "blocks-narrow.png");
+      await page.setViewportSize({ width: 1366, height: 768 });
+      ok("the diagram editor follows the light, dark and high-contrast themes and fits an 800 px wide window");
+
+      // touch: one finger pans, and a tap on two ports connects them
+      const touch = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, deviceScaleFactor: 1 });
+      const tp = await touch.newPage();
+      watchErrors(tp, consoleErrors, "[tablet] ");
+      await tp.goto(url);
+      await tp.waitForSelector(".CodeMirror");
+      await tp.evaluate(() => { const d = document.getElementById("dlg-welcome"); if (d && d.open) d.close(); });
+      await tp.evaluate(() => window.mylab.createFile("touch.mlb.json", JSON.stringify({ format: "mylab-blocks-1", name: "touch", blocks: [
+        { name: "C", type: "Constant", position: [60, 60, 50, 36] }, { name: "S", type: "Scope", position: [260, 55, 50, 50] }], lines: [] })));
+      await tp.waitForSelector(".bd-svg .bd-block[data-name='S']");
+      await tp.waitForSelector("#loader", { state: "hidden", timeout: 240000 });
+      await tp.waitForTimeout(300);
+      const tc = (sel) => tp.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, sel);
+      const a1 = await tc(".bd-svg .bd-port[data-block='C'][data-kind='out'] .bd-port-dot");
+      await tp.touchscreen.tap(a1.x, a1.y);
+      const a2 = await tc(".bd-svg .bd-port[data-block='S'][data-kind='in'] .bd-port-dot");
+      await tp.touchscreen.tap(a2.x, a2.y);
+      check(await tp.evaluate(() => JSON.parse(window.mylab.app.blocks.editor.text()).lines.length === 1), "tapping two ports on a touch screen should connect them");
+      const hit = await tp.evaluate(() => { const b = document.querySelector(".bd-toolbar #bd-run").getBoundingClientRect(); return Math.min(b.width, b.height); });
+      check(hit >= 28, "toolbar buttons must be large enough to tap: " + hit);
+      await touch.close();
+      ok("on a touch screen, tapping one port and then another draws a line");
+
+      // tidy up, so the rest of the checks see the project as before
+      await page.evaluate(async () => {
+        const app = window.mylab.app;
+        const mine = app.sortedPaths().filter((p) => p.startsWith("models/"));
+        for (const p of mine) app.closeTab(p);
+        await app.removePaths(mine);
+      });
+      await h.openFile("welcome.m");
+      check(await page.locator("#blocks-view").isHidden() && !(await page.evaluate(() => document.body.dataset.blocks)), "closing the model files leaves the code editor as it was");
+    }
+
     /* ---------------- polish ---------------- */
     check((await page.locator(".footbar a").getAttribute("href")) === "https://github.com/ghanemja/mylab/issues", "Report a problem link is wrong");
     await page.click("#foot-about");

@@ -48,6 +48,26 @@ python tools/package.py                   # dist/matlab-corpus.tar.gz with licen
 `fetch.py` uses partial, sparse git clones, so only `.m` files and license
 files are downloaded. Nothing in the corpus is ever executed by these tools.
 
+### Block-diagram model files
+
+Eight of the repositories also hold `.slx` model files: 82 files, 11 MB.
+`models.jsonl` lists them (repository, pinned commit, path, license, size and
+SHA-256). They are test data for the `.slx` reader of
+[mylab Blocks](../../docs/BLOCKS.md) and, like the `.m` files, are not stored
+in this repository:
+
+```bash
+python tools/fetch_models.py              # into ~/.cache/mylab-corpus-models (or $MYLAB_SLX_CACHE)
+python -m mylab.blocks.import_report ~/.cache/mylab-corpus-models
+```
+
+`fetch_models.py` fetches only the listed files at the pinned commits and
+checks each against its SHA-256. The report says, for every file, whether it
+was imported fully, imported with unsupported blocks (named and counted) or
+not at all, and whether the imported model then ran. `tests/test_blocks_slx.py`
+runs the same survey when the files are in the cache and is skipped otherwise.
+The files are read as data and nothing in them is executed.
+
 ## How repositories were selected
 
 - GitHub repositories whose main language is MATLAB, found through the GitHub

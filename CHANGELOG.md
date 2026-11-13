@@ -117,6 +117,13 @@ First public release.
 - Appending to cell and struct arrays in a loop is no longer quadratic.
 - The loop compiler inlines anonymous functions and one-line local
   functions: loops that call them run about 100× faster.
+- **mylab Blocks:** block-diagram modelling and simulation. A hybrid
+  simulation engine with zero-crossing location, 96 blocks, readable
+  `.mlb.json` model files, and `sim`, `new_system`, `add_block`, `add_line`,
+  `set_param`, `get_param`, `find_system`, `linmod`, `trim`. The web app has
+  a diagram editor with live scopes. Simple `.slx` files can be imported:
+  of 82 public model files, 33 import fully, 49 with named placeholders, and
+  14 then simulate. See docs/BLOCKS.md.
 - **Apps:** `uifigure` and its components, classic `figure` + `uicontrol`,
   `guidata`, callbacks with event data, and App Designer-exported class
   files. `mylab app.m` shows the app in the browser through a local server.
