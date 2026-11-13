@@ -375,6 +375,7 @@ class Lexer:
         line, col = self.line, self.col
         self.add("OP", "(", line, col, False)
         args: list[str] = []
+        syms = self.tokens[-2].value == "syms"
         while self.peek() in " \t":
             self.advance()
         while self.pos < len(self.text) and self.peek() not in "\n,;%":
@@ -391,6 +392,19 @@ class Lexer:
                         break
                     buf.append(self.advance())
                 args.append("".join(buf))
+            elif syms:  # 'syms f(x, y)' and 'syms a [1 3]': brackets keep an argument together
+                start = self.pos
+                depth = 0
+                while self.pos < len(self.text) and self.peek() != "\n":
+                    ch = self.peek()
+                    if ch in "([":
+                        depth += 1
+                    elif ch in ")]":
+                        depth -= 1
+                    elif depth <= 0 and ch in " \t,;%":
+                        break
+                    self.advance()
+                args.append(self.text[start:self.pos])
             else:
                 start = self.pos
                 while self.pos < len(self.text) and self.peek() not in " \t\n,;%":

@@ -678,8 +678,40 @@ const handlers = {
   },
 };
 
+/* ---------- optional packages ---------- */
+
+// SymPy (symbolic math) is a large download, so it is fetched the first time code uses it.
+const SYMBOLIC_RE =
+  /\b(?:syms|sym|str2sym|symfun|vpa|vpasolve|dsolve|poly2sym|piecewise|assume|assumeAlso|laplace|ilaplace|fourier|ifourier|ztrans|iztrans|symsum|symprod|taylor|solve|digits|heaviside|dirac)\b/;
+let sympyState = "none"; // none | loaded | failed
+
+function usesSymbolic(msg) {
+  const texts = [msg.code, msg.tail];
+  for (const s of msg.sections || []) texts.push(typeof s === "string" ? s : s && s.code);
+  for (const f of [...((msg.fs && msg.fs.files) || []), ...(msg.files || [])]) {
+    if (typeof f.content === "string" && /\.m$/i.test(f.path || "")) texts.push(f.content);
+  }
+  return texts.some((t) => typeof t === "string" && SYMBOLIC_RE.test(t));
+}
+
+async function loadOptional(msg) {
+  if (sympyState !== "none" || !usesSymbolic(msg)) return;
+  self.postMessage({ type: "notice", text: "Loading symbolic math…" });
+  try {
+    await pyodide.loadPackage("sympy", { messageCallback: () => {}, errorCallback: () => {} });
+    sympyState = "loaded";
+  } catch {
+    sympyState = "failed"; // the program still runs; symbolic functions report that SymPy is missing
+  }
+}
+
+let queue = Promise.resolve(); // requests run one at a time, in the order they arrive
+
 self.onmessage = (ev) => {
-  const msg = ev.data || {};
+  queue = queue.then(() => handle(ev.data || {}));
+};
+
+async function handle(msg) {
   const { id, type } = msg;
   if (!api) {
     self.postMessage({ id, ok: false, error: "The engine is still loading." });
@@ -690,12 +722,13 @@ self.onmessage = (ev) => {
     self.postMessage({ id, ok: false, error: `Unknown request: ${type}` });
     return;
   }
+  if (type === "run" || type === "trace" || type === "publish" || type === "test") await loadOptional(msg);
   try {
     const { result, transfer } = h(msg);
     self.postMessage({ id, ok: true, result }, transfer || []);
   } catch (err) {
     self.postMessage({ id, ok: false, error: pyErrorMessage(err) });
   }
-};
+}
 
 init();

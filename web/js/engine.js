@@ -30,6 +30,7 @@ export class Engine extends EventTarget {
   _onMessage(msg) {
     if (!msg) return;
     if (msg.type === "progress") return this._emit("progress", msg);
+    if (msg.type === "notice") return this._emit("notice", msg);
     if (msg.type === "ready") {
       this.ready = true;
       this.info = msg.info;

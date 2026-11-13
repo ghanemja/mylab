@@ -30,7 +30,9 @@ what mylab printed, and what you expected.
 - `inputParser`, `onCleanup`, `RandStream`, `timer`.
 - Image reading, writing and processing; binary file I/O; animations.
 - JSON (`jsondecode`/`jsonencode`), WAV audio files and Excel `.xlsx` files.
-- About 1,250 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
+- Symbolic math with `syms`, `sym`, `diff`, `int`, `solve`, `dsolve` and
+  related functions, when SymPy is installed; see [SYMBOLIC.md](SYMBOLIC.md).
+- About 1,340 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
 
 ## Not supported yet
 
@@ -46,7 +48,7 @@ what mylab printed, and what you expected.
   than WAV, HDF5 and XML files, bit-field precisions (`'ubitN'`) in
   `fread`/`fwrite`. `textscan` and `fscanf` handle common formats only.
 - **Toolboxes:** only the parts listed in FUNCTIONS.md (image processing,
-  signal processing, statistics, optimization). Simulink, Symbolic Math,
+  signal processing, statistics, optimization, symbolic math). Simulink,
   Control System, deep learning and others are out of scope for now.
 - **Language corners:** `nargin('fname')`, `parfor` (runs as an ordinary
   `for` loop), `Repeating` and `Output` argument blocks, the `!command` shell
@@ -87,6 +89,13 @@ what mylab printed, and what you expected.
   contents when writing; without it a built-in reader and writer handles
   plain numbers, text and logical values. Dates are read as Excel serial
   numbers. Formulas are read as their last saved value.
+- **Symbolic math** needs the optional SymPy package
+  (`pip install "mylab-lang[symbolic]"`; the web app loads it on first use).
+  Results are mathematically equal to MATLAB's but terms can be ordered or
+  factored differently. `solve` returns the solutions it finds without
+  parameters or conditions, assumptions are limited to simple conditions on
+  one variable, and `matlabFunction` returns a function handle only. The full
+  list is in [SYMBOLIC.md](SYMBOLIC.md).
 - **Categorical arrays** support construction, comparison, indexing,
   `categories`, `countcats`, category editing, sorting, tables and grouping.
   Arithmetic-style functions such as `histogram` draw a bar chart of counts;

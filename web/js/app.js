@@ -2097,6 +2097,7 @@ async function main() {
   // Start the engine as early as possible; it loads while the files are read.
   engine = new Engine();
   engine.addEventListener("progress", (e) => onProgress(e.detail));
+  engine.addEventListener("notice", (e) => toast(e.detail.text));
   engine.addEventListener("ready", (e) => onReady(e.detail));
   engine.addEventListener("fatal", (e) => onFatal(e.detail));
   engine.addEventListener("restarting", () => {

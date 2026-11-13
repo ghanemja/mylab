@@ -427,6 +427,8 @@ def is_true(v: Any) -> bool:
         raise MatlabError("Conditional expressions must be numeric or logical, not string.")
     if isinstance(v, (Cell, Struct, FunctionHandle)):
         raise MatlabError(f"Conditional expressions cannot be of type {class_name(v)}.")
+    if hasattr(v, "truth_value"):  # symbolic conditions such as  if x == y
+        return v.truth_value()
     a = to_numeric(v)
     if a.size == 0:
         return False

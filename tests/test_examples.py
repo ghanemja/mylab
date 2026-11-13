@@ -12,6 +12,8 @@ EXAMPLES = sorted((Path(__file__).parent.parent / "examples").glob("*.m"))
 
 @pytest.mark.parametrize("path", EXAMPLES, ids=[p.name for p in EXAMPLES])
 def test_example_runs(path, tmp_path, monkeypatch):
+    if path.name == "symbolic_demo.m":
+        pytest.importorskip("sympy")  # an optional dependency
     monkeypatch.chdir(tmp_path)  # plots are saved into the temp dir
     out: list[str] = []
     interp = Interpreter(out=out.append)

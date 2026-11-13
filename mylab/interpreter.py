@@ -715,6 +715,11 @@ class Interpreter:
             if isinstance(current, FunctionHandle):
                 raise MatlabError("Cannot index into a function handle.")
             args = self.eval_index_args(target.args, current if current is not None else empty_double(), frame)
+            if args and getattr(args[0], "is_sym", False):  # f(x) = 1 with symbolic x: a symbolic function
+                from .builtins.symbolic import define_function
+                fun = define_function(args, value)
+                if fun is not None:
+                    return fun
             is_delete = isinstance(value, np.ndarray) and value.shape == (0, 0) and value.dtype == float
             if is_delete and current is not None:
                 if isinstance(current, (MString, StringArray)):

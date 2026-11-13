@@ -1573,6 +1573,16 @@ async function main() {
     await page.click("#welcome-close");
     ok("footer has 'Report a problem', About keeps the trademark disclaimer, shortcut help is updated");
 
+    // Symbolic math: SymPy is downloaded the first time a program uses it.
+    await input.fill("syms x; dsym = diff(x^3 + sin(x), x)");
+    await input.press("Enter");
+    await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /Loading symbolic math/.test(t.textContent)), null, { timeout: 30000 });
+    await page.waitForFunction(() => /dsym =\s*3\*x\^2 \+ cos\(x\)/.test(document.querySelector("#console-out").innerText), null, { timeout: 180000 });
+    await input.fill("isym = double(int(x^2, 0, 3))");
+    await input.press("Enter");
+    await page.waitForFunction(() => /isym =\s*\n?\s*9\b/.test(document.querySelector("#console-out").innerText), null, { timeout: 60000 });
+    ok("symbolic math loads SymPy on first use ('Loading symbolic math…') and computes diff and int");
+
     // 10. Stop restarts the engine
     await input.fill("k = 0; while true, k = k + 1; end");
     await input.press("Enter");

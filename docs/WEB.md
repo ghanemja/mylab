@@ -499,6 +499,9 @@ needed).
 - The mylab interpreter is Python. The web app runs it with
   [Pyodide](https://pyodide.org), a version of Python compiled to
   WebAssembly, together with NumPy, SciPy, Matplotlib and Pillow.
+- SymPy, used for [symbolic math](SYMBOLIC.md), is downloaded the first time
+  a program uses `syms`, `sym`, `solve` or a related function. The app shows
+  "Loading symbolic math…" while it loads.
 - The engine runs in a **Web Worker** (`web/worker.js`), so the page stays
   responsive while code runs.
 - Nothing runs on a server. The site is plain static files.

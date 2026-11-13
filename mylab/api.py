@@ -82,6 +82,9 @@ def _preview(v: Any, limit: int = 60) -> str:
         elif isinstance(v, np.ndarray) and v.ndim == 2 and v.shape[0] == 1 and v.size <= 8:
             from .display import format_scalar
             s = "[" + " ".join(format_scalar(x) for x in v.flat) + "]"
+        elif getattr(v, "is_sym", False):
+            from .builtins.symbolic import text_of
+            s = text_of(v)
         else:
             s = ""  # size and class are reported separately
     except Exception:  # pragma: no cover - previews must never fail

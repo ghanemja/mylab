@@ -83,7 +83,7 @@ def check_source(text: str, filename: str | None = None) -> list[dict]:
             assigned.update(n.params)
         elif t is A.Index and isinstance(n.base, A.Ident):
             calls.append((n.base.name, n.base.line or n.line or 0))
-            if n.base.name in ("load", "eval", "evalin", "assignin", "run", "import"):
+            if n.base.name in ("load", "eval", "evalin", "assignin", "run", "import", "syms"):
                 uses_dynamic = True
         elif t is A.FuncHandle:
             calls.append((n.name.split(".")[0], getattr(n, "line", 0) or 0))
