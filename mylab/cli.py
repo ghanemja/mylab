@@ -104,6 +104,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("script", nargs="?", help="a .m script or function file to run")
     parser.add_argument("-e", "--eval", metavar="CODE", help="run CODE and exit")
     parser.add_argument("--no-plots", action="store_true", help="do not open plot windows")
+    parser.add_argument("--no-browser", action="store_true",
+                        help="apps (uifigure, uicontrol): print the address of the app window instead of "
+                             "opening the web browser")
     parser.add_argument("--debug", action="store_true",
                         help="run the script in the debugger, pausing at the first line (type h for help)")
     parser.add_argument("--check", metavar="FILE",
@@ -136,6 +139,9 @@ def main(argv: list[str] | None = None) -> int:
     interp.state["animation_capture"] = False  # nothing collects captured frames on the command line
     if args.eval is None and args.script is None:
         return repl(interp)
+    # App windows (uifigure, uicontrol) are shown in the web browser by a small local server.
+    from .uiweb import AppServer
+    apps = AppServer(interp, open_browser=not args.no_browser)
     if args.debug:
         from .debugger import get_debugger
         interp.state["debug_interactive"] = True
@@ -151,6 +157,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except SystemExit as e:
         return int(e.code or 0)
+    from . import ui
+    if ui.has_ui(interp):
+        try:
+            apps.serve()  # until the app windows are closed
+        except KeyboardInterrupt:
+            sys.stdout.write("\n")
+        finally:
+            apps.stop()
+        return 0
+    apps.stop()
     if not args.no_plots:
         from .builtins.plotting import show_figures
         show_figures(interp, block=True)

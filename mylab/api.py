@@ -37,6 +37,8 @@ class RunResult:
     figures: list[bytes] = field(default_factory=list)
     # Animated GIFs: one per figure that was redrawn at least twice with drawnow, pause or getframe.
     animations: list[bytes] = field(default_factory=list)
+    # App windows built with uifigure/uicontrol: the component tree (see mylab.ui), or None.
+    ui: dict | None = None
 
     @property
     def ok(self) -> bool:
@@ -49,7 +51,7 @@ class RunResult:
         return [base64.b64encode(a).decode("ascii") for a in self.animations]
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "output": self.output,
             "error": self.error,
             "error_line": self.error_line,
@@ -57,6 +59,9 @@ class RunResult:
             "figures": self.figures_base64(),
             "animations": self.animations_base64(),
         }
+        if self.ui is not None:
+            out["ui"] = self.ui
+        return out
 
 
 @dataclass
@@ -128,7 +133,50 @@ class Session:
         if capture_figures:
             result.animations = self.render_animations()
             result.figures = self.render_figures(close=close_figures)
+        if "ui" in self.interp.state:
+            try:
+                result.ui = self.ui_snapshot()
+            except MatlabError as e:
+                result.error = result.error or e.message
         return result
+
+    # -- app windows (uifigure, uicontrol, ...) ---------------------------------------
+    def ui_snapshot(self) -> dict | None:
+        """The app windows as JSON data (see :mod:`mylab.ui`), or None when there are none."""
+        from . import ui
+        return ui.snapshot(self.interp)
+
+    def ui_event(self, event: dict) -> dict:
+        """Send one user action to an app window and run its callbacks.
+
+        Returns ``{"output", "error", "update", "figures", "animations"}``: what the callbacks
+        printed, the error that stopped them (or None), the changes to the component tree and
+        any ordinary figures they drew (base64 PNG).
+        """
+        from . import ui
+        self._buffer.clear()
+        self.interp.state.pop("animation", None)
+        try:
+            res = ui.dispatch(self.interp, event)
+        except SystemExit:
+            res = {"error": "exit/quit is not available in this environment.", "update": ui.update(self.interp)}
+        except RecursionError:
+            res = {"error": "Maximum recursion limit reached.", "update": ui.update(self.interp)}
+        except Exception as e:  # an engine bug: report it instead of crashing the host
+            res = {"error": f"Internal error: {type(e).__name__}: {e}", "update": {"full": False, "patch": {}}}
+        res["output"] = "".join(self._buffer)
+        self._buffer.clear()
+        res["animations"] = [base64.b64encode(a).decode("ascii") for a in self.render_animations()]
+        res["figures"] = [base64.b64encode(f).decode("ascii") for f in self.render_figures()]
+        return res
+
+    def ui_close(self) -> None:
+        """Close every app window (the front end does this before a file is run again)."""
+        from . import ui
+        from .builtins.plotting import _close_number
+        for n in ui.classic_figure_numbers(self.interp):
+            _close_number(self.interp, n)
+        ui.reset(self.interp)
 
     def render_animations(self) -> list[bytes]:
         """Animated GIFs of the frames captured since the run started (and forget those frames)."""
@@ -142,12 +190,22 @@ class Session:
         if not st or not st.figures:
             return []
         images = []
+        keep: set[int] = set()
+        if "ui" in self.interp.state:  # classic figures that hold controls are app windows, not plots
+            from . import ui
+            keep = ui.classic_figure_numbers(self.interp)
         for n in sorted(st.figures):
+            if n in keep:
+                continue
             fig = st.figures[n]
             buf = io.BytesIO()
             fig.savefig(buf, format=self.figure_format, dpi=self.dpi, bbox_inches="tight")
             images.append(buf.getvalue())
-        if close:
+        if close and keep:
+            from .builtins.plotting import _close_number
+            for n in [n for n in st.figures if n not in keep]:
+                _close_number(self.interp, n)
+        elif close:
             from .builtins.plotting import close_all
             close_all(self.interp)
         return images
@@ -159,7 +217,9 @@ class Session:
         self.interp.classes.clear()
 
     def reset(self) -> None:
+        from . import ui
         from .builtins.plotting import close_all
+        ui.reset(self.interp)
         close_all(self.interp)
         self.interp.base.vars.clear()
         self.interp.base.functions = {}

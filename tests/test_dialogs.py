@@ -319,12 +319,12 @@ def test_ginput_needs_a_window(m):
         m.run("ginput(0)")
 
 
-@pytest.mark.parametrize("call", ["uicontrol('Style', 'pushbutton')", "f = uifigure;", "uipanel", "uimenu(gcf)",
-                                  "guide", "uitable('Data', magic(3))"])
-def test_gui_functions_raise_one_clear_error(m, call):
-    with pytest.raises(MatlabError) as e:
-        m.run(call)
-    assert e.value.message == "Graphical user interfaces are not supported in mylab"
+def test_gui_functions_build_app_windows(m):
+    # Custom windows are covered by tests/test_ui_*.py; guide and App Designer say what to do instead.
+    m.run("f = uifigure; b = uicontrol('Style', 'pushbutton'); ok = isvalid(f) && isvalid(b);")
+    assert m.num("ok")
+    with pytest.raises(MatlabError, match="GUIDE"):
+        m.run("guide")
 
 
 def test_existing_console_functions_still_work(m):

@@ -25,6 +25,7 @@ Contents: [For students](#for-students) · [For teachers](#for-teachers) ·
 | **Workspace** (right) | Every variable with its size and class. Click one to open it in the [variable viewer](#variable-viewer). |
 | **Plots** (right) | Figures and animations drawn by your code. Click to enlarge, or download them (PNG, or GIF for animations). |
 | **Assignment** | Appears when you open an assignment: the problems, and a button to check your answers. |
+| **App** | Appears when your code opens an app window (`uifigure`, `uicontrol`). See [Apps](#apps). |
 | **Assistant** (optional) | An AI helper, see below. |
 
 The first time you open the app, a welcome window points to the examples, to
@@ -59,6 +60,24 @@ A script can call functions saved in other `.m` files of the project (a file
 called as `add_squares(3, 4)`), including files in other folders of the
 project. A file runs with its own folder as the current folder, so
 `readmatrix('data.csv')` finds a `data.csv` that sits next to the script.
+
+### Apps
+
+![An app running in the App panel](images/app-run.png)
+
+Code that builds a window with `uifigure` or `uicontrol` opens the **App**
+panel when you run it. The buttons, sliders, tables and plots work: each
+click runs your callback in the same workspace, so the app remembers its
+state. **Restart** runs the file again, **App only** hides the editor, and
+the **App** button in the top bar hides or shows the panel.
+
+**New app** in the command palette opens the app builder: place components
+on a grid with the mouse or the keyboard, set their properties, and let it
+write the `.m` file with a callback function for each component. A file made
+this way gets an **Edit layout** button.
+
+[APPS.md](APPS.md) explains how to write apps, the builder, and what is not
+supported.
 
 ### Editor help
 
@@ -232,6 +251,9 @@ Nothing is uploaded. Whoever opens the link sees the code in a temporary
 project, clearly marked, and can run it; their own files are not touched
 unless they press **Keep a copy**. Tick "Run the code as soon as the link is
 opened" to have it run by itself.
+
+Tick "Open as app" for a file that builds an app window: the link then opens
+straight into the running app, without the editor (`&app=1`).
 
 Very long links (over about 8,000 characters) get cut off by some chat and
 e-mail programs. The share window warns you; for big projects use a GitHub
@@ -474,6 +496,9 @@ needed).
 - Code runs on a single thread, and Python in WebAssembly is slower than
   native Python. Very large computations are better run with the desktop
   `mylab` command.
+- Apps cannot wait for the user in the middle of code: `uiwait` returns at
+  once and `uiconfirm` returns its default answer (use callbacks). See
+  [APPS.md](APPS.md).
 - Plots are static images (plus GIF animations from `drawnow`/`pause` loops).
   There is no zooming or rotating of 3-D plots.
 - Step through records a finished run; it cannot pause a running program, and
@@ -551,6 +576,8 @@ Anthropic SDK 1.3.0 (jsDelivr, only when that provider is used).
 | `js/settings.js` | Themes, text size, the settings dialog and the ⋯ menu. |
 | `js/ui.js`, `js/markdown.js` | DOM helpers, dialogs, menus; a small safe Markdown renderer. |
 | `js/ai.js` | The assistant. |
+| `js/uiapp.js`, `js/uirender.js`, `css/uirender.css` | The App panel for app windows. `uirender.js`/`.css` draw the component tree; they are copies of `mylab/uiweb/` (the `mylab` command serves the same files), refreshed by `scripts/build_web.py`. |
+| `js/designer.js`, `css/apps.css` | The app builder (design data, canvas, property panel, code generation, reading a design back from a file) and the styles of both. |
 
 ### Worker protocol
 
@@ -581,6 +608,12 @@ Requests are `{ id, type, … }`; replies are `{ id, ok, result | error }`.
   warnings about names in `known` (the project's `.m` files) or in the
   workspace. `helpIndex` returns `{ name: [usage lines, one-line description] }`
   from `mylab.help_data` for hover help and autocomplete.
+- Results of `run` carry `ui` when app windows are open: the component tree
+  described at the top of `mylab/ui.py`. `uiEvent { event }` delivers one
+  user action (`{ id, event, value, … }`), runs the callbacks and returns
+  `{ error, output, update, figures, variables, files }`, where `update` is
+  a full tree or a patch of changed properties. `uiClose` closes every app
+  window. `uiEvent` is a background request, so Run stays available.
 - `inspect { name, path, row, rows, col, cols }` returns one page of a
   variable as a grid of short texts (`path` walks into struct fields and
   cells); `csv { name, path, maxCells }` returns it as CSV text.
@@ -606,6 +639,7 @@ number of characters of the output printed so far.
 | `#code=<p>` | `<p>` packs `{ n: name, c: code }` |
 | `#project=<p>` | `<p>` packs `{ n: name, m: main file, f: { path: text or { b: base64 } } }` |
 | `&run=1` | run the main file when the engine is ready |
+| `&app=1` | run the main file and show only its app window (no editor) |
 | `#gh=owner/repo[/folder][@ref]` | import through `api.github.com/repos/{owner}/{repo}/git/trees/{ref}?recursive=1` (one request; `HEAD` when no ref is given) and `raw.githubusercontent.com` |
 | `#assignment=<url>` | fetch a bundle (https, or the app's own origin) |
 | `#assignmentdata=<p>` | `<p>` packs a bundle |
@@ -639,6 +673,9 @@ keyboard access and focus), sections, published reports, stepping forward and ba
 and binary files through the engine's file system, files written by code,
 animations, projects and .zip round trips, folder import, GitHub import and
 its error messages, share links opened in a second browser context,
+app windows and the app builder (`scripts/test_web_apps.mjs`, which also runs
+on its own: a button, a slider drag, a table edit, themes, an app link on a
+phone, building an app, generating code and reopening it),
 assignments (wrong answer, right answer, `exit`, the timeout watchdog,
 submission .zip, reload), Stop, persistence (files, tabs, cursor,
 breakpoints), the phone layout down to 320 px, and that there are no console

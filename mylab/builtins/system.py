@@ -1272,6 +1272,9 @@ def _run(interp, args, nargout):
     """Run a script file in the caller's workspace."""
     from ..parser import parse
     path = text(args[0])
+    if path.lower().endswith(".mlapp"):
+        from ..ui import MLAPP_MESSAGE
+        raise MatlabError(MLAPP_MESSAGE)
     if not path.endswith(".m") and os.path.isfile(path + ".m"):
         path += ".m"
     if not os.path.isfile(path):

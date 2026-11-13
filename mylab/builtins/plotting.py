@@ -736,9 +736,14 @@ def _alive(h: GraphicsHandle) -> bool:
     st = _state(h.interp)
     if h.kind == "root":
         return True
+    ui_alive = getattr(h, "ui_alive", None)
+    if ui_alive is not None:  # an axes inside an app window (mylab.ui)
+        return ui_alive()
     if h.kind == "figure":
         return any(f is h.obj for f in st.figures.values())
     fig = _obj_figure(h)
+    if fig is not None and getattr(fig, "_mylab_ui", False):  # drawn in the axes of an app window
+        return not h.extra.get("deleted")
     if fig is None or not any(f is fig for f in st.figures.values()):
         return False
     if h.kind in ("axes", "polaraxes"):
@@ -1809,7 +1814,10 @@ _FIGURE_IGNORED = {"Units", "WindowState", "MenuBar", "ToolBar", "NumberTitle", 
                    "PaperUnits", "PaperPosition", "PaperSize", "PaperOrientation", "Resize", "InvertHardcopy",
                    "Renderer", "RendererMode", "DockControls", "WindowStyle", "IntegerHandle",
                    "HandleVisibility", "CloseRequestFcn", "SizeChangedFcn", "KeyPressFcn", "Pointer",
-                   "GraphicsSmoothing", "Theme"}
+                   "GraphicsSmoothing", "Theme", "ResizeFcn", "WindowButtonDownFcn", "WindowButtonMotionFcn",
+                   "WindowButtonUpFcn", "WindowKeyPressFcn", "WindowKeyReleaseFcn", "WindowScrollWheelFcn",
+                   "KeyReleaseFcn", "CreateFcn", "DeleteFcn", "ButtonDownFcn", "Interruptible", "BusyAction",
+                   "AutoResizeChildren", "Scrollable", "Icon"}
 
 
 # text ---------------------------------------------------------------------------------------

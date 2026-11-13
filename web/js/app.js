@@ -22,6 +22,8 @@ import { initIntel } from "./intel.js";
 import { initVarView } from "./varview.js";
 import { initHistory } from "./history.js";
 import { renderDiff, statsText } from "./diff.js";
+import { initUiApp } from "./uiapp.js";
+import { initDesigner } from "./designer.js";
 
 /* ================================================================== state */
 
@@ -61,7 +63,7 @@ const app = { state, store, prefs };
 
 // A small event bus so feature modules can react without knowing about each other.
 // Events: fileOpened(path), docCreated(path, doc), tabsChanged, projectChanged, saved(info),
-// moved(from, to), removed(paths), projectDeleted(id), runFinished(result, error),
+// moved(from, to), removed(paths), projectDeleted(id), runStarting(ctx), runFinished(result, error, ctx),
 // variables(list), engineReady(info), settingsChanged(key, value), keysChanged(preset).
 const listeners = new Map();
 app.on = (name, fn) => {
@@ -1034,7 +1036,7 @@ function locateError(res, ctx) {
   let line = errorLineOf(res);
   if (!line) return { file: null, line: null };
   if (res.error_file && state.files.has(res.error_file)) return { file: res.error_file, line };
-  if (!ctx.file) return { file: null, line };
+  if (!ctx.file || ctx.call) return { file: null, line }; // ctx.call: the file was called by name
   if (ctx.codeLines && line > ctx.codeLines && ctx.tailStart != null) return { file: ctx.file, line: ctx.tailStart + (line - ctx.codeLines) };
   return { file: ctx.file, line: line + (ctx.lineOffset || 0) };
 }
@@ -1054,6 +1056,7 @@ async function runCode(code, ctx) {
   let res;
   const sent = ctx.tail ? code + "\n" + ctx.tail : code;
   const runCtx = { ...ctx, codeLines: ctx.tail ? code.split("\n").length : 0 };
+  app.emit("runStarting", ctx);
   try {
     res = await engine.run(sent, { fs: fsSpec(), cwd: ctx.kind === "command" ? undefined : dirName(ctx.file || "") });
   } catch (e) {
@@ -1088,7 +1091,7 @@ async function runCode(code, ctx) {
   if (res.variables) renderVariables(res.variables);
   for (const d of res.dialogs || []) showMessageBox(d);
   await applyWritten(res.files);
-  app.emit("runFinished", res, state.lastError);
+  app.emit("runFinished", res, state.lastError, ctx);
   return res;
 }
 
@@ -1113,6 +1116,9 @@ function runnableFile() {
     toast("Only .m files can be run.", "error");
     return null;
   }
+  // A function without inputs (the usual way to write an app) or a class file: Run calls it by name.
+  const callable = app.callableFile && app.callableFile(name, code);
+  if (callable) return { name, code: callable, call: true };
   if (isFunctionFile(code)) {
     const fn = baseName(name).replace(/\.m$/, "");
     printInfo(
@@ -1136,6 +1142,7 @@ async function runActiveFile() {
   const f = runnableFile();
   if (!f) return null;
   flashEditor();
+  if (f.call) return runCode(f.code, { kind: "file", file: f.name, lineOffset: 0, label: f.code, call: true });
   return runCode(f.code, { kind: "file", file: f.name, lineOffset: 0, label: `run ${f.name}` });
 }
 
@@ -2060,6 +2067,7 @@ Object.assign(app, {
   printEcho,
   appendConsole,
   addFigures,
+  applyWritten,
   renderVariables,
   showBottom,
   replaceText,
@@ -2132,6 +2140,8 @@ async function main() {
   initIntel(app);
   initVarView(app);
   initHistory(app);
+  initUiApp(app);
+  initDesigner(app);
 
   await loadProjects();
   document.body.dataset.files = "ready";

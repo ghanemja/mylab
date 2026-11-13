@@ -26,7 +26,7 @@ from .objects import MObject
 
 HANDLE_BASES = {"handle", "matlab.mixin.Copyable", "dynamicprops", "hgsetget", "matlab.mixin.SetGet",
                 "matlab.mixin.Heterogeneous", "matlab.mixin.CustomDisplay", "event.EventData",
-                "matlab.System", "matlab.unittest.TestCase"}
+                "matlab.System", "matlab.unittest.TestCase", "matlab.apps.AppBase"}
 # Built-in value classes an enumeration class may derive from (classdef Level < uint8).
 NUMERIC_BASES = {"double", "single", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32",
                  "uint64", "logical", "char"}
@@ -217,9 +217,10 @@ class ClassInfo:
             raise MatlabError(f"Cannot instantiate the abstract class '{self.name}'{detail}.")
         obj = UserObject(self)
         obj.props = dict(self.defaults(interp))
-        return [self.run_constructor(interp, obj, args)]
+        made = self.run_constructor(interp, obj, args, nargout)
+        return [] if made is None else [made]
 
-    def run_constructor(self, interp, obj: "UserObject", args: list) -> "UserObject":
+    def run_constructor(self, interp, obj: "UserObject", args: list, nargout: int = 1) -> "UserObject | None":
         ctor = self.cd.methods.get(self.name)
         if ctor is None:
             if args:
@@ -233,8 +234,10 @@ class ClassInfo:
             if parent.name not in called and parent.cd.methods.get(parent.name) is not None:
                 obj = parent.run_constructor(interp, obj, [])
         out_name = ctor.outputs[0] if ctor.outputs else "obj"
-        res = interp.call_user_function(ctor, args, 1, self.functions, self.path, preset={out_name: obj},
-                                        owner=self)
+        res = interp.call_user_function(ctor, args, min(nargout, 1), self.functions, self.path,
+                                        preset={out_name: obj}, owner=self)
+        if not res and nargout == 0:
+            return None  # the constructor cleared its output (App Designer: if nargout == 0, clear app)
         if not res or not isinstance(res[0], UserObject):
             raise MatlabError(f"The constructor of '{self.name}' must return the object.")
         return res[0]

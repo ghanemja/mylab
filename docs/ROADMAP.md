@@ -10,7 +10,7 @@ well with AI assistants.
   - lexer, parser and interpreter for the language;
   - N-D arrays, string arrays, cells, structs;
   - `classdef` classes, `containers.Map`, tables.
-- **Library:** about 1,340 functions, including image and signal processing,
+- **Library:** about 1,370 functions, including image and signal processing,
   statistics, optimization, sparse solvers, ODE solvers and plotting. Every function has help text.
 - **Ways to run it:**
   - the `mylab` command-line prompt and script runner;

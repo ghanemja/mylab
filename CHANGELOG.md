@@ -117,6 +117,13 @@ First public release.
 - Appending to cell and struct arrays in a loop is no longer quadratic.
 - The loop compiler inlines anonymous functions and one-line local
   functions: loops that call them run about 100× faster.
+- **Apps:** `uifigure` and its components, classic `figure` + `uicontrol`,
+  `guidata`, callbacks with event data, and App Designer-exported class
+  files. `mylab app.m` shows the app in the browser through a local server.
+  The web app has an App panel, "Open as app" share links and a visual app
+  builder that generates `.m` code and reopens it. See docs/APPS.md.
+- Changed: class constructors called as a statement see `nargout == 0`;
+  `@obj.method` creates a handle bound to the object.
 - **Symbolic math** with MATLAB's syntax, backed by SymPy (optional:
   `pip install "mylab-lang[symbolic]"`): `syms`, `sym`, `diff`, `int`,
   `limit`, `taylor`, `simplify`, `subs`, `solve`, `dsolve`, `laplace`,

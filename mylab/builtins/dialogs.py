@@ -41,8 +41,8 @@ kind           payload keys                                                answe
                ``figure`` (figure number)                                  in data coordinates
 =============  ==========================================================  ================================
 
-Functions that build custom windows (``uicontrol``, ``uifigure``, ...) raise one
-clear error instead.
+Custom windows (``uifigure``, ``uicontrol``, ...) are built by
+``mylab/builtins/uicomponents.py`` on top of :mod:`mylab.ui`.
 """
 
 from __future__ import annotations
@@ -588,12 +588,6 @@ def _uigetdir(interp, args, nargout):
 
 # -- waiting and mouse input ---------------------------------------------------------------------------
 
-@builtin("uiwait", "uiresume", "waitfor")
-def _no_wait(interp, args, nargout):
-    """There are no windows to wait for: return at once."""
-    return None
-
-
 @builtin("waitforbuttonpress")
 def _waitforbuttonpress(interp, args, nargout):
     plt = _plt()
@@ -626,12 +620,3 @@ def _ginput(interp, args, nargout):
     if not rows:
         cols = [np.zeros((0, 1))] * 3
     return tuple(cols[:nargout]) if nargout > 1 else np.hstack(cols[:2])
-
-
-# -- custom windows are not available ---------------------------------------------------------------------
-
-@builtin("uicontrol", "uipanel", "uimenu", "uifigure", "guide", "uitable", "uibuttongroup", "uitab",
-         "uitabgroup", "uiaxes", "uibutton", "uilabel", "uieditfield", "uidropdown", "uislider", "uicheckbox",
-         "uitoolbar", "uipushtool", "uicontextmenu", "appdesigner", "dialog", "guihandles")
-def _no_gui(interp, args, nargout):
-    raise MatlabError("Graphical user interfaces are not supported in mylab")
