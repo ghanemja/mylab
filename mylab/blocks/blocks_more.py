@@ -244,7 +244,12 @@ class Merge(Node):
             if link is not None and link[0].stamp > stamp:
                 best, stamp = k, link[0].stamp
         if stamp < 0 or best is None:
-            return [self.y0]
+            y0 = self.y0
+            if y0.size == 1:  # a scalar initial output takes the size of the signals merged
+                big = max((np.asarray(v) for v in u), key=lambda v: v.size, default=y0)
+                if big.size > 1:
+                    y0 = np.broadcast_to(y0.ravel()[0], big.shape).astype(float)
+            return [y0]
         if not self.sim.minor:
             self.last = best
         return [u[best]]

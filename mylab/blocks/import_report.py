@@ -102,7 +102,7 @@ def find_setup(missing: set[str], scripts: list[tuple[str, str]], model_path: st
     for path, text in scripts:
         if path in tried:
             continue
-        hits = sum(1 for name in missing if re.search(rf"^\s*{re.escape(name)}\s*(\([^=\n]*\))?\s*=[^=]", text, re.M))
+        hits = sum(1 for name in missing if re.search(rf"^\s*{re.escape(name)}\s*(\.[\w.]+|\([^=\n]*\))?\s*=[^=]", text, re.M))
         if not hits:
             continue
         base = os.path.splitext(os.path.basename(path))[0].lower()
@@ -123,6 +123,9 @@ def _missing_names(messages: list[str]) -> set[str]:
     names: set[str] = set()
     for m in messages:
         names.update(MISSING.findall(m))
+        if "Dot indexing is not supported" in m:
+            # 'quad.nrotors' where quad is a function here: the model expects a workspace struct of that name
+            names.update(re.findall(r"(?<![\w.])([A-Za-z_]\w*)\.[A-Za-z_]", m.split("cannot be evaluated")[0]))
     return names
 
 
@@ -155,9 +158,15 @@ def check_file(path: str, time_limit_s: float = 30.0, sources: str | None = None
     row["blocks"] = rep["blocks"]
     row["unsupported"] = rep["unsupported"]
     row["import"] = "partial" if rep["unsupported"] else "full"
+    row["library"] = bool(model.library)
+    row["standins"] = sum(1 for n in model.notes if "was replaced by a subsystem" in n)
+    if model.library:
+        row["simulate"] = "library: not a model to run"
+        return row
     if rep["unsupported"]:
         row["simulate"] = "no: unsupported blocks"
         return row
+    last: list[str] = []
     if rep["blocks"] == 0:
         row["simulate"] = "no: empty model"
         return row
@@ -209,6 +218,7 @@ def check_file(path: str, time_limit_s: float = 30.0, sources: str | None = None
                     errors = comp.errors()
                     if errors:
                         messages = [e["message"] for e in errors]
+                        last[:] = messages
                         if needs(messages + notes):
                             continue
                         missing = _missing_names(messages)
@@ -224,8 +234,10 @@ def check_file(path: str, time_limit_s: float = 30.0, sources: str | None = None
                     sim = Sim(comp, None, tick)
                     sim.run()
                     res = sim.result()
-                row["simulate"] = "yes"
-                row["detail"] = f"{res.steps} steps to t = {res.t[-1]:g}"
+                stopped = [d["message"] for d in comp.diagnostics if d.get("kind") == "run"]
+                row["standins"] += len(stopped)  # a display block that was switched off is not a real block either
+                row["simulate"] = "yes (with stand-ins)" if row["standins"] else "yes"
+                row["detail"] = f"{res.steps} steps to t = {res.t[-1]:g}" + ("; " + stopped[0] if stopped else "")
                 row["result"] = res
                 return row
             except _TimeUp:
@@ -233,6 +245,7 @@ def check_file(path: str, time_limit_s: float = 30.0, sources: str | None = None
                 row["detail"] = f"stopped after {time_limit_s:g} s of computing"
                 return row
             except SimError as exc:
+                last[:] = [exc.message]
                 if needs([exc.message]):
                     continue
                 missing = _missing_names([exc.message])
@@ -244,7 +257,8 @@ def check_file(path: str, time_limit_s: float = 30.0, sources: str | None = None
                 row["detail"] = exc.message[:400]
                 return row
         row["simulate"] = "no: needs workspace variables or toolbox functions"
-        row["detail"] = "set-up scripts were run but names are still missing"
+        row["missing"] = sorted(_missing_names(last))
+        row["detail"] = ("set-up scripts were run but names are still missing: " + " | ".join(last[:2]))[:400]
     except Exception as exc:
         row["simulate"] = "no: internal error"
         row["detail"] = f"{type(exc).__name__}: {exc}"[:400]
@@ -301,8 +315,90 @@ def summarize(rows: list[dict]) -> dict:
         "unsupported_blocks": dict(missing.most_common()),
         "unsupported_files": dict(files_with.most_common()),
         "missing_names": dict(names.most_common()),
-        "with_setup": sum(1 for r in rows if r["simulate"] == "yes" and r.get("setup")),
+        "with_setup": sum(1 for r in rows if r["simulate"].startswith("yes") and r.get("setup")),
     }
+
+
+def _same_value(a: str, b: str) -> bool:
+    a, b = a.strip(), b.strip()
+    if a.lower() == b.lower():
+        return True
+    try:
+        return float(a) == float(b)
+    except ValueError:
+        pass
+    squeeze = lambda s: re.sub(r"[\s\[\]]", "", s).lower()  # noqa: E731
+    return squeeze(a) == squeeze(b)
+
+
+def defaults_table(root: str) -> list[dict]:
+    """What the files say about parameter defaults, next to what the importer assumes.
+
+    A file may list the default parameters of its block types. For every
+    parameter that the importer carries over to a mylab block, a row gives
+    the value most files list as the default (``listed``, with the number of
+    files), the value most often set on a block (``common``), and the value
+    the importer uses when a file says nothing (``ours``). ``agree`` is False
+    when files list a default and ours differs.
+    """
+    from .library import find_type
+    from .slx import IMPORT_DEFAULTS, PARAM_MAP, TYPE_MAP, _Archive, _params
+
+    listed: dict[tuple[str, str], Counter] = {}
+    explicit: dict[tuple[str, str], Counter] = {}
+    files = [root] if os.path.isfile(root) else sorted(
+        os.path.join(d, f) for d, _dirs, fs in os.walk(root) for f in fs if f.lower().endswith(".slx")
+    )
+    for path in files:
+        try:
+            arc = _Archive(path)
+            names = [n for n in arc.names() if n.startswith("simulink/") and n.endswith(".xml")]
+            for name in names:
+                if "blockdiagram" not in name and "/systems/" not in name:
+                    continue
+                tree = arc.xml(name)
+                if tree is None:
+                    continue
+                skip = set()
+                for d in tree.iter("BlockParameterDefaults"):
+                    for b in d.findall("Block"):
+                        skip.add(id(b))
+                        for k, v in _params(b).items():
+                            listed.setdefault((b.get("BlockType", ""), k), Counter())[v.strip()] += 1
+                for b in tree.iter("Block"):
+                    if id(b) in skip:
+                        continue
+                    for p in b.findall("P"):
+                        explicit.setdefault((b.get("BlockType", ""), p.get("Name", "")), Counter())[
+                            (p.text or "").strip()
+                        ] += 1
+        except Exception:  # unreadable file: the import report says so
+            continue
+    rows = []
+    for (btype, k), counts in sorted(listed.items()):
+        cls = find_type(TYPE_MAP.get(btype, btype))
+        if cls is None:
+            continue
+        k2 = PARAM_MAP.get(cls.type, {}).get(k, k)
+        spec = next((q for q in cls.params if q.name == k2), None)
+        if spec is None:
+            continue
+        value, n = counts.most_common(1)[0]
+        ours = IMPORT_DEFAULTS.get(btype, {}).get(k, spec.default)
+        common = explicit.get((btype, k), Counter()).most_common(1)
+        rows.append(
+            {
+                "block": btype,
+                "parameter": k,
+                "listed": value,
+                "files": n,
+                "of": sum(counts.values()),
+                "common": common[0][0] if common else "",
+                "ours": str(ours),
+                "agree": _same_value(value, str(ours)),
+            }
+        )
+    return rows
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -312,7 +408,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", default="", help="only files whose path contains this text")
     ap.add_argument("--json", help="also write the full result to this file")
     ap.add_argument("--time-limit", type=float, default=30.0, help="seconds of computing allowed per model")
+    ap.add_argument("--defaults", action="store_true", help="print the table of parameter defaults instead")
     args = ap.parse_args(argv)
+    if args.defaults:
+        for r in defaults_table(args.path):
+            mark = "  " if r["agree"] else "!!"
+            print(
+                f"{mark} {r['block']}.{r['parameter']}: files list {r['listed']!r} ({r['files']} of {r['of']}), "
+                f"most often set to {r['common']!r}, mylab assumes {r['ours']!r}"
+            )
+        return 0
     rows = survey(args.path, args.time_limit, args.sources, only=args.only)
     for r in rows:
         miss = ", ".join(f"{k} ({v})" for k, v in sorted(r["unsupported"].items(), key=lambda kv: -kv[1])[:6])

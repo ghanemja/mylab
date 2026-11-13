@@ -873,3 +873,228 @@ def test_structure_blocks_are_in_the_catalog():
 def test_stop_simulation_block():
     r = apply("StopSimulation", {}, [("Step", {"Time": "0.4"})], n_out=0, stop="5")
     assert r.t[-1] == pytest.approx(0.4) and r.stopped_by == "B"
+
+
+# -- blocks added for imported models ---------------------------------------------------------------
+
+
+def test_if_block_runs_the_action_subsystem_of_the_first_true_condition():
+    def action(gain):
+        return (
+            [("In", "Inport"), ("Act", "ActionPort"), ("K", "Gain", {"Gain": gain}), ("Out", "Outport")],
+            ["In/1 -> K/1", "K/1 -> Out/1"],
+        )
+
+    m = build(
+        "ifelse",
+        [
+            ("Ramp", "Ramp", {"Slope": "1", "InitialOutput": "-1"}),
+            ("If", "If", {"IfExpression": "u1 < 0", "ElseIfExpressions": "u1 < 0.5", "ShowElse": "on"}),
+            ("Neg", "Subsystem", {}, action("-1")),
+            ("Mid", "Subsystem", {}, action("10")),
+            ("Pos", "Subsystem", {}, action("100")),
+            ("Merge", "Merge", {"Inputs": "3"}),
+            ("y", "Outport"),
+        ],
+        [
+            "Ramp/1 -> If/1",
+            "Ramp/1 -> Neg/1",
+            "Ramp/1 -> Mid/1",
+            "Ramp/1 -> Pos/1",
+            "If/1 -> Neg/enable",
+            "If/2 -> Mid/enable",
+            "If/3 -> Pos/enable",
+            "Neg/1 -> Merge/1",
+            "Mid/1 -> Merge/2",
+            "Pos/1 -> Merge/3",
+            "Merge/1 -> y/1",
+        ],
+        StopTime="2",
+        Solver="ode4",
+        FixedStep="0.25",
+    )
+    r = simulate(m)
+    u = r.t - 1
+    expected = np.where(u < 0, -u, np.where(u < 0.5, 10 * u, 100 * u))
+    assert np.allclose(r.y[:, 0], expected)
+    assert count_ports(find_type("If").nout, {"ElseIfExpressions": "u1 > 2, u1 > 3", "ShowElse": "off"}) == 3
+
+
+def test_lookup_table_with_three_dimensions():
+    p = {
+        "NumberOfTableDimensions": "3",
+        "Table": "reshape(0:26, 3, 3, 3)",  # value = i + 3 j + 9 k for 0-based indices
+        "Breakpoints": "[0 1 2], [0 10 20], [0 100 200]",
+    }
+    assert last("LookupTableND", p, [1, 10, 100])[0] == pytest.approx(13)
+    assert last("LookupTableND", p, [0.5, 5, 150])[0] == pytest.approx(0.5 + 1.5 + 13.5)
+    assert last("LookupTableND", p, [3, 0, 0])[0] == pytest.approx(3)  # a straight line continues outside
+    assert last("LookupTableND", {**p, "ExtrapMethod": "Clip"}, [3, 0, 0])[0] == pytest.approx(2)
+    with pytest.raises(SimError, match="3 lists of breakpoints"):
+        last("LookupTableND", {**p, "Breakpoints": "[0 1 2], [0 10 20]"}, [1, 1, 1])
+
+
+def test_direct_lookup_and_prelookup():
+    tab = {"Table": "[4 5 6; 16 19 20; 10 18 23]"}
+    assert last("DirectLookupTable", tab, [1, 2])[0] == 20  # row 1, column 2, counted from 0
+    assert last("DirectLookupTable", tab, [9, -3])[0] == 10  # outside: the nearest edge
+    col = last("DirectLookupTable", {**tab, "InputsSelectThisObjectFromTable": "Vector"}, [1])
+    assert list(col) == [5, 19, 18]
+    r = apply("Prelookup", {"BreakpointsData": "[10 20 40]"}, [25], n_out=2)
+    assert r.y[-1, 0] == 1 and r.y[-1, 1] == pytest.approx(0.25)
+    assert last("Prelookup", {"BreakpointsData": "[10 20 40]", "OutputSelection": "Index only"}, [40])[0] == 2
+
+
+def test_rate_limiter_dynamic_and_running_minimum():
+    r = apply("RateLimiterDynamic", {}, [2, ("Step", {"Time": "0", "After": "10"}), -1], stop="1", Solver="ode4", FixedStep="0.1")
+    assert np.allclose(r.y[:, 0], 2 * r.t, atol=1e-9)  # rises by at most 2 per second
+    r = apply("MinMaxRunningResettable", {"Function": "min", "vinit": "5"}, [("SineWave", {"Frequency": "2*pi"}), 0], stop="1")
+    assert r.y[-1, 0] == pytest.approx(-1, abs=1e-3) and r.y[0, 0] == 0
+    r = apply(
+        "MinMaxRunningResettable",
+        {"Function": "max", "vinit": "0"},
+        [("SineWave", {"Frequency": "2*pi"}), ("Step", {"Time": "0.6"})],
+        stop="1",
+    )
+    assert r.y[-1, 0] == pytest.approx(0, abs=1e-6)  # reset after the peak: back to the initial value
+
+
+def test_permute_dimensions_and_viewer():
+    y = apply("PermuteDimensions", {"Order": "[2 1]"}, ["[1 2 3; 4 5 6]"])
+    assert list(y.y[-1]) == [1, 2, 3, 4, 5, 6]  # the columns of the transposed matrix (the input logs as 1 4 2 5 3 6)
+    with pytest.raises(SimError, match="two-dimensional"):
+        last("PermuteDimensions", {"Order": "[3 1 2]"}, ["[1 2; 3 4]"])
+    r = apply("Viewer", {"NumInputPorts": "2", "Kind": "Video Viewer"}, [1, 2], n_out=0)
+    assert r.t[-1] == 1  # a sink that draws nothing
+
+
+SFUN_L1 = """
+function [sys, x0, str, ts] = decay1(t, x, u, flag, rate)
+switch flag
+    case 0
+        s = simsizes; s.NumContStates = 1; s.NumOutputs = 2; s.NumInputs = 1; s.DirFeedthrough = 1; s.NumSampleTimes = 1;
+        sys = simsizes(s); x0 = 0; str = []; ts = [0 0];
+    case 1
+        sys = rate * (u - x);
+    case 3
+        sys = [x; 2 * u];
+    otherwise
+        sys = [];
+end
+"""
+
+SFUN_L2 = """
+function count2(block)
+setup(block);
+
+function setup(block)
+block.NumInputPorts = 1;
+block.NumOutputPorts = 1;
+block.SetPreCompInpPortInfoToDynamic;
+block.SetPreCompOutPortInfoToDynamic;
+block.InputPort(1).Dimensions = 1;
+block.InputPort(1).DirectFeedthrough = false;
+block.OutputPort(1).Dimensions = 1;
+block.NumDialogPrms = 1;
+block.SampleTimes = [0.5 0];
+block.RegBlockMethod('PostPropagationSetup', @DoPost);
+block.RegBlockMethod('Start', @Start);
+block.RegBlockMethod('Outputs', @Outputs);
+block.RegBlockMethod('Update', @Update);
+
+function DoPost(block)
+block.NumDworks = 1;
+block.Dwork(1).Name = 'total';
+block.Dwork(1).Dimensions = 1;
+
+function Start(block)
+block.Dwork(1).Data = block.DialogPrm(1).Data;
+
+function Outputs(block)
+block.OutputPort(1).Data = block.Dwork(1).Data;
+
+function Update(block)
+block.Dwork(1).Data = block.Dwork(1).Data + block.InputPort(1).Data;
+"""
+
+
+def test_s_functions_written_in_the_matlab_language(tmp_path):
+    (tmp_path / "decay1.m").write_text(SFUN_L1)
+    (tmp_path / "count2.m").write_text(SFUN_L2)
+    s = Session()
+    s.interp.path = [str(tmp_path)]
+    m = build(
+        "sf",
+        [
+            ("u", "Constant", {"Value": "3"}),
+            ("B", "SFunction", {"FunctionName": "decay1", "Parameters": "4", "NumInputs": "1", "NumOutputs": "1"}),
+            ("D", "Demux", {"Outputs": "2"}),
+            ("y1", "Outport", {"Port": "1"}),
+            ("y2", "Outport", {"Port": "2"}),
+        ],
+        ["u/1 -> B/1", "B/1 -> D/1", "D/1 -> y1/1", "D/2 -> y2/1"],
+        StopTime="1",
+        RelTol="1e-8",
+    )
+    r = simulate(m, s.interp)
+    assert r.y[-1, 0] == pytest.approx(3 * (1 - math.exp(-4)), abs=1e-6) and r.y[-1, 1] == 6
+    m = build(
+        "sf2",
+        [
+            ("u", "Constant", {"Value": "2"}),
+            ("B", "MSFunction", {"FunctionName": "count2", "Parameters": "10", "NumInputs": "1", "NumOutputs": "1"}),
+            ("y", "Outport"),
+        ],
+        ["u/1 -> B/1", "B/1 -> y/1"],
+        StopTime="2",
+    )
+    r = simulate(m, s.interp)
+    assert r.y[0, 0] == 10 and r.y[-1, 0] == 10 + 2 * 4  # one update every 0.5 s
+    m.root.block("B").params["FunctionName"] = "compiled_thing"
+    with pytest.raises(SimError, match="compiled_thing"):
+        simulate(m, s.interp)
+
+
+def test_options_added_for_imported_models():
+    # a sine wave driven by an input signal instead of the simulation time
+    assert last("SineWave", {"TimeSource": "Use external signal", "Frequency": "1"}, [math.pi / 2])[0] == pytest.approx(1)
+    # a transfer function that starts away from rest
+    r = apply("TransferFcn", {"Numerator": "[1]", "Denominator": "[1 1]", "InitialStates": "2"}, [0], RelTol="1e-8")
+    assert r.y[0, 0] == pytest.approx(2) and r.y[-1, 0] == pytest.approx(2 * math.exp(-1), abs=1e-5)
+    # a discrete integrator with a reset input
+    r = apply(
+        "DiscreteIntegrator",
+        {"SampleTime": "0.1", "ExternalReset": "rising"},
+        [1, ("Step", {"Time": "0.45"})],
+        stop="1",
+    )
+    assert r.y[-1, 0] == pytest.approx(0.5, abs=0.051) and np.max(r.y[:, 0]) < 0.61
+    # one random stream per seed
+    r = apply("RandomNumber", {"Seed": "[1 2 3]", "SampleTime": "0.1"}, [])
+    assert r.y.shape[1] == 3 and len({round(v, 9) for v in r.y[-1]}) == 3
+    # a scalar initial value takes the size of the signal
+    r = apply("Merge", {"Inputs": "2"}, ["[1 2 3]", "[4 5 6]"])
+    assert r.y.shape[1] == 3
+
+
+def test_a_vector_counts_as_a_column_in_matrix_products():
+    # column times row is a full matrix (the outer product), row times column one number
+    m = build(
+        "outer",
+        [
+            ("v", "Constant", {"Value": "[1 2 3]"}),
+            ("T", "MathFunction", {"Operator": "transpose"}),
+            ("Outer", "Product", {"Inputs": "2", "Multiplication": "Matrix(*)"}),
+            ("Inner", "Product", {"Inputs": "2", "Multiplication": "Matrix(*)"}),
+            ("Back", "MathFunction", {"Operator": "transpose"}),
+            ("y1", "Outport", {"Port": "1"}),
+            ("y2", "Outport", {"Port": "2"}),
+            ("y3", "Outport", {"Port": "3"}),
+        ],
+        ["v/1 -> T/1", "v/1 -> Outer/1", "T/1 -> Outer/2", "T/1 -> Inner/1", "v/1 -> Inner/2", "T/1 -> Back/1"]
+        + ["Outer/1 -> y1/1", "Inner/1 -> y2/1", "Back/1 -> y3/1"],
+        StopTime="1",
+    )
+    r = simulate(m)
+    assert list(r.y[-1][:9]) == [1, 2, 3, 2, 4, 6, 3, 6, 9] and r.y[-1][9] == 14
+    assert list(r.y[-1][10:]) == [1, 2, 3]  # transposing twice gives the vector back

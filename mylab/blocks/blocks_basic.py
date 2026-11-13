@@ -589,10 +589,19 @@ class Outport(Sink):
 # =====================================================================================
 
 
+def _transpose(u: np.ndarray) -> np.ndarray:
+    """Transpose; a vector (which counts as a column) becomes a 1-by-n row matrix."""
+    if u.ndim == 1:
+        return u.reshape(1, -1).astype(float) if u.size > 1 else u
+    return sig(u.T)
+
+
 def _matmul(a: np.ndarray, b: np.ndarray, what: str) -> np.ndarray:
     try:
         if a.size == 1 or b.size == 1:
             return a * b
+        if a.ndim == 1 and b.ndim == 2 and b.shape[0] == 1:
+            return a.reshape(-1, 1) @ b  # a vector counts as a column: column times row is a full matrix
         if a.ndim == 2 and b.ndim == 1 and a.shape[1] != b.size and a.shape[1] == 1:
             return a @ b.reshape(1, -1)
         return a @ b
@@ -702,6 +711,8 @@ class Product(Node):
                     if op == "/":
                         v = np.linalg.inv(np.atleast_2d(v)) if v.size > 1 else 1.0 / v
                     total = v if total is None else _matmul(total, v, "matrix product")
+                if total.ndim == 2 and total.shape[0] == 1 and total.size > 1:
+                    return [total.astype(float)]  # row times matrix stays a row
                 return [sig(total)]
             try:
                 total = u[0] if self.ops[0] == "*" else 1.0 / u[0]
@@ -804,8 +815,8 @@ _MATH = {
     "square": lambda u: u * u,
     "reciprocal": lambda u: 1.0 / u,
     "conj": lambda u: u,
-    "transpose": lambda u: sig(u.T),
-    "hermitian": lambda u: sig(u.T),
+    "transpose": lambda u: _transpose(u),
+    "hermitian": lambda u: _transpose(u),
     "sqrt": np.sqrt,
     "pow": np.power,
     "hypot": np.hypot,
@@ -1253,13 +1264,17 @@ class Saturation(Node):
     def out(self, t, u):
         v = u[0]
         side = self.latched(
-            lambda: np.where(v >= self.hi, 1, np.where(v <= self.lo, -1, 0)) + 0 * (self.hi + self.lo).astype(int)
+            lambda: np.where(v >= self.hi, 1, np.where(v <= self.lo, -1, 0))
+            + np.zeros(np.broadcast(self.hi, self.lo).shape, dtype=int)
         )
         return [np.where(side > 0, self.hi, np.where(side < 0, self.lo, v)).astype(float)]
 
     def zc(self, t, u):
-        both = u[0] + 0.0 * (self.hi + self.lo)
-        return list(np.ravel(both - self.hi)) + list(np.ravel(both - self.lo))
+        both = u[0] + np.zeros(np.broadcast(self.hi, self.lo).shape)
+        # an infinite limit is never reached: a large finite distance keeps the crossing search well defined
+        return list(np.clip(np.ravel(both - self.hi), -1e100, 1e100)) + list(
+            np.clip(np.ravel(both - self.lo), -1e100, 1e100)
+        )
 
 
 @block(

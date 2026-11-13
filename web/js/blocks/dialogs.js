@@ -250,6 +250,7 @@ export function settingsDialog(config) {
   };
   const solver = el("select", { "data-cfg": "Solver", "data-first": true }, (SOLVERS.some((s) => s[0] === cfg.Solver) ? SOLVERS : [[cfg.Solver, cfg.Solver], ...SOLVERS]).map(([v, text]) => el("option", { value: v, selected: v === cfg.Solver }, text)));
   const zc = el("input", { type: "checkbox", checked: String(cfg.ZeroCrossings).toLowerCase() !== "off" });
+  const loops = el("input", { type: "checkbox", checked: !["error", "off", "none"].includes(String(cfg.AlgebraicLoop ?? "solve").toLowerCase()) });
   const body = el(
     "div",
     { class: "bd-params" },
@@ -258,6 +259,7 @@ export function settingsDialog(config) {
     el("div", { class: "bd-two" }, field("MaxStep", "Largest step", "auto = 1/50 of the run"), field("FixedStep", "Fixed step", "for fixed-step solvers")),
     el("div", { class: "bd-two" }, field("RelTol", "Relative tolerance"), field("AbsTol", "Absolute tolerance")),
     el("label", { class: "bd-check" }, zc, "Find the exact time of events (zero crossings)"),
+    el("label", { class: "bd-check" }, loops, "Solve algebraic loops by iteration (off: a loop is an error)"),
     el("p", { class: "small muted" }, "Times and tolerances may be expressions with workspace variables. Variable-step solvers pick their step from the tolerances; fixed-step solvers use the fixed step.")
   );
   return openDialog({
@@ -277,6 +279,8 @@ export function settingsDialog(config) {
         cfg[input.dataset.cfg] = v;
       }
       cfg.ZeroCrossings = zc.checked ? "on" : "off";
+      if (!loops.checked) cfg.AlgebraicLoop = "error";
+      else delete cfg.AlgebraicLoop;
       return { value: cfg };
     },
   });

@@ -117,6 +117,11 @@ HELP = {
         "in the workspace of the function that calls sim. Called without an output, sim stores out, tout, yout and "
         "the To Workspace variables in the workspace. Errors name the block they come from.",
     ),
+    "Simulink.Variant": (
+        "v = Simulink.Variant('MODE == 2')",
+        "A variant control for imported block diagrams: a struct with the field Condition. A variant subsystem "
+        "whose choice names v as its control runs that choice when the condition is true in the workspace.",
+    ),
     "simset": (
         ["options = simset('Solver', 'ode4', 'FixedStep', 0.01)", "options = simset(options, name, value, ...)"],
         "Makes an options struct for sim(model, tspan, options). The fields are the settings sim accepts.",

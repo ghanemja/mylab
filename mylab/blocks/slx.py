@@ -226,6 +226,7 @@ class _Importer:
         if root is None:
             raise ModelError("This .slx file has no simulink/blockdiagram.xml part; it cannot be imported.")
         top = root.find("Model")
+        self.is_library = top is None
         if top is None:
             top = root.find("Library")
         if top is None:
@@ -339,6 +340,7 @@ class _Importer:
         self.open()
         st = self.stats
         model = Model(name)
+        model.library = self.is_library
         model.root = self.system(self.top_system, "", "")
         for p in self.top.findall("P"):
             if p.get("Name") in ("PreLoadFcn", "PostLoadFcn", "InitFcn", "StartFcn") and (p.text or "").strip():
@@ -534,10 +536,17 @@ class _Importer:
                 return blk
             if sf not in ("NONE", ""):
                 return unsupported(f"Stateflow block ({sf})")
-            if p.get("Variant", "off") == "on":
-                return unsupported("Variant Subsystem")
             sub = el.find("System")
             blk.type = "Subsystem"
+            if p.get("Variant", "off") == "on" and sub is not None:
+                # the choices are the subsystems inside; which one runs is decided when the model is compiled
+                choices = {}
+                for c in self._deref(sub).findall("Block"):
+                    if c.get("BlockType") == "SubSystem":
+                        choices[re.sub(r"\s+", " ", c.get("Name", "")).strip()] = _params(c).get("VariantControl", "").strip()
+                blk.extra["variants"] = choices
+                if p.get("VariantControlMode", "").strip().lower() == "label" or p.get("LabelModeActiveChoice"):
+                    blk.extra["variantLabel"] = p.get("LabelModeActiveChoice", "").strip()
             blk.system = (
                 self.system(self._deref(sub), path + "/", chart_prefix + name + "/") if sub is not None else System()
             )

@@ -52,6 +52,8 @@ def _chars_to_strings(v):
 
 def _convert_all(fn, name):
     def f(interp, args, nargout):
+        if not args and nargout == 0:
+            return ()  # [c{:}] = f(c{:}) with an empty list
         nargs(args, 1, None, name)
         if max(nargout, 1) > len(args):
             raise MatlabError(f"{name}: more outputs than inputs.")

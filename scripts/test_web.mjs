@@ -1809,6 +1809,21 @@ async function main() {
         window.mylab.editor.setValue(JSON.stringify(m));
       });
       await page.waitForSelector(".bd-svg .bd-block[data-name='Sum']");
+      // an algebraic loop is solved by iteration: the blocks get a warning and the model runs
+      await page.waitForSelector(".bd-svg .bd-block[data-name='Sum'].has-warning", { timeout: 20000 });
+      check((await page.locator(".bd-svg .bd-block.has-error").count()) === 0, "a loop that can be solved is a warning, not an error");
+      n = await runs();
+      await page.click("#bd-run");
+      await waitRun(n);
+      check(!/did not run/.test(await page.locator("#bd-progress").innerText()), "the model with the algebraic loop should run");
+      ok("an algebraic loop is solved at every step and marked with a warning");
+      // with the strict setting it is an error
+      await page.evaluate(() => {
+        const ed = window.mylab.app.blocks.editor;
+        const m = JSON.parse(ed.text());
+        m.config.AlgebraicLoop = "error";
+        window.mylab.editor.setValue(JSON.stringify(m));
+      });
       await page.waitForSelector(".bd-svg .bd-block[data-name='Sum'].has-error", { timeout: 20000 });
       check((await page.locator(".bd-svg .bd-block.has-error").count()) === 2, "both blocks of the algebraic loop should be marked while editing");
       n = await runs();

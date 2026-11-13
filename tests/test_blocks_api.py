@@ -271,6 +271,9 @@ def test_errors_reach_matlab_code_with_block_names(s):
         "add_block('blocks/Gain', 'a/G'); add_block('blocks/Outport', 'a/O'); add_line('a', 'C/1', 'S/1'); add_line('a', 'S/1', 'G/1');"  # noqa: E501
         "add_line('a', 'G/1', 'S/2'); add_line('a', 'G/1', 'O/1');",
     )
+    ok(s, "o = sim('a'); y = o.yout(end);")  # y = 1 - y is solved at every step
+    assert val(s, "y")[0, 0] == pytest.approx(0.5)
+    ok(s, "set_param('a', 'AlgebraicLoop', 'error');")
     r = s.run("sim('a');")
     assert "Algebraic loop" in r.error and "'S'" in r.error and "'G'" in r.error
     ok(s, "try, sim('a'); msg = ''; catch err, msg = err.message; id = err.identifier; end")

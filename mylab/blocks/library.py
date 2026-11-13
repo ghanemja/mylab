@@ -174,6 +174,7 @@ class Node:
     df: Any = True  # direct feedthrough: True, False, or a list per input
     sample = "inherit"  # "inherit", "cont", "const" or "param" (reads SampleTime)
     virtual = False
+    loop = None  # the algebraic loop this block is part of, if any (set by the simulator)
     nx = 0
     has_zc = False
     is_sink = False
