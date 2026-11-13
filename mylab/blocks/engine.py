@@ -27,7 +27,7 @@ import numpy as np
 from .library import BlockError, Node, find_type, sig
 from .blocks_basic import Display, Inport, Outport, Scope, Sink, ToWorkspace, XYGraph
 from .blocks_more import BusCreator, Gate, HeldOutput
-from .model import Block, Model, System
+from .model import Block, Line, Model, System
 
 ZERO = np.zeros(1)
 VARIABLE = {
@@ -101,7 +101,43 @@ class Context:
         self.interp = interp
         self.frame = frame
         self.scope = scope or {}
-        self.shared = shared if shared is not None else {"t0": 0.0, "tf": 10.0, "ext": {}, "cache": {}}
+        self.shared = shared if shared is not None else {"t0": 0.0, "tf": 10.0, "ext": {}, "cache": {}, "n": 0}
+        self.shared["n"] = self.shared.get("n", 0) + 1
+        self.serial = self.shared["n"]
+
+    def run_code(self, code: str, scope: dict) -> tuple[dict, str | None]:
+        """Run initialization code with ``scope`` as extra variables.
+
+        Returns the variables the code made or changed, and an error message
+        if it stopped early (what it had set until then is kept).
+        """
+        from ..errors import MatlabError
+        from ..interpreter import Frame
+        from ..parser import parse
+
+        interp = self.interp
+        src = interp.base
+        frame = Frame(interp, src.functions, name="mask initialization", file=src.file)
+        before = dict(src.vars)
+        frame.vars = dict(before)
+        frame.vars.update(self.scope)
+        frame.vars.update(scope)
+        start = dict(frame.vars)
+        error = None
+        out = interp.out
+        interp.out = lambda s: None
+        interp.frames.append(frame)
+        try:
+            interp.run_program(parse(code), frame)
+        except MatlabError as exc:
+            error = exc.message
+        except RecursionError:
+            error = "the code calls itself without end"
+        finally:
+            interp.frames.pop()
+            interp.out = out
+        changed = {k: v for k, v in frame.vars.items() if k not in start or start[k] is not v}
+        return changed, error
 
     def child(self, scope: dict) -> "Context":
         merged = dict(self.scope)
@@ -170,7 +206,7 @@ class Context:
         return program.body[0].expr
 
     def evaluate(self, expr: str) -> Any:
-        key = (expr, id(self.scope) if self.scope else 0)
+        key = (expr, self.serial if self.scope else 0)
         cache = self.shared["cache"]
         if key not in cache:
             try:  # plain numbers need no interpreter
@@ -216,6 +252,9 @@ class Context:
         main = next(iter(program.functions.values()))
         functions = {**self.interp.base.functions, **program.functions}
         interp = self.interp
+        # A block function named like a library function it wraps (angdiff calling angdiff) means the library one.
+        if main.name in interp.builtins or interp.find_file_function(main.name) is not None:
+            functions.pop(main.name, None)
 
         def call(args, nout):
             return interp.call_user_function(main, args, nout, functions, None)
@@ -285,6 +324,7 @@ class Compiled:
         self.diagnostics: list[dict] = []
         self.by_path: dict[str, Node] = {}
         self.taps: dict[str, LogTap] = {}
+        self.solve_loops = True
 
     def problem(
         self, level: str, message: str, path: str | None = None, port: int | None = None, kind: str = ""
@@ -296,6 +336,70 @@ class Compiled:
 
     def errors(self) -> list[dict]:
         return [d for d in self.diagnostics if d["level"] == "error"]
+
+
+def _active_variant(comp: Compiled, ctx: Context, path: str, inner: System, variants: dict, label: Any) -> System:
+    """The inside of a variant subsystem with only the active choice, wired to the ports by name."""
+    from ..values import Struct, is_true
+
+    def holds(control: str) -> bool:
+        v = ctx.evaluate(control)
+        if isinstance(v, Struct) and "Condition" in v.fields:  # a variant object: its condition is the test
+            from ..values import to_str
+
+            v = ctx.evaluate(to_str(v.get_field(0, "Condition")))
+        return bool(is_true(v))
+
+    active, failed = [], []
+    for name, control in variants.items():
+        c = str(control).strip()
+        if c in ("", "(default)"):
+            continue
+        if isinstance(label, str) and label:
+            ok = c == label
+        else:
+            try:
+                ok = holds(c)
+            except Exception as exc:
+                failed.append(f"{c}: {getattr(exc, 'message', exc)}")
+                ok = False
+        if ok:
+            active.append(name)
+    if not active:
+        active = [n for n, c in variants.items() if str(c).strip() == "(default)"][:1]
+    ports = [b for b in inner.blocks if getattr(find_type(b.type), "type", "") in ("Inport", "Outport")]
+    out = System()
+    out.blocks = list(ports)
+    if len(active) != 1:
+        controls = ", ".join(f"'{n}' when {c or '(no control)'}" for n, c in variants.items())
+        comp.problem(
+            "error",
+            f"'{path}': {'no choice' if not active else 'more than one choice'} of this variant subsystem is active "
+            f"({controls}). Exactly one control must be true."
+            + (" Controls that cannot be evaluated: " + "; ".join(failed[:3]) + "." if failed else ""),
+            path,
+            kind="variant",
+        )
+        return out
+    choice = inner.block(active[0])
+    if choice is None or choice.system is None:
+        return out
+    out.blocks.append(choice)
+    out.lines = [ln for ln in inner.lines if {ln.src[0], ln.dst[0]} <= {b.name for b in out.blocks}]
+    wired = {(ln.dst[0], ln.dst[1]) for ln in out.lines} | {(ln.src[0], ln.src[1]) for ln in out.lines}
+    for cb in choice.system.blocks:
+        kind = getattr(find_type(cb.type), "type", "")
+        if kind not in ("Inport", "Outport"):
+            continue
+        twin = next((b for b in ports if b.name == cb.name and getattr(find_type(b.type), "type", "") == kind), None)
+        if twin is None:
+            continue
+        k = int(float(cb.params.get("Port", "1") or 1))
+        if kind == "Inport" and (choice.name, k) not in wired:
+            out.lines.append(Line((twin.name, 1), (choice.name, k)))
+        elif kind == "Outport" and (twin.name, 1) not in wired:
+            out.lines.append(Line((choice.name, k), (twin.name, 1)))
+    return out
 
 
 def port_count(block: Block, kind: str) -> int:
@@ -329,6 +433,7 @@ def compile_model(
     comp = Compiled(model, ctx)
     cfg = dict(model.config)
     cfg.update(config or {})
+    comp.solve_loops = str(cfg.get("AlgebraicLoop", "solve")).strip().lower() not in ("error", "off", "none")
     try:
         ctx.shared["t0"] = _number(ctx, cfg.get("StartTime", "0"), "StartTime")
         ctx.shared["tf"] = _number(ctx, cfg.get("StopTime", "10"), "StopTime")
@@ -352,12 +457,15 @@ def compile_model(
             kind = cls.type
             if kind == "Subsystem":
                 inner = b.system or System()
+                variants = b.extra.get("variants")
+                if isinstance(variants, dict) and variants:
+                    inner = _active_variant(comp, sy.ctx, path, inner, variants, b.extra.get("variantLabel"))
                 conds = list(sy.conds)
                 gated = False
                 for ib in inner.blocks:
                     it = getattr(find_type(ib.type), "type", "")
-                    if it in ("EnablePort", "TriggerPort"):
-                        which = "enable" if it == "EnablePort" else "trigger"
+                    if it in ("EnablePort", "TriggerPort", "ActionPort"):
+                        which = "trigger" if it == "TriggerPort" else "enable"
                         g = Gate(
                             f"{path}/{ib.name}", which, ib.params.get("TriggerType", "rising").strip().lower(), ctx
                         )
@@ -382,12 +490,25 @@ def compile_model(
                                 kind="param",
                             )
                     child_ctx = sy.ctx.child(scope)
+                init = b.extra.get("maskInit")
+                if isinstance(init, str) and init.strip():
+                    made, err = child_ctx.run_code(init, {})
+                    if made:
+                        child_ctx = child_ctx.child(made)
+                    if err:
+                        comp.problem(
+                            "warning",
+                            f"'{path}': the mask initialization code stopped early ({err}). "
+                            "Variables it would have set after that point are missing.",
+                            path,
+                            kind="mask-init",
+                        )
                 child = _Sys(inner, path, sy, b, conds, child_ctx)
                 child.gated = gated
                 sy.children[b.name] = child
                 build(child)
                 continue
-            if kind in ("Goto", "From", "EnablePort", "TriggerPort"):
+            if kind in ("Goto", "From", "EnablePort", "TriggerPort", "ActionPort"):
                 if kind == "Goto":
                     gotos.setdefault(b.params.get("GotoTag", "A").strip(), []).append((sy, b))
                 continue
@@ -552,7 +673,7 @@ def compile_model(
                 for which in ("enable", "trigger"):
                     has = any(
                         getattr(find_type(ib.type), "type", "")
-                        == ("EnablePort" if which == "enable" else "TriggerPort")
+                        in (("EnablePort", "ActionPort") if which == "enable" else ("TriggerPort",))
                         for ib in child.system.blocks
                     )
                     if has and (b.name, which) not in sy.into:
@@ -660,6 +781,30 @@ def _resolve_rates(comp: Compiled) -> None:
         n.rate = spec[id(n)]
 
 
+class _Loop:
+    """An algebraic loop: blocks that need each other's outputs at the same instant.
+
+    ``torn`` are the outputs (block, port) taken as the unknowns. With values
+    for them the members can be computed one after the other in ``members``
+    order, which gives new values for the same outputs; the loop is solved
+    when both agree.
+    """
+
+    def __init__(self, members: list, torn: list):
+        self.members = members
+        self.torn = torn
+        self.paths = [n.path for n in members]
+        self.jac: np.ndarray | None = None
+        for n in members:
+            n.loop = self
+
+
+LOOP_HELP = (
+    "Break the loop with a block that has memory (Integrator, Unit Delay, Memory, Transfer Fcn with more poles "
+    "than zeros)."
+)
+
+
 def _sort(comp: Compiled) -> None:
     nodes = comp.nodes
     index = {id(n): i for i, n in enumerate(nodes)}
@@ -719,6 +864,8 @@ def _sort(comp: Compiled) -> None:
             if work:
                 parent = work[-1][0]
                 low[parent] = min(low[parent], low[v])
+    torn_edges: set[tuple[int, int]] = set()
+    comp_of = list(range(len(nodes)))
     for group in loops:
         members = set(group)
         # walk the cycle so the message reads in signal order
@@ -729,34 +876,108 @@ def _sort(comp: Compiled) -> None:
                 break
             chain.append(nxt[0])
         paths = [nodes[i].path for i in chain]
-        comp.diagnostics.append(
-            {
-                "level": "error",
-                "kind": "algebraic-loop",
-                "path": paths[0],
-                "paths": paths,
-                "message": "Algebraic loop: "
-                + " -> ".join(f"'{p}'" for p in paths + paths[:1])
-                + ". Each of these blocks needs the output of the one before it at the same instant, so there is "
-                "no order to compute them in. Break the loop with a block that has memory (Integrator, Unit Delay, "
-                "Memory, Transfer Fcn with more poles than zeros).",
-            }
-        )
-    if loops:
+        text = "Algebraic loop: " + " -> ".join(f"'{p}'" for p in paths + paths[:1])
+        text += ". Each of these blocks needs the output of the one before it at the same instant"
+        problem = None
+        if comp.solve_loops:
+            # Tear the loop: the back edges of a depth-first walk; without them the members have an order.
+            back: set[tuple[int, int]] = set()
+            state: dict[int, int] = {}
+            walk = [(min(group), 0)]
+            state[min(group)] = 1
+            while walk:
+                v, i = walk.pop()
+                inner = [w for w in succ[v] if w in members]
+                if i < len(inner):
+                    walk.append((v, i + 1))
+                    w = inner[i]
+                    if state.get(w, 0) == 1:
+                        back.add((v, w))
+                    elif state.get(w, 0) == 0:
+                        state[w] = 1
+                        walk.append((w, 0))
+                else:
+                    state[v] = 2
+            for v, w in back:
+                if any(g is nodes[v] for g in nodes[w].conds):
+                    problem = (
+                        f"; '{nodes[w].path}' is switched on and off by a signal that depends on its own output, "
+                        "which cannot be solved"
+                    )
+            torn_edges |= back
+            for i in group:
+                comp_of[i] = min(group)
+        if comp.solve_loops and problem is None:
+            comp.diagnostics.append(
+                {
+                    "level": "warning",
+                    "kind": "algebraic-loop",
+                    "path": paths[0],
+                    "paths": paths,
+                    "message": text + ". The loop is solved by iteration at every step, which costs time and can "
+                    "fail. " + LOOP_HELP,
+                }
+            )
+        else:
+            comp.diagnostics.append(
+                {
+                    "level": "error",
+                    "kind": "algebraic-loop",
+                    "path": paths[0],
+                    "paths": paths,
+                    "message": text + (problem or ", so there is no order to compute them in") + ". " + LOOP_HELP,
+                }
+            )
+    if comp.errors() and loops:
         return
-    # Kahn's algorithm, keeping the model's block order where the dependencies allow it.
+    # Kahn's algorithm, keeping the model's block order where the dependencies allow it. The blocks of a loop
+    # are kept together: the loop is one item in the order.
     import heapq
 
-    ready = [i for i in range(len(nodes)) if indeg[i] == 0]
-    heapq.heapify(ready)
-    order = []
-    while ready:
-        v = heapq.heappop(ready)
-        order.append(nodes[v])
+    def kahn(items: list[int], edges: dict[int, list[int]]) -> list[int]:
+        deg = {i: 0 for i in items}
+        for a in items:
+            for b in edges.get(a, ()):
+                deg[b] += 1
+        ready = [i for i in items if deg[i] == 0]
+        heapq.heapify(ready)
+        out = []
+        while ready:
+            v = heapq.heappop(ready)
+            out.append(v)
+            for w in edges.get(v, ()):
+                deg[w] -= 1
+                if deg[w] == 0:
+                    heapq.heappush(ready, w)
+        return out
+
+    outer: dict[int, list[int]] = {}
+    inner_edges: dict[int, list[int]] = {}
+    for v in range(len(nodes)):
         for w in succ[v]:
-            indeg[w] -= 1
-            if indeg[w] == 0:
-                heapq.heappush(ready, w)
+            if comp_of[v] != comp_of[w]:
+                outer.setdefault(comp_of[v], []).append(comp_of[w])
+            elif v != w and (v, w) not in torn_edges:
+                inner_edges.setdefault(v, []).append(w)
+    grouped: dict[int, list[int]] = {}
+    for i, c in enumerate(comp_of):
+        grouped.setdefault(c, []).append(i)
+    order = []
+    for c in kahn(sorted(grouped), outer):
+        if len(grouped[c]) == 1 and (c, c) not in torn_edges:
+            order.append(nodes[c])
+            continue
+        inside = kahn(grouped[c], inner_edges)
+        members = [nodes[i] for i in inside]
+        torn = []
+        for v, w in sorted(torn_edges):
+            if comp_of[v] != c:
+                continue
+            for k, link in enumerate(nodes[w].inputs):
+                if link is not None and link[0] is nodes[v] and nodes[w].is_df(k) and (link[0], link[1]) not in torn:
+                    torn.append((link[0], link[1]))
+        _Loop(members, torn)
+        order.extend(members)
     comp.order = order
 
 
@@ -802,6 +1023,9 @@ class Sim:
         self.minor = True
         self.logging = False
         self.latch = False
+        self.lenient = False
+        self.deferred = 0
+        self.failing: set = set()
         self.initializing = True
         self.step_no = 0
         self.hits: set = set()
@@ -828,6 +1052,10 @@ class Sim:
         self._init_states()
 
     # -- helpers ----------------------------------------------------------------------
+    def note(self, message: str) -> None:
+        """A warning to show with the results."""
+        self.comp.problem("warning", message, None, kind="run")
+
     def request_stop(self, path: str) -> None:
         self.stop_requested = path
 
@@ -863,6 +1091,10 @@ class Sim:
         init = self.initializing
         hits = self.hits
         for n in self.order:
+            if n.loop is not None:
+                if n is n.loop.members[0]:
+                    self._solve_loop(n.loop, t, x, minor)
+                continue
             if not init:
                 if n.conds and not self.active(n):
                     continue
@@ -874,9 +1106,138 @@ class Sim:
             try:
                 n.y = n.out(t, self.gather(n))
             except Exception as exc:
-                raise self._fail(n, exc) from None
+                if not self.lenient:
+                    raise self._fail(n, exc) from None
+                # while signal sizes are still being worked out, an input may not have its final size yet
+                self.deferred += 1
+                self.failing.add(id(n))
+                if not n.y:
+                    n.y = [ZERO] * max(n.n_out(), 1)
             if not minor:
                 n.stamp = self.step_no
+
+    def _one(self, n: Node, t: float, x: np.ndarray) -> None:
+        """Compute one block (as in eval), for the blocks of an algebraic loop."""
+        if not self.initializing:
+            if n.conds and not self.active(n):
+                return
+            r = n.rate
+            if r is not None and (self.minor or r == "const" or r not in self.hits):
+                return
+        if n.nx:
+            n.x = x[n.xo : n.xo + n.nx]
+        try:
+            n.y = n.out(t, self.gather(n))
+        except Exception as exc:
+            if not self.lenient:
+                raise self._fail(n, exc) from None
+            self.deferred += 1
+            self.failing.add(id(n))
+            if not n.y:
+                n.y = [ZERO] * max(n.n_out(), 1)
+        if not self.minor:
+            n.stamp = self.step_no
+
+    def _solve_loop(self, lp: _Loop, t: float, x: np.ndarray, minor: bool) -> None:
+        """Newton's method on the torn signals of an algebraic loop; then one real pass over its blocks."""
+        members, torn = lp.members, lp.torn
+
+        def run() -> None:
+            for n in members:
+                self._one(n, t, x)
+
+        def read() -> list:
+            return [np.asarray(n.y[p], float) if p < len(n.y) else np.zeros((1, 1)) for n, p in torn]
+
+        if self.lenient:  # sizes are still being worked out: two plain passes carry them around the loop
+            self.minor = True
+            run()
+            run()
+            self.minor = minor
+            return
+        self.minor = True  # trial passes must not change what blocks remember
+        try:
+            values = read()
+            shapes = [v.shape for v in values]
+            sizes = [v.size for v in values]
+            z = np.concatenate([v.ravel() for v in values]) if values else np.zeros(0)
+            if not np.all(np.isfinite(z)):
+                z = np.zeros(z.size)
+
+            def put(zz: np.ndarray) -> None:
+                off = 0
+                for (n, p), shp, size in zip(torn, shapes, sizes):
+                    ys = list(n.y)
+                    ys[p] = zz[off : off + size].reshape(shp).copy()
+                    n.y = ys
+                    off += size
+
+            def residual(zz: np.ndarray) -> np.ndarray:
+                put(zz)
+                run()
+                new = read()
+                if [v.shape for v in new] != shapes:
+                    raise SimError(
+                        "The signal sizes in the algebraic loop "
+                        + " -> ".join(f"'{p}'" for p in lp.paths)
+                        + " change during the run, so it cannot be solved.",
+                        lp.paths[0],
+                        lp.paths,
+                    )
+                return np.concatenate([v.ravel() for v in new]) - zz
+
+            def size_of(v: np.ndarray) -> float:
+                return float(np.max(np.abs(v))) if v.size and np.all(np.isfinite(v)) else math.inf
+
+            f = residual(z)
+            fresh = False
+            for _ in range(40):
+                if size_of(f) <= 1e-10 * (1.0 + size_of(z)):
+                    break
+                if lp.jac is None or lp.jac.shape != (z.size, z.size):
+                    jac = np.zeros((z.size, z.size))
+                    for i in range(z.size):
+                        h = 1e-7 * max(1.0, abs(z[i]))
+                        zi = z.copy()
+                        zi[i] += h
+                        jac[:, i] = (residual(zi) - f) / h
+                    lp.jac, fresh = jac, True
+                if not np.all(np.isfinite(lp.jac)):
+                    break
+                try:
+                    dz = np.linalg.solve(lp.jac, -f)
+                except np.linalg.LinAlgError:
+                    dz = np.linalg.lstsq(lp.jac, -f, rcond=None)[0]
+                lam, z2, f2 = 1.0, z, f
+                while lam > 1e-4:
+                    z2 = z + lam * dz
+                    f2 = residual(z2)
+                    if size_of(f2) < size_of(f):
+                        break
+                    lam *= 0.5
+                if size_of(f2) < size_of(f):
+                    if size_of(f2) > 0.5 * size_of(f) and not fresh:
+                        lp.jac = None  # the slope has changed: measure it again
+                    z, f = z2, f2
+                    fresh = False
+                elif fresh:
+                    break  # a fresh slope and still no progress
+                else:
+                    lp.jac = None
+            if not size_of(f) <= 1e-7 * (1.0 + size_of(z)):
+                lp.jac = None
+                raise SimError(
+                    "The algebraic loop "
+                    + " -> ".join(f"'{p}'" for p in lp.paths + lp.paths[:1])
+                    + f" could not be solved at t = {t:g}: the iteration did not converge (the signals still "
+                    f"disagree by {size_of(f):.3g}). The loop may have no solution, or several. " + LOOP_HELP,
+                    lp.paths[0],
+                    lp.paths,
+                )
+            put(z)
+        finally:
+            self.minor = minor
+        run()
 
     def deriv(self, t: float, x: np.ndarray) -> np.ndarray:
         self.eval(t, x, True)
@@ -926,7 +1287,8 @@ class Sim:
         for n in order:
             n.setup(None)
         x = np.zeros(0)
-        for _attempt in range(8):
+        failed = -1
+        for _attempt in range(12):
             off = 0
             for n in order:
                 n.xo = off  # type: ignore[attr-defined]
@@ -938,9 +1300,17 @@ class Sim:
                     if x0.size != n.nx:
                         raise SimError(f"'{n.path}': the initial state has the wrong size.", n.path)
                     x[n.xo : n.xo + n.nx] = x0
+            self.lenient = True
+            self.deferred = 0
+            self.failing = set()
             self.eval(self.t0, x, True)
+            before = self.deferred
             self.eval(self.t0, x, True)  # second pass: inputs that come from blocks later in the order
-            changed = False
+            self.lenient = False
+            changed = self.deferred - before not in (0, failed)  # still getting further
+            failed = self.deferred - before
+            if self._push_hints():
+                changed = True
             for n in order:
                 shapes = [None if link is None else np.shape(u) for link, u in zip(n.inputs, self.gather(n))]
                 try:
@@ -952,6 +1322,7 @@ class Sim:
                 break
         else:
             raise SimError("The signal sizes do not settle. Check the initial values of blocks in feedback loops.")
+        self.eval(self.t0, x, True)  # from here on an error is an error
         late = False
         for n in order:
             fn = getattr(n, "late_init", None)
@@ -977,6 +1348,36 @@ class Sim:
             if isinstance(n.rate, tuple):
                 self.rates.setdefault(n.rate, 0)
         self.initializing = False
+
+    def _push_hints(self) -> bool:
+        """Tell blocks with a scalar initial value which size the blocks they feed need. True if a size changed."""
+        changed = False
+
+        def push(node: Node, shape: tuple, depth: int) -> None:
+            nonlocal changed
+            if depth > 25:
+                return
+            if node.expandable:
+                ys = node.y
+                if node.hint != shape and ys and all(np.size(v) == 1 for v in ys):
+                    node.hint = shape
+                    changed = True
+            elif node.same_shape:
+                for link in node.inputs:
+                    if link is not None and np.size(link[0].y[link[1]] if link[1] < len(link[0].y) else ZERO) == 1:
+                        push(link[0], shape, depth + 1)
+
+        for n in self.order:
+            for k, link in enumerate(n.inputs):
+                if link is None:
+                    continue
+                try:
+                    want = n.want_in(k) or (n.want_min(k) if id(n) in self.failing else None)
+                except Exception:
+                    want = None
+                if want and np.size(link[0].y[link[1]] if link[1] < len(link[0].y) else ZERO) == 1:
+                    push(link[0], tuple(want), 0)
+        return changed
 
     # -- major step -------------------------------------------------------------------
     def hit_time(self, rate: tuple) -> float:
@@ -1029,6 +1430,22 @@ class Sim:
     keep_states = False
 
     def run(self) -> None:
+        # Function files do not change while a model runs: look each name up on the path only once.
+        interp = self.ctx.interp
+        lookup, memo = interp.find_file_function, {}
+
+        def remembered(name: str) -> Any:
+            if name not in memo:
+                memo[name] = lookup(name)
+            return memo[name]
+
+        interp.find_file_function = remembered
+        try:
+            self._run()
+        finally:
+            del interp.find_file_function
+
+    def _run(self) -> None:
         cfg = self.cfg
         ctx = self.ctx
         name = str(cfg.get("Solver", "ode45")).strip()
@@ -1247,6 +1664,42 @@ def _external(spec: Any, n_ports: int) -> dict:
     return fns
 
 
+def run_callbacks(model: Model, interp: Any, names: tuple = ()) -> list[str]:
+    """Run the model's set-up code in the base workspace. Returns messages about callbacks that failed.
+
+    PreLoadFcn and PostLoadFcn run once per loaded model, InitFcn and StartFcn before every simulation.
+    """
+    import os
+
+    from ..errors import MatlabError
+
+    todo = list(names)
+    if not todo:
+        seen = getattr(model, "_preloaded", None)
+        if seen is None or seen() is not interp:  # once per model and workspace
+            import weakref
+
+            todo += ["PreLoadFcn", "PostLoadFcn"]
+            model._preloaded = weakref.ref(interp)  # type: ignore[attr-defined]
+        todo += ["InitFcn", "StartFcn"]
+    notes = []
+    folder = os.path.dirname(os.path.abspath(model.file)) if model.file else None
+    added = bool(folder) and folder not in interp.path
+    if added:
+        interp.path.append(folder)
+    for name in todo:
+        code = model.callbacks.get(name, "")
+        if not code.strip():
+            continue
+        try:
+            interp.execute(code)
+        except MatlabError as exc:
+            notes.append(f"The model's {name} callback stopped with an error: {exc.message}")
+        except Exception as exc:  # a parse error or similar in code we did not write
+            notes.append(f"The model's {name} callback could not be run: {exc}")
+    return notes
+
+
 def simulate(
     model: Model,
     interp: Any = None,
@@ -1257,12 +1710,32 @@ def simulate(
     keep_states: bool = False,
 ) -> SimResult:
     """Compile and run a model; returns the logged data."""
-    comp = compile_model(model, interp, frame, strict=True, config=config)
+    if interp is None:
+        from ..interpreter import Interpreter
+
+        interp = Interpreter(out=lambda s: None)
+    notes = run_callbacks(model, interp)
+    try:
+        comp = compile_model(model, interp, frame, strict=True, config=config)
+    except SimError as exc:
+        if notes:  # the likely cause: set-up code of the model that did not run through
+            exc.message += " Earlier: " + notes[0]
+            exc.args = (exc.message,)
+        raise
+    for n in notes:
+        comp.problem("warning", n, None, kind="callback")
     if external_input is not None:
         comp.ctx.shared["ext"] = _external(external_input, 0)
     sim = Sim(comp, config, on_step)
     sim.keep_states = keep_states
-    sim.run()
+    try:
+        sim.run()
+    except SimError as exc:
+        early = [d["message"] for d in comp.diagnostics if d.get("kind") in ("mask-init", "callback")]
+        if early and "Earlier:" not in exc.message:
+            exc.message += " Earlier: " + early[0]
+            exc.args = (exc.message,)
+        raise
     return sim.result()
 
 

@@ -160,6 +160,12 @@ export function countPorts(rule, params) {
     return Math.max(val.replace(/[|\s]/g, "").length, 1);
   }
   if (kind === "csv") return Math.max(val.split(",").filter((s) => s.trim()).length, 1);
+  if (kind === "csv0") return val.split(",").filter((s) => s.trim()).length;
+  if (kind === "dlt") {
+    const whole = { element: 0, vector: 1, "2dmatrix": 2 }[key(params[rule[2]] ?? "")] || 0;
+    const n = Math.floor(Number(val));
+    return Number.isFinite(n) && val !== "" ? Math.max(n - whole, 0) : 1;
+  }
   if (kind === "sig") {
     const s = signature(val);
     return rule[2] === "in" ? s.ins.length : s.outs.length;
@@ -186,7 +192,7 @@ export function portCounts(block) {
   if (t.type === "Subsystem") {
     return {
       in: innerOfType(block, "Inport").length, out: innerOfType(block, "Outport").length,
-      enable: innerOfType(block, "EnablePort").length > 0, trigger: innerOfType(block, "TriggerPort").length > 0,
+      enable: innerOfType(block, "EnablePort").length + innerOfType(block, "ActionPort").length > 0, trigger: innerOfType(block, "TriggerPort").length > 0,
     };
   }
   const p = paramsOf(block);

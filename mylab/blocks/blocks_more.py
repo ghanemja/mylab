@@ -137,7 +137,21 @@ _INDEX_PARAMS = [
 
 @block("Selector", "Routing", "Picks elements of a vector (or rows and columns of a matrix) by index.", icon="u(i)")
 class Selector(_Indexed):
-    params = _INDEX_PARAMS
+    params = _INDEX_PARAMS + [P("InputPortWidth", "-1", "Width of the input, if known (-1: any)")]
+
+    def want_in(self, port):
+        if port or self.ndim != 1:
+            return None
+        try:
+            n = int(self.scalar("InputPortWidth"))
+        except BlockError:
+            return None
+        return (n,) if n > 1 else None
+
+    def want_min(self, port):
+        i = self.idx[0] if self.ndim == 1 else None
+        return (int(i.max()) + 1,) if isinstance(i, np.ndarray) and i.size and i.max() > 0 else None
+
     nin = ["if", "IndexOptions", "Index vector (port)", 2, 1]
 
     def init(self):
@@ -230,7 +244,12 @@ class Merge(Node):
             if link is not None and link[0].stamp > stamp:
                 best, stamp = k, link[0].stamp
         if stamp < 0 or best is None:
-            return [self.y0]
+            y0 = self.y0
+            if y0.size == 1:  # a scalar initial output takes the size of the signals merged
+                big = max((np.asarray(v) for v in u), key=lambda v: v.size, default=y0)
+                if big.size > 1:
+                    y0 = np.broadcast_to(y0.ravel()[0], big.shape).astype(float)
+            return [y0]
         if not self.sim.minor:
             self.last = best
         return [u[best]]
@@ -317,7 +336,7 @@ class Gate(Node):
                 self.active = False
             return []
         v = u[0]
-        if self.kind == "enable":
+        if self.kind != "trigger":
             self.active = bool(np.any(v > 0))
         else:
             p = self.prev
@@ -338,6 +357,8 @@ class Gate(Node):
 
 
 class HeldOutput(Node):
+    same_shape = True
+
     """Output port of a conditionally run subsystem: keeps its value while the subsystem is idle."""
 
     def __init__(self, path, raw, ctx):
@@ -368,6 +389,10 @@ class HeldOutput(Node):
 class Fcn(Node):
     params = [P("Expr", "sin(u(1))", "Expression", "text")]
     time_varying = True
+
+    def want_min(self, port):
+        idx = [int(k) for k in re.findall(r"\bu\s*[\[(]\s*(\d+)\s*[\])]", self.text("Expr"))]
+        return (max(idx),) if idx and max(idx) > 1 else None
 
     def init(self):
         expr = self.text("Expr")

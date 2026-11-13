@@ -35,10 +35,15 @@ what mylab printed, and what you expected.
 - About 1,390 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
 - Block-diagram models (mylab Blocks): `sim`, `new_system`, `add_block`,
   `add_line`, `set_param`, `get_param`, `find_system`, `linmod`, `trim` and a
-  library of 96 blocks, with a diagram editor in the web app and import of
-  simple `.slx` files. See [BLOCKS.md](BLOCKS.md) for what is covered and
-  what is not (no code generation, state charts, physical modelling,
-  S-functions or algebraic-loop solving; `.mdl` files are not read).
+  library of 107 blocks, with a diagram editor in the web app and import of
+  `.slx` files. See [BLOCKS.md](BLOCKS.md) for what is covered and what is
+  not (no code generation, state charts, physical modelling or compiled
+  S-functions; `.mdl` files are not read).
+- Conversions between rotation matrices, Euler angles, quaternions,
+  axis-angle and homogeneous transforms (`eul2rotm`, `rotm2quat`,
+  `tform2eul`, `trvec2tform`…), `rotx`/`roty`/`rotz` and `angdiff`. The
+  `coder.*` directives are accepted and do nothing; `coder.ceval` is an
+  error.
 
 ## Not supported yet
 

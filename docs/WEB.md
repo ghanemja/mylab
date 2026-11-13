@@ -227,7 +227,7 @@ A file whose name ends in `.mlb.json` is a block-diagram model. It opens in a
 diagram editor: drag blocks from the library, draw lines between their ports,
 press **Run**, and watch the scopes. The results land in the Workspace, so
 your scripts can plot them. Start with Ctrl+Shift+P → *New block diagram…* or
-one of the *Example model* entries. Simple `.slx` files can be imported.
+one of the *Example model* entries. `.slx` files can be imported.
 [BLOCKS.md](BLOCKS.md) describes the editor, the blocks, and how the same
 models are built and run from code with `add_block` and `sim`.
 

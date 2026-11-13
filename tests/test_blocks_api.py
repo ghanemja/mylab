@@ -271,6 +271,9 @@ def test_errors_reach_matlab_code_with_block_names(s):
         "add_block('blocks/Gain', 'a/G'); add_block('blocks/Outport', 'a/O'); add_line('a', 'C/1', 'S/1'); add_line('a', 'S/1', 'G/1');"  # noqa: E501
         "add_line('a', 'G/1', 'S/2'); add_line('a', 'G/1', 'O/1');",
     )
+    ok(s, "o = sim('a'); y = o.yout(end);")  # y = 1 - y is solved at every step
+    assert val(s, "y")[0, 0] == pytest.approx(0.5)
+    ok(s, "set_param('a', 'AlgebraicLoop', 'error');")
     r = s.run("sim('a');")
     assert "Algebraic loop" in r.error and "'S'" in r.error and "'G'" in r.error
     ok(s, "try, sim('a'); msg = ''; catch err, msg = err.message; id = err.identifier; end")
@@ -553,3 +556,27 @@ def test_save_model_and_load_model_helpers(tmp_path):
     path = str(tmp_path / "h.mlb.json")
     save_model(m, path)
     assert load_model(path).to_json() == m.to_json() and not m.dirty
+
+
+def test_the_web_app_runs_a_model_with_its_callbacks_and_reports_loops(s):
+    from mylab.blocks import web
+    from mylab.blocks.model import build
+
+    m = build(
+        "cb",
+        [("C", "Constant", {"Value": "level"}), ("S", "Sum", {"Inputs": "+-"}), ("K", "Gain"), ("Scope", "Scope")],
+        ["C/1 -> S/1", "S/1 -> K/1", "K/1 -> S/2", "K/1 -> Scope/1"],
+        StopTime="1",
+    )
+    m.callbacks["InitFcn"] = "level = 8;"
+    marks = web.check(s, {"model": m.dumps()})["diagnostics"]  # checking a model does not run its code
+    assert any("level" in d["message"] and d["level"] == "error" for d in marks)
+    out = web.run(s, {"model": m.dumps()})
+    assert out["ok"] and out["error"] is None, out
+    assert out["scopes"][0]["signals"][0][-1] == [4.0] or out["scopes"][0]["signals"][0][-1] == 4.0  # y = 8 - y
+    loop = [d for d in out["diagnostics"] if d["kind"] == "algebraic-loop"]
+    assert len(loop) == 1 and loop[0]["level"] == "warning"
+    m.callbacks["InitFcn"] = "level = no_such_thing;"
+    ok(s, "clear level")
+    out = web.run(s, {"model": m.dumps()})
+    assert not out["ok"] and "InitFcn callback stopped" in out["error"]["message"]

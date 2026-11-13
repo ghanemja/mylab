@@ -727,6 +727,13 @@ def test_algebraic_loop_is_reported_with_the_blocks():
         [("C", "Constant"), ("Sum", "Sum", {"Inputs": "+-"}), ("K", "Gain", {"Gain": "2"}), ("Out", "Outport")],
         ["C/1 -> Sum/1", "Sum/1 -> K/1", "K/1 -> Sum/2", "K/1 -> Out/1"],
     )
+    res = run(m)  # y = 2 (1 - y) is solved at every step
+    assert np.allclose(out(res), 2 / 3)
+    diags = compile_model(m, strict=False).diagnostics
+    loop = [d for d in diags if d["kind"] == "algebraic-loop"]
+    assert len(loop) == 1 and loop[0]["level"] == "warning" and set(loop[0]["paths"]) == {"Sum", "K"}
+    assert "solved by iteration" in loop[0]["message"] and "Memory" in loop[0]["message"]
+    m.config["AlgebraicLoop"] = "error"  # the strict setting: a loop is an error
     with pytest.raises(SimError) as info:
         run(m)
     assert "Algebraic loop" in info.value.message
@@ -735,6 +742,71 @@ def test_algebraic_loop_is_reported_with_the_blocks():
     diags = compile_model(m, strict=False).diagnostics
     loop = [d for d in diags if d["kind"] == "algebraic-loop"]
     assert len(loop) == 1 and loop[0]["level"] == "error"
+
+
+def test_algebraic_loops_are_solved_by_newton_iteration():
+    # nonlinear: y = cos(y)
+    m = build(
+        "nl",
+        [("F", "Fcn", {"Expr": "cos(u(1))"}), ("G", "Gain"), ("Out", "Outport")],
+        ["F/1 -> G/1", "G/1 -> F/1", "G/1 -> Out/1"],
+        StopTime="1",
+    )
+    assert out(run(m))[-1] == pytest.approx(0.7390851332151607, abs=1e-9)
+    # a vector loop inside a dynamic model: e = sin(t) - K e, so e = sin(t) / (1 + K), integrated over half a period
+    m = build(
+        "tv",
+        [
+            ("S", "SineWave"),
+            ("Sum", "Sum", {"Inputs": "+-"}),
+            ("K", "Gain", {"Gain": "[0.5 2]"}),
+            ("I", "Integrator"),
+            ("Out", "Outport"),
+        ],
+        ["S/1 -> Sum/1", "Sum/1 -> K/1", "K/1 -> Sum/2", "Sum/1 -> I/1", "I/1 -> Out/1"],
+        StopTime="pi",
+        RelTol="1e-8",
+        AbsTol="1e-10",
+    )
+    assert np.allclose(run(m).y[-1], [2 / 1.5, 2 / 3], atol=1e-6)
+    # two loops through the same block: e = 3 - 2 e - 3 e
+    m = build(
+        "two",
+        [
+            ("C", "Constant", {"Value": "3"}),
+            ("S1", "Sum", {"Inputs": "+--"}),
+            ("A", "Gain", {"Gain": "2"}),
+            ("B", "Gain", {"Gain": "3"}),
+            ("Out", "Outport"),
+        ],
+        ["C/1 -> S1/1", "S1/1 -> A/1", "A/1 -> S1/2", "S1/1 -> B/1", "B/1 -> S1/3", "S1/1 -> Out/1"],
+    )
+    assert out(run(m))[-1] == pytest.approx(0.5)
+    # a loop with a switch-like block: y = max(u - y, 0) for u = 3 gives 1.5
+    m = build(
+        "sat",
+        [
+            ("C", "Constant", {"Value": "3"}),
+            ("S", "Sum", {"Inputs": "+-"}),
+            ("L", "Saturation", {"LowerLimit": "0", "UpperLimit": "inf"}),
+            ("Out", "Outport"),
+        ],
+        ["C/1 -> S/1", "S/1 -> L/1", "L/1 -> S/2", "L/1 -> Out/1"],
+    )
+    assert out(run(m))[-1] == pytest.approx(1.5)
+
+
+def test_an_algebraic_loop_without_a_solution_is_a_clear_error():
+    m = build(
+        "bad",  # y = y + 1
+        [("C", "Constant"), ("Sum", "Sum", {"Inputs": "++"}), ("G", "Gain"), ("Out", "Outport")],
+        ["C/1 -> Sum/1", "Sum/1 -> G/1", "G/1 -> Sum/2", "G/1 -> Out/1"],
+    )
+    with pytest.raises(SimError) as info:
+        run(m)
+    msg = info.value.message
+    assert "could not be solved at t = 0" in msg and "did not converge" in msg and "'Sum' -> 'G' -> 'Sum'" in msg
+    assert set(info.value.paths) == {"Sum", "G"} and "Memory" in msg
 
 
 def test_loop_broken_by_memory_or_integrator_is_fine():
@@ -762,9 +834,11 @@ def test_transfer_function_loop_with_direct_feedthrough_is_algebraic():
         ["G/1 -> K/1", "K/1 -> G/1", "G/1 -> T/1"],
     )
     with pytest.raises(SimError, match="Algebraic loop"):
-        run(m)
+        run(m, config={"AlgebraicLoop": "error"})
+    assert any(d["kind"] == "algebraic-loop" for d in compile_model(m, strict=False).diagnostics)
     m.root.block("G").params["Numerator"] = "[1]"
     run(m)
+    assert not any(d["kind"] == "algebraic-loop" for d in compile_model(m, strict=False).diagnostics)
 
 
 def test_subsystem_nesting_gives_the_same_result():

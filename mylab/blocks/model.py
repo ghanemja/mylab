@@ -177,12 +177,18 @@ class Model:
         self.dirty = False
         self.notes: list[str] = []  # messages from an importer
         self.description = ""
+        self.callbacks: dict[str, str] = {}  # code run before a simulation: PreLoadFcn, PostLoadFcn, InitFcn, StartFcn
+        self.library = False  # a collection of blocks to link to, not a model to run
 
     def to_json(self) -> dict:
         d: dict[str, Any] = {"format": FORMAT, "name": self.name}
         if self.description:
             d["description"] = self.description
         d["config"] = dict(self.config)
+        if self.callbacks:
+            d["callbacks"] = dict(self.callbacks)
+        if self.library:
+            d["library"] = True
         d.update(self.root.to_json())
         return d
 
@@ -195,6 +201,8 @@ class Model:
             raise ModelError(f"Unknown model format '{fmt}'. This version of mylab reads '{FORMAT}'.")
         m = cls(str(name or d.get("name") or "untitled"))
         m.description = str(d.get("description", ""))
+        m.callbacks = {str(k): str(v) for k, v in (d.get("callbacks") or {}).items()}
+        m.library = bool(d.get("library", False))
         m.config.update({k: _text(v) for k, v in (d.get("config") or {}).items()})
         m.root = System.from_json(d)
         return m

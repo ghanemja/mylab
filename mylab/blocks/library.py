@@ -117,6 +117,14 @@ def count_ports(rule: Any, params: dict) -> int:
         return max(len(val.replace("|", "").replace(" ", "")), 1)
     if kind == "csv":
         return max(len([s for s in val.split(",") if s.strip()]), 1)
+    if kind == "csv0":  # like csv, but an empty text counts as none
+        return len([s for s in val.split(",") if s.strip()])
+    if kind == "dlt":  # direct lookup table: one index per dimension that is not returned whole
+        whole = {"element": 0, "vector": 1, "2dmatrix": 2}.get(_key(str(params.get(rule[2], ""))), 0)
+        try:
+            return max(int(float(val)) - whole, 0)
+        except ValueError:
+            return 1
     if kind == "sig":  # ports of a function block from its first 'function' line
         ins, outs = signature(val)
         return len(ins) if rule[2] == "in" else len(outs)
@@ -166,10 +174,14 @@ class Node:
     df: Any = True  # direct feedthrough: True, False, or a list per input
     sample = "inherit"  # "inherit", "cont", "const" or "param" (reads SampleTime)
     virtual = False
+    loop = None  # the algebraic loop this block is part of, if any (set by the simulator)
     nx = 0
     has_zc = False
     is_sink = False
     time_varying = False  # the output can change even while all inputs are constant
+    expandable = False  # has an initial value that is stretched to the size of the signal
+    same_shape = False  # the output has the shape of the inputs (sizes can be traced back through it)
+    hint: Any = None  # shape a block downstream needs from this block (see want_in)
 
     def __init__(self, path: str, raw: dict, ctx: Any):
         self.path = path
@@ -302,6 +314,19 @@ class Node:
     def update(self, t: float, u: list) -> None:
         pass
 
+    def want_in(self, port: int) -> Any:
+        """Shape this block needs at an input, or None. Used to size blocks upstream whose initial value is a scalar."""
+        return None
+
+    def want_min(self, port: int) -> Any:
+        """Like want_in, but only a smallest size (used when nothing else says how wide the signal is)."""
+        return None
+
+    def wanted(self, shapes: list | None, port: int = 0) -> Any:
+        """Input shape for sizing a state: the real one, or the hint from downstream while the input is still scalar."""
+        want = shapes[port] if shapes else None
+        return self.hint if self.hint is not None else want
+
     def zc(self, t: float, u: list) -> list:
         return []
 
@@ -326,6 +351,7 @@ def elementwise(
 
     class Elementwise(Node):
         params = plist
+        same_shape = type_name not in ("SumOfElements", "ProductOfElements", "Width")
         has_zc = zc_fn is not None
 
         def out(self, t, u):
@@ -359,4 +385,4 @@ def catalog() -> dict:
     return {"categories": CATEGORIES, "blocks": out}
 
 
-from . import blocks_basic, blocks_dynamic, blocks_more  # noqa: E402,F401  (register the block types)
+from . import blocks_basic, blocks_dynamic, blocks_more, blocks_extra, blocks_sfun  # noqa: E402,F401  (register the block types)

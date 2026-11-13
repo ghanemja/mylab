@@ -7,6 +7,7 @@ it is skipped otherwise.
 """
 
 import json
+import math
 import os
 import zipfile
 from pathlib import Path
@@ -16,7 +17,7 @@ import pytest
 
 from mylab.api import Session
 from mylab.blocks import ModelError, compile_model, load_model, simulate
-from mylab.blocks.import_report import check_file, main, summarize, survey
+from mylab.blocks.import_report import check_file, defaults_table, main, summarize, survey
 from mylab.blocks.slx import import_slx
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -161,7 +162,7 @@ def test_import_split_layout_subsystems_and_settings(tmp_path):
 def test_unsupported_blocks_are_named_not_dropped(tmp_path):
     body = (
         block("Constant", "C", 1, "[0, 0, 30, 30]")
-        + block("S-Function", "Engine", 2, "[60, 0, 120, 40]", P("Ports", "[1, 2]"))
+        + block("ForIterator", "Engine", 2, "[60, 0, 120, 40]", P("Ports", "[1, 2]"))
         + block(
             "Reference",
             "Arm",
@@ -171,7 +172,7 @@ def test_unsupported_blocks_are_named_not_dropped(tmp_path):
             P("SourceBlock", "robotlib/Arm"),
             P("SourceType", "Arm"),
         )
-        + block("Lookup_n-D", "Map", 4, "[150, 0, 200, 40]", P("NumberOfTableDimensions", "3"))
+        + block("Lookup_n-D", "Map", 4, "[150, 0, 200, 40]", P("TableSource", "Input port"))
         + block("Terminator", "T", 5, "[240, 0, 260, 20]")
         + line("1#out:1", "2#in:1")
         + line("2#out:1", "5#in:1")
@@ -182,16 +183,20 @@ def test_unsupported_blocks_are_named_not_dropped(tmp_path):
         + "</Line>"
     )
     m = import_slx(write_slx(tmp_path / "odd.slx", body))
-    assert m.import_report["unsupported"] == {"S-Function": 1, "Library link: robotlib/Arm": 1, "3-D Lookup Table": 1}
+    assert m.import_report["unsupported"] == {
+        "ForIterator": 1,
+        "Library link: robotlib/Arm": 1,
+        "Lookup Table with the table from an input port": 1,
+    }
     assert (
         m.import_report["blocks"] == 5 and m.import_report["converted"] == 2 and m.import_report["skipped_lines"] == 1
     )
-    assert "3 of 5 blocks have no equivalent" in m.notes[0] and "S-Function (1)" in m.notes[0]
+    assert "3 of 5 blocks have no equivalent" in m.notes[0] and "ForIterator (1)" in m.notes[0]
     assert "physical" in m.notes[1]
     eng = m.root.block("Engine")
-    assert eng.type == "S-Function" and eng.extra["ports"] == [1, 2] and len(m.root.lines) == 3
+    assert eng.type == "ForIterator" and eng.extra["ports"] == [1, 2] and len(m.root.lines) == 3
     errors = [d["message"] for d in compile_model(m, strict=False).errors()]
-    assert any("no block type 'S-Function'" in e for e in errors) and len(errors) == 3
+    assert any("no block type 'ForIterator'" in e for e in errors) and len(errors) == 3
     row = check_file(str(tmp_path / "odd.slx"))
     assert row["import"] == "partial" and row["simulate"] == "no: unsupported blocks"
 
@@ -343,9 +348,9 @@ def test_load_system_and_sim_read_slx_files(tmp_path, monkeypatch):
     assert abs(float(s.interp.get_var("y")[0, 0]) - (1 - np.exp(-6))) < 1e-3 and s.interp.get_var("n")[0, 0] == 7
     again = load_model(str(tmp_path / "plant.mlb.json"))  # saved in mylab's own format
     assert [b.name for b in again.root.blocks] == ["Step", "Sum", "K", "Int", "Scope", "Out1"]
-    write_slx(tmp_path / "odd.slx", block("S-Function", "X", 1, "[0, 0, 30, 30]"))
+    write_slx(tmp_path / "odd.slx", block("ForIterator", "X", 1, "[0, 0, 30, 30]"))
     r = s.run("load_system('odd');")
-    assert "Warning: 1 of 1 blocks have no equivalent in mylab Blocks" in r.output and "S-Function (1)" in r.output
+    assert "Warning: 1 of 1 blocks have no equivalent in mylab Blocks" in r.output and "ForIterator (1)" in r.output
 
 
 def test_bad_archives_are_refused(tmp_path):
@@ -388,7 +393,7 @@ def test_import_report_tool(tmp_path, capsys):
         + block("Terminator", "T", 2, "[60, 0, 80, 20]")
         + line("1#out:1", "2#in:1"),
     )
-    write_slx(tmp_path / "odd.slx", block("S-Function", "X", 1, "[0, 0, 30, 30]"))
+    write_slx(tmp_path / "odd.slx", block("ForIterator", "X", 1, "[0, 0, 30, 30]"))
     (tmp_path / "junk.slx").write_text("not a zip")
     rows = {r["file"]: r for r in survey(str(tmp_path))}
     assert rows["good.slx"]["import"] == "full" and rows["good.slx"]["simulate"] == "yes"
@@ -396,14 +401,275 @@ def test_import_report_tool(tmp_path, capsys):
         rows["needs.slx"]["import"] == "full"
         and rows["needs.slx"]["simulate"] == "no: needs workspace variables or toolbox functions"
     )
-    assert rows["odd.slx"]["import"] == "partial" and rows["odd.slx"]["unsupported"] == {"S-Function": 1}
+    assert rows["odd.slx"]["import"] == "partial" and rows["odd.slx"]["unsupported"] == {"ForIterator": 1}
     assert rows["junk.slx"]["import"] == "failed" and "not a readable" in rows["junk.slx"]["detail"]
     s = summarize(list(rows.values()))
     assert s["import"] == {"full": 2, "partial": 1, "failed": 1} and s["simulate"]["yes"] == 1
     assert main([str(tmp_path), "--json", str(tmp_path / "out.json")]) == 0
     text = capsys.readouterr().out
-    assert "4 files. Import: failed 1, full 2, partial 1" in text and "unsupported: S-Function (1)" in text
+    assert "4 files. Import: failed 1, full 2, partial 1" in text and "unsupported: ForIterator (1)" in text
     assert json.loads((tmp_path / "out.json").read_text())["summary"]["files"] == 4
+
+
+# -- structure and set-up of imported models -------------------------------------------------------
+
+
+def _io_system(prefix, inner):
+    return (
+        block("Inport", "u", f"{prefix}::1", "[0, 0, 30, 14]")
+        + inner
+        + block("Outport", "y", f"{prefix}::3", "[160, 0, 190, 14]")
+        + line(f"{prefix}::1#out:1", f"{prefix}::2#in:1")
+        + line(f"{prefix}::2#out:1", f"{prefix}::3#in:1")
+    )
+
+
+def test_variant_subsystems_run_the_active_choice(tmp_path):
+    def choice(name, sid, gain, control):
+        inner = _io_system(sid, block("Gain", "K", f"{sid}::2", "[60, 0, 90, 30]", P("Gain", gain)))
+        return block("SubSystem", name, sid, "[60, 0, 120, 40]", P("VariantControl", control), extra=f"<System>{inner}</System>")  # noqa: E501
+
+    variant = (
+        block("Inport", "u", "20::1", "[0, 0, 30, 14]")
+        + choice("Slow", "21", "2", "MODE == 1")
+        + choice("Fast", "22", "30", "fast_variant")
+        + block("Outport", "y", "20::3", "[160, 0, 190, 14]")
+    )  # no lines inside: the choices are wired to the ports by name
+    body = (
+        block("Constant", "C", 1, "[0, 0, 30, 30]", P("Value", "5"))
+        + block("SubSystem", "Plant", 20, "[60, 0, 140, 40]", P("Variant", "on"), extra=f"<System>{variant}</System>")
+        + block("Outport", "O", 3, "[200, 10, 230, 24]")
+        + line("1#out:1", "20#in:1")
+        + line("20#out:1", "3#in:1")
+    )
+    m = import_slx(write_slx(tmp_path / "var.slx", body))
+    assert m.import_report["unsupported"] == {}
+    assert m.root.block("Plant").extra["variants"] == {"Slow": "MODE == 1", "Fast": "fast_variant"}
+    s = Session()
+    s.run("MODE = 1; fast_variant = Simulink.Variant('MODE == 2');")
+    assert simulate(m, s.interp, config={"StopTime": "1"}).y[-1, 0] == 10
+    s.run("MODE = 2;")
+    assert simulate(m, s.interp, config={"StopTime": "1"}).y[-1, 0] == 150
+    s.run("MODE = 3;")
+    with pytest.raises(Exception, match="no choice of this variant subsystem is active"):
+        simulate(m, s.interp, config={"StopTime": "1"})
+    again = type(m).from_json(json.loads(m.dumps()))  # the choice survives saving in mylab's format
+    s.run("MODE = 1;")
+    assert simulate(again, s.interp, config={"StopTime": "1"}).y[-1, 0] == 10
+
+
+def test_model_callbacks_and_mask_initialization_run_before_the_simulation(tmp_path):
+    inner = _io_system("7", block("Gain", "K", "7::2", "[60, 0, 90, 30]", P("Gain", "twice")))
+    mask = (
+        '<Mask><MaskParameter Name="k" Type="edit"><Value>base_gain</Value></MaskParameter>'
+        "<Initialization>twice = 2 * k;\nerror('later lines do not matter');</Initialization></Mask>"
+    )
+    body = (
+        block("Constant", "C", 1, "[0, 0, 30, 30]", P("Value", "offset"))
+        + block("SubSystem", "Scale", 7, "[60, 0, 140, 40]", extra=f"{mask}<System>{inner}</System>")
+        + block("Outport", "O", 3, "[200, 10, 230, 24]")
+        + line("1#out:1", "7#in:1")
+        + line("7#out:1", "3#in:1")
+    )
+    (tmp_path / "plant_data.m").write_text("base_gain = 4;\n")
+    cfg = P("PreLoadFcn", "plant_data") + P("InitFcn", "offset = 3;") + P("StopFcn", "error('never run')")
+    m = import_slx(write_slx(tmp_path / "cb.slx", body, config=cfg))
+    assert m.callbacks == {"PreLoadFcn": "plant_data", "InitFcn": "offset = 3;"}
+    assert m.root.block("Scale").extra["maskInit"].startswith("twice = 2 * k;")
+    assert simulate(m, config={"StopTime": "1"}).y[-1, 0] == 24  # the script next to the model is found
+    again = type(m).from_json(json.loads(m.dumps()))
+    assert again.callbacks == m.callbacks
+    m.callbacks["InitFcn"] = "offset = undefined_thing + 1;"
+    with pytest.raises(Exception) as info:
+        simulate(m, config={"StopTime": "1"})
+    assert "offset" in str(info.value) and "InitFcn callback stopped" in str(info.value)
+
+
+def test_library_blocks_that_moved_or_are_replaced_by_equivalents(tmp_path):
+    lib_inner = _io_system("1", block("Gain", "G", "1::2", "[60, 0, 90, 30]", P("Gain", "7")))
+    lib = block("SubSystem", "New name", 1, "[0, 0, 80, 40]", extra=f"<System>{lib_inner}</System>")
+    with zipfile.ZipFile(tmp_path / "movedlib.slx", "w") as z:
+        z.writestr(
+            "simulink/blockdiagram.xml",
+            f'<?xml version="1.0"?><ModelInformation><Library><System>{lib}</System></Library></ModelInformation>',
+        )
+        z.writestr(
+            "simulink/forwardingTable.xml",
+            '<?xml version="1.0"?><ForwardingTable><Entry><OldBlock>movedlib/Old name</OldBlock>'
+            "<NewBlock>movedlib/New name</NewBlock></Entry></ForwardingTable>",
+        )
+    assert import_slx(str(tmp_path / "movedlib.slx")).library is True
+    body = (
+        block("Constant", "C", 1, "[0, 0, 30, 30]", P("Value", "[1 0.5]"))
+        + block("Reference", "Old", 2, "[60, 0, 140, 40]", P("SourceBlock", "movedlib/Old name"), P("SourceType", "SubSystem"))  # noqa: E501
+        + block("Outport", "O", 3, "[200, 10, 230, 24]")
+        + block(
+            "Reference",
+            "Car",
+            4,
+            "[60, 100, 180, 160]",
+            P("Ports", "[2, 2]"),
+            P("SourceBlock", "robotmobilelib/Bicycle Kinematic Model"),
+            P("SourceType", "Bicycle Kinematic Model"),
+            extra="<InstanceData>" + P("WheelBase", "2") + P("VehicleInputs", "Vehicle Speed & Steering Angle") + "</InstanceData>",  # noqa: E501
+        )
+        + block("Constant", "v", 5, "[0, 100, 30, 120]", P("Value", "1"))
+        + block("Constant", "steer", 6, "[0, 140, 30, 160]", P("Value", "0"))
+        + block("Outport", "pose", 7, "[220, 110, 250, 124]", P("Port", "2"))
+        + block("Terminator", "T", 8, "[220, 140, 240, 160]")
+        + block(
+            "Reference",
+            "Movie",
+            9,
+            "[220, 200, 260, 240]",
+            P("Ports", "[1]"),
+            P("SourceBlock", "visionsinks/Video Viewer"),
+            P("SourceType", "Video Viewer"),
+        )
+        + block("SliderBlock", "Knob", 10, "[0, 300, 60, 330]")
+        + line("1#out:1", "2#in:1")
+        + line("2#out:1", "3#in:1")
+        + line("5#out:1", "4#in:1")
+        + line("6#out:1", "4#in:2")
+        + line("4#out:1", branches=[("7#in:1",), ("9#in:1",)])
+        + line("4#out:2", "8#in:1")
+    )
+    path = write_slx(tmp_path / "uses2.slx", body)
+    m = import_slx(path)
+    assert m.library is False and m.import_report["unsupported"] == {}
+    assert m.root.block("Old").system.block("G").params["Gain"] == "7"  # found through the forwarding table
+    car = m.root.block("Car")
+    assert car.type == "Subsystem" and car.extra["mask"]["L"] == "2"
+    assert m.root.block("Movie").type == "Viewer" and m.root.block("Knob") is None
+    notes = " ".join(m.notes)
+    assert "replaced by a subsystem with the same equations" in notes and "only draws" in notes and "dashboard" in notes
+    r = simulate(m, config={"StopTime": "2", "RelTol": "1e-8"})
+    assert np.allclose(r.y[-1], [7, 3.5, 2, 0, 0], atol=1e-6)  # driving straight at 1 m/s for 2 s
+    row = check_file(path)
+    assert row["simulate"] == "yes (with stand-ins)" and row["standins"] == 1 and row["library"] is False
+    lib_row = check_file(str(tmp_path / "movedlib.slx"))
+    assert lib_row["import"] == "full" and lib_row["simulate"] == "library: not a model to run"
+
+
+def test_if_blocks_s_functions_and_large_tables_are_imported(tmp_path):
+    def action(sid, gain):
+        inner = (
+            block("Inport", "u", f"{sid}::1", "[0, 0, 30, 14]")
+            + block("ActionPort", "Action Port", f"{sid}::4", "[60, 40, 90, 60]")
+            + block("Gain", "K", f"{sid}::2", "[60, 0, 90, 30]", P("Gain", gain))
+            + block("Outport", "y", f"{sid}::3", "[160, 0, 190, 14]")
+            + line(f"{sid}::1#out:1", f"{sid}::2#in:1")
+            + line(f"{sid}::2#out:1", f"{sid}::3#in:1")
+        )
+        return block("SubSystem", f"A{sid}", sid, "[100, 0, 160, 40]", extra=f"<System>{inner}</System>")
+
+    body = (
+        block("Constant", "C", 1, "[0, 0, 30, 30]", P("Value", "-2"))
+        + block("If", "If", 2, "[40, 0, 80, 40]", P("Ports", "[1, 2]"), P("IfExpression", "u1 < 0"))
+        + action(11, "10")
+        + action(12, "100")
+        + block("Merge", "Merge", 3, "[200, 0, 220, 40]", P("Ports", "[2, 1]"))
+        + block("Outport", "O", 4, "[260, 10, 290, 24]")
+        + block("S-Function", "Plant", 5, "[0, 100, 60, 140]", P("Ports", "[1, 1]"), P("FunctionName", "missing_mex"))
+        + block("Terminator", "T", 6, "[100, 100, 120, 120]")
+        + block(
+            "Lookup_n-D",
+            "Map",
+            7,
+            "[0, 200, 60, 240]",
+            P("Ports", "[3, 1]"),
+            P("NumberOfTableDimensions", "3"),
+            P("Table", "reshape(0:7, 2, 2, 2)"),
+            P("BreakpointsForDimension1", "[0 1]"),
+            P("BreakpointsForDimension2", "[0 1]"),
+            P("BreakpointsForDimension3", "[0 1]"),
+        )
+        + block("Outport", "O2", 8, "[100, 210, 130, 224]", P("Port", "2"))
+        + line("1#out:1", branches=[("2#in:1",), ("11#in:1",), ("12#in:1",), ("5#in:1",), ("7#in:1",), ("7#in:2",), ("7#in:3",)])  # noqa: E501
+        + line("2#out:1", "11#ifaction")
+        + line("2#out:2", "12#ifaction")
+        + line("11#out:1", "3#in:1")
+        + line("12#out:1", "3#in:2")
+        + line("3#out:1", "4#in:1")
+        + line("5#out:1", "6#in:1")
+        + line("7#out:1", "8#in:1")
+    )
+    m = import_slx(write_slx(tmp_path / "ifs.slx", body))
+    assert m.import_report["unsupported"] == {}
+    assert m.root.block("Plant").type == "SFunction" and m.root.block("Map").type == "LookupTableND"
+    assert m.root.block("Map").params["Breakpoints"].count("[0 1]") == 3
+    # the S-function has no .m file here: it is compiled code, which is reported by name and not replaced
+    with pytest.raises(Exception, match="missing_mex"):
+        simulate(m, config={"StopTime": "1"})
+    row = check_file(str(tmp_path / "ifs.slx"))
+    assert row["simulate"].startswith("no:") and "missing_mex" in row["detail"]
+    m.root.blocks.remove(m.root.block("Plant"))
+    m.root.blocks.remove(m.root.block("T"))
+    m.root.lines = [ln for ln in m.root.lines if "Plant" not in (ln.src[0], ln.dst[0])]
+    r = simulate(m, config={"StopTime": "1"})
+    assert r.y[-1, 0] == -20 and r.y[-1, 1] == pytest.approx(-14)  # the if branch; the table continued outside
+
+
+def test_report_finds_set_up_scripts_in_the_sources_of_the_repository(tmp_path):
+    repo = tmp_path / "files" / "owner__repo" / "models"
+    repo.mkdir(parents=True)
+    write_slx(
+        repo / "needs.slx",
+        block("Constant", "C", 1, "[0, 0, 30, 30]", P("Value", "plant.gain * helper_fn(2)"))
+        + block("Outport", "O", 2, "[60, 0, 80, 20]")
+        + line("1#out:1", "2#in:1"),
+    )
+    src = tmp_path / "sources" / "owner__repo"
+    (src / "scripts").mkdir(parents=True)
+    (src / "lib").mkdir()
+    (src / "scripts" / "init_plant.m").write_text("plant.gain = 3;\n")
+    (src / "scripts" / "other.m").write_text("unrelated = 1;\n")
+    (src / "lib" / "helper_fn.m").write_text("function y = helper_fn(x)\ny = 10 * x;\n")
+    rows = survey(str(tmp_path / "files"), sources=str(tmp_path / "sources"), keep_results=True)
+    assert len(rows) == 1 and rows[0]["simulate"] == "yes", rows[0]
+    assert rows[0]["setup"] == [os.path.join("scripts", "init_plant.m")]
+    assert rows[0]["result"].y[-1, 0] == 60
+    assert summarize(rows)["with_setup"] == 1
+    without = survey(str(tmp_path / "files"))
+    assert without[0]["simulate"] == "no: needs workspace variables or toolbox functions"
+    assert without[0]["missing"] == ["plant"]
+
+
+def test_defaults_table_compares_listed_defaults_with_the_importer(tmp_path, capsys):
+    defaults = (
+        '<BlockParameterDefaults><Block BlockType="Gain">'
+        + P("Gain", "1")
+        + '</Block><Block BlockType="Constant">'
+        + P("Value", "7")
+        + "</Block></BlockParameterDefaults>"
+    )
+    write_slx(tmp_path / "d.slx", FIRST_ORDER, defaults=defaults)
+    rows = {(r["block"], r["parameter"]): r for r in defaults_table(str(tmp_path))}
+    assert rows[("Gain", "Gain")]["agree"] and rows[("Gain", "Gain")]["common"] == "2"
+    assert not rows[("Constant", "Value")]["agree"] and rows[("Constant", "Value")]["ours"] == "1"
+    assert main([str(tmp_path), "--defaults"]) == 0
+    assert "!! Constant.Value: files list '7'" in capsys.readouterr().out
+
+
+def test_function_block_code_is_found_when_names_contain_line_breaks(tmp_path):
+    chart = (
+        '<?xml version="1.0"?><Stateflow><machine><Children><chart id="2">'
+        + P("name", "Wave\nforce/Excitation \nForce")
+        + "<Children><state><eml>"
+        + P("script", "function y = fcn(u)\ny = 3 * u;\n")
+        + "</eml></state></Children></chart></Children></machine></Stateflow>"
+    )
+    fcn = block("SubSystem", "Excitation \nForce", "9::2", "[60, 0, 120, 40]", P("SFBlockType", "MATLAB Function"))
+    body = (
+        block("Constant", "C", 1, "[0, 0, 30, 30]", P("Value", "5"))
+        + block("SubSystem", "Wave\nforce", 9, "[50, 0, 110, 40]", extra=f"<System>{_io_system('9', fcn)}</System>")
+        + block("Outport", "O", 3, "[200, 10, 230, 24]")
+        + line("1#out:1", "9#in:1")
+        + line("9#out:1", "3#in:1")
+    )
+    m = import_slx(write_slx(tmp_path / "nl.slx", body, parts={"simulink/stateflow.xml": chart}))
+    assert m.import_report["unsupported"] == {}
+    assert simulate(m, config={"StopTime": "1"}).y[-1, 0] == 15
 
 
 # -- the real files (only when they have been downloaded) ------------------------------------------
@@ -436,25 +702,39 @@ def test_models_list_matches_the_manifest():
 
 @needs_corpus
 def test_real_files_import_and_simulate_at_the_documented_rates():
-    rows = survey(str(_cache()), time_limit=60)
+    # The documented numbers come from a run with 400 s per model. Here the limit is short, so the models that
+    # spend minutes in interpreted function blocks count as "time limit"; the bounds below allow for that.
+    src = _sources()
+    rows = survey(str(_cache()), time_limit=25, sources=str(src) if src else None)
     s = summarize(rows)
     assert s["files"] == 82
     # every file is read: none fails, and nothing is dropped silently
     assert s["import"].get("failed", 0) == 0
-    assert s["import"]["full"] >= 33 and s["import"]["full"] + s["import"]["partial"] == 82
+    assert s["import"]["full"] >= 50 and s["import"]["full"] + s["import"]["partial"] == 82
+    libraries = [r for r in rows if r["simulate"] == "library: not a model to run"]
+    assert len(libraries) == 14 and all(r["library"] for r in libraries)
     for r in rows:
         if r["import"] == "partial":
             assert r["unsupported"] and all(k and v > 0 for k, v in r["unsupported"].items()), r["file"]
-            assert r["simulate"] == "no: unsupported blocks"
-    assert s["simulate"].get("yes", 0) >= 14
+            assert r["simulate"] in ("no: unsupported blocks", "library: not a model to run")
+        # a model with a stand-in subsystem is never counted as a plain "yes"
+        assert not (r["simulate"] == "yes" and r["standins"]), r["file"]
     assert not any(v.startswith("no: internal error") for v in s["simulate"])
     ran = {r["file"].replace(os.sep, "/") for r in rows if r["simulate"] == "yes"}
-    for name in (
+    stand = {r["file"].replace(os.sep, "/") for r in rows if r["simulate"] == "yes (with stand-ins)"}
+    must = [
         "ivaquero__book-control/matlab/control_pi.slx",
         "ivaquero__book-control/matlab/vibration.slx",
         "petercorke__RVC3-MATLAB/toolbox/sl_sea.slx",
         "cybergalactic__MSS/SIMULINK/mssSimulinkDemos/demoKalmanWavefilterAutop.slx",
-    ):
+    ]
+    if src is None:  # without the repositories' own .m files fewer models have what they need
+        assert len(ran) + len(stand) >= 18
+    else:
+        assert len(ran) >= 18 and len(stand) >= 6
+        must += ["cybergalactic__MSS/SIMULINK/mssSimulinkDemos/demoDSRVdepthControl.slx"]
+        assert "petercorke__RVC3-MATLAB/toolbox/sl_pursuit.slx" in stand
+    for name in must:
         assert name in ran, name
 
 
@@ -480,3 +760,121 @@ def test_real_files_keep_positions_routes_and_subsystems():
     assert len(subs) >= 5 and big.import_report["libraries"] == ["mssSimulink"] and big.import_report["linked"] >= 3
     again = type(big).from_json(json.loads(big.dumps()))
     assert again.to_json() == big.to_json()
+
+
+@needs_corpus
+def test_parameter_defaults_listed_in_the_real_files_agree_with_the_importer():
+    rows = defaults_table(str(_cache()))
+    assert len(rows) >= 15
+    assert [f"{r['block']}.{r['parameter']}" for r in rows if not r["agree"]] == []
+
+
+# -- sanity checks on real models --------------------------------------------------------------------
+#
+# The results cannot be compared with the original program. Where a model has an obvious expected
+# behaviour (a textbook response, a controller that must reach its setpoint), that is checked instead.
+
+
+def _sources():
+    d = Path(os.environ.get("MYLAB_CORPUS_CACHE") or Path.home() / ".cache" / "mylab-corpus")
+    return d if (d / "cybergalactic__MSS").is_dir() and (d / "petercorke__RVC3-MATLAB").is_dir() else None
+
+
+needs_sources = pytest.mark.skipif(
+    _cache() is None or _sources() is None,
+    reason="model files or repository sources not downloaded: run the fetch tools in datasets/matlab-corpus/tools",
+)
+
+
+def _run_real(rel, limit=120):
+    src = _sources()
+    row = check_file(str(_cache() / rel), limit, str(src / rel.split("/")[0]) if src else None)
+    assert row["simulate"].startswith("yes"), row
+    return row["result"]
+
+
+def _scope(res, name, k=0, signal=0):
+    sc = res.scopes[name]
+    data = np.asarray(sc["signals"][signal]["data"], float)
+    return np.asarray(sc["t"], float), data.reshape(len(sc["t"]), -1)[:, k]
+
+
+BOOK = "ivaquero__book-control/matlab/"
+RVC = "petercorke__RVC3-MATLAB/toolbox/"
+MSS = "cybergalactic__MSS/SIMULINK/mssSimulinkDemos/"
+
+
+@needs_corpus
+def test_textbook_models_give_the_textbook_responses():
+    # free vibration x'' + 2 zeta w x' + w^2 x = 0 from x = 5 with zeta = 2, w = 1 (overdamped): exact solution
+    t, x = _scope(_run_real(BOOK + "vibration.slx"), "Scope")
+    r1, r2 = -2 + math.sqrt(3), -2 - math.sqrt(3)
+    assert np.allclose(x, 5 * (r2 * np.exp(r1 * t) - r1 * np.exp(r2 * t)) / (r2 - r1), atol=2e-3)
+    # the same without damping and with a constant force: x'' + x = 1, so x = 1 + 4 cos t
+    t, x = _scope(_run_real(BOOK + "vibration2.slx"), "Scope")
+    assert np.allclose(x, 1 + 4 * np.cos(t), atol=5e-3)
+    # P, I and PI control of 1/(s + 1) with a unit setpoint: P leaves the error 1/(1 + K), the others none
+    res = _run_real(BOOK + "control_pi.slx")
+    finals = [_scope(res, "Scope", k)[1][-1] for k in range(4)]
+    assert finals[0] == 1 and finals[1] == pytest.approx(0.5, abs=1e-3)
+    assert finals[2] == pytest.approx(1, abs=0.01) and finals[3] == pytest.approx(1, abs=1e-3)
+    # gain 2 around 1/((s+1)(s+2)): steady state 2*0.5/(1 + 2*0.5); with a compensator of gain 9: 9/(1 + 9)
+    res = _run_real(BOOK + "compensator_lag.slx")
+    assert _scope(res, "Scope", 0)[1][-1] == pytest.approx(0.5, abs=2e-3)
+    assert _scope(res, "Scope", 2)[1][-1] == pytest.approx(0.9, abs=5e-3)
+    t, y = _scope(res, "Scope", 0)  # the plain loop against its closed-loop transfer function 2/(s^2 + 3 s + 4)
+    wd, sg = math.sqrt(4 - 2.25), 1.5
+    assert np.allclose(y, 0.5 * (1 - np.exp(-sg * t) * (np.cos(wd * t) + sg / wd * np.sin(wd * t))), atol=2e-3)
+    # tracking a staircase with x'' + 2 x' + x = r: just before each change the output has reached the level
+    t, r = _scope(_run_real(BOOK + "lqr_track.slx"), "Scope", 0)
+    _, x = _scope(_run_real(BOOK + "lqr_track.slx"), "Scope", 1)
+    for level, t_end in zip([3, 1, 4, 2, 1], [20, 40, 60, 80, 100]):
+        k = np.searchsorted(t, t_end - 1e-9) - 1
+        assert r[k] == level and x[k] == pytest.approx(level, abs=2e-3)
+    # an observer: the estimates converge to the states
+    res = _run_real(BOOK + "observer_lb.slx")
+    for name in ("z1", "z2"):
+        a, b = _scope(res, name, 0)[1], _scope(res, name, 1)[1]
+        assert abs(a[-1] - b[-1]) < 2e-3 and abs(a[0] - b[0]) in (0, 1)
+    # a stabilizing nonlinear controller: the states go to rest from 10 and never grow
+    res = _run_real(BOOK + "control_nonlinear.slx")
+    for k in range(3):
+        x = _scope(res, "x_scope", k)[1]
+        assert x[0] == 10 and abs(x[-1]) < 0.3 and np.max(np.abs(x)) <= 10 + 1e-9
+
+
+@needs_sources
+def test_vehicle_and_ship_controllers_reach_their_targets():
+    # (these use a stand-in subsystem for the bicycle model of a toolbox library: the same equations)
+    res = _run_real(RVC + "sl_driveline.slx")  # steer onto a line: the distance to it goes to zero
+    d = _scope(res, "d")[1]
+    assert abs(d[0]) > 0.4 and abs(d[-1]) < 1e-2
+    assert _scope(res, "heading")[1][-1] == pytest.approx(math.atan(0.5), abs=1e-2)  # the direction of the line
+    res = _run_real(RVC + "sl_drivepoint.slx")  # drive to a point: after turning round, the distance only shrinks
+    xy = np.asarray(next(o for o in res.outports if o["path"] == "xy")["data"], float).reshape(-1, 2)
+    dist = np.hypot(xy[:, 0], xy[:, 1])
+    assert dist[0] > 7 and dist[-1] < 0.5 and np.all(np.diff(dist[len(dist) // 2 :]) < 0)
+    res = _run_real(RVC + "sl_pursuit.slx")  # follow a moving goal at the look-ahead distance of 5
+    assert _scope(res, "distance")[1][-1] == pytest.approx(5, abs=0.2)
+    assert 0 <= np.min(_scope(res, "velocity")[1])
+    res = _run_real(RVC + "sl_lanechange.slx")  # a lane change ends parallel to where it started
+    q = np.asarray(next(o for o in res.outports if o["path"] == "q")["data"], float).reshape(-1, 3)
+    assert abs(q[-1, 2]) < 1e-3 and q[-1, 1] > 0.5 and q[-1, 0] > 5
+    # a heading autopilot with a Kalman filter that removes the wave motion: the ship turns to 30 degrees
+    res = _run_real(MSS + "demoKalmanWavefilterAutop.slx")
+    name = "psi_d, psi and psi_ship"
+    assert _scope(res, name, 0)[1][-1] == pytest.approx(30, abs=1e-3)  # the reference model has settled
+    assert _scope(res, name, 1)[1][-1] == pytest.approx(30, abs=1.5)  # the heading
+    assert _scope(res, name, 2)[1][-1] == pytest.approx(30, abs=1.5)  # the filter's estimate of it
+    assert np.max(np.abs(_scope(res, name, 2)[1])) < 40
+    res = _run_real(MSS + "demoPassiveWavefilterAutopilot1.slx")  # the same task with a passive observer
+    assert _scope(res, name, 1)[1][-1] == pytest.approx(30, abs=1.5)
+    assert _scope(res, name, 2)[1][-1] == pytest.approx(30, abs=1.5)
+    # a motor speed loop with proportional control: the speed follows the demand of 50 with a small lag
+    res = _run_real(RVC + "sl_vloop_test.slx")
+    w_ref, w = _scope(res, "w*/w", 0)[1], _scope(res, "w*/w", 1)[1]
+    assert w_ref[-1] == 50 and 48 < w[-1] < 50 and np.max(w) < 51
+    # depth control of a submersible: from the surface towards 50 m without overshoot
+    res = _run_real(MSS + "demoDSRVdepthControl.slx")
+    z, zd = _scope(res, "z", 0)[1], _scope(res, "z", 1)[1]
+    assert zd[-1] == 50 and 45 < z[-1] <= 50.5 and np.max(z) <= 50.5

@@ -105,8 +105,10 @@ class SineWave(Source):
         P("Bias", "0", "Bias"),
         P("Frequency", "1", "Frequency (rad/s)"),
         P("Phase", "0", "Phase (rad)"),
+        P("TimeSource", "Use simulation time", "Time", options=["Use simulation time", "Use external signal"]),
         SAMPLE("0"),
     ]
+    nin = ["if", "TimeSource", "Use external signal", 1, 0]
 
     def init(self):
         self.a, self.b, self.f, self.ph = (
@@ -117,6 +119,8 @@ class SineWave(Source):
         )
 
     def out(self, t, u):
+        if u:  # time comes from the input
+            t = u[0]
         return [self.a * np.sin(self.f * t + self.ph) + self.b]
 
 
@@ -252,8 +256,9 @@ class _Random(Source):
         return self.read_sample("SampleTime", None)
 
     def init(self):
-        seed = int(self.scalar("Seed")) % (2**32)
-        self.rng = np.random.RandomState(seed)
+        seeds = self.num("Seed")  # a vector of seeds gives a vector signal, one stream per element
+        self.seed_shape = np.zeros(seeds.shape if seeds.size > 1 else (1,))
+        self.rng = np.random.RandomState([int(v) % (2**32) for v in np.ravel(seeds)])
         self.prepare()
         self.val = self.draw() * 0.0
 
@@ -271,7 +276,7 @@ class RandomNumber(_Random):
         self.mean, self.sd = self.num("Mean"), np.sqrt(self.num("Variance"))
 
     def draw(self):
-        shape = np.broadcast(self.mean, self.sd).shape
+        shape = np.broadcast(self.mean, self.sd, self.seed_shape).shape
         return self.mean + self.sd * self.rng.standard_normal(shape)
 
 
@@ -288,7 +293,7 @@ class UniformRandomNumber(_Random):
         self.lo, self.hi = self.num("Minimum"), self.num("Maximum")
 
     def draw(self):
-        shape = np.broadcast(self.lo, self.hi).shape
+        shape = np.broadcast(self.lo, self.hi, self.seed_shape).shape
         return self.lo + (self.hi - self.lo) * self.rng.uniform(size=shape)
 
 
@@ -313,7 +318,8 @@ class BandLimitedWhiteNoise(_Random):
         self.cov, self.ts = self.num("Cov"), self.scalar("Ts")
 
     def draw(self):
-        return np.sqrt(self.cov / self.ts) * self.rng.standard_normal(self.cov.shape)
+        shape = np.broadcast(self.cov, self.seed_shape).shape
+        return np.sqrt(self.cov / self.ts) * self.rng.standard_normal(shape)
 
 
 def _table(node: Node, v) -> tuple[np.ndarray, np.ndarray]:
@@ -546,6 +552,14 @@ class Terminator(Node):
     is_sink = True
 
 
+@block("Viewer", "Sinks", "Stands for a display that mylab does not draw (video, 3-D animation); its inputs are ignored.", icon="view")  # noqa: E501
+class Viewer(Node):
+    params = [P("NumInputPorts", "1", "Number of input ports", "text"), P("Kind", "", "What it showed", "text")]
+    nin = ["int", "NumInputPorts"]
+    nout = 0
+    is_sink = True
+
+
 @block("StopSimulation", "Sinks", "Stops the simulation when its input is not zero.", aliases=("Stop",), icon="stop")
 class StopSimulation(Node):
     params = []
@@ -575,10 +589,19 @@ class Outport(Sink):
 # =====================================================================================
 
 
+def _transpose(u: np.ndarray) -> np.ndarray:
+    """Transpose; a vector (which counts as a column) becomes a 1-by-n row matrix."""
+    if u.ndim == 1:
+        return u.reshape(1, -1).astype(float) if u.size > 1 else u
+    return sig(u.T)
+
+
 def _matmul(a: np.ndarray, b: np.ndarray, what: str) -> np.ndarray:
     try:
         if a.size == 1 or b.size == 1:
             return a * b
+        if a.ndim == 1 and b.ndim == 2 and b.shape[0] == 1:
+            return a.reshape(-1, 1) @ b  # a vector counts as a column: column times row is a full matrix
         if a.ndim == 2 and b.ndim == 1 and a.shape[1] != b.size and a.shape[1] == 1:
             return a @ b.reshape(1, -1)
         return a @ b
@@ -601,6 +624,13 @@ class Gain(Node):
     def init(self):
         self.mode = self.choice("Multiplication")
         self.k = self.num("Gain") if self.mode.startswith("element") else self.mat("Gain")
+        self.same_shape = self.mode.startswith("element") and self.k.size == 1
+
+    def want_in(self, port):
+        if self.mode.startswith("element") or self.k.ndim != 2 or self.k.size == 1:
+            return None
+        n = self.k.shape[0] if self.mode == "matrixuk" else self.k.shape[1]
+        return (n,) if n > 1 else None
 
     def out(self, t, u):
         if self.mode.startswith("element"):
@@ -633,6 +663,8 @@ def _add(vals: list, signs: str) -> np.ndarray:
     icon="Σ",
 )
 class Sum(Node):
+    same_shape = True
+
     params = [P("Inputs", "++", "List of signs (or number of inputs)", "text")]
     nin = ["signs", "Inputs"]
 
@@ -679,6 +711,8 @@ class Product(Node):
                     if op == "/":
                         v = np.linalg.inv(np.atleast_2d(v)) if v.size > 1 else 1.0 / v
                     total = v if total is None else _matmul(total, v, "matrix product")
+                if total.ndim == 2 and total.shape[0] == 1 and total.size > 1:
+                    return [total.astype(float)]  # row times matrix stays a row
                 return [sig(total)]
             try:
                 total = u[0] if self.ops[0] == "*" else 1.0 / u[0]
@@ -698,6 +732,8 @@ class Divide(Product):
 
 @block("Abs", "Math", "Absolute value.", icon="|u|")
 class Abs(Node):
+    same_shape = True
+
     params = []
     has_zc = True
 
@@ -779,8 +815,8 @@ _MATH = {
     "square": lambda u: u * u,
     "reciprocal": lambda u: 1.0 / u,
     "conj": lambda u: u,
-    "transpose": lambda u: sig(u.T),
-    "hermitian": lambda u: sig(u.T),
+    "transpose": lambda u: _transpose(u),
+    "hermitian": lambda u: _transpose(u),
     "sqrt": np.sqrt,
     "pow": np.power,
     "hypot": np.hypot,
@@ -1215,6 +1251,8 @@ class HitCrossing(Node):
     icon="sat",
 )
 class Saturation(Node):
+    same_shape = True
+
     params = [P("UpperLimit", "0.5", "Upper limit"), P("LowerLimit", "-0.5", "Lower limit")]
     has_zc = True
 
@@ -1226,13 +1264,17 @@ class Saturation(Node):
     def out(self, t, u):
         v = u[0]
         side = self.latched(
-            lambda: np.where(v >= self.hi, 1, np.where(v <= self.lo, -1, 0)) + 0 * (self.hi + self.lo).astype(int)
+            lambda: np.where(v >= self.hi, 1, np.where(v <= self.lo, -1, 0))
+            + np.zeros(np.broadcast(self.hi, self.lo).shape, dtype=int)
         )
         return [np.where(side > 0, self.hi, np.where(side < 0, self.lo, v)).astype(float)]
 
     def zc(self, t, u):
-        both = u[0] + 0.0 * (self.hi + self.lo)
-        return list(np.ravel(both - self.hi)) + list(np.ravel(both - self.lo))
+        both = u[0] + np.zeros(np.broadcast(self.hi, self.lo).shape)
+        # an infinite limit is never reached: a large finite distance keeps the crossing search well defined
+        return list(np.clip(np.ravel(both - self.hi), -1e100, 1e100)) + list(
+            np.clip(np.ravel(both - self.lo), -1e100, 1e100)
+        )
 
 
 @block(
@@ -1252,6 +1294,8 @@ class SaturationDynamic(Node):
 
 @block("DeadZone", "Nonlinear", "Outputs zero inside a band; outside, the input shifted by the band edge.", icon="dz")
 class DeadZone(Node):
+    same_shape = True
+
     params = [P("LowerValue", "-0.5", "Start of dead zone"), P("UpperValue", "0.5", "End of dead zone")]
     has_zc = True
 

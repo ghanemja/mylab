@@ -893,6 +893,12 @@ def _sim(interp, args, nargout):
     return None
 
 
+@builtin("Simulink.Variant")
+def _variant(interp, args, nargout):
+    cond = text(args[0], "Simulink.Variant") if args else ""
+    return Struct.scalar({"Condition": char(cond)})
+
+
 @builtin("simset")
 def _simset(interp, args, nargout):
     args = list(args)
