@@ -17,17 +17,18 @@ students, researchers and engineers who can't afford a MATLAB license.
   `uifigure`/`uicontrol` code, or with the visual app builder in the web app.
   `mylab myapp.m` opens the app in your browser. See
   [docs/APPS.md](docs/APPS.md).
-- **Block diagrams (mylab Blocks).** Build a model from 96 blocks and signal
+- **Block diagrams (mylab Blocks).** Build a model from 107 blocks and signal
   lines in the browser, or with `add_block`/`add_line`, and simulate it with
   `sim`: variable- and fixed-step solvers, events, multi-rate, live scopes,
-  `linmod`. Simple `.slx` files can be imported. See
+  `linmod`. `.slx` files can be imported: of 82 public files, 50 import
+  fully and 30 of the 68 models run. See
   [docs/BLOCKS.md](docs/BLOCKS.md).
 - **Built for classes.** Share code as a link, step through a program
   forwards and backwards, publish a report, and auto-grade assignments in the
   browser or on Gradescope.
 - **Covers a lot of the language:** matrices, N-D arrays, cells, structs,
   strings, tables, sparse matrices, dates, `containers.Map`, `classdef`
-  classes and about 1,390 functions, from linear algebra to `fft`, `ode45`,
+  classes and about 1,420 functions, from linear algebra to `fft`, `ode45`,
   `fminsearch`, `imread` and plotting.
 
 ![mylab running in the browser](docs/images/demo.gif)
@@ -138,7 +139,7 @@ mylab also publishes two datasets for the community (see [datasets/](datasets/))
 | Functions | Script-local functions, `.m` files on the path, multiple outputs, `nargin`/`nargout`, `varargin`/`varargout`, anonymous functions with captured variables, `global`, `eval`/`feval` |
 | Data types | double, single, logical, char, int8–uint64 (saturating), complex numbers, N-D arrays, cell arrays, structs and struct arrays, string arrays, function handles, `containers.Map`, `table`, sparse matrices, `datetime`/`duration` |
 | Classes | `classdef` value and handle classes, properties with defaults, `Constant`/`Dependent` properties, `get.`/`set.` methods, constructors, `Static` methods, inheritance with `obj@Parent`, operator overloading, custom `disp`, object arrays, enumerations, events and listeners, `@Class` and `+package` folders |
-| Library | About 1,390 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations, categorical arrays, JSON, WAV audio and Excel files, symbolic math (`syms`, `diff`, `int`, `solve`, `dsolve`; needs SymPy) |
+| Library | About 1,420 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations, categorical arrays, JSON, WAV audio and Excel files, symbolic math (`syms`, `diff`, `int`, `solve`, `dsolve`; needs SymPy) |
 
 The full list is in [docs/FUNCTIONS.md](docs/FUNCTIONS.md). Type `help name` in
 mylab for any function. Known differences and gaps are in

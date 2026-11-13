@@ -118,12 +118,21 @@ First public release.
 - The loop compiler inlines anonymous functions and one-line local
   functions: loops that call them run about 100× faster.
 - **mylab Blocks:** block-diagram modelling and simulation. A hybrid
-  simulation engine with zero-crossing location, 96 blocks, readable
+  simulation engine with zero-crossing location, 107 blocks, readable
   `.mlb.json` model files, and `sim`, `new_system`, `add_block`, `add_line`,
   `set_param`, `get_param`, `find_system`, `linmod`, `trim`. The web app has
-  a diagram editor with live scopes. Simple `.slx` files can be imported:
-  of 82 public model files, 33 import fully, 49 with named placeholders, and
-  14 then simulate. See docs/BLOCKS.md.
+  a diagram editor with live scopes. Algebraic loops are solved (Newton);
+  `AlgebraicLoop = error` reports them instead.
+- **`.slx` import:** model callbacks and mask initialization run before a
+  simulation; If/action and variant subsystems; MATLAB-language S-functions
+  (level 1 and 2); library forwarding tables; stand-ins for kinematic
+  vehicle models. Of 82 public files, 14 are block libraries; 50 files
+  import fully, and 30 of the 68 models simulate (24 with every block real,
+  6 with a stand-in subsystem). 15 models have behaviour checks. Physical
+  modelling and compiled S-functions are not supported. See docs/BLOCKS.md.
+- New functions: rotation and transform conversions (`eul2rotm`,
+  `rotm2quat`, `tform2eul`, …), `rotx`/`roty`/`rotz`, `angdiff`, `coder.*`
+  directives (accepted, no effect), `simsizes`.
 - **Apps:** `uifigure` and its components, classic `figure` + `uicontrol`,
   `guidata`, callbacks with event data, and App Designer-exported class
   files. `mylab app.m` shows the app in the browser through a local server.
