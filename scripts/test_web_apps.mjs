@@ -224,7 +224,188 @@ export async function testApps(browser, url, t, consoleErrors = []) {
   await page.evaluate(() => window.mylab.app.closeApp());
   await page.waitForSelector("#app-view", { state: "hidden" });
 
-  return { context, page, newFile, run, waitIdle, until, text };
+  /* ---------------- the app builder ---------------- */
+  const cmd = (id) => page.evaluate((c) => void window.mylab.app.commands.run(c), id); // not awaited: some open a dialog
+  const design = () => page.evaluate(() => JSON.parse(JSON.stringify(window.mylab.app.designer.design)));
+  const itemBy = async (type) => (await design()).items.find((it) => it.type === type);
+  await cmd("app.new");
+  await page.waitForSelector("#dlg-prompt[open]");
+  await page.fill("#prompt-input", "TipApp");
+  await page.click("#prompt-ok");
+  await page.waitForSelector("#designer:not([hidden]) .mui-window");
+  check((await text("#designer-title")) === "App builder: TipApp.m", "builder title: " + (await text("#designer-title")));
+
+  // add with the mouse (click), with the keyboard, and by dragging from the palette
+  await page.click(".dsg-tool[data-type='label']");
+  await page.click(".dsg-tool[data-type='numericfield']");
+  await page.locator(".dsg-tool[data-type='button']").focus();
+  await page.keyboard.press("Enter");
+  let d = await design();
+  check(d.items.map((it) => `${it.type}@${it.row},${it.col}`).join(" ") === "label@1,1 numericfield@1,2 button@2,1", "new components should fill the grid in order: " + JSON.stringify(d.items.map((it) => [it.type, it.row, it.col])));
+  const tool = await page.locator(".dsg-tool[data-type='axes']").boundingBox();
+  const target = await page.locator(".dsg-cell[data-row='4'][data-col='1']").boundingBox();
+  await page.mouse.move(tool.x + 20, tool.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(target.x + 30, target.y + 12, { steps: 6 });
+  await page.waitForSelector(".dsg-cell.target[data-row='4'][data-col='1']");
+  await page.mouse.up();
+  await until(() => window.mylab.app.designer.design.items.length === 4);
+  const ax = await itemBy("axes");
+  check(ax.row === 4 && ax.col === 1, "the dropped axes should land in the cell under the pointer: " + JSON.stringify(ax));
+  ok("the builder adds components by click, by keyboard and by dragging from the palette onto a grid cell");
+
+  // keyboard: move and resize the selected component, announce it
+  const axCover = page.locator(`.dsg-item[data-id='${ax.id}']`);
+  await axCover.focus();
+  await page.keyboard.press("Shift+ArrowRight");
+  check((await itemBy("axes")).colSpan === 2, "Shift+ArrowRight should widen the component");
+  check(/2 columns/.test(await page.locator("#designer [role=status]").innerText()), "changes should be announced to screen readers");
+  check(/row 4, column 1, 1 rows by 2 columns/.test(await page.locator(`.dsg-item[data-id='${ax.id}']`).getAttribute("aria-label")), "the component needs a spoken position");
+  const btnItem = await itemBy("button");
+  await page.locator(`.dsg-item[data-id='${btnItem.id}']`).focus();
+  await page.keyboard.press("ArrowRight");
+  check((await itemBy("button")).col === 2, "ArrowRight should move the component one column");
+  check((await page.evaluate(() => document.activeElement.dataset.id)) === btnItem.id, "the moved component should keep the focus");
+  // mouse: drag the button back, and resize the label with its handle
+  const from = await page.locator(`.dsg-item[data-id='${btnItem.id}']`).boundingBox();
+  const to = await page.locator(".dsg-cell[data-row='3'][data-col='1']").boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 20, to.y + 10, { steps: 6 });
+  await page.mouse.up();
+  await until(() => { const b = window.mylab.app.designer.design.items.find((it) => it.type === "button"); return b.row === 3 && b.col === 1; });
+  ok("components move and resize with the arrow keys (announced) and by dragging; they snap to grid cells");
+
+  // properties, undo and redo
+  const lab = await itemBy("label");
+  await page.locator(`.dsg-item[data-id='${lab.id}']`).click();
+  await page.fill("#dsg-props [data-key='text']", "Bill amount");
+  await page.press("#dsg-props [data-key='text']", "Enter");
+  await until(() => [...document.querySelectorAll("#dsg-canvas .mui-label")].some((l) => l.textContent === "Bill amount"));
+  await page.locator(`.dsg-item[data-id='${(await itemBy("numericfield")).id}']`).click();
+  await page.fill("#dsg-props [data-key='name']", "bill");
+  await page.press("#dsg-props [data-key='name']", "Tab");
+  await page.fill("#dsg-props [data-key='max']", "1000");
+  await page.press("#dsg-props [data-key='max']", "Tab");
+  await page.locator(`.dsg-item[data-id='${btnItem.id}']`).click();
+  await page.fill("#dsg-props [data-key='text']", "15% tip");
+  await page.press("#dsg-props [data-key='text']", "Tab");
+  await page.fill("#dsg-props [data-key='callback']", "showTip");
+  await page.press("#dsg-props [data-key='callback']", "Tab");
+  await page.fill("#dsg-props [data-key='name']", "2bad");
+  await page.press("#dsg-props [data-key='name']", "Tab");
+  check((await itemBy("button")).name === "button1", "a name that is not valid must be refused");
+  await page.click("#dsg-undo");
+  check((await itemBy("button")).callback === "button1Pushed", "Undo should take back the last change");
+  await page.click("#dsg-redo");
+  check((await itemBy("button")).callback === "showTip", "Redo should bring it back");
+  await page.locator(`.dsg-item[data-id='${btnItem.id}']`).focus();
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+y");
+  check((await itemBy("button")).callback === "showTip", "Ctrl+Z / Ctrl+Y should undo and redo");
+  ok("the property panel edits text, limits, names and callbacks; bad names are refused; undo and redo work");
+  await page.keyboard.press("Escape");
+  await t.shot(page, "app-builder.png", "#designer");
+
+  // preview and code
+  await page.click("#dsg-preview");
+  check((await page.locator("#dsg-canvas .dsg-cell").count()) === 0, "Preview should hide the grid lines");
+  await page.click("#dsg-preview");
+  await page.click("#dsg-code");
+  const shown = await text("#dsg-code-view");
+  check(/bill = uieditfield\(grid, 'numeric', 'Limits', \[-Inf 1000\], 'Value', 0\);/.test(shown), "the code view should show the generated code:\n" + shown);
+  await page.click("#dsg-code");
+  await page.click("#dsg-save");
+  await page.waitForSelector("#designer", { state: "hidden" });
+  await page.waitForSelector(".tab.active[data-name='TipApp.m']");
+  let code = await page.evaluate(() => window.mylab.editor.getValue());
+  for (const piece of ["function TipApp", "fig = uifigure('Name', 'My app'", "grid = uigridlayout(fig, [4 2]);", "label1 = uilabel(grid, 'Text', 'Bill amount');", "button1.ButtonPushedFcn = @showTip;",
+    "    function showTip(src, event)", "ax1.Layout.Column = [1 2];", "mylab-app-design:"]) {
+    check(code.includes(piece), `generated code lacks "${piece}":\n${code}`);
+  }
+  ok("Generate code writes a readable .m file with the layout, callback stubs and the stored design");
+
+  // write a callback, run the app
+  code = code.replace(/( {4}function showTip\(src, event\)\n)[\s\S]*?( {4}end)/, "$1        label1.Text = sprintf('Tip: %.2f', 0.15 * bill.Value);\n        plot(ax1, [0 bill.Value], [0 0.15 * bill.Value]);\n$2");
+  await page.evaluate((c) => window.mylab.editor.setValue(c), code);
+  await run();
+  await page.waitForSelector("#app-view:not([hidden]) .mui-window");
+  await page.fill("#app-view input.mui-numeric", "80");
+  await page.press("#app-view input.mui-numeric", "Enter");
+  await page.click("#app-view .mui-button:has-text('15% tip')");
+  await until(() => document.querySelector("#app-view .mui-label").textContent === "Tip: 12.00");
+  ok("the generated app runs: its callback reads the number field and updates the label and the plot");
+  await page.click("#app-hide");
+
+  // round trip: reopen the file in the builder, change the layout, keep the callback
+  check(await page.locator("#btn-design").isVisible(), "files made by the builder should offer 'Edit layout'");
+  await page.click("#btn-design");
+  await page.waitForSelector("#designer:not([hidden]) .mui-window");
+  d = await design();
+  check(d.items.length === 4 && d.items.find((it) => it.type === "button").callback === "showTip" && d.items.find((it) => it.type === "axes").colSpan === 2, "the design was not restored: " + JSON.stringify(d.items));
+  await page.click(".dsg-tool[data-type='checkbox']");
+  await page.click("#dsg-run");
+  await page.waitForSelector("#designer", { state: "hidden" });
+  await waitIdle();
+  await page.waitForSelector("#app-view:not([hidden]) .mui-check");
+  code = await page.evaluate(() => window.mylab.editor.getValue());
+  check(code.includes("label1.Text = sprintf('Tip: %.2f', 0.15 * bill.Value);"), "generating again must keep the callback the user wrote");
+  check(/check1 = uicheckbox\(grid/.test(code) && /function check1Changed\(src, event\)/.test(code), "the new component and its stub should be in the code");
+  await page.click("#app-view .mui-button:has-text('15% tip')");
+  await until(() => document.querySelector("#app-view .mui-label").textContent === "Tip: 0.00");
+  ok("reopening a generated file restores the design; generating again keeps hand-written callbacks");
+
+  // the command palette knows the app actions
+  await cmd("palette.commands");
+  await page.waitForSelector("#dlg-palette[open]");
+  await page.fill("#palette-input", ">app builder");
+  try {
+    await until(() => /New app \(open the app builder\)/.test(document.querySelector("#palette-list").textContent), null, 5000);
+  } catch {
+    throw new Error("palette shows: " + (await page.locator("#palette-list").textContent()).slice(0, 400));
+  }
+  await page.keyboard.press("Escape");
+  ok("the app actions are in the command palette");
+
+  /* ---------------- "Open as app" links, on a phone ---------------- */
+  await page.evaluate(() => window.mylab.app.openFile("signal_lab.m"));
+  await cmd("app.share");
+  await page.waitForSelector("#dlg-share[open]");
+  await until(() => /&app=1$/.test(document.querySelector("#share-link").value));
+  const link = await page.inputValue("#share-link");
+  await page.click("#dlg-share button[value='close']");
+  await page.evaluate(() => window.mylab.app.closeApp());
+  const phone = await browser.newContext({ viewport: { width: 360, height: 740 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const pp = await phone.newPage();
+  pp.on("console", (m) => m.type() === "error" && consoleErrors.push("[app link] " + m.text()));
+  pp.on("pageerror", (e) => consoleErrors.push("[app link] pageerror: " + e.message));
+  await pp.goto(link);
+  await pp.waitForSelector("body[data-appmode] #app-view:not([hidden])");
+  check(await pp.locator(".CodeMirror").isHidden(), "an app link should hide the editor");
+  check(await pp.locator("#dlg-welcome").isHidden(), "the welcome dialog should not cover an app link");
+  await pp.waitForSelector("#app-view .mui-window", { timeout: 240000 });
+  await pp.waitForFunction(() => document.querySelector("#app-view .mui-axes-image") && document.querySelector("#app-view .mui-axes-image").naturalWidth > 0);
+  await pp.tap("#app-view .mui-button:has-text('Push me')");
+  await pp.waitForFunction(() => document.querySelector("#app-view .mui-label").textContent === "Pushed 1 times");
+  await pp.waitForTimeout(700);
+  const over = await pp.evaluate(() => ({ page: document.documentElement.scrollWidth - window.innerWidth, win: document.querySelector("#app-view .mui-window").getBoundingClientRect().right - window.innerWidth }));
+  check(over.page <= 1 && over.win <= 1, "the app should fit a 360 px screen: " + JSON.stringify(over));
+  await t.shot(pp, "app-phone.png");
+  ok("an 'Open as app' link opens straight into the running app, which fits a 360 px phone");
+  await pp.tap("#app-code");
+  await pp.waitForSelector("body:not([data-appmode]) .CodeMirror");
+  check(/uifigure/.test(await pp.evaluate(() => window.mylab.editor.getValue())), "'Edit the code' should show the code of the app");
+  ok("'Edit the code' leaves the app-only view and shows the editor");
+  // the builder on a phone
+  await pp.tap("#app-hide");
+  await pp.evaluate(() => window.mylab.app.openDesigner(window.mylab.app.designer.readDesign("mylab-app-design:\n" + JSON.stringify({ format: "mylab-app-1", name: "P", title: "P", width: 480, height: 300, rows: ["fit", "1x"], cols: ["1x", "1x"], items: [] })), "P.m"));
+  await pp.tap(".dsg-tool[data-type='slider']");
+  await pp.waitForSelector("#dsg-canvas input[type=range]");
+  const wide = await pp.evaluate(() => document.querySelector("#designer .dsg-body").scrollWidth - document.querySelector("#designer .dsg-body").clientWidth);
+  check(wide <= 1, `the app builder scrolls sideways on a phone by ${wide}px`);
+  ok("the app builder fits a phone screen");
+  await phone.close();
+  await context.close();
 }
 
 /* ------------------------------------------------------------------ standalone */

@@ -40,8 +40,11 @@ what mylab printed, and what you expected.
   unless you put them in a cell array.
 - **Other data types:** timetable, and `containers.Map` with non-scalar keys.
 - **Tables:** `rowfun`, `stack`/`unstack`. Table variables must be columns.
-- **GUIs:** `uicontrol`, `uifigure`, GUIDE and App Designer raise a clear
-  error. `.fig` files can't be saved or opened.
+- **GUIs:** apps written in code run (`uifigure` and its components,
+  `figure` + `uicontrol`, and class files exported from App Designer); see
+  [APPS.md](APPS.md) for what is missing. GUIDE, `.mlapp` and `.fig` files
+  can't be opened. In the browser `uiwait` and `uiconfirm` cannot wait for
+  the user.
 - **Input and output:** old binary Excel files (`.xls`), audio formats other
   than WAV, HDF5 and XML files, bit-field precisions (`'ubitN'`) in
   `fread`/`fwrite`. `textscan` and `fscanf` handle common formats only.

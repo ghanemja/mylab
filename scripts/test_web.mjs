@@ -18,6 +18,8 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 
+import { testApps } from "./test_web_apps.mjs";
+
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 
@@ -1671,6 +1673,9 @@ async function main() {
     await pp.keyboard.press("Escape");
     ok("the app is usable at 320 px: no sideways scrolling; find, search, palette, shortcuts, settings and help fit");
     await phone.close();
+
+    // App windows (uifigure, uicontrol) and the app builder: see scripts/test_web_apps.mjs
+    await testApps(browser, url, { ok, check, shot }, consoleErrors);
 
     // 13. No console errors
     if (consoleErrors.length) throw new Error("console errors:\n" + consoleErrors.join("\n"));

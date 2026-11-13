@@ -1461,6 +1461,9 @@ class UIArray(MObject):
             return [flags.reshape(self.matlab_shape())]
         return super().call_method(interp, name, args, nargout)
 
+    def elements(self) -> list:  # arrayfun and cellfun visit the components one by one
+        return list(self.items)
+
     def field_list(self, interp, name: str) -> list:
         return [h.get_field(interp, name) for h in self.items]
 
