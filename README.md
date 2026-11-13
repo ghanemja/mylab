@@ -18,7 +18,7 @@ students, researchers and engineers who can't afford a MATLAB license.
   browser or on Gradescope.
 - **Covers a lot of the language:** matrices, N-D arrays, cells, structs,
   strings, tables, sparse matrices, dates, `containers.Map`, `classdef`
-  classes and about 1,250 functions, from linear algebra to `fft`, `ode45`,
+  classes and about 1,340 functions, from linear algebra to `fft`, `ode45`,
   `fminsearch`, `imread` and plotting.
 
 ![mylab running in the browser](docs/images/demo.gif)
@@ -52,6 +52,10 @@ You need Python 3.10 or newer.
 ```bash
 pip install "git+https://github.com/ghanemja/mylab"
 ```
+
+Optional extras: `[symbolic]` for symbolic math (`syms`, `solve`; see
+[docs/SYMBOLIC.md](docs/SYMBOLIC.md)), `[fast]` for faster large-array math,
+`[excel]`, `[jupyter]`, `[mcp]`.
 
 ```bash
 mylab                      # interactive prompt
@@ -125,11 +129,10 @@ mylab also publishes two datasets for the community (see [datasets/](datasets/))
 | Functions | Script-local functions, `.m` files on the path, multiple outputs, `nargin`/`nargout`, `varargin`/`varargout`, anonymous functions with captured variables, `global`, `eval`/`feval` |
 | Data types | double, single, logical, char, int8–uint64 (saturating), complex numbers, N-D arrays, cell arrays, structs and struct arrays, string arrays, function handles, `containers.Map`, `table`, sparse matrices, `datetime`/`duration` |
 | Classes | `classdef` value and handle classes, properties with defaults, `Constant`/`Dependent` properties, `get.`/`set.` methods, constructors, `Static` methods, inheritance with `obj@Parent`, operator overloading, custom `disp`, object arrays, enumerations, events and listeners, `@Class` and `+package` folders |
-| Library | About 1,250 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations, categorical arrays, JSON, WAV audio and Excel files |
+| Library | About 1,340 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations, categorical arrays, JSON, WAV audio and Excel files, symbolic math (`syms`, `diff`, `int`, `solve`, `dsolve`; needs SymPy) |
 
 The full list is in [docs/FUNCTIONS.md](docs/FUNCTIONS.md). Type `help name` in
-mylab for any function. Known differences and gaps (for example Simulink,
-GUIs and symbolic math) are in
+mylab for any function. Known differences and gaps are in
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ## Speed

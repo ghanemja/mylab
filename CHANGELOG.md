@@ -117,6 +117,11 @@ First public release.
 - Appending to cell and struct arrays in a loop is no longer quadratic.
 - The loop compiler inlines anonymous functions and one-line local
   functions: loops that call them run about 100× faster.
+- **Symbolic math** with MATLAB's syntax, backed by SymPy (optional:
+  `pip install "mylab-lang[symbolic]"`): `syms`, `sym`, `diff`, `int`,
+  `limit`, `taylor`, `simplify`, `subs`, `solve`, `dsolve`, `laplace`,
+  symbolic matrices, `vpa`, `matlabFunction`, `latex`. In the web app SymPy
+  loads on first use. See docs/SYMBOLIC.md.
 - **Optional accelerator** (`pip install "mylab-lang[fast]"`): large
   elementwise array expressions are evaluated in one multi-threaded pass,
   2–5× faster than NumPy on four cores.
