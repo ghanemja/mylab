@@ -64,5 +64,7 @@ node scripts/test_web.mjs                # end-to-end test (needs Playwright + C
 ## Pull requests
 
 - Keep changes focused, and add tests.
-- `pytest -q` and `ruff check .` must pass.
+- `scripts/check.sh` must pass (lint, tests, conformance, benchmark tasks).
+  Add `--web` if you changed the browser app. Tests do not run automatically
+  on GitHub; run them before you push.
 - Describe behaviour changes in `CHANGELOG.md`.

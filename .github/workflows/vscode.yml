@@ -5,9 +5,10 @@ name: VS Code extension
 # The package of each run can be downloaded from the run's page ("Artifacts").
 # Releases are made by release.yml, which attaches the .vsix to the GitHub release.
 
+# Runs only when started by hand (Actions tab → Run workflow), so pushes use no
+# Actions minutes. Run scripts/check.sh on your own machine for the same checks.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -1,8 +1,9 @@
 name: CI
 
+# Runs only when started by hand (Actions tab → Run workflow), so pushes use no
+# Actions minutes. Run scripts/check.sh on your own machine for the same checks.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   test:

@@ -3,9 +3,9 @@ name: Datasets
 # Weekly: re-index the MATLAB Corpus and verify the MATLAB Tasks benchmark on
 # mylab and GNU Octave. Results appear in the job summary and as artifacts.
 
+# Runs only when started by hand (Actions tab → Run workflow), so pushes use no
+# Actions minutes. Run scripts/check.sh on your own machine for the same checks.
 on:
-  schedule:
-    - cron: "17 6 * * 1"
   workflow_dispatch:
 
 jobs:

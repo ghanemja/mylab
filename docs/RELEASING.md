@@ -295,9 +295,10 @@ Below, replace `X.Y.Z` with your new version number.
    git push origin main
    ```
 
-5. **Wait for the checks.** Open the **Actions** tab on GitHub. Wait until the
-   runs for your commit show a green tick (about 5 minutes). If one is red,
-   fix it first.
+5. **Run the checks on your own machine:** `scripts/check.sh --web`. Fix
+   anything that fails first. (The test workflows on GitHub no longer run on
+   every push. You can still start them by hand from the **Actions** tab to
+   test on Windows and macOS.)
 6. **Tag and push the tag:**
 
    ```bash
