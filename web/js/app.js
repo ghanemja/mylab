@@ -22,6 +22,7 @@ import { initIntel } from "./intel.js";
 import { initVarView } from "./varview.js";
 import { initHistory } from "./history.js";
 import { renderDiff, statsText } from "./diff.js";
+import { initBlocks } from "./blocks/index.js"; // mylab Blocks: the diagram editor
 
 /* ================================================================== state */
 
@@ -437,6 +438,7 @@ function expandTo(path) {
 
 function openFile(path, { focus = true } = {}) {
   if (!state.files.has(path)) return;
+  if (app.openSpecial && app.openSpecial(path)) return; // mylab Blocks: .slx files are converted, not shown
   if (!isText(path)) return viewFile(path);
   if (state.active !== path) rememberCursor();
   if (!state.tabs.includes(path)) state.tabs.push(path);
@@ -1107,6 +1109,7 @@ function runnableFile() {
     return null;
   }
   const name = state.active;
+  if (app.runSpecial && app.runSpecial(name)) return null; // mylab Blocks: Run simulates a model file
   const code = editor.getValue();
   flushSave(name);
   if (!name.endsWith(".m")) {
@@ -2131,6 +2134,7 @@ async function main() {
   initIntel(app);
   initVarView(app);
   initHistory(app);
+  initBlocks(app);
 
   await loadProjects();
   document.body.dataset.files = "ready";

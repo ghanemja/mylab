@@ -511,7 +511,7 @@ def _add(vals: list, signs: str) -> np.ndarray:
 
 
 @block("Sum", "Math", "Adds and subtracts its inputs; the signs string (such as +-) gives one sign per input.",
-       aliases=("Add", "Subtract"), icon="sum")
+       aliases=("Add", "Subtract"), icon="Σ")
 class Sum(Node):
     params = [P("Inputs", "++", "List of signs (or number of inputs)", "text")]
     nin = ["signs", "Inputs"]
@@ -601,7 +601,7 @@ elementwise("ProductOfElements", "Math", "Multiplies the elements of a vector.",
             title="Product of Elements", icon="Πu")
 elementwise("Polynomial", "Math", "Evaluates a polynomial with the given coefficients (highest power first).",
             lambda u, b: np.polyval(b.num("Coefs"), u), [P("Coefs", "[1 0]", "Coefficients")], aliases=("Polyval",), icon="P(u)")
-elementwise("Width", "Math", "Outputs the number of elements of its input.", lambda u, b: np.array([float(u.size)]), icon="len")
+elementwise("Width", "Math", "Outputs the number of elements of its input.", lambda u, b: np.array([float(u.size)]), icon="#u")
 elementwise("DataTypeConversion", "Math", "Passes the signal on (all signals are double precision in mylab Blocks).",
             lambda u, b: u, title="Data Type Conversion", aliases=("SignalConversion", "SignalSpecification", "InitialCondition"),
             icon="→")
@@ -814,7 +814,7 @@ class LogicalOperator(Node):
         return [np.asarray(total).astype(float)]
 
 
-@block("BitwiseOperator", "Logic", "Bitwise AND, OR, XOR or NOT of whole-number inputs, optionally with a fixed mask.", icon="bit")
+@block("BitwiseOperator", "Logic", "Bitwise AND, OR, XOR or NOT of whole-number inputs, optionally with a fixed mask.", icon="&b")
 class BitwiseOperator(Node):
     params = [P("logicop", "AND", "Operator", options=["AND", "OR", "XOR", "NOT"]), ONOFF("UseBitMask", "on", "Use a bit mask"),
               P("BitMask", "217", "Bit mask"), P("NumInputPorts", "1", "Number of inputs", "text")]

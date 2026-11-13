@@ -5,7 +5,7 @@ import { toStored, formatSize } from "./codec.js";
 import { parseGithub, githubSpecText, fetchGithub } from "./github.js";
 import { DEFAULT_PROJECT } from "./storage.js";
 
-export const IMPORT_EXT = /\.(m|txt|csv|tsv|dat|json|md|xml|png|jpe?g|gif|bmp|mat)$/i;
+export const IMPORT_EXT = /\.(m|txt|csv|tsv|dat|json|md|xml|png|jpe?g|gif|bmp|mat|slx)$/i;
 const MAX_FILE = 5 * 1024 * 1024;
 const MAX_TOTAL = 30 * 1024 * 1024;
 const MAX_COUNT = 500;

@@ -458,7 +458,17 @@ def _csv(name, path_json, max_cells):
         lines.append(",".join(([q(rownames[r])] if rownames else []) + [text(get(r, c)) for c in range(cols)]))
     return json.dumps({"csv": "\\n".join(lines) + "\\n", "truncated": rows > limit, "rows": min(rows, limit)})
 
+# -- mylab Blocks: the diagram editor's requests (see mylab/blocks/web.py) --
+def _blocks(op, args_json, cwd, emit):
+    from mylab.blocks import web
+    _enter(_session, cwd)
+    out = json.loads(web.handle(_session, op, args_json, emit))
+    if op == "run":
+        out["variables"] = _vars()
+    return json.dumps(out)
+
 _api = {
+    "blocks": _blocks,
     "run": _run, "trace": _trace, "publish": _publish, "test": _test, "wipe": _wipe,
     "vars": lambda: json.dumps(_vars()), "show": _show,
     "complete": _complete, "help": _help, "reset": _reset, "cwd": _cwd,
@@ -617,6 +627,14 @@ function withStdout(out) {
 }
 
 const handlers = {
+  // mylab Blocks: op is "run", "check", "validate" or "import_slx"; scope data is streamed as "event" messages.
+  blocks({ op, args, fs, cwd }) {
+    syncFiles(fs);
+    stdoutBuffer = [];
+    const emit = (text) => self.postMessage({ type: "event", name: "blocks", data: JSON.parse(text) });
+    const out = withStdout(JSON.parse(call("blocks", String(op), JSON.stringify(args || {}), cwd === undefined ? null : cwd, emit)));
+    return { result: out };
+  },
   run({ code, fs, cwd }) {
     syncFiles(fs);
     stdoutBuffer = [];

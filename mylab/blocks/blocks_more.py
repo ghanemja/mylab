@@ -122,7 +122,7 @@ _INDEX_PARAMS = [P("NumberOfDimensions", "1", "Number of dimensions", options=["
                  P("Indices", "[1 3]", "Indices, one expression per dimension", "text")]
 
 
-@block("Selector", "Routing", "Picks elements of a vector (or rows and columns of a matrix) by index.", icon="sel")
+@block("Selector", "Routing", "Picks elements of a vector (or rows and columns of a matrix) by index.", icon="u(i)")
 class Selector(_Indexed):
     params = _INDEX_PARAMS
     nin = ["if", "IndexOptions", "Index vector (port)", 2, 1]
@@ -138,7 +138,7 @@ class Selector(_Indexed):
         return [sig(a2[self.key(a2)])]
 
 
-@block("Assignment", "Routing", "Replaces chosen elements of the first input with the second input.", icon="asg")
+@block("Assignment", "Routing", "Replaces chosen elements of the first input with the second input.", icon="y(i)=u")
 class Assignment(_Indexed):
     params = _INDEX_PARAMS
     nin = ["if", "IndexOptions", "Index vector (port)", 3, 2]

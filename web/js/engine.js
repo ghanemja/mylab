@@ -36,6 +36,7 @@ export class Engine extends EventTarget {
       return this._emit("ready", msg.info);
     }
     if (msg.type === "fatal") return this._emit("fatal", msg);
+    if (msg.type === "event") return this._emit(msg.name, msg.data); // mylab Blocks: data sent while a request runs
     const q = this.quiet.get(msg.id);
     if (q) {
       this.quiet.delete(msg.id);
