@@ -35,7 +35,8 @@ from .model import ModelError
 from .slx import import_slx
 
 MISSING = re.compile(
-    r"(?:Unrecognized function or variable|Undefined function or variable|Undefined function) '([A-Za-z_]\w*)'"
+    r"(?:Unrecognized function or variable|Undefined function or variable|Undefined function|the S-function) "
+    r"'([A-Za-z_]\w*)'(?! failed)"
 )
 
 

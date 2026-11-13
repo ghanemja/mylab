@@ -392,6 +392,7 @@ class _Importer:
                     continue
                 for chart in el.iter("chart"):
                     cname = next((p.text or "" for p in chart.findall("P") if p.get("Name") == "name"), "")
+                    cname = re.sub(r"\s+", " ", cname).strip()  # block names are compared without line breaks
                     for p in chart.iter("P"):
                         if p.get("Name") == "script" and p.text:
                             self.scripts[cname] = p.text

@@ -651,6 +651,27 @@ def test_defaults_table_compares_listed_defaults_with_the_importer(tmp_path, cap
     assert "!! Constant.Value: files list '7'" in capsys.readouterr().out
 
 
+def test_function_block_code_is_found_when_names_contain_line_breaks(tmp_path):
+    chart = (
+        '<?xml version="1.0"?><Stateflow><machine><Children><chart id="2">'
+        + P("name", "Wave\nforce/Excitation \nForce")
+        + "<Children><state><eml>"
+        + P("script", "function y = fcn(u)\ny = 3 * u;\n")
+        + "</eml></state></Children></chart></Children></machine></Stateflow>"
+    )
+    fcn = block("SubSystem", "Excitation \nForce", "9::2", "[60, 0, 120, 40]", P("SFBlockType", "MATLAB Function"))
+    body = (
+        block("Constant", "C", 1, "[0, 0, 30, 30]", P("Value", "5"))
+        + block("SubSystem", "Wave\nforce", 9, "[50, 0, 110, 40]", extra=f"<System>{_io_system('9', fcn)}</System>")
+        + block("Outport", "O", 3, "[200, 10, 230, 24]")
+        + line("1#out:1", "9#in:1")
+        + line("9#out:1", "3#in:1")
+    )
+    m = import_slx(write_slx(tmp_path / "nl.slx", body, parts={"simulink/stateflow.xml": chart}))
+    assert m.import_report["unsupported"] == {}
+    assert simulate(m, config={"StopTime": "1"}).y[-1, 0] == 15
+
+
 # -- the real files (only when they have been downloaded) ------------------------------------------
 
 
@@ -681,25 +702,39 @@ def test_models_list_matches_the_manifest():
 
 @needs_corpus
 def test_real_files_import_and_simulate_at_the_documented_rates():
-    rows = survey(str(_cache()), time_limit=60)
+    # The documented numbers come from a run with 400 s per model. Here the limit is short, so the models that
+    # spend minutes in interpreted function blocks count as "time limit"; the bounds below allow for that.
+    src = _sources()
+    rows = survey(str(_cache()), time_limit=25, sources=str(src) if src else None)
     s = summarize(rows)
     assert s["files"] == 82
     # every file is read: none fails, and nothing is dropped silently
     assert s["import"].get("failed", 0) == 0
-    assert s["import"]["full"] >= 33 and s["import"]["full"] + s["import"]["partial"] == 82
+    assert s["import"]["full"] >= 50 and s["import"]["full"] + s["import"]["partial"] == 82
+    libraries = [r for r in rows if r["simulate"] == "library: not a model to run"]
+    assert len(libraries) == 14 and all(r["library"] for r in libraries)
     for r in rows:
         if r["import"] == "partial":
             assert r["unsupported"] and all(k and v > 0 for k, v in r["unsupported"].items()), r["file"]
-            assert r["simulate"] == "no: unsupported blocks"
-    assert s["simulate"].get("yes", 0) >= 14
+            assert r["simulate"] in ("no: unsupported blocks", "library: not a model to run")
+        # a model with a stand-in subsystem is never counted as a plain "yes"
+        assert not (r["simulate"] == "yes" and r["standins"]), r["file"]
     assert not any(v.startswith("no: internal error") for v in s["simulate"])
     ran = {r["file"].replace(os.sep, "/") for r in rows if r["simulate"] == "yes"}
-    for name in (
+    stand = {r["file"].replace(os.sep, "/") for r in rows if r["simulate"] == "yes (with stand-ins)"}
+    must = [
         "ivaquero__book-control/matlab/control_pi.slx",
         "ivaquero__book-control/matlab/vibration.slx",
         "petercorke__RVC3-MATLAB/toolbox/sl_sea.slx",
         "cybergalactic__MSS/SIMULINK/mssSimulinkDemos/demoKalmanWavefilterAutop.slx",
-    ):
+    ]
+    if src is None:  # without the repositories' own .m files fewer models have what they need
+        assert len(ran) + len(stand) >= 18
+    else:
+        assert len(ran) >= 18 and len(stand) >= 6
+        must += ["cybergalactic__MSS/SIMULINK/mssSimulinkDemos/demoDSRVdepthControl.slx"]
+        assert "petercorke__RVC3-MATLAB/toolbox/sl_pursuit.slx" in stand
+    for name in must:
         assert name in ran, name
 
 

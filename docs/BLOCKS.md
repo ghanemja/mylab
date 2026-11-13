@@ -482,20 +482,52 @@ What is converted:
 - the blocks listed above, with the parameters they share;
 - lines with their branches and corner points, signal names;
 - subsystems, in both file layouts (everything in one part, or one part per
-  subsystem), mask parameters of subsystems as subsystem variables;
-- MATLAB Function blocks (their code);
-- links to the common built-in library blocks, and links to library files
-  that lie next to the model (a library `.slx` in the same folder tree);
+  subsystem); enabled, triggered and If-action subsystems; variant subsystems
+  (the active choice is picked from the workspace when the model is compiled);
+- mask parameters of subsystems as subsystem variables, and mask
+  initialization code, which is run by the mylab interpreter to compute more
+  of them;
+- MATLAB Function blocks (their code), and S-function blocks whose code is a
+  MATLAB-language file on the path, level 1 (the `flag` protocol) and level 2
+  (the block object with `Outputs`, `Update`, `Derivatives`…);
+- links to the common built-in library blocks, and links to library files in
+  the same folder tree, including blocks that a library has moved (its
+  forwarding table) and libraries that only open other libraries;
+- the model's `PreLoadFcn`, `PostLoadFcn`, `InitFcn` and `StartFcn` code,
+  which is run before a simulation;
 - start and stop time, solver, step size and tolerances.
 
-What is not: anything listed under [What is not supported](#what-is-not-supported),
-mask initialization code, callbacks, data types, annotations and block
-colours. A block without an equivalent is **kept as a grey placeholder under
-its original type name**, with its ports and lines, and listed in a message.
-A model with placeholders does not run; the error names them.
+Some library blocks from add-on products are replaced by something of ours,
+and the import says so in a note:
 
-The file is treated as data: nothing in it is executed, sizes are limited,
-and XML with entity declarations is refused.
+- the bicycle, unicycle, differential-drive and Ackermann vehicle models
+  become a subsystem of ordinary blocks with the textbook equations
+  (a **stand-in**: written here, not taken from the library);
+- conversions between rotation matrices, Euler angles, quaternions and
+  homogeneous transforms become a function block that calls `eul2rotm`,
+  `tform2eul` and their relatives;
+- blocks that only draw (video viewers, 3-D animations) become a Viewer
+  block that ignores its inputs; dashboard knobs and gauges are left out.
+
+What is not converted: anything listed under
+[What is not supported](#what-is-not-supported), data types, annotations and
+block colours. A block without an equivalent is **kept as a grey placeholder
+under its original type name**, with its ports and lines, and listed in a
+message. A model with placeholders does not run; the error names them.
+
+Importing treats the file as data: nothing in it is executed, sizes are
+limited, and XML with entity declarations is refused. **Running** an imported
+model is different: its callbacks, mask initialization code, MATLAB Function
+blocks and S-function files are code, and the mylab interpreter runs them like
+any script. Run models only from sources you would run scripts from. (The
+code is stored as text in the converted model, where you can read it.)
+
+### Variables and functions a model expects
+
+Most real models take parameters from the workspace and call functions in
+files of their project. Put those files in the folder of the model (it is
+added to the path) or on the path, and run the project's set-up script before
+`sim`. The model's own callbacks often do this already.
 
 ### Tested on real files
 
@@ -503,58 +535,132 @@ The reader is run on 82 `.slx` files from eight public repositories with
 permissive licenses (saved by releases R2019b to R2024b; 26 blocks in the
 median file, 2,442 in the largest). The files are not part of mylab: they are
 listed in `datasets/matlab-corpus/models.jsonl` and fetched with
-`python datasets/matlab-corpus/tools/fetch_models.py`.
+`python datasets/matlab-corpus/tools/fetch_models.py`. The `.m` files of the
+same repositories (fetched with `tools/fetch.py`) are given to the report
+tool, which puts their folders on the path and, when a model names a variable
+that does not exist, runs the script of that repository that assigns it.
 
 | Result | Files |
 |--------|-------|
 | Read without an error | 82 of 82 |
-| Imported fully (every block converted) | 33 |
-| Imported with placeholders for unsupported blocks | 49 |
-| Then simulated to their stop time | 14 |
-| Imported fully but need workspace variables or toolbox functions that are not in the file | 16 |
-| Imported fully but stopped with an error while running | 1 |
-| Empty diagrams | 2 |
+| Imported fully (every block converted) | 50 |
+| Imported with placeholders for unsupported blocks | 32 |
+| Block libraries (collections of blocks, not models to run) | 14 |
+| Models | 68 |
+| … simulated to their stop time, every block real | 24 |
+| … simulated, with a stand-in subsystem for a toolbox library block | 6 |
+| … have unsupported blocks | 24 |
+| … need workspace variables, toolbox classes or generated code that are not available | 8 |
+| … need data files that are not in the repository | 3 |
+| … stopped with an error | 0 |
+| … did not finish within the time limit | 1 |
+| … are empty diagrams | 2 |
 
-Blocks without an equivalent, by number of files: links to toolbox or user
-libraries that are not available (43 files; mostly physical modelling,
-robotics and the projects' own libraries), physical connection ports (10),
-variant subsystems (7), If with action subsystems (3), S-functions written in
-MATLAB (3) or compiled (2), and, in one or two files each, lookup tables of
-kinds mylab does not have (direct, pre-lookup, three and more dimensions),
-dashboard sliders and gauges, a video viewer, a For iterator and a few block
-options.
+Without the `.m` files of the repositories, 20 of these 30 models still run;
+the other ten call functions of their project (vessel models, an S-function).
+In the end no model needed a set-up script to be found for it: where
+variables were missing, they came from data files or toolbox classes that are
+not in the repositories.
 
-Keep in mind what these numbers do and do not say. "Simulated" means the
-converted model ran to its stop time without an error. The results were
-**not** compared with the original program, which is not available here. Of
-the 14, seven are small control examples from a textbook repository, four are
-ship-autopilot and wave demos, one is an actuator model, and two are library
-files that hold only a few unconnected blocks. Most larger models in the set
-depend on toolboxes.
+Keep in mind what these numbers do and do not say.
+
+- **"Simulated" means** the converted model ran to its stop time (or to its
+  own Stop block) with every block a real one. Models that use a stand-in
+  subsystem are counted apart. The time limit was 400 seconds of
+  computing per model; the slow ones spend it in the interpreter, running
+  large MATLAB Function blocks at every step.
+- The results were **not compared with the original program**, which is not
+  available here. Instead, 15 models with an obvious expected
+  behaviour are checked for it in `tests/test_blocks_slx.py`:
+  - seven textbook control models (`ivaquero/book-control`): free vibration
+    with and without damping against the exact solutions; P, I and PI
+    loops and a lag compensator against their steady states and the
+    closed-loop step response; a tracking controller that must reach each
+    level of a staircase; an observer whose estimates must converge; a
+    nonlinear controller that must bring the states to rest;
+  - five vehicle and motor models (`petercorke/RVC3-MATLAB`): driving onto a
+    line, to a point, after a moving goal, a lane change, and a speed loop
+    (four of these use the bicycle stand-in);
+  - three ship models (`cybergalactic/MSS`): two heading autopilots with
+    wave filters that must turn the ship to 30 degrees, and a depth
+    controller that must approach 50 m without overshoot.
+  The other models that ran have no such check: they ran; nothing more is
+  claimed.
+- These checks earn their keep. The first run of them showed a ship autopilot
+  that never reached its heading although the model "simulated": a vector
+  times its transpose was computed as one number instead of a matrix. That is
+  fixed; a model without a check may hide a similar error.
+
+What remains, by name:
+
+- **Physical modelling** (8 models and 7 libraries of WEC-Sim, and one
+  first-generation mechanics model): the library blocks
+  Rigid Transform, World Frame, Mechanism Configuration, Weld, Planar,
+  Prismatic, Revolute, Bushing, Spherical and Universal Joint, Extruded, File
+  and Spherical Solid, Inertia, External Force and Torque, Transform Sensor,
+  Graphic, PS-Simulink Converter, Simulink-PS Converter, Solver
+  Configuration, and Body, Ground, Prismatic, Joint Actuator, Joint Initial
+  Condition, Body Sensor and Machine Environment, with their physical
+  connection ports. These are networks with two-way connections, which
+  mylab does not have; nothing is put in their place.
+- **Compiled code** (8 models): a vehicle simulator's compiled S-function
+  (CarSim S-Function, 4 models) and a solver that the project generates as
+  C code together with its data (4 models, which is why `p` and `x0` are
+  missing there).
+- **Robot arm and flight blocks that need a toolbox's robot model**
+  (9 models): Forward Dynamics, Inverse Dynamics, Get Jacobian, Get
+  Transform, Polynomial Trajectory, Trapezoidal Velocity Profile Trajectory
+  and the UAV Guidance Model.
+- **Single blocks**: Image From Workspace, Varying Transfer Function, Cross
+  Product from a 3-D animation library, For Iterator subsystems, a Selector
+  on a 4-dimensional signal, an Assignment with an index input, lookup
+  tables whose table is an input (the last four only in libraries).
+- **Workspace contents that are not in the repositories** (7 models): data
+  files (`.mat`) of three vessel models and one platform, objects of toolbox
+  classes (`se2`, `se3`, a camera object), and a struct that a test model
+  expects.
+- **Time**: one quadrotor model did not finish in 400 s; given 420 s it runs
+  to its stop time (its dynamics are an S-function file that the interpreter
+  runs several times per step, for 5,363 steps).
 
 Print the same report for your own files with
 
 ```bash
-python -m mylab.blocks.import_report folder_with_slx_files
+python -m mylab.blocks.import_report folder_with_slx_files --sources folder_with_the_repositories
+python -m mylab.blocks.import_report folder_with_slx_files --defaults
 ```
+
+The second form compares the parameter defaults that files list for their
+block types with the defaults the importer assumes (in the 82 files: 20
+parameters of 12 block types, all in agreement).
 
 ## What is not supported
 
 - Code generation, real-time targets, hardware in the loop.
 - State charts and flow charts.
 - Physical modelling (mechanical, electrical, hydraulic networks with
-  two-way connections).
+  two-way connections), and the library blocks that belong to it.
+- Compiled S-functions (C, MEX): they are named in the error, not replaced.
+  S-functions written in the MATLAB language run only when their file is on
+  the path; of the level-2 interface the common methods are there
+  (`Outputs`, `Update`, `Derivatives`, `Start`, `InitializeConditions`,
+  `PostPropagationSetup`, Dwork vectors, dialog parameters),
+  not zero-crossing or variable-size signals.
 - Signals that change size while the model runs; fixed-point and integer data
-  types; complex signals; bus objects; frames.
-- Function-call subsystems, If and Switch Case action subsystems, For and
-  While iterator subsystems, variant subsystems, model references, library
+  types; complex signals; bus objects; frames. Row and column vectors are not
+  told apart except where it matters for matrix products: a vector counts as
+  a column, and its transpose is a row.
+- Function-call subsystems, Switch Case action subsystems, For and While
+  iterator subsystems, model references, resettable subsystems, and library
   links other than the ones described above.
-- S-functions and blocks from add-on toolboxes.
-- Lookup tables with more than two dimensions.
-- Resettable subsystems; the "reset states when enabling" option of enabled
-  subsystems (states are always held).
+- Blocks from add-on toolboxes other than the stand-ins listed above.
+- Lookup tables whose table comes from an input port.
+- The "reset states when enabling" option of enabled subsystems (states are
+  always held).
 - Discrete-time PID, discrete zero-pole, and continuous blocks with
   per-block tolerances.
+- Algebraic loops through the enable or trigger input of a subsystem (other
+  loops are solved, see [How a model runs](#how-a-model-runs)).
 - Linearization of discrete states (`linmod` holds them constant), `dlinmod`.
 - In the editor: annotations, block colours, several views of one model side
   by side, and pausing or stepping a simulation.
@@ -562,7 +668,7 @@ python -m mylab.blocks.import_report folder_with_slx_files
 
 ## How it was checked
 
-`tests/test_blocks_*.py` holds about 460 assert statements. Simulations are compared
+`tests/test_blocks_*.py` holds about 560 assert statements. Simulations are compared
 with exact solutions and with `ode45` at tight tolerances:
 
 | Model | Compared with | Largest error |
@@ -588,7 +694,8 @@ with exact solutions and with `ode45` at tight tolerances:
 The static blocks (saturation, dead zone, relay, lookup tables…) are checked
 against their definitions, each of the block types at least once, and
 the `.slx` reader on small files built in the tests and on the real files
-above. `scripts/test_web.mjs` drives the editor in a browser: it opens and
+above, where 15 models are also checked for the behaviour they must show
+(see [Tested on real files](#tested-on-real-files)). `scripts/test_web.mjs` drives the editor in a browser: it opens and
 runs an example, builds a model with the mouse and with the keyboard alone,
 changes a gain and runs again, makes and enters a subsystem, undoes and
 redoes, checks the error markers, imports a `.slx` file and looks at the
