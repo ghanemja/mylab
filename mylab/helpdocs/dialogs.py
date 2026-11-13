@@ -2,9 +2,6 @@
 
 _HOW = ("In a terminal or notebook the question is asked as text; when nobody can answer (for example in a "
         "batch run) the default is used and a note is printed.")
-_NO_GUI = ("Windows with buttons and other controls cannot be built in mylab: this raises the error "
-           "'Graphical user interfaces are not supported in mylab'. Use input, menu, questdlg or inputdlg "
-           "for simple interaction.")
 _BOX = "Prints the message with the label '{0}' (there is no pop-up window) and returns a handle that close " \
        "and delete accept. The message can be text or a cell array of lines."
 
@@ -55,11 +52,6 @@ HELP = {
     "uigetdir": (["folder = uigetdir", "folder = uigetdir(start, title)"],
                  "Asks for a folder (typed as a path) and returns it, or 0 after a cancel. An empty reply, or "
                  "nobody to answer, gives the start folder (the current folder when none is given)."),
-    "uiwait": (["uiwait", "uiwait(h)"],
-               "Returns immediately: mylab dialogs have already been answered when they return, so there is "
-               "nothing to wait for."),
-    "uiresume": (["uiresume", "uiresume(h)"], "Has no effect; see uiwait."),
-    "waitfor": (["waitfor(h)", "waitfor(h, property)"], "Returns immediately; see uiwait."),
     "waitforbuttonpress": ("k = waitforbuttonpress",
                            "Waits for a mouse click (0) or key press (1) in a plot window. Without a live "
                            "window it returns 0 at once."),
@@ -68,7 +60,3 @@ HELP = {
                "their data coordinates as column vectors. It needs a live plot window; elsewhere it raises "
                "an error."),
 }
-for _n in ("uicontrol", "uipanel", "uimenu", "uifigure", "guide", "uitable", "uibuttongroup", "uitab",
-           "uitabgroup", "uiaxes", "uibutton", "uilabel", "uieditfield", "uidropdown", "uislider", "uicheckbox",
-           "uitoolbar", "uipushtool", "uicontextmenu", "appdesigner", "dialog", "guihandles"):
-    HELP[_n] = (f"{_n}(...)", _NO_GUI)

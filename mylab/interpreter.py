@@ -174,6 +174,9 @@ class Interpreter:
 
     def run_file(self, path: str) -> None:
         path = os.path.abspath(path)
+        if path.lower().endswith(".mlapp"):
+            from .ui import MLAPP_MESSAGE
+            raise MatlabError(MLAPP_MESSAGE)
         directory = os.path.dirname(path)
         if directory not in self.path:
             self.path.insert(0, directory)
@@ -890,6 +893,12 @@ class Interpreter:
         if t is A.Colon:
             return char(":")
         if t is A.FuncHandle:
+            if "." in node.name:
+                root = node.name.split(".", 1)[0]
+                if frame.has(root) and isinstance(frame.get(root), MObject):
+                    # @obj.method: a handle that calls the method of this object
+                    lam = parse(f"@(varargin) {node.name}(varargin{{:}})").body[0].expr
+                    return self.make_lambda(lam, frame)
             return FunctionHandle(name=node.name, closure={"__functions__": frame.functions})
         if t is A.Lambda:
             return self.make_lambda(node, frame)
