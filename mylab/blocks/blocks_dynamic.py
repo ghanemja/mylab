@@ -49,6 +49,7 @@ def _edge(kind: str, prev, now) -> bool:
     icon="∫",
 )
 class Integrator(Node):
+    expandable = True
     params = [
         P("InitialCondition", "0", "Initial value"),
         P("ExternalReset", "none", "Reset input", options=_RESET),
@@ -83,7 +84,7 @@ class Integrator(Node):
         self.has_zc = self.limited or self.reset != "none"
 
     def setup(self, shapes):
-        want = shapes[0] if shapes else None
+        want = self.wanted(shapes)
         if self.ic_port is not None and shapes and shapes[self.ic_port] is not None:
             want = np.broadcast_shapes(tuple(want or (1,)), tuple(shapes[self.ic_port]))
         x0 = _fit(self.x0, want)
@@ -239,10 +240,14 @@ def _tf(node: Node, num_name: str, den_name: str, inverse_powers: bool = False):
     icon="tf",
 )
 class TransferFcn(ContinuousLTI):
-    params = [P("Numerator", "[1]", "Numerator coefficients"), P("Denominator", "[1 1]", "Denominator coefficients")]
+    params = [
+        P("Numerator", "[1]", "Numerator coefficients"),
+        P("Denominator", "[1 1]", "Denominator coefficients"),
+        P("InitialStates", "0", "Initial states (of the controllable canonical form)"),
+    ]
 
     def init(self):
-        self.set_system(*_tf(self, "Numerator", "Denominator"))
+        self.set_system(*_tf(self, "Numerator", "Denominator"), self.num("InitialStates"))
 
 
 @block("StateSpace", "Continuous", "Linear system dx/dt = Ax + Bu, y = Cx + Du.", title="State-Space", icon="ss")
@@ -388,6 +393,7 @@ class Derivative(Node):
 
 @block("TransportDelay", "Continuous", "Delays the input by a fixed time.", title="Transport Delay", icon="delay")
 class TransportDelay(Node):
+    expandable = True
     params = [P("DelayTime", "1", "Time delay (s)"), P("InitialOutput", "0", "Output before the delay has passed")]
     sample = "cont"
 
@@ -401,7 +407,7 @@ class TransportDelay(Node):
         self.us: list[np.ndarray] = []
 
     def setup(self, shapes):
-        y0 = _fit(self.y0, shapes[0] if shapes else None)
+        y0 = _fit(self.y0, self.wanted(shapes))
         changed = y0.shape != self.y0.shape
         self.y0 = y0
         return changed
@@ -434,6 +440,7 @@ class TransportDelay(Node):
 
 
 class Held(Node):
+    expandable = True
     """A block that outputs a stored value and replaces it at the end of the step."""
 
     df = False
@@ -443,7 +450,7 @@ class Held(Node):
         self.state = self.num(self.ic_name)
 
     def setup(self, shapes):
-        s = _fit(self.state, shapes[0] if shapes else None)
+        s = _fit(self.state, self.wanted(shapes))
         changed = s.shape != self.state.shape
         self.state = s
         return changed
@@ -468,6 +475,7 @@ class Memory(Held):
 
 @block("Delay", "Discrete", "Delays the input by a number of sample times.", icon="z⁻ⁿ")
 class Delay(Node):
+    expandable = True
     params = [P("DelayLength", "2", "Number of samples"), P("InitialCondition", "0", "Initial value"), SAMPLE("-1")]
     sample = "param"
     df = False
@@ -481,7 +489,7 @@ class Delay(Node):
         self.buf = deque([self.ic] * self.n)
 
     def setup(self, shapes):
-        ic = _fit(self.ic, shapes[0] if shapes else None)
+        ic = _fit(self.ic, self.wanted(shapes))
         changed = ic.shape != self.ic.shape
         self.ic = ic
         self.buf = deque([ic] * self.n)
@@ -504,6 +512,8 @@ class Delay(Node):
     icon="zoh",
 )
 class ZeroOrderHold(Node):
+    same_shape = True
+
     params = [SAMPLE("1")]
     sample = "param"
 
@@ -534,6 +544,7 @@ class RateTransition(ZeroOrderHold):
     icon="KTs/(z−1)",
 )
 class DiscreteTimeIntegrator(Node):
+    expandable = True
     params = [
         P(
             "IntegratorMethod",
@@ -543,9 +554,12 @@ class DiscreteTimeIntegrator(Node):
         ),
         P("gainval", "1.0", "Gain"),
         P("InitialCondition", "0", "Initial value"),
+        P("ExternalReset", "none", "Reset input", options=_RESET),
+        P("InitialConditionSource", "internal", "Initial value from", options=["internal", "external"]),
         *_LIMITS,
         SAMPLE("1"),
     ]
+    nin = ["sum", 1, ["if", "ExternalReset", "none", 0, 1], ["if", "InitialConditionSource", "external", 1, 0]]
     sample = "param"
 
     def init(self):
@@ -553,15 +567,23 @@ class DiscreteTimeIntegrator(Node):
         self.method = "backward" if "backward" in m else ("trapezoidal" if "trapez" in m else "forward")
         if "accumulation" in m:
             raise BlockError("the accumulation methods are not supported; use an integration method")
-        self.df = self.method != "forward"
         self.k = self.num("gainval")
-        self.state = self.num("InitialCondition")
+        self.reset = self.choice("ExternalReset")
+        self.ext_ic = self.choice("InitialConditionSource") == "external"
+        self.reset_port = 1 if self.reset != "none" else None
+        self.ic_port = (2 if self.reset != "none" else 1) if self.ext_ic else None
+        self.state = np.zeros(1) if self.ext_ic else self.num("InitialCondition")
+        self.ic = self.state
+        self.r_prev = None
+        self.first = True
+        # the input, the reset and the initial-value port act on the output in the same step
+        self.df = [self.method != "forward"] + [True] * (self.n_in() - 1)
         self.limited = self.is_on("LimitOutput")
         self.hi = self.num("UpperSaturationLimit") if self.limited else np.inf
         self.lo = self.num("LowerSaturationLimit") if self.limited else -np.inf
 
     def setup(self, shapes):
-        s = _fit(self.state, shapes[0] if shapes else None)
+        s = _fit(self.state, self.wanted(shapes))
         changed = s.shape != self.state.shape
         self.state = s
         return changed
@@ -574,9 +596,19 @@ class DiscreteTimeIntegrator(Node):
         return np.clip(y, self.lo, self.hi) if self.limited else y
 
     def out(self, t, u):
+        if not self.sim.minor and (self.reset_port is not None or self.ic_port is not None):
+            fire = self.first and self.ic_port is not None
+            if self.reset_port is not None:
+                fire = fire or _edge(self.reset, self.r_prev, u[self.reset_port])
+            if fire:
+                ic = u[self.ic_port] if self.ic_port is not None else self.ic
+                self.state = np.array(np.broadcast_to(ic, np.broadcast_shapes(np.shape(ic), self.state.shape)), dtype=float)
         return [np.asarray(self._y(u[0]), float)]
 
     def update(self, t, u):
+        self.first = False
+        if self.reset_port is not None:
+            self.r_prev = np.array(u[self.reset_port], copy=True)
         step = self.k * self.period * u[0]
         if self.method == "forward":
             s = self.state + step

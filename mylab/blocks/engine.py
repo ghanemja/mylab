@@ -101,7 +101,43 @@ class Context:
         self.interp = interp
         self.frame = frame
         self.scope = scope or {}
-        self.shared = shared if shared is not None else {"t0": 0.0, "tf": 10.0, "ext": {}, "cache": {}}
+        self.shared = shared if shared is not None else {"t0": 0.0, "tf": 10.0, "ext": {}, "cache": {}, "n": 0}
+        self.shared["n"] = self.shared.get("n", 0) + 1
+        self.serial = self.shared["n"]
+
+    def run_code(self, code: str, scope: dict) -> tuple[dict, str | None]:
+        """Run initialization code with ``scope`` as extra variables.
+
+        Returns the variables the code made or changed, and an error message
+        if it stopped early (what it had set until then is kept).
+        """
+        from ..errors import MatlabError
+        from ..interpreter import Frame
+        from ..parser import parse
+
+        interp = self.interp
+        src = interp.base
+        frame = Frame(interp, src.functions, name="mask initialization", file=src.file)
+        before = dict(src.vars)
+        frame.vars = dict(before)
+        frame.vars.update(self.scope)
+        frame.vars.update(scope)
+        start = dict(frame.vars)
+        error = None
+        out = interp.out
+        interp.out = lambda s: None
+        interp.frames.append(frame)
+        try:
+            interp.run_program(parse(code), frame)
+        except MatlabError as exc:
+            error = exc.message
+        except RecursionError:
+            error = "the code calls itself without end"
+        finally:
+            interp.frames.pop()
+            interp.out = out
+        changed = {k: v for k, v in frame.vars.items() if k not in start or start[k] is not v}
+        return changed, error
 
     def child(self, scope: dict) -> "Context":
         merged = dict(self.scope)
@@ -170,7 +206,7 @@ class Context:
         return program.body[0].expr
 
     def evaluate(self, expr: str) -> Any:
-        key = (expr, id(self.scope) if self.scope else 0)
+        key = (expr, self.serial if self.scope else 0)
         cache = self.shared["cache"]
         if key not in cache:
             try:  # plain numbers need no interpreter
@@ -216,6 +252,9 @@ class Context:
         main = next(iter(program.functions.values()))
         functions = {**self.interp.base.functions, **program.functions}
         interp = self.interp
+        # A block function named like a library function it wraps (angdiff calling angdiff) means the library one.
+        if main.name in interp.builtins or interp.find_file_function(main.name) is not None:
+            functions.pop(main.name, None)
 
         def call(args, nout):
             return interp.call_user_function(main, args, nout, functions, None)
@@ -356,8 +395,8 @@ def compile_model(
                 gated = False
                 for ib in inner.blocks:
                     it = getattr(find_type(ib.type), "type", "")
-                    if it in ("EnablePort", "TriggerPort"):
-                        which = "enable" if it == "EnablePort" else "trigger"
+                    if it in ("EnablePort", "TriggerPort", "ActionPort"):
+                        which = "trigger" if it == "TriggerPort" else "enable"
                         g = Gate(
                             f"{path}/{ib.name}", which, ib.params.get("TriggerType", "rising").strip().lower(), ctx
                         )
@@ -382,12 +421,25 @@ def compile_model(
                                 kind="param",
                             )
                     child_ctx = sy.ctx.child(scope)
+                init = b.extra.get("maskInit")
+                if isinstance(init, str) and init.strip():
+                    made, err = child_ctx.run_code(init, {})
+                    if made:
+                        child_ctx = child_ctx.child(made)
+                    if err:
+                        comp.problem(
+                            "warning",
+                            f"'{path}': the mask initialization code stopped early ({err}). "
+                            "Variables it would have set after that point are missing.",
+                            path,
+                            kind="mask-init",
+                        )
                 child = _Sys(inner, path, sy, b, conds, child_ctx)
                 child.gated = gated
                 sy.children[b.name] = child
                 build(child)
                 continue
-            if kind in ("Goto", "From", "EnablePort", "TriggerPort"):
+            if kind in ("Goto", "From", "EnablePort", "TriggerPort", "ActionPort"):
                 if kind == "Goto":
                     gotos.setdefault(b.params.get("GotoTag", "A").strip(), []).append((sy, b))
                 continue
@@ -552,7 +604,7 @@ def compile_model(
                 for which in ("enable", "trigger"):
                     has = any(
                         getattr(find_type(ib.type), "type", "")
-                        == ("EnablePort" if which == "enable" else "TriggerPort")
+                        in (("EnablePort", "ActionPort") if which == "enable" else ("TriggerPort",))
                         for ib in child.system.blocks
                     )
                     if has and (b.name, which) not in sy.into:
@@ -802,6 +854,9 @@ class Sim:
         self.minor = True
         self.logging = False
         self.latch = False
+        self.lenient = False
+        self.deferred = 0
+        self.failing: set = set()
         self.initializing = True
         self.step_no = 0
         self.hits: set = set()
@@ -828,6 +883,10 @@ class Sim:
         self._init_states()
 
     # -- helpers ----------------------------------------------------------------------
+    def note(self, message: str) -> None:
+        """A warning to show with the results."""
+        self.comp.problem("warning", message, None, kind="run")
+
     def request_stop(self, path: str) -> None:
         self.stop_requested = path
 
@@ -874,7 +933,13 @@ class Sim:
             try:
                 n.y = n.out(t, self.gather(n))
             except Exception as exc:
-                raise self._fail(n, exc) from None
+                if not self.lenient:
+                    raise self._fail(n, exc) from None
+                # while signal sizes are still being worked out, an input may not have its final size yet
+                self.deferred += 1
+                self.failing.add(id(n))
+                if not n.y:
+                    n.y = [ZERO] * max(n.n_out(), 1)
             if not minor:
                 n.stamp = self.step_no
 
@@ -926,7 +991,8 @@ class Sim:
         for n in order:
             n.setup(None)
         x = np.zeros(0)
-        for _attempt in range(8):
+        failed = -1
+        for _attempt in range(12):
             off = 0
             for n in order:
                 n.xo = off  # type: ignore[attr-defined]
@@ -938,9 +1004,17 @@ class Sim:
                     if x0.size != n.nx:
                         raise SimError(f"'{n.path}': the initial state has the wrong size.", n.path)
                     x[n.xo : n.xo + n.nx] = x0
+            self.lenient = True
+            self.deferred = 0
+            self.failing = set()
             self.eval(self.t0, x, True)
+            before = self.deferred
             self.eval(self.t0, x, True)  # second pass: inputs that come from blocks later in the order
-            changed = False
+            self.lenient = False
+            changed = self.deferred - before not in (0, failed)  # still getting further
+            failed = self.deferred - before
+            if self._push_hints():
+                changed = True
             for n in order:
                 shapes = [None if link is None else np.shape(u) for link, u in zip(n.inputs, self.gather(n))]
                 try:
@@ -952,6 +1026,7 @@ class Sim:
                 break
         else:
             raise SimError("The signal sizes do not settle. Check the initial values of blocks in feedback loops.")
+        self.eval(self.t0, x, True)  # from here on an error is an error
         late = False
         for n in order:
             fn = getattr(n, "late_init", None)
@@ -977,6 +1052,36 @@ class Sim:
             if isinstance(n.rate, tuple):
                 self.rates.setdefault(n.rate, 0)
         self.initializing = False
+
+    def _push_hints(self) -> bool:
+        """Tell blocks with a scalar initial value which size the blocks they feed need. True if a size changed."""
+        changed = False
+
+        def push(node: Node, shape: tuple, depth: int) -> None:
+            nonlocal changed
+            if depth > 25:
+                return
+            if node.expandable:
+                ys = node.y
+                if node.hint != shape and ys and all(np.size(v) == 1 for v in ys):
+                    node.hint = shape
+                    changed = True
+            elif node.same_shape:
+                for link in node.inputs:
+                    if link is not None and np.size(link[0].y[link[1]] if link[1] < len(link[0].y) else ZERO) == 1:
+                        push(link[0], shape, depth + 1)
+
+        for n in self.order:
+            for k, link in enumerate(n.inputs):
+                if link is None:
+                    continue
+                try:
+                    want = n.want_in(k) or (n.want_min(k) if id(n) in self.failing else None)
+                except Exception:
+                    want = None
+                if want and np.size(link[0].y[link[1]] if link[1] < len(link[0].y) else ZERO) == 1:
+                    push(link[0], tuple(want), 0)
+        return changed
 
     # -- major step -------------------------------------------------------------------
     def hit_time(self, rate: tuple) -> float:
@@ -1029,6 +1134,22 @@ class Sim:
     keep_states = False
 
     def run(self) -> None:
+        # Function files do not change while a model runs: look each name up on the path only once.
+        interp = self.ctx.interp
+        lookup, memo = interp.find_file_function, {}
+
+        def remembered(name: str) -> Any:
+            if name not in memo:
+                memo[name] = lookup(name)
+            return memo[name]
+
+        interp.find_file_function = remembered
+        try:
+            self._run()
+        finally:
+            del interp.find_file_function
+
+    def _run(self) -> None:
         cfg = self.cfg
         ctx = self.ctx
         name = str(cfg.get("Solver", "ode45")).strip()
@@ -1247,6 +1368,39 @@ def _external(spec: Any, n_ports: int) -> dict:
     return fns
 
 
+def run_callbacks(model: Model, interp: Any, names: tuple = ()) -> list[str]:
+    """Run the model's set-up code in the base workspace. Returns messages about callbacks that failed.
+
+    PreLoadFcn and PostLoadFcn run once per loaded model, InitFcn and StartFcn before every simulation.
+    """
+    import os
+
+    from ..errors import MatlabError
+
+    todo = list(names)
+    if not todo:
+        if not getattr(model, "_preloaded", False):
+            todo += ["PreLoadFcn", "PostLoadFcn"]
+            model._preloaded = True  # type: ignore[attr-defined]
+        todo += ["InitFcn", "StartFcn"]
+    notes = []
+    folder = os.path.dirname(os.path.abspath(model.file)) if model.file else None
+    added = bool(folder) and folder not in interp.path
+    if added:
+        interp.path.append(folder)
+    for name in todo:
+        code = model.callbacks.get(name, "")
+        if not code.strip():
+            continue
+        try:
+            interp.execute(code)
+        except MatlabError as exc:
+            notes.append(f"The model's {name} callback stopped with an error: {exc.message}")
+        except Exception as exc:  # a parse error or similar in code we did not write
+            notes.append(f"The model's {name} callback could not be run: {exc}")
+    return notes
+
+
 def simulate(
     model: Model,
     interp: Any = None,
@@ -1257,7 +1411,14 @@ def simulate(
     keep_states: bool = False,
 ) -> SimResult:
     """Compile and run a model; returns the logged data."""
+    if interp is None:
+        from ..interpreter import Interpreter
+
+        interp = Interpreter(out=lambda s: None)
+    notes = run_callbacks(model, interp)
     comp = compile_model(model, interp, frame, strict=True, config=config)
+    for n in notes:
+        comp.problem("warning", n, None, kind="callback")
     if external_input is not None:
         comp.ctx.shared["ext"] = _external(external_input, 0)
     sim = Sim(comp, config, on_step)

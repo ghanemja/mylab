@@ -23,6 +23,7 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from .library import find_type
+from .slx_library import KINEMATIC, coordinate_conversion, kinematic_model
 from .model import Block, Line, Model, ModelError, System
 
 MAX_PART = 64 * 1024 * 1024
@@ -54,6 +55,10 @@ TYPE_MAP = {
     "InitialCondition": "DataTypeConversion",
     "Concatenate": "Concatenate",
     "DiscreteFir": "DiscreteFir",
+    "S-Function": "SFunction",
+    "M-S-Function": "MSFunction",
+    "PreLookup": "Prelookup",
+    "LookupNDDirect": "DirectLookupTable",
     "Sum": "Sum",
 }
 # Parameter names that differ: {our type: {their name: our name}}.
@@ -68,7 +73,12 @@ PARAM_MAP = {
     "ManualSwitch": {"CurrentSetting": "sw"},
     "Ramp": {"slope": "Slope", "start": "Start", "X0": "InitialOutput"},
     "TransportDelay": {"InitialOutput": "InitialOutput"},
+    "TransferFcn": {"N": "Numerator", "D": "Denominator", "X0": "InitialStates"},
 }
+# Display-only sinks: nothing to compute. They become a Viewer block and a note.
+VIEWERS = {"videoviewer", "tovideodisplay", "uavanimation", "vrsink", "matrixviewer"}
+# Dashboard controls and gauges have no signal ports; the value they set is already in the block they point to.
+DASHBOARD = re.compile(r"(Slider|Knob|Gauge|Switch|Lamp|Button|Checkbox|EditField|ComboBox|RadioButton|Display|DashboardScope)Block$")
 # Library links ("Reference" blocks) we can stand in for: SourceType or last part of SourceBlock -> (our type, fixed params).  # noqa: E501
 REFERENCE_MAP = {
     "comparetoconstant": ("CompareToConstant", {}),
@@ -88,6 +98,10 @@ REFERENCE_MAP = {
     "xyscope": ("XYGraph", {}),
     "xygraph": ("XYGraph", {}),
     "discretederivative": ("DiscreteDerivative", {}),
+    "ratelimiterdynamic": ("RateLimiterDynamic", {}),
+    "minmaxrunningresettable": ("MinMaxRunningResettable", {}),
+    "transferfunctionwithinitialstates": ("TransferFcn", {}),
+    "transferfcnwithinitialstates": ("TransferFcn", {}),
     "transpose": ("MathFunction", {"Operator": "transpose"}),
     "coulombviscousfriction": ("CoulombViscousFriction", {}),
     "coulombicandviscousfriction": ("CoulombViscousFriction", {}),
@@ -197,6 +211,7 @@ class _Importer:
         self.top_system: ET.Element | None = None
         self.libs: dict[str, "_Importer | None"] = {}
         self.index: dict[str, str] | None = None
+        self._forward: dict[str, str] | None = None
         self.depth = 0
 
     # counters live in one place, shared with the libraries a model links to
@@ -254,7 +269,9 @@ class _Importer:
                         break
                     here = parent
             path = root.index.get(name)
-            if path and os.path.abspath(path) != root.path:
+            if path and os.path.abspath(path) == root.path:
+                found = root
+            elif path:
                 try:
                     found = _Importer(path, root)
                     found.open()
@@ -283,15 +300,39 @@ class _Importer:
                 prefix += want + "/"
         return (el, prefix) if el is not None else None
 
-    def resolve_link(self, source: str) -> tuple["_Importer", ET.Element, str] | None:
+    def forwarding(self) -> dict[str, str]:
+        """Old block path -> new block path, from the library's forwarding table."""
+        if self._forward is None:
+            self._forward = {}
+            el = self.arc.xml("simulink/forwardingTable.xml")
+            for entry in el.iter("Entry") if el is not None else []:
+                old, new = entry.findtext("OldBlock"), entry.findtext("NewBlock")
+                if old and new:
+                    self._forward[re.sub(r"\s+", " ", old).strip()] = new
+        return self._forward
+
+    def resolve_link(self, source: str, depth: int = 0) -> tuple["_Importer", ET.Element, str] | None:
         parts = [q.replace("\0", "/") for q in source.replace("//", "\0").split("/")]
-        if len(parts) < 2:
+        if len(parts) < 2 or depth > 6:
             return None
         lib = self if parts[0] == "$bdroot" else self.library(parts[0])
         if lib is None:
             return None
         hit = lib.find_block(parts[1:])
-        return (lib, hit[0], hit[1]) if hit else None
+        if hit:
+            return lib, hit[0], hit[1]
+        # the block moved: the library says where to
+        moved = lib.forwarding().get(re.sub(r"\s+", " ", source).strip())
+        if moved and moved != source:
+            return self.resolve_link(moved, depth + 1)
+        # a library that is only a menu: its top-level blocks open other library files
+        top = lib.find_block(parts[1:2])
+        if top is not None and len(parts) > 2:
+            m = re.fullmatch(r"\s*(?:open(?:_system)?\(\s*['\"]([\w.-]+)['\"]\s*\)|([\w.-]+))\s*;?\s*", _params(top[0]).get("OpenFcn", ""))
+            other = (m.group(1) or m.group(2)) if m else None
+            if other and other != parts[0]:
+                return self.resolve_link("/".join([other] + [q.replace("/", "//") for q in parts[2:]]), depth + 1)
+        return None
 
     # -- parts ------------------------------------------------------------------------
     def run(self, name: str) -> Model:
@@ -299,6 +340,9 @@ class _Importer:
         st = self.stats
         model = Model(name)
         model.root = self.system(self.top_system, "", "")
+        for p in self.top.findall("P"):
+            if p.get("Name") in ("PreLoadFcn", "PostLoadFcn", "InitFcn", "StartFcn") and (p.text or "").strip():
+                model.callbacks[p.get("Name")] = p.text.strip()
         self._config(model, self.top)
         notes = list(dict.fromkeys(st.notes))
         if st.unsupported:
@@ -429,6 +473,24 @@ class _Importer:
                 if k in REFERENCE_MAP:
                     target, fixed = REFERENCE_MAP[k]
                     break
+                if k in VIEWERS:
+                    target, fixed = "Viewer", {"NumInputPorts": str(ports[0] if ports else 1), "Kind": cand}
+                    self.notes.append(f"'{path}' ({cand}) only draws; it was replaced by a Viewer block that ignores its inputs.")
+                    break
+                if k.endswith("coordinatetransformationconversion") and (ports or [1, 1])[:2] == [1, 1]:
+                    expr = coordinate_conversion(p)
+                    if expr:
+                        target, fixed = "InterpretedFunction", {"MATLABFcn": expr}
+                        break
+                if k in KINEMATIC:
+                    made = kinematic_model(KINEMATIC[k], name, p)
+                    if made is not None:
+                        made.pos, made.rot, made.flip = box, rot, flip
+                        self._count("converted")
+                        self._count("total", len(made.system.blocks))
+                        self._count("converted", len(made.system.blocks))
+                        self.notes.append(f"'{path}' ({cand}) was replaced by a subsystem with the same equations, built from mylab blocks.")
+                        return made
             if target is None:
                 link = self.resolve_link(p.get("SourceBlock", "")) if self.root.depth < 12 else None
                 if link is None:
@@ -490,7 +552,7 @@ class _Importer:
                     if not mname or v is None:
                         continue
                     val = own.get(mname, v.text or "")
-                    literal = mp.get("Evaluate", "on") == "off" or "\n" in val.strip()
+                    literal = mp.get("Evaluate", "on") == "off"
                     if kind == "checkbox":
                         values[mname] = "1" if val.strip() == "on" else "0"
                     elif kind == "popup" and not literal:
@@ -500,17 +562,29 @@ class _Importer:
                         values[mname] = "'" + val.replace("'", "''") + "'" if literal else (val.strip() or "[]")
                 if values:
                     blk.extra["mask"] = values
-                if mask.find("Initialization") is not None and (mask.find("Initialization").text or "").strip():
-                    self.notes.append(f"'{path}' has mask initialization code, which mylab Blocks does not run.")
+                init = (mask.findtext("Initialization") or "").strip()
+                if init:
+                    blk.extra["maskInit"] = init
             self._count("converted")
             return blk
+        elif DASHBOARD.search(btype) and not ports:
+            self.notes.append(f"'{path}' is a dashboard control ({btype}); it has no signals and was left out.")
+            return None
+        elif _key(btype) in VIEWERS:
+            target, fixed = "Viewer", {"NumInputPorts": str(ports[0] if ports else 1), "Kind": btype}
+            self.notes.append(f"'{path}' ({btype}) only draws; it was replaced by a Viewer block that ignores its inputs.")
         elif btype == "Lookup_n-D":
             dims = (p.get("NumberOfTableDimensions") or "2").strip()
             if p.get("TableSource", "Dialog") == "Input port":
                 return unsupported("Lookup Table with the table from an input port")
-            if dims not in ("1", "2"):
+            if not dims.isdigit():
                 return unsupported(f"{dims}-D Lookup Table")
-            target = "LookupTable1D" if dims == "1" else "LookupTable2D"
+            if dims not in ("1", "2"):
+                target = "LookupTableND"
+                grids = [p.get(f"BreakpointsForDimension{k + 1}", "[1,2,3]").strip() for k in range(int(dims))]
+                fixed = {"Breakpoints": ", ".join(grids)}
+            else:
+                target = "LookupTable1D" if dims == "1" else "LookupTable2D"
             if dims == "1":
                 p.setdefault("Table", "tanh([-5:5])")
                 p.setdefault("BreakpointsForDimension1", "[-5:5]")
@@ -544,6 +618,18 @@ class _Importer:
             pname, side = COUNTED[kind]
             if pname not in own and len(ports) > side and ports[side] > 0:
                 q[pname] = str(ports[side])
+        if kind in ("SFunction", "MSFunction"):
+            q["NumInputs"] = str(ports[0] if ports else 1)
+            q["NumOutputs"] = str(ports[1] if len(ports) > 1 else (0 if ports else 1))
+        elif kind == "DirectLookupTable":
+            q.setdefault("NumberOfTableDimensions", "2")
+            if n_in is not None and "InputsSelectThisObjectFromTable" not in q:
+                q["InputsSelectThisObjectFromTable"] = "Element"
+        elif kind == "If":
+            q["NumInputs"] = str(n_in or 1)
+            n_out = ports[1] if len(ports) > 1 else 1
+            n_else_if = len([e for e in q.get("ElseIfExpressions", "").split(",") if e.strip()])
+            q["ShowElse"] = "on" if n_out > 1 + n_else_if else "off"
         if kind == "Scope":
             if btype == "Record":
                 q["NumInputPorts"] = str(n_in or 1)
@@ -553,8 +639,6 @@ class _Importer:
             if kind == "Outport" and q.get("InitialOutput", "[]").strip() in ("", "[]"):
                 q.pop("InitialOutput", None)
         elif kind == "SineWave":
-            if p.get("TimeSource", "Use simulation time") != "Use simulation time":
-                return "Sine Wave with an external time input"
             if p.get("SineType", "Time based") != "Time based":
                 return "Sample-based Sine Wave"
         elif kind == "PulseGenerator":
@@ -570,8 +654,6 @@ class _Importer:
             if p.get("ShowSaturationPort", "off") == "on":
                 return "Integrator with a saturation port"
         elif kind == "DiscreteTimeIntegrator":
-            if p.get("ExternalReset", "none") != "none" or p.get("InitialConditionSource", "internal") != "internal":
-                return "Discrete-Time Integrator with a reset or external initial value"
             if "Accumulation" in p.get("IntegratorMethod", ""):
                 return "Discrete-Time Integrator (accumulation method)"
         elif kind in ("Selector", "Assignment"):
@@ -655,6 +737,8 @@ class _Importer:
             return sid, int(num)
         if kind in ("enable", "trigger"):
             return sid, kind
+        if kind == "ifaction":  # the control input of an if-action subsystem works like an enable input
+            return sid, "enable"
         return None
 
     def line(self, el: ET.Element, sy: System, sid_name: dict, boxes: dict) -> None:

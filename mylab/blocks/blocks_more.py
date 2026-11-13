@@ -137,7 +137,21 @@ _INDEX_PARAMS = [
 
 @block("Selector", "Routing", "Picks elements of a vector (or rows and columns of a matrix) by index.", icon="u(i)")
 class Selector(_Indexed):
-    params = _INDEX_PARAMS
+    params = _INDEX_PARAMS + [P("InputPortWidth", "-1", "Width of the input, if known (-1: any)")]
+
+    def want_in(self, port):
+        if port or self.ndim != 1:
+            return None
+        try:
+            n = int(self.scalar("InputPortWidth"))
+        except BlockError:
+            return None
+        return (n,) if n > 1 else None
+
+    def want_min(self, port):
+        i = self.idx[0] if self.ndim == 1 else None
+        return (int(i.max()) + 1,) if isinstance(i, np.ndarray) and i.size and i.max() > 0 else None
+
     nin = ["if", "IndexOptions", "Index vector (port)", 2, 1]
 
     def init(self):
@@ -317,7 +331,7 @@ class Gate(Node):
                 self.active = False
             return []
         v = u[0]
-        if self.kind == "enable":
+        if self.kind != "trigger":
             self.active = bool(np.any(v > 0))
         else:
             p = self.prev
@@ -338,6 +352,8 @@ class Gate(Node):
 
 
 class HeldOutput(Node):
+    same_shape = True
+
     """Output port of a conditionally run subsystem: keeps its value while the subsystem is idle."""
 
     def __init__(self, path, raw, ctx):
@@ -368,6 +384,10 @@ class HeldOutput(Node):
 class Fcn(Node):
     params = [P("Expr", "sin(u(1))", "Expression", "text")]
     time_varying = True
+
+    def want_min(self, port):
+        idx = [int(k) for k in re.findall(r"\bu\s*[\[(]\s*(\d+)\s*[\])]", self.text("Expr"))]
+        return (max(idx),) if idx and max(idx) > 1 else None
 
     def init(self):
         expr = self.text("Expr")

@@ -230,7 +230,7 @@ is what the model file and `add_block` use.
 
 <!-- BLOCK-TABLE:START -->
 
-96 blocks.
+107 blocks.
 
 **Sources**
 
@@ -261,6 +261,7 @@ is what the model file and `add_block` use.
 | Stop Simulation | `StopSimulation` | Stops the simulation when its input is not zero. |
 | Terminator | `Terminator` | Ends a signal that is not used. |
 | To Workspace | `ToWorkspace` | Saves its input to a variable (and a field of the object returned by sim). |
+| Viewer | `Viewer` | Stands for a display that mylab does not draw (video, 3-D animation); its inputs are ignored. |
 | XY Graph | `XYGraph` | Plots the second input against the first. |
 
 **Continuous**
@@ -303,6 +304,8 @@ is what the model file and `add_block` use.
 | Gain | `Gain` | Multiplies its input by a constant: element by element, or as a matrix product. |
 | Math Function | `MathFunction` | A choice of functions: exp, log, 10^u, log10, square, pow, reciprocal, hypot, rem, mod, transpose. |
 | Min Max | `MinMax` | Smallest or largest of its inputs (or of the elements of a single input). |
+| MinMax Running Resettable | `MinMaxRunningResettable` | Smallest or largest value its first input has had so far; the second input resets it. |
+| Permute Dimensions | `PermuteDimensions` | Reorders the dimensions of a matrix signal ([2 1] swaps rows and columns). |
 | Polynomial | `Polynomial` | Evaluates a polynomial with the given coefficients (highest power first). |
 | Product | `Product` | Multiplies and divides its inputs; the string (such as */) gives one operation per input. |
 | Product of Elements | `ProductOfElements` | Multiplies the elements of a vector. |
@@ -325,6 +328,7 @@ is what the model file and `add_block` use.
 | Compare To Constant | `CompareToConstant` | Compares the input with a constant; the output is 1 or 0. |
 | Compare To Zero | `CompareToZero` | Compares the input with zero; the output is 1 or 0. |
 | Hit Crossing | `HitCrossing` | Outputs 1 at the step where the input crosses a level, otherwise 0. |
+| If | `If` | Tests conditions on its inputs (u1, u2...) and switches on the action subsystem of the first one that holds. |
 | Logical Operator | `LogicalOperator` | AND, OR, NAND, NOR, XOR, NXOR or NOT of its inputs (non-zero counts as true). |
 | Multiport Switch | `MultiportSwitch` | Passes the data input chosen by the first (control) input: 1 for the first, 2 for the next... |
 | Relational Operator | `RelationalOperator` | Compares two inputs (==, ~=, <, <=, >=, >); the output is 1 or 0. |
@@ -339,16 +343,21 @@ is what the model file and `add_block` use.
 | Backlash | `Backlash` | Play between two parts: the output only follows once the input has crossed the dead band. |
 | Coulomb & Viscous Friction | `CoulombViscousFriction` | Friction: sign(u) * (gain*|u| + offset). |
 | Dead Zone | `DeadZone` | Outputs zero inside a band; outside, the input shifted by the band edge. |
+| Direct Lookup Table | `DirectLookupTable` | Picks an element (or a column) of a table by index, counting from 0; no interpolation. |
+| Prelookup | `Prelookup` | Finds where the input lies in a list of breakpoints: the interval number (from 0) and the fraction inside it. |
 | Quantizer | `Quantizer` | Rounds the input to a multiple of the quantization interval. |
 | Rate Limiter | `RateLimiter` | Limits how fast the output may rise and fall. |
+| Rate Limiter Dynamic | `RateLimiterDynamic` | Limits how fast the output may change; the rising and falling limits are inputs (up, u, lo). |
 | Relay | `Relay` | Switches on above one level and off below another (hysteresis). |
 | Saturation | `Saturation` | Limits the input to the range between a lower and an upper limit. |
 | Saturation Dynamic | `SaturationDynamic` | Limits the middle input to the range given by the upper and lower inputs. |
+| n-D Lookup Table | `LookupTableND` | Interpolates in a table with three or more dimensions; one input per dimension. |
 
 **Routing**
 
 | Block | Type name | What it does |
 |-------|-----------|--------------|
+| Action Port | `ActionPort` | Put inside a subsystem: the subsystem runs only while the If block output wired to it is on. |
 | Assignment | `Assignment` | Replaces chosen elements of the first input with the second input. |
 | Bus Creator | `BusCreator` | Groups signals under their names so a Bus Selector can pick them out again. |
 | Bus Selector | `BusSelector` | Picks signals by name out of the bus made by a Bus Creator. |
@@ -372,6 +381,8 @@ is what the model file and `add_block` use.
 | Fcn | `Fcn` | A formula in u (the input; u(1), u(2)... for a vector) and t. The result is one number. |
 | Interpreted Function | `InterpretedFunction` | Calls a function handle or a named function with the input: y = f(u). |
 | MATLAB Function | `MATLABFunction` | Runs a function you write in the MATLAB language; its inputs and outputs become ports. |
+| S-Function (level 1, .m file) | `SFunction` | Runs a level-1 S-function written as a .m file: [sys, x0, str, ts] = name(t, x, u, flag, ...). |
+| S-Function (level 2, .m file) | `MSFunction` | Runs a level-2 S-function written as a .m file: a setup function that fills in a block object. |
 <!-- BLOCK-TABLE:END -->
 
 Notes:

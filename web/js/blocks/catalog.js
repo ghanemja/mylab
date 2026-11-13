@@ -393,13 +393,29 @@ export const CATALOG = {
      "label": "Phase (rad)"
     },
     {
+     "name": "TimeSource",
+     "default": "Use simulation time",
+     "kind": "enum",
+     "label": "Time",
+     "options": [
+      "Use simulation time",
+      "Use external signal"
+     ]
+    },
+    {
      "name": "SampleTime",
      "default": "0",
      "kind": "expr",
      "label": "Sample time (s); -1 takes it from the input, 0 is continuous"
     }
    ],
-   "in": 0,
+   "in": [
+    "if",
+    "TimeSource",
+    "Use external signal",
+    1,
+    0
+   ],
    "out": 1,
    "sink": false
   },
@@ -574,6 +590,33 @@ export const CATALOG = {
     }
    ],
    "in": 1,
+   "out": 0,
+   "sink": true
+  },
+  {
+   "type": "Viewer",
+   "title": "Viewer",
+   "category": "Sinks",
+   "doc": "Stands for a display that mylab does not draw (video, 3-D animation); its inputs are ignored.",
+   "icon": "view",
+   "params": [
+    {
+     "name": "NumInputPorts",
+     "default": "1",
+     "kind": "text",
+     "label": "Number of input ports"
+    },
+    {
+     "name": "Kind",
+     "default": "",
+     "kind": "text",
+     "label": "What it showed"
+    }
+   ],
+   "in": [
+    "int",
+    "NumInputPorts"
+   ],
    "out": 0,
    "sink": true
   },
@@ -857,6 +900,12 @@ export const CATALOG = {
      "default": "[1 1]",
      "kind": "expr",
      "label": "Denominator coefficients"
+    },
+    {
+     "name": "InitialStates",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial states (of the controllable canonical form)"
     }
    ],
    "in": 1,
@@ -1140,6 +1189,29 @@ export const CATALOG = {
      "label": "Initial value"
     },
     {
+     "name": "ExternalReset",
+     "default": "none",
+     "kind": "enum",
+     "label": "Reset input",
+     "options": [
+      "none",
+      "rising",
+      "falling",
+      "either",
+      "level"
+     ]
+    },
+    {
+     "name": "InitialConditionSource",
+     "default": "internal",
+     "kind": "enum",
+     "label": "Initial value from",
+     "options": [
+      "internal",
+      "external"
+     ]
+    },
+    {
      "name": "LimitOutput",
      "default": "off",
      "kind": "bool",
@@ -1164,7 +1236,24 @@ export const CATALOG = {
      "label": "Sample time (s); -1 takes it from the input, 0 is continuous"
     }
    ],
-   "in": 1,
+   "in": [
+    "sum",
+    1,
+    [
+     "if",
+     "ExternalReset",
+     "none",
+     0,
+     1
+    ],
+    [
+     "if",
+     "InitialConditionSource",
+     "external",
+     1,
+     0
+    ]
+   ],
    "out": 1,
    "sink": false
   },
@@ -1432,6 +1521,52 @@ export const CATALOG = {
     "int",
     "Inputs"
    ],
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "MinMaxRunningResettable",
+   "title": "MinMax Running Resettable",
+   "category": "Math",
+   "doc": "Smallest or largest value its first input has had so far; the second input resets it.",
+   "icon": "run",
+   "params": [
+    {
+     "name": "Function",
+     "default": "min",
+     "kind": "enum",
+     "label": "Function",
+     "options": [
+      "min",
+      "max"
+     ]
+    },
+    {
+     "name": "vinit",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial value"
+    }
+   ],
+   "in": 2,
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "PermuteDimensions",
+   "title": "Permute Dimensions",
+   "category": "Math",
+   "doc": "Reorders the dimensions of a matrix signal ([2 1] swaps rows and columns).",
+   "icon": "perm",
+   "params": [
+    {
+     "name": "Order",
+     "default": "[2,1]",
+     "kind": "expr",
+     "label": "Order of the dimensions"
+    }
+   ],
+   "in": 1,
    "out": 1,
    "sink": false
   },
@@ -1859,6 +1994,59 @@ export const CATALOG = {
    "sink": false
   },
   {
+   "type": "If",
+   "title": "If",
+   "category": "Logic",
+   "doc": "Tests conditions on its inputs (u1, u2...) and switches on the action subsystem of the first one that holds.",
+   "icon": "if",
+   "params": [
+    {
+     "name": "NumInputs",
+     "default": "1",
+     "kind": "text",
+     "label": "Number of inputs"
+    },
+    {
+     "name": "IfExpression",
+     "default": "u1 > 0",
+     "kind": "text",
+     "label": "If condition, in u1, u2..."
+    },
+    {
+     "name": "ElseIfExpressions",
+     "default": "",
+     "kind": "text",
+     "label": "Else-if conditions, separated by commas"
+    },
+    {
+     "name": "ShowElse",
+     "default": "on",
+     "kind": "bool",
+     "label": "Else output"
+    }
+   ],
+   "in": [
+    "int",
+    "NumInputs"
+   ],
+   "out": [
+    "sum",
+    1,
+    [
+     "csv0",
+     "ElseIfExpressions"
+    ],
+    [
+     "if",
+     "ShowElse",
+     "on",
+     1,
+     0
+    ]
+   ],
+   "sink": false
+  },
+  {
    "type": "LogicalOperator",
    "title": "Logical Operator",
    "category": "Logic",
@@ -2137,6 +2325,79 @@ export const CATALOG = {
    "sink": false
   },
   {
+   "type": "DirectLookupTable",
+   "title": "Direct Lookup Table",
+   "category": "Nonlinear",
+   "doc": "Picks an element (or a column) of a table by index, counting from 0; no interpolation.",
+   "icon": "lut[i]",
+   "params": [
+    {
+     "name": "NumberOfTableDimensions",
+     "default": "2",
+     "kind": "text",
+     "label": "Number of table dimensions"
+    },
+    {
+     "name": "InputsSelectThisObjectFromTable",
+     "default": "Element",
+     "kind": "enum",
+     "label": "The inputs select",
+     "options": [
+      "Element",
+      "Vector",
+      "2-D Matrix"
+     ]
+    },
+    {
+     "name": "Table",
+     "default": "[4 5 6;16 19 20;10 18 23]",
+     "kind": "expr",
+     "label": "Table"
+    }
+   ],
+   "in": [
+    "dlt",
+    "NumberOfTableDimensions",
+    "InputsSelectThisObjectFromTable"
+   ],
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "Prelookup",
+   "title": "Prelookup",
+   "category": "Nonlinear",
+   "doc": "Finds where the input lies in a list of breakpoints: the interval number (from 0) and the fraction inside it.",
+   "icon": "k,f",
+   "params": [
+    {
+     "name": "BreakpointsData",
+     "default": "[10:10:110]",
+     "kind": "expr",
+     "label": "Breakpoints"
+    },
+    {
+     "name": "OutputSelection",
+     "default": "Index and fraction",
+     "kind": "enum",
+     "label": "Outputs",
+     "options": [
+      "Index and fraction",
+      "Index only"
+     ]
+    }
+   ],
+   "in": 1,
+   "out": [
+    "if",
+    "OutputSelection",
+    "Index only",
+    1,
+    2
+   ],
+   "sink": false
+  },
+  {
    "type": "Quantizer",
    "title": "Quantizer",
    "category": "Nonlinear",
@@ -2181,6 +2442,24 @@ export const CATALOG = {
     }
    ],
    "in": 1,
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "RateLimiterDynamic",
+   "title": "Rate Limiter Dynamic",
+   "category": "Nonlinear",
+   "doc": "Limits how fast the output may change; the rising and falling limits are inputs (up, u, lo).",
+   "icon": "rate",
+   "params": [
+    {
+     "name": "InitialCondition",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial output"
+    }
+   ],
+   "in": 3,
    "out": 1,
    "sink": false
   },
@@ -2253,6 +2532,60 @@ export const CATALOG = {
    "params": [],
    "in": 3,
    "out": 1,
+   "sink": false
+  },
+  {
+   "type": "LookupTableND",
+   "title": "n-D Lookup Table",
+   "category": "Nonlinear",
+   "doc": "Interpolates in a table with three or more dimensions; one input per dimension.",
+   "icon": "lutn",
+   "params": [
+    {
+     "name": "NumberOfTableDimensions",
+     "default": "3",
+     "kind": "text",
+     "label": "Number of dimensions"
+    },
+    {
+     "name": "Table",
+     "default": "reshape(1:27, 3, 3, 3)",
+     "kind": "expr",
+     "label": "Table"
+    },
+    {
+     "name": "Breakpoints",
+     "default": "[1 2 3], [1 2 3], [1 2 3]",
+     "kind": "text",
+     "label": "Breakpoints, one list per dimension"
+    },
+    {
+     "name": "ExtrapMethod",
+     "default": "Linear",
+     "kind": "enum",
+     "label": "Outside the table",
+     "options": [
+      "Linear",
+      "Clip"
+     ]
+    }
+   ],
+   "in": [
+    "int",
+    "NumberOfTableDimensions"
+   ],
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "ActionPort",
+   "title": "Action Port",
+   "category": "Routing",
+   "doc": "Put inside a subsystem: the subsystem runs only while the If block output wired to it is on.",
+   "icon": "act",
+   "params": [],
+   "in": 0,
+   "out": 0,
    "sink": false
   },
   {
@@ -2565,6 +2898,12 @@ export const CATALOG = {
      "default": "[1 3]",
      "kind": "text",
      "label": "Indices, one expression per dimension"
+    },
+    {
+     "name": "InputPortWidth",
+     "default": "-1",
+     "kind": "expr",
+     "label": "Width of the input, if known (-1: any)"
     }
    ],
    "in": [
@@ -2676,6 +3015,90 @@ export const CATALOG = {
     "sig",
     "Script",
     "out"
+   ],
+   "sink": false
+  },
+  {
+   "type": "SFunction",
+   "title": "S-Function (level 1, .m file)",
+   "category": "User-defined",
+   "doc": "Runs a level-1 S-function written as a .m file: [sys, x0, str, ts] = name(t, x, u, flag, ...).",
+   "icon": "sfun",
+   "params": [
+    {
+     "name": "FunctionName",
+     "default": "system",
+     "kind": "text",
+     "label": "Function name"
+    },
+    {
+     "name": "Parameters",
+     "default": "",
+     "kind": "text",
+     "label": "Extra arguments, separated by commas"
+    },
+    {
+     "name": "NumInputs",
+     "default": "1",
+     "kind": "text",
+     "label": "Input ports"
+    },
+    {
+     "name": "NumOutputs",
+     "default": "1",
+     "kind": "text",
+     "label": "Output ports"
+    }
+   ],
+   "in": [
+    "int",
+    "NumInputs"
+   ],
+   "out": [
+    "int",
+    "NumOutputs"
+   ],
+   "sink": false
+  },
+  {
+   "type": "MSFunction",
+   "title": "S-Function (level 2, .m file)",
+   "category": "User-defined",
+   "doc": "Runs a level-2 S-function written as a .m file: a setup function that fills in a block object.",
+   "icon": "sfun2",
+   "params": [
+    {
+     "name": "FunctionName",
+     "default": "mysfun",
+     "kind": "text",
+     "label": "Function name"
+    },
+    {
+     "name": "Parameters",
+     "default": "",
+     "kind": "text",
+     "label": "Dialog parameters, separated by commas"
+    },
+    {
+     "name": "NumInputs",
+     "default": "1",
+     "kind": "text",
+     "label": "Input ports"
+    },
+    {
+     "name": "NumOutputs",
+     "default": "1",
+     "kind": "text",
+     "label": "Output ports"
+    }
+   ],
+   "in": [
+    "int",
+    "NumInputs"
+   ],
+   "out": [
+    "int",
+    "NumOutputs"
    ],
    "sink": false
   }

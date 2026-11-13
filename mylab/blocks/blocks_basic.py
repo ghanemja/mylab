@@ -105,8 +105,10 @@ class SineWave(Source):
         P("Bias", "0", "Bias"),
         P("Frequency", "1", "Frequency (rad/s)"),
         P("Phase", "0", "Phase (rad)"),
+        P("TimeSource", "Use simulation time", "Time", options=["Use simulation time", "Use external signal"]),
         SAMPLE("0"),
     ]
+    nin = ["if", "TimeSource", "Use external signal", 1, 0]
 
     def init(self):
         self.a, self.b, self.f, self.ph = (
@@ -117,6 +119,8 @@ class SineWave(Source):
         )
 
     def out(self, t, u):
+        if u:  # time comes from the input
+            t = u[0]
         return [self.a * np.sin(self.f * t + self.ph) + self.b]
 
 
@@ -252,8 +256,9 @@ class _Random(Source):
         return self.read_sample("SampleTime", None)
 
     def init(self):
-        seed = int(self.scalar("Seed")) % (2**32)
-        self.rng = np.random.RandomState(seed)
+        seeds = self.num("Seed")  # a vector of seeds gives a vector signal, one stream per element
+        self.seed_shape = np.zeros(seeds.shape if seeds.size > 1 else (1,))
+        self.rng = np.random.RandomState([int(v) % (2**32) for v in np.ravel(seeds)])
         self.prepare()
         self.val = self.draw() * 0.0
 
@@ -271,7 +276,7 @@ class RandomNumber(_Random):
         self.mean, self.sd = self.num("Mean"), np.sqrt(self.num("Variance"))
 
     def draw(self):
-        shape = np.broadcast(self.mean, self.sd).shape
+        shape = np.broadcast(self.mean, self.sd, self.seed_shape).shape
         return self.mean + self.sd * self.rng.standard_normal(shape)
 
 
@@ -288,7 +293,7 @@ class UniformRandomNumber(_Random):
         self.lo, self.hi = self.num("Minimum"), self.num("Maximum")
 
     def draw(self):
-        shape = np.broadcast(self.lo, self.hi).shape
+        shape = np.broadcast(self.lo, self.hi, self.seed_shape).shape
         return self.lo + (self.hi - self.lo) * self.rng.uniform(size=shape)
 
 
@@ -313,7 +318,8 @@ class BandLimitedWhiteNoise(_Random):
         self.cov, self.ts = self.num("Cov"), self.scalar("Ts")
 
     def draw(self):
-        return np.sqrt(self.cov / self.ts) * self.rng.standard_normal(self.cov.shape)
+        shape = np.broadcast(self.cov, self.seed_shape).shape
+        return np.sqrt(self.cov / self.ts) * self.rng.standard_normal(shape)
 
 
 def _table(node: Node, v) -> tuple[np.ndarray, np.ndarray]:
@@ -546,6 +552,14 @@ class Terminator(Node):
     is_sink = True
 
 
+@block("Viewer", "Sinks", "Stands for a display that mylab does not draw (video, 3-D animation); its inputs are ignored.", icon="view")
+class Viewer(Node):
+    params = [P("NumInputPorts", "1", "Number of input ports", "text"), P("Kind", "", "What it showed", "text")]
+    nin = ["int", "NumInputPorts"]
+    nout = 0
+    is_sink = True
+
+
 @block("StopSimulation", "Sinks", "Stops the simulation when its input is not zero.", aliases=("Stop",), icon="stop")
 class StopSimulation(Node):
     params = []
@@ -601,6 +615,13 @@ class Gain(Node):
     def init(self):
         self.mode = self.choice("Multiplication")
         self.k = self.num("Gain") if self.mode.startswith("element") else self.mat("Gain")
+        self.same_shape = self.mode.startswith("element") and self.k.size == 1
+
+    def want_in(self, port):
+        if self.mode.startswith("element") or self.k.ndim != 2 or self.k.size == 1:
+            return None
+        n = self.k.shape[0] if self.mode == "matrixuk" else self.k.shape[1]
+        return (n,) if n > 1 else None
 
     def out(self, t, u):
         if self.mode.startswith("element"):
@@ -633,6 +654,8 @@ def _add(vals: list, signs: str) -> np.ndarray:
     icon="Σ",
 )
 class Sum(Node):
+    same_shape = True
+
     params = [P("Inputs", "++", "List of signs (or number of inputs)", "text")]
     nin = ["signs", "Inputs"]
 
@@ -698,6 +721,8 @@ class Divide(Product):
 
 @block("Abs", "Math", "Absolute value.", icon="|u|")
 class Abs(Node):
+    same_shape = True
+
     params = []
     has_zc = True
 
@@ -1215,6 +1240,8 @@ class HitCrossing(Node):
     icon="sat",
 )
 class Saturation(Node):
+    same_shape = True
+
     params = [P("UpperLimit", "0.5", "Upper limit"), P("LowerLimit", "-0.5", "Lower limit")]
     has_zc = True
 
@@ -1252,6 +1279,8 @@ class SaturationDynamic(Node):
 
 @block("DeadZone", "Nonlinear", "Outputs zero inside a band; outside, the input shifted by the band edge.", icon="dz")
 class DeadZone(Node):
+    same_shape = True
+
     params = [P("LowerValue", "-0.5", "Start of dead zone"), P("UpperValue", "0.5", "End of dead zone")]
     has_zc = True
 
