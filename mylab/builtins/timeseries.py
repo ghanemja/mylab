@@ -1476,9 +1476,11 @@ def _m_synchronize(interp, args, nargout):
                    "MATLAB:timeseries:synchronize:NoOverlap")
     if how == "Union":
         inside = lambda t: t[(t >= lo - tol) & (t <= hi + tol)]  # noqa: E731
-        common = _union_times(inside(t1), inside(t2), tol)
+        common = np.clip(_union_times(inside(t1), inside(t2), tol), lo, hi)
     elif how == "Intersection":
-        common = np.array([x for x in t1 if np.any(np.abs(t2 - x) <= tol)])
+        j = np.clip(np.searchsorted(t2, t1), 1, t2.size - 1) if t2.size > 1 else np.zeros(t1.size, dtype=int)
+        nearest = np.minimum(np.abs(t2[j] - t1), np.abs(t2[np.maximum(j - 1, 0)] - t1))
+        common = t1[nearest <= tol]
     else:
         if "Interval" not in opts:
             raise _err("synchronize(..., 'Uniform') needs 'Interval', step.",

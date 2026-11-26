@@ -326,6 +326,18 @@ def test_synchronize_converts_units(m):
     np.testing.assert_array_equal(col(m, "x.Data"), [0, 30, 60])
 
 
+def test_synchronize_with_start_dates(m):
+    m.run("a = timeseries([0; 10; 20], [0 1 2]); a.TimeInfo.Units = 'days'; a.TimeInfo.StartDate = '01-Jan-2020';"
+          "b = timeseries([5; 6], [0 1]); b.TimeInfo.Units = 'days'; b.TimeInfo.StartDate = '02-Jan-2020';"
+          "[x, y] = synchronize(a, b, 'union'); [p, q] = synchronize(a, b, 'union', 'KeepOriginalTimes', true);")
+    np.testing.assert_allclose(col(m, "x.Time"), [1, 2])
+    np.testing.assert_allclose(col(m, "x.Data"), [10, 20])
+    np.testing.assert_allclose(col(m, "y.Data"), [5, 6])
+    assert m.str("y.TimeInfo.StartDate") == "01-Jan-2020 00:00:00"
+    np.testing.assert_allclose(col(m, "q.Time"), [0, 1])
+    assert m.str("q.TimeInfo.StartDate") == "02-Jan-2020 00:00:00"
+
+
 # -- events -----------------------------------------------------------------------------------------------
 
 def test_events(m):
