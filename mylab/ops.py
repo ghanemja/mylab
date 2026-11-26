@@ -518,6 +518,9 @@ def concat(items: list[Any], axis: int) -> Any:
     if not items:
         return np.zeros((0, 0))
     for i in items:
+        if getattr(i, "is_missing_value", False):  # missing takes the type of its neighbours
+            return type(i).concat(items, axis)
+    for i in items:
         if hasattr(type(i), "concat") and hasattr(i, "isa_class"):
             return type(i).concat(items, axis)
     if any(hasattr(i, "isa_class") for i in items):

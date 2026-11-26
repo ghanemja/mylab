@@ -66,11 +66,12 @@ def _texts(v: Any) -> tuple[list, tuple] | None:
 class CategoricalArray(MObject):
     kind = "categorical"
 
-    def __init__(self, data: Any, categories: list[str], ordinal: bool = False):
+    def __init__(self, data: Any, categories: list[str], ordinal: bool = False, protected: bool = False):
         a = np.asarray(data, dtype=float)
         self.data = as_2d(a) if a.ndim != 2 else a
         self.categories = list(categories)
         self.ordinal = ordinal
+        self.protected = protected or ordinal  # ordinal arrays never grow new categories on assignment
 
     # -- array duck type (shared with datetime arrays; used by tables and for-loops) -----------------
     def matlab_shape(self) -> tuple:
@@ -94,7 +95,7 @@ class CategoricalArray(MObject):
         return np.where(np.isnan(self.data), -1, self.data - 1).astype(int)
 
     def like(self, data: Any) -> "CategoricalArray":
-        return CategoricalArray(data, self.categories, self.ordinal)
+        return CategoricalArray(data, self.categories, self.ordinal, self.protected)
 
     def copy(self) -> "CategoricalArray":
         return self.like(self.data.copy())
@@ -158,9 +159,13 @@ class CategoricalArray(MObject):
                 codes[k] = np.nan
             elif n in cats:
                 codes[k] = cats.index(n) + 1
-            elif extend and not self.ordinal:
+            elif extend and not self.protected:
                 cats.append(n)
                 codes[k] = len(cats)
+            elif self.protected and not self.ordinal:
+                raise MatlabError(f"Cannot add a new category '{n}' to this categorical array because it is "
+                                  "protected. Use ADDCATS to add the new category.",
+                                  "MATLAB:categorical:ProtectedForCombination")
             elif self.ordinal:
                 raise MatlabError(f"'{n}' is not a category of this ordinal categorical array. Its "
                                   "categories are: " + ", ".join(self.categories) + ".")
@@ -179,7 +184,8 @@ class CategoricalArray(MObject):
 
     def index_set(self, interp, args: list, value: Any) -> Any:
         codes, cats = self.codes_for(value, extend=True)
-        return CategoricalArray(ix.set_(self.data.copy(), list(args), codes, lambda: np.nan), cats, self.ordinal)
+        return CategoricalArray(ix.set_(self.data.copy(), list(args), codes, lambda: np.nan), cats, self.ordinal,
+                                self.protected)
 
     def index_delete(self, interp, args: list) -> Any:
         return self.like(ix.delete(self.data, list(args)))
@@ -201,7 +207,7 @@ class CategoricalArray(MObject):
                 raise MatlabError("Ordinal categorical arrays must have the same categories, in the same "
                                   "order, to be concatenated.")
             codes, cats = result.codes_for(i, extend=True)
-            result = CategoricalArray(result.data, cats, first.ordinal)
+            result = CategoricalArray(result.data, cats, first.ordinal, first.protected)
             datas.append(codes)
         return result.like(ops._concat_arrays(datas, axis)) if datas else result
 
@@ -312,11 +318,15 @@ def _key_name(k: Any) -> str:
 def make_categorical(args: list) -> CategoricalArray:
     rest = list(args)
     ordinal = False
+    protected = False
     k = len(rest) - 2
     while k >= 1 and is_text(rest[k]) and text(rest[k]).lower() in ("ordinal", "protected"):
+        v = rest[k + 1]
+        flag = text(v).lower() in ("true", "on") if is_text(v) else bool(np.asarray(v).flat[0])
         if text(rest[k]).lower() == "ordinal":
-            v = rest[k + 1]
-            ordinal = text(v).lower() in ("true", "on") if is_text(v) else bool(np.asarray(v).flat[0])
+            ordinal = flag
+        else:
+            protected = flag
         del rest[k:k + 2]
         k = len(rest) - 2
     if not rest:
@@ -327,7 +337,8 @@ def make_categorical(args: list) -> CategoricalArray:
     source = rest[0]
     keys, shape, numeric = _value_keys(source, "categorical")
     if isinstance(source, CategoricalArray) and len(rest) == 1:
-        return CategoricalArray(source.data.copy(), source.categories, ordinal or source.ordinal)
+        return CategoricalArray(source.data.copy(), source.categories, ordinal or source.ordinal,
+                                protected or source.protected)
     if len(rest) >= 2:
         value_keys, _, _ = _value_keys(rest[1], "categorical")
         if any(v is None for v in value_keys):
@@ -353,7 +364,7 @@ def make_categorical(args: list) -> CategoricalArray:
             cats.append(n)
     lookup = {v: cats.index(n) + 1.0 for v, n in zip(value_keys, names)}
     data = np.array([lookup.get(x, np.nan) if x is not None else np.nan for x in keys], dtype=float)
-    return CategoricalArray(data.reshape(shape, order="F"), cats, ordinal)
+    return CategoricalArray(data.reshape(shape, order="F"), cats, ordinal, protected)
 
 
 @builtin("categorical")
@@ -646,6 +657,120 @@ def _sort(interp, args, nargout):
     key = c.data if not descend else -c.data
     order = np.argsort(np.where(np.isnan(key), np.inf, key), axis=axis, kind="stable")
     return c.like(np.take_along_axis(c.data, order, axis=axis)), order + 1.0
+
+
+@native("isprotected")
+def _isprotected(interp, args, nargout):
+    return bool_scalar(_cat(args).protected)
+
+
+builtin("isprotected")(_isprotected)
+
+
+def _need_ordinal(c: CategoricalArray, name: str) -> None:
+    if not c.ordinal:
+        raise MatlabError(f"{name} needs an ordinal categorical array: the categories of this one have no "
+                          "order. Create one with categorical(values, categoryOrder, 'Ordinal', true).",
+                          "MATLAB:categorical:NotOrdinal")
+
+
+def _extreme(name: str):
+    """max / min of ordinal categorical arrays, by category order."""
+    pick = np.nanmax if name == "max" else np.nanmin
+
+    def f(interp, args, nargout):
+        c = next(a for a in args if isinstance(a, CategoricalArray))
+        _need_ordinal(c, name)
+        rest = [a for a in args[1:] if not (is_text(a) and text(a).lower() in
+                                            ("omitnan", "includenan", "omitundefined", "includeundefined",
+                                             "omitmissing", "includemissing"))]
+        include = any(is_text(a) and text(a).lower().startswith("include") for a in args[1:])
+        if rest and not (isinstance(rest[0], np.ndarray) and rest[0].size == 0):
+            # max(a, b): element by element
+            a = args[0].data if isinstance(args[0], CategoricalArray) else c.codes_for(args[0], extend=False)[0]
+            b = rest[0].data if isinstance(rest[0], CategoricalArray) else c.codes_for(rest[0], extend=False)[0]
+            if isinstance(rest[0], CategoricalArray) and rest[0].categories != c.categories:
+                raise MatlabError("Ordinal categorical arrays must have the same categories to be compared.",
+                                  "MATLAB:categorical:OrdinalCatsMismatch")
+            try:
+                a, b = np.broadcast_arrays(a, b)
+            except ValueError:
+                raise MatlabError("Arrays have incompatible sizes for this operation.",
+                                  "MATLAB:sizeDimensionsMustMatch") from None
+            with np.errstate(invalid="ignore"):
+                out = np.fmax(a, b) if name == "max" else np.fmin(a, b)
+            return c.like(out)
+        data = c.data
+        if len(rest) > 1:
+            if is_text(rest[1]) and text(rest[1]).lower() == "all":
+                data = data.reshape(-1, 1, order="F")
+                axis = 0
+            else:
+                axis = to_int(rest[1], "dimension") - 1
+        else:
+            axis = next((d for d, s in enumerate(data.shape) if s != 1), 0)
+        if data.size == 0:
+            return c.like(np.zeros((0, 0)))
+        if axis >= data.ndim:
+            return c.copy()
+        with np.errstate(invalid="ignore"):
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                if include:
+                    out = np.max(data, axis=axis, keepdims=True) if name == "max" else \
+                        np.min(data, axis=axis, keepdims=True)
+                else:
+                    out = pick(data, axis=axis, keepdims=True)
+        if nargout > 1:
+            filled = np.where(np.isnan(data), -np.inf if name == "max" else np.inf, data)
+            where = (np.argmax(filled, axis=axis) if name == "max" else np.argmin(filled, axis=axis)) + 1.0
+            return c.like(out), np.expand_dims(where, axis)
+        return c.like(out)
+    _NATIVE[name] = f
+
+
+_extreme("max")
+_extreme("min")
+
+
+@native("median")
+def _median(interp, args, nargout):
+    c = _cat(args)
+    _need_ordinal(c, "median")
+    data = c.data
+    rest = [a for a in args[1:] if not is_text(a)]
+    axis = to_int(rest[0], "dimension") - 1 if rest else next((d for d, s in enumerate(data.shape) if s != 1), 0)
+    if axis >= data.ndim or data.size == 0:
+        return c.copy()
+    moved = np.moveaxis(data, axis, 0)
+    out = np.full(moved.shape[1:], np.nan)
+    for idx in np.ndindex(moved.shape[1:]):
+        col = np.sort(moved[(slice(None),) + idx])
+        if col.size and not np.any(np.isnan(col)):
+            # with an even count the middle falls between two categories: the upper one is taken
+            mid = col.size // 2
+            out[idx] = col[mid] if col.size % 2 else np.ceil((col[mid - 1] + col[mid]) / 2)
+    return c.like(np.expand_dims(out, axis))
+
+
+@native("mode")
+def _mode(interp, args, nargout):
+    c = _cat(args)
+    data = c.data
+    rest = [a for a in args[1:] if not is_text(a)]
+    axis = to_int(rest[0], "dimension") - 1 if rest else next((d for d, s in enumerate(data.shape) if s != 1), 0)
+    if axis >= data.ndim or data.size == 0:
+        return c.copy()
+    moved = np.moveaxis(data, axis, 0)
+    out = np.full(moved.shape[1:], np.nan)
+    for idx in np.ndindex(moved.shape[1:]):
+        col = moved[(slice(None),) + idx]
+        col = col[~np.isnan(col)]
+        if col.size:
+            vals, counts = np.unique(col, return_counts=True)
+            out[idx] = vals[np.argmax(counts)]
+    return c.like(np.expand_dims(out, axis))
 
 
 @native("isequal")

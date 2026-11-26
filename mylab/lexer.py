@@ -386,6 +386,8 @@ class Lexer:
             return False
         if word in COMMAND_WORDS and (first.isdigit() or first == "_"):
             return True  # e.g. figure 2, pause 1
+        if word in COMMAND_WORDS and first in "*?" and len(rest) > 1 and rest[1] not in " \t=":
+            return True  # e.g. dir *.m, ls ?.txt
         if (self.in_classdef or self.in_arguments) and word not in COMMAND_WORDS:
             return False  # 'name string' in properties/arguments blocks is a declaration
         # Any other name: ``shading interp``, ``colormap jet``, ``clearvars -except y``,

@@ -524,34 +524,6 @@ def _validateattributes(interp, args, nargout):
     return None
 
 
-@builtin("validatestring")
-def _validatestring(interp, args, nargout):
-    nargs(args, 2, 5, "validatestring")
-    s = args[0]
-    if not is_text(s):
-        raise MatlabError("validatestring: first input must be text.")
-    want = text(s)
-    options = _cell_texts(args[1])
-    func = text(args[2]) if len(args) > 2 and is_text(args[2]) else ""
-    prefix = f"{func}: " if func else ""
-    low = want.lower()
-    matches = [o for o in options if o.lower().startswith(low)] if want else []
-    exact = [o for o in options if o.lower() == low]
-    if exact:
-        pick = exact[0]
-    elif len(matches) == 1:
-        pick = matches[0]
-    elif matches:
-        shortest = min(matches, key=len)
-        if all(m.lower().startswith(shortest.lower()) for m in matches):
-            pick = shortest
-        else:
-            raise MatlabError(f"{prefix}'{want}' matches more than one valid value: " + ", ".join(matches))
-    else:
-        raise MatlabError(f"{prefix}'{want}' does not match any valid value: " + ", ".join(options))
-    return MString(pick) if isinstance(s, MString) else char(pick)
-
-
 # -- text utilities ----------------------------------------------------------------------
 
 def _tmap(v, fn):
@@ -670,31 +642,6 @@ def _pad(interp, args, nargout):
     return _tmap(v, fn)
 
 
-@builtin("strip")
-def _strip(interp, args, nargout):
-    nargs(args, 1, 3, "strip")
-    side = "both"
-    chars = None
-    rest = list(args[1:])
-    if rest:
-        s0 = text(rest[0])
-        if s0.lower() in ("both", "left", "right"):
-            side = s0.lower()
-            rest.pop(0)
-    if rest:
-        chars = text(rest[0])
-        if len(chars) != 1:
-            raise MatlabError("strip: strip character must be a single character.")
-
-    def fn(s):
-        if side == "both":
-            return s.strip(chars) if chars else s.strip()
-        if side == "left":
-            return s.lstrip(chars) if chars else s.lstrip()
-        return s.rstrip(chars) if chars else s.rstrip()
-    return _tmap(args[0], fn)
-
-
 def _pos(v) -> int | None:
     if isinstance(v, np.ndarray) and not is_char(v):
         return to_int(v, "position")
@@ -737,57 +684,6 @@ def _extract_after(interp, args, nargout):
     return _tmap(args[0], fn)
 
 
-@builtin("extractBetween")
-def _extract_between(interp, args, nargout):
-    nargs(args, 3, 5, "extractBetween")
-    inclusive = False
-    k = 3
-    while k < len(args) - 1:
-        if text(args[k]).lower() == "boundaries":
-            inclusive = text(args[k + 1]).lower() == "inclusive"
-        k += 2
-    p1, p2 = _pos(args[1]), _pos(args[2])
-    v = args[0]
-    if p1 is not None and p2 is not None:
-        def fn(s):
-            if not (1 <= p1 <= p2 + 1 and p2 <= len(s)):
-                raise MatlabError("extractBetween: positions are out of range.")
-            return s[p1 - 1:p2]
-        return _tmap(v, fn)
-    starts, ends = _patterns(args[1]), _patterns(args[2])
-
-    def all_matches(s):
-        found = []
-        i = 0
-        while True:
-            a = _find_first(s[i:], starts)
-            if not a:
-                break
-            a0 = i + a[0]
-            body = a0 + a[1]
-            b = _find_first(s[body:], ends)
-            if not b:
-                break
-            b0 = body + b[0]
-            found.append(s[a0:b0 + b[1]] if inclusive else s[body:b0])
-            i = b0 + b[1]
-        return found
-
-    if isinstance(v, Cell):
-        res = [all_matches(to_str(x)) for x in v.values_f()]
-        if all(len(r) == 1 for r in res):
-            data = np.empty(v.shape, dtype=object)
-            for idx, r in zip(np.ndindex(v.shape[::-1]), res):
-                data[idx[::-1]] = char(r[0]) if not isinstance(v.data[idx[::-1]], MString) else MString(r[0])
-            return Cell(data)
-        raise MatlabError("extractBetween: each element must contain exactly one match for cell input.")
-    found = all_matches(text(v))
-    if isinstance(v, MString) and len(found) == 1:
-        return MString(found[0])
-    make = MString if isinstance(v, MString) else char
-    return Cell.from_list([make(f) for f in found], column=True)
-
-
 def _insert(after: bool, name: str):
     def f(interp, args, nargout):
         nargs(args, 3, 3, name)
@@ -812,47 +708,6 @@ builtin("insertAfter")(_insert(True, "insertAfter"))
 builtin("insertBefore")(_insert(False, "insertBefore"))
 
 
-@builtin("count")
-def _count(interp, args, nargout):
-    nargs(args, 2, 4, "count")
-    pats = [p for p in _patterns(args[1]) if p]
-    ic = _ignore_case(args, 2)
-    if not pats:
-        return _tcount(args[0], lambda s: 0)
-    rx = re.compile("|".join(re.escape(p) for p in sorted(pats, key=len, reverse=True)),
-                    re.IGNORECASE if ic else 0)
-    return _tcount(args[0], lambda s: len(rx.findall(s)))
-
-
-@builtin("replace")
-def _replace(interp, args, nargout):
-    nargs(args, 3, 3, "replace")
-    olds = _patterns(args[1])
-    news = _patterns(args[2])
-    if len(news) == 1:
-        news = news * len(olds)
-    if len(news) != len(olds):
-        raise MatlabError("replace: new text must be a single value or match the number of patterns.")
-    table = {}
-    for o, nw in zip(olds, news):
-        table.setdefault(o, nw)
-    keys = [k for k in table if k]
-    if not keys:
-        return args[0]
-    rx = re.compile("|".join(re.escape(k) for k in sorted(keys, key=len, reverse=True)))
-    return _tmap(args[0], lambda s: rx.sub(lambda m: table[m.group(0)], s))
-
-
-@builtin("erase")
-def _erase(interp, args, nargout):
-    nargs(args, 2, 2, "erase")
-    pats = [p for p in _patterns(args[1]) if p]
-    if not pats:
-        return args[0]
-    rx = re.compile("|".join(re.escape(p) for p in sorted(pats, key=len, reverse=True)))
-    return _tmap(args[0], lambda s: rx.sub("", s))
-
-
 def _split_one(s: str, delims: list[str] | None, collapse: bool) -> list[str]:
     if delims is None:
         parts = re.split(r"\s+" if collapse else r"\s", s)
@@ -863,147 +718,7 @@ def _split_one(s: str, delims: list[str] | None, collapse: bool) -> list[str]:
     return re.split(rx, s)
 
 
-@builtin("split")
-def _split(interp, args, nargout):
-    nargs(args, 1, 4, "split")
-    v = args[0]
-    delims = None
-    collapse = True
-    rest = list(args[1:])
-    if rest and not (is_text(rest[0]) and text(rest[0]).lower() == "collapsedelimiters" and len(rest) == 2):
-        delims = [x for x in _patterns(rest.pop(0))]
-    if len(rest) >= 2 and text(rest[0]).lower() == "collapsedelimiters":
-        collapse = bool(fnum(rest[1]).flat[0])
-    make = MString if isinstance(v, MString) else char
-    if isinstance(v, Cell):
-        items = v.values_f()
-        pieces = [_split_one(to_str(x), delims, collapse) for x in items]
-        m = len(pieces[0]) if pieces else 0
-        if any(len(p) != m for p in pieces):
-            raise MatlabError("split: every element must split into the same number of pieces.")
-        mk = [MString if isinstance(x, MString) else char for x in items]
-        if v.shape[0] == 1 and v.shape[1] > 1:
-            data = np.empty((m, len(items)), dtype=object)
-            for j, (p, f) in enumerate(zip(pieces, mk)):
-                for i, t in enumerate(p):
-                    data[i, j] = f(t)
-        else:
-            data = np.empty((len(items), m), dtype=object)
-            for i, (p, f) in enumerate(zip(pieces, mk)):
-                for j, t in enumerate(p):
-                    data[i, j] = f(t)
-        return Cell(data)
-    parts = _split_one(text(v), delims, collapse)
-    return Cell.from_list([make(p) for p in parts], column=True)
-
-
-@builtin("join")
-def _join(interp, args, nargout):
-    nargs(args, 1, 3, "join")
-    v = args[0]
-    if isinstance(v, MString) or is_char(v):
-        return v
-    if not isinstance(v, Cell):
-        raise MatlabError("join: input must be a cell array of text.")
-    delim: list[str] | str = " "
-    if len(args) > 1:
-        d = args[1]
-        delim = [to_str(x) for x in d.values_f()] if isinstance(d, Cell) else text(d)
-    dim = to_int(args[2]) - 1 if len(args) > 2 else None
-    def joiner(items: list[str]) -> str:
-        if isinstance(delim, str):
-            return delim.join(items)
-        if len(delim) != max(len(items) - 1, 0):
-            raise MatlabError("join: number of delimiters must be one less than the number of items.")
-        out = items[0] if items else ""
-        for dl, it in zip(delim, items[1:]):
-            out += dl + it
-        return out
-
-    def is_str(x):
-        return isinstance(x, MString)
-
-    data = v.data
-    if dim is None:
-        if data.shape[0] == 1 or data.shape[1] == 1:
-            items = list(data.flatten(order="F"))
-            res = joiner([to_str(x) for x in items])
-            return Cell.from_list([MString(res) if items and is_str(items[0]) else char(res)])
-        dim = 1
-    if dim == 1:
-        rows = [joiner([to_str(x) for x in row]) for row in data]
-        mk = MString if data.size and is_str(data.flat[0]) else char
-        return Cell.from_list([mk(r) for r in rows], column=True)
-    cols = [joiner([to_str(x) for x in data[:, j]]) for j in range(data.shape[1])]
-    mk = MString if data.size and is_str(data.flat[0]) else char
-    return Cell.from_list([mk(c) for c in cols])
-
-
 _SPEC_RE = re.compile(r"%(?!%)[-+ #0]*(\*|\d+)?(?:\.(\*|\d+))?[diouxXfeEgGcs]")
-
-
-@builtin("compose")
-def _compose(interp, args, nargout):
-    nargs(args, 1, None, "compose")
-    fmt_v = args[0]
-    as_string = isinstance(fmt_v, MString)
-    fmt = text(fmt_v, "format")
-
-    def sprintf(vals):
-        r = interp.call_function_value("sprintf", [char(fmt)] + vals, 1)[0]
-        return to_str(r)
-
-    def wrap(results, shape):
-        mk = MString if as_string else char
-        if as_string and len(results) == 1:
-            return MString(results[0])
-        data = np.empty(shape, dtype=object)
-        for idx, r in zip(itertools.product(*[range(s) for s in shape]), results):
-            data[idx] = mk(r)
-        return Cell(data)
-
-    if len(args) == 1:
-        return wrap([sprintf([])], (1, 1))
-    data = list(args[1:])
-    nspec = max(1, len(_SPEC_RE.findall(fmt)))
-
-    def elems(a):
-        if isinstance(a, Cell):
-            return a.data, True
-        if isinstance(a, MString):
-            arr = np.empty((1, 1), dtype=object)
-            arr[0, 0] = a
-            return arr, True
-        if is_char(a):
-            arr = np.empty((1, 1), dtype=object)
-            arr[0, 0] = a
-            return arr, True
-        return num(a), False
-
-    if len(data) == 1:
-        arr, is_obj = elems(data[0])
-        if arr.size == 0:
-            return Cell(np.empty((0, 0), dtype=object)) if not as_string else Cell(np.empty((0, 0), dtype=object))
-        rows, cols = arr.shape
-        ncol_out = int(np.ceil(cols / nspec))
-        results = []
-        for i in range(rows):
-            for j in range(ncol_out):
-                chunk = arr[i, j * nspec:(j + 1) * nspec]
-                vals = [c if is_obj else np.array([[c]]) for c in chunk]
-                results.append(sprintf(vals))
-        return wrap(results, (rows, ncol_out))
-    arrays = [elems(a) for a in data]
-    shape = max((a[0].shape for a in arrays), key=lambda s: s[0] * s[1])
-    results = []
-    for i in range(shape[0]):
-        for j in range(shape[1]):
-            vals = []
-            for arr, is_obj in arrays:
-                c = arr[0, 0] if arr.size == 1 else arr[i, j]
-                vals.append(c if is_obj else np.array([[c]]))
-            results.append(sprintf(vals))
-    return wrap(results, shape)
 
 
 # -- cells ------------------------------------------------------------------------------------

@@ -900,25 +900,6 @@ def _strtok(interp, args, nargout):
     return (char(t), char(r)) if nargout > 1 else char(t)
 
 
-@builtin("splitlines")
-def _splitlines(interp, args, nargout):
-    nargs(args, 1, 1, "splitlines")
-    parts = re.split(r"\r\n|\n|\r", text(args[0]))
-    if isinstance(args[0], MString):
-        data = np.empty((len(parts), 1), dtype=object)
-        for k, x in enumerate(parts):
-            data[k, 0] = x
-        return string_result(data)
-    return Cell.from_list([char(p) for p in parts], column=True)
-
-
-@builtin("missing")
-def _missing(interp, args, nargout):
-    data = np.empty((1, 1), dtype=object)
-    data[0, 0] = None
-    return StringArray(data)
-
-
 @builtin("strjoin")
 def _strjoin(interp, args, nargout):
     src = _as_cell_if_strings(args[0])

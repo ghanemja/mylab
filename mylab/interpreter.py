@@ -676,6 +676,9 @@ class Interpreter:
 
     def assign_into(self, target: A.Node, current: Any, value: Any, frame: Frame) -> Any:
         """Return the new value of ``target.base`` after assigning ``value``."""
+        if getattr(value, "is_missing_value", False) and current is not None \
+                and isinstance(target, (A.Index, A.CellIndex)) and not getattr(current, "is_missing_value", False):
+            value = value.as_like(current) if isinstance(target, A.Index) else value  # x(k) = missing
         if isinstance(current, MObject):
             if isinstance(target, (A.Field, A.DynField)):
                 return current.set_field(self, self.field_name(target, frame), value)

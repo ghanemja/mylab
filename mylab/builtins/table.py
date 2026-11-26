@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from .. import indexing as ix
-from ..display import format_scalar, size_str, summary
+from ..display import size_str, summary
 from ..errors import MatlabError
 from ..objects import MObject
 from ..values import (
@@ -27,6 +27,12 @@ def _height(v: Any) -> int:
         return 1
     if _is_time(v):
         return v.data.shape[0]
+    if isinstance(v, TableObject):
+        return v.nrows
+    if isinstance(v, Struct):
+        return v.data.shape[0]
+    if hasattr(v, "months") and hasattr(v, "days"):  # calendarDuration
+        return v.months.shape[0]
     raise MatlabError(f"A {type(v).__name__} cannot be a table variable.")
 
 
@@ -57,6 +63,12 @@ def _rows(v: Any, pos: np.ndarray) -> Any:
         return Cell(v.data[pos, ...])
     if isinstance(v, StringArray):
         return StringArray(v.data[pos, ...])
+    if isinstance(v, TableObject):
+        return v.index_get(None, [np.asarray(pos, dtype=float).reshape(-1, 1) + 1.0, ix.COLON])
+    if isinstance(v, Struct):
+        return Struct(v.data[pos, ...], v.fields)
+    if hasattr(v, "months") and hasattr(v, "days"):
+        return type(v)(v.months[pos, ...], v.days[pos, ...], v.secs[pos, ...])
     return v[pos, ...]
 
 
@@ -80,8 +92,35 @@ class TableObject(MObject):
         self.columns = list(columns)
         self.description = description
         self.row_names: list[str] | None = None
+        self.units: dict[str, str] = {}             # VariableUnits, by variable name
+        self.var_descriptions: dict[str, str] = {}  # VariableDescriptions, by variable name
+        self.user_data: Any = None
+        self.dim_names: list[str] = list(self.DEFAULT_DIMS)
+        self.custom: dict[str, Any] = {}            # CustomProperties
+        self.custom_var: set[str] = set()           # names of the per-variable custom properties
         if row_names is not None and len(row_names):
             self.set_row_names(list(row_names))
+
+    DEFAULT_DIMS = ("Row", "Variables")
+    kind_word = "table"
+
+    def inherit(self, src: "TableObject", renames: dict | None = None) -> "TableObject":
+        """Take the properties (units, descriptions, user data ...) of the table this one was made from."""
+        ren = renames or {}
+        self.units = {ren.get(k, k): v for k, v in src.units.items() if ren.get(k, k) in self.names}
+        self.var_descriptions = {ren.get(k, k): v for k, v in src.var_descriptions.items()
+                                 if ren.get(k, k) in self.names}
+        self.user_data = src.user_data
+        self.dim_names = list(src.dim_names) if type(src) is type(self) else list(self.DEFAULT_DIMS)
+        self.custom = dict(src.custom)
+        self.custom_var = set(src.custom_var)
+        if not self.description:
+            self.description = src.description
+        return self
+
+    def make(self, names: list, columns: list, row_names: list | None = None) -> "TableObject":
+        """A new table of plain class (overridden by timetables) with this table's properties."""
+        return TableObject(names, columns, self.description, row_names).inherit(self)
 
     def set_row_names(self, names: list[str] | None) -> None:
         if not names:
@@ -107,17 +146,25 @@ class TableObject(MObject):
         return (self.nrows, len(self.names))
 
     def copy(self) -> "TableObject":
-        return TableObject(list(self.names), list(self.columns), self.description, self.row_names)
+        return TableObject(list(self.names), list(self.columns), self.description, self.row_names).inherit(self)
 
     # -- lookup helpers --------------------------------------------------------------------
     def var_index(self, name: str) -> int:
         if name not in self.names:
-            raise MatlabError(f"Unrecognized table variable name '{name}'.")
+            raise MatlabError(f"Unrecognized table variable name '{name}'.", "MATLAB:table:UnrecognizedVarName")
         return self.names.index(name)
 
     def var_positions(self, idx: Any) -> list[int]:
         if idx is ix.COLON:
             return list(range(len(self.names)))
+        if getattr(idx, "is_vartype", False):
+            return [k for k, c in enumerate(self.columns) if idx.matches(c)]
+        if isinstance(idx, FunctionHandle):
+            raise MatlabError("A function handle cannot select table variables here; use T(:, vartype(...)) "
+                              "or varfun with 'InputVariables'.")
+        if hasattr(idx, "compiled") and hasattr(idx, "regex"):  # a pattern: the names that match it
+            rx = idx.compiled(False)
+            return [k for k, n in enumerate(self.names) if rx.fullmatch(n)]
         if is_text(idx) or isinstance(idx, (Cell, StringArray)):
             return [self.var_index(n) for n in _names_from(idx)]
         pos, _ = ix._to_positions(idx, len(self.names), for_set=False)
@@ -157,50 +204,132 @@ class TableObject(MObject):
             return []
         return [to_matlab(r) for r in res] if isinstance(res, tuple) else [to_matlab(res)]
 
+    def properties_struct(self) -> Struct:
+        def per_var(store: dict) -> Cell:
+            if not store:
+                return Cell(np.empty((0, 0), dtype=object))
+            return Cell.from_list([char(store.get(n, "")) for n in self.names])
+        custom = Struct.scalar({k: v for k, v in self.custom.items()})
+        return Struct.scalar({
+            "Description": char(self.description),
+            "UserData": self.user_data if self.user_data is not None else np.zeros((0, 0)),
+            "DimensionNames": Cell.from_list([char(n) for n in self.dim_names]),
+            "VariableNames": Cell.from_list([char(n) for n in self.names]),
+            "VariableDescriptions": per_var(self.var_descriptions),
+            "VariableUnits": per_var(self.units),
+            "VariableContinuity": np.zeros((0, 0)),
+            "RowNames": Cell.from_list([char(n) for n in self.row_names], column=True)
+            if self.row_names else Cell(np.empty((0, 0), dtype=object)),
+            "CustomProperties": custom,
+        })
+
     def get_field(self, interp, name: str) -> Any:
         if name == "Properties":
-            return Struct.scalar({
-                "VariableNames": Cell.from_list([char(n) for n in self.names]),
-                "Description": char(self.description),
-                "RowNames": Cell.from_list([char(n) for n in self.row_names], column=True)
-                if self.row_names else Cell(np.empty((0, 1), dtype=object)),
-                "DimensionNames": Cell.from_list([char("Row"), char("Variables")]),
-            })
-        if name == "Row" and self.row_names is not None:
+            return self.properties_struct()
+        if name == self.dim_names[0]:
+            if self.row_names is None:
+                return Cell(np.empty((0, 1), dtype=object))
             return Cell.from_list([char(n) for n in self.row_names], column=True)
+        if name == self.dim_names[1] and name not in self.names:
+            return self.to_array()
         if name in self.names:
             return self.columns[self.names.index(name)]
-        raise MatlabError(f"Unrecognized table variable name '{name}'.")
+        raise MatlabError(f"Unrecognized table variable name '{name}'.", "MATLAB:table:UnrecognizedVarName")
+
+    @staticmethod
+    def _per_var_texts(value: Any, n: int, what: str) -> list[str]:
+        if isinstance(value, np.ndarray) and value.size == 0 and not is_char(value):
+            return []
+        if isinstance(value, Cell) and value.data.size == 0:
+            return []
+        texts = _names_from(value)
+        if len(texts) != n:
+            raise MatlabError(f"The {what} property must have one element for each variable in the table.",
+                              "MATLAB:table:IncorrectNumberOfVarPropElts")
+        return ["" if t is None else t for t in texts]
+
+    def apply_properties(self, value: Struct) -> None:
+        """Take over the fields of a Properties struct (in place)."""
+        def field(key: str) -> Any:
+            return value.get_field(0, key) if key in value.fields else None
+        names_v = field("VariableNames")
+        if names_v is not None:
+            new_names = _names_from(names_v)
+            if len(new_names) != len(self.names):
+                raise MatlabError("The VariableNames property must contain one name for each variable in "
+                                  "the table.", "MATLAB:table:IncorrectNumberOfVarNames")
+            if len(set(new_names)) != len(new_names):
+                raise MatlabError("Duplicate table variable names.", "MATLAB:table:DuplicateVarNames")
+            ren = dict(zip(self.names, new_names))
+            self.units = {ren.get(k, k): v for k, v in self.units.items()}
+            self.var_descriptions = {ren.get(k, k): v for k, v in self.var_descriptions.items()}
+            self.names = new_names
+        if "Description" in value.fields:
+            d = field("Description")
+            self.description = "" if (isinstance(d, np.ndarray) and d.size == 0) else to_str(d)
+        if "UserData" in value.fields:
+            u = field("UserData")
+            self.user_data = None if (isinstance(u, np.ndarray) and u.size == 0 and not is_char(u)) else u
+        if "DimensionNames" in value.fields:
+            dn = _names_from(field("DimensionNames"))
+            if len(dn) != 2 or dn[0] == dn[1]:
+                raise MatlabError("The DimensionNames property must contain two different names.",
+                                  "MATLAB:table:IncorrectNumberOfDimNames")
+            clash = [n for n in dn if n in self.names]
+            if clash:
+                raise MatlabError(f"The dimension name '{clash[0]}' is also a variable name.",
+                                  "MATLAB:table:DuplicateDimNamesAndVarNames")
+            self.dim_names = dn
+        if "VariableUnits" in value.fields:
+            texts = self._per_var_texts(field("VariableUnits"), len(self.names), "VariableUnits")
+            self.units = {n: t for n, t in zip(self.names, texts) if t}
+        if "VariableDescriptions" in value.fields:
+            texts = self._per_var_texts(field("VariableDescriptions"), len(self.names), "VariableDescriptions")
+            self.var_descriptions = {n: t for n, t in zip(self.names, texts) if t}
+        if "RowNames" in value.fields:
+            rn = field("RowNames")
+            empty = (isinstance(rn, np.ndarray) and rn.size == 0) or (isinstance(rn, Cell) and rn.data.size == 0)
+            self.set_row_names(None if empty else _names_from(rn))
+        if "CustomProperties" in value.fields:
+            cp = field("CustomProperties")
+            if isinstance(cp, Struct) and cp.data.size == 1:
+                unknown = [k for k in cp.fields if k not in self.custom]
+                if unknown:
+                    raise MatlabError(f"'{unknown[0]}' is not a custom property of this table. Add it with "
+                                      "addprop first.", "MATLAB:table:UnrecognizedCustomProperty")
+                for k in cp.fields:
+                    self.custom[k] = cp.get_field(0, k)
 
     def set_field(self, interp, name: str, value: Any) -> "TableObject":
         t = self.copy()
         if name == "Properties":
             if not isinstance(value, Struct):
                 raise MatlabError("Properties must be a struct.")
-            new_names = _names_from(value.get_field(0, "VariableNames"))
-            if len(new_names) != len(t.names):
-                raise MatlabError("The number of variable names must match the number of variables.")
-            t.names = new_names
-            if "Description" in value.fields:
-                t.description = to_str(value.get_field(0, "Description"))
-            if "RowNames" in value.fields:
-                rn = value.get_field(0, "RowNames")
-                empty = (isinstance(rn, np.ndarray) and rn.size == 0) or (isinstance(rn, Cell) and rn.data.size == 0)
-                t.set_row_names(None if empty else _names_from(rn))
+            t.apply_properties(value)
             return t
-        if name == "Row":
+        if name == self.dim_names[0]:
             t.set_row_names(None if isinstance(value, np.ndarray) and value.size == 0 else _names_from(value))
             return t
+        if isinstance(value, np.ndarray) and value.shape == (0, 0) and value.dtype == float and name in t.names:
+            return t.index_delete(interp, [ix.COLON, char(name)])  # T.var = [] deletes the variable
         col = _as_column(value)
         if t.names and _height(col) != t.nrows:
             if isinstance(col, np.ndarray) and col.size == 1:
                 col = np.repeat(col, t.nrows, axis=0)
+            elif isinstance(col, StringArray) and col.data.size == 1:
+                col = StringArray(np.repeat(col.data, t.nrows, axis=0))
+            elif is_char(col) and col.ndim == 2 and col.shape[0] == 1:
+                col = np.repeat(col, t.nrows, axis=0)
             else:
                 raise MatlabError(f"To assign to or create a variable in a table, the number of rows must "
-                                  f"match the height of the table ({t.nrows}).")
+                                  f"match the height of the table ({t.nrows}).",
+                                  "MATLAB:table:RowDimensionMismatch")
         if name in t.names:
             t.columns[t.names.index(name)] = col
         else:
+            if name in t.dim_names:
+                raise MatlabError(f"'{name}' is a dimension name of this table and cannot be a variable name.",
+                                  "MATLAB:table:DuplicateDimNamesAndVarNames")
             t.names.append(name)
             t.columns.append(col)
         return t
@@ -210,8 +339,8 @@ class TableObject(MObject):
             raise MatlabError("Tables are indexed with two subscripts: T(rows, vars).")
         rows = self.row_positions(args[0])
         cols = self.var_positions(args[1])
-        return TableObject([self.names[c] for c in cols], [_rows(self.columns[c], rows) for c in cols],
-                           self.description, self._sub_row_names(rows))
+        return self.make([self.names[c] for c in cols], [_rows(self.columns[c], rows) for c in cols],
+                         self._sub_row_names(rows))
 
     def brace_get(self, interp, args: list) -> list:
         if len(args) != 2:
@@ -226,15 +355,13 @@ class TableObject(MObject):
         if rows_all:
             drop = set(self.var_positions(args[1]))
             keep = [k for k in range(len(self.names)) if k not in drop]
-            return TableObject([self.names[k] for k in keep], [self.columns[k] for k in keep], self.description,
-                               self.row_names)
+            return self.make([self.names[k] for k in keep], [self.columns[k] for k in keep], self.row_names)
         if args[1] is not ix.COLON:
             raise MatlabError("Delete whole rows with T(rows, :) = [].")
         keep = np.ones(self.nrows, dtype=bool)
         keep[self.row_positions(args[0])] = False
         idx = np.nonzero(keep)[0]
-        return TableObject(list(self.names), [_rows(c, idx) for c in self.columns], self.description,
-                           self._sub_row_names(idx))
+        return self.make(list(self.names), [_rows(c, idx) for c in self.columns], self._sub_row_names(idx))
 
     def index_set(self, interp, args: list, value: Any) -> Any:
         if len(args) != 2:
@@ -352,66 +479,156 @@ class TableObject(MObject):
             for t in tables:
                 names += t.names
                 cols += t.columns
-            return TableObject(names, cols, tables[0].description, tables[0].row_names)
+            if len({t.nrows for t in tables}) > 1:
+                raise MatlabError("All tables being horizontally concatenated must have the same number of rows.",
+                                  "MATLAB:table:horzcat:SizeMismatch")
+            dup = sorted({n for n in names if names.count(n) > 1})
+            if dup:
+                raise MatlabError(f"Duplicate table variable name: '{dup[0]}'.", "MATLAB:table:DuplicateVarNames")
+            row_names = next((t.row_names for t in tables if t.row_names), None)
+            out = tables[0].make(names, cols, row_names)
+            for t in tables[1:]:
+                out.units.update(t.units)
+                out.var_descriptions.update(t.var_descriptions)
+            return out
         first = tables[0]
         for t in tables[1:]:
             if set(t.names) != set(first.names):
-                raise MatlabError("Vertically concatenated tables must have the same variable names.")
+                raise MatlabError("All tables being vertically concatenated must have the same variable names.",
+                                  "MATLAB:table:vertcat:UnequalVarNames")
         cols = [cat([t.columns[t.names.index(n)] for t in tables], 0) for n in first.names]
         row_names = None
         if all(t.row_names is not None for t in tables):
             row_names = [r for t in tables for r in t.row_names]
-        return TableObject(list(first.names), cols, first.description, row_names)
+            if len(set(row_names)) != len(row_names):
+                raise MatlabError("Duplicate table row names.", "MATLAB:table:DuplicateRowNames")
+        return first.make(list(first.names), cols, row_names)
 
     # -- display -------------------------------------------------------------------------------
-    def _cell_text(self, col: Any, i: int) -> str:
-        if isinstance(col, Cell):
-            return "{" + summary(col.data[i, 0], True) + "}"
-        if isinstance(col, StringArray):
-            x = col.data[i, 0]
-            return "<missing>" if x is None else f'"{x}"'
-        if is_char(col):
-            return "'" + "".join(col[i]) + "'"
-        if _is_time(col):
-            return "   ".join(str(x) for x in np.atleast_1d(col.element_texts()[i]).ravel())
-        row = col[i]
-        if col.dtype == bool:
-            return " ".join("true" if x else "false" for x in row)
-        if col.dtype.kind == "f":
-            finite = col[np.isfinite(col)]
-            if finite.size and not np.all(finite == np.round(finite)):
-                return " ".join(f"{x:.4f}" if np.isfinite(x) else format_scalar(x) for x in row)
-        return " ".join(format_scalar(x) for x in row)
+    def size_line(self) -> str:
+        shape = self.matlab_shape()
+        if not self.names or shape[0] == 0:
+            return f"  {size_str(shape)} empty {self.kind_word}"
+        return f"  {size_str(shape)} {self.kind_word}"
+
+    def leading_blocks(self) -> list[tuple[str, list[str], str]]:
+        """Columns shown before the variables: (header, one text per row, alignment)."""
+        if self.row_names:
+            return [("", list(self.row_names), "left")]
+        return []
+
+    def body_lines(self) -> list[str]:
+        """The header, the underline and one line per row, as MATLAB lays a table out."""
+        blocks = self.leading_blocks()
+        for name, col in zip(self.names, self.columns):
+            blocks.append((name, _var_texts(col, self.nrows), "center"))
+        if not blocks:
+            return []
+        heads, unders, cols = [], [], []
+        for k, (name, texts, align) in enumerate(blocks):
+            body_w = max((len(x) for x in texts), default=0)
+            width = max(len(name), body_w)
+            lead = (width - body_w) // 2
+            cols.append([" " * lead + x.ljust(body_w) + " " * (width - body_w - lead) for x in texts])
+            name_lead = (width - len(name)) // 2
+            heads.append(" " * name_lead + name + " " * (width - len(name) - name_lead))
+            row_label = k == 0 and align == "left" and name == ""
+            unders.append(" " * width if row_label else "_" * width)
+        indent, gap = "    ", "    "
+        lines = [indent + gap.join(heads), indent + gap.join(unders), ""]
+        return lines + [indent + gap.join(c[i] for c in cols) for i in range(self.nrows)]
 
     def display_lines(self) -> list[str]:
-        if not self.names:
-            return [f"  {size_str(self.matlab_shape())} empty table"]
-        limit = 20
-        n = self.nrows
-        shown = list(range(n)) if n <= limit else list(range(10)) + list(range(n - 5, n))
-        cells = [[self._cell_text(c, i) for c in self.columns] for i in shown]
-        widths = [max([len(self.names[j])] + [len(r[j]) for r in cells]) for j in range(len(self.names))]
-        rn_w = max(len(r) for r in self.row_names) if self.row_names else 0
+        if not self.names or self.nrows == 0:
+            lines = [self.size_line()]
+            if self.names and self.nrows == 0:
+                lines += [""] + self.body_lines()[:2]
+            return lines
+        return [self.size_line(), ""] + self.body_lines()
 
-        def pre(label: str) -> str:
-            return "    " + (label.ljust(rn_w) + "    " if rn_w else "")
+    def disp_lines(self) -> list[str]:
+        """What disp(T) prints: the table without the size line, followed by a blank line."""
+        body = self.body_lines()
+        return body + [""] if body else []
 
-        lines = [f"  {size_str(self.matlab_shape())} table", ""]
-        lines.append((pre("") + "    ".join(self.names[j].center(widths[j])
-                                           for j in range(len(widths)))).rstrip())
-        lines.append(pre("") + "    ".join("_" * widths[j] for j in range(len(widths))))
-        lines.append("")
-        for k, r in enumerate(cells):
-            if n > limit and k == 10:
-                lines.append("    " + ":".center(sum(widths) + 4 * (len(widths) - 1) + (rn_w + 4 if rn_w else 0)))
-            label = self.row_names[shown[k]] if rn_w else ""
-            lines.append((pre(label) + "    ".join(r[j].center(widths[j]) if not r[j][:1].isdigit() and
-                                                   r[j][:1] != "-" else r[j].rjust(widths[j])
-                                                   for j in range(len(widths)))).rstrip())
-        return lines
+    def summary_text(self, in_cell: bool) -> str:
+        s = f"{size_str(self.matlab_shape())} {self.kind_word}"
+        return s if in_cell else f"[{s}]"
 
     def format_display(self, name: str) -> str:
         return f"{name} =\n\n" + "\n".join(self.display_lines()) + "\n\n"
+
+
+def _number_texts(a: np.ndarray) -> list[str]:
+    """Texts of the numbers of one table column, as the table display writes them."""
+    from ..display import FORMAT, _special
+    flat = a.flatten()
+    if a.dtype == bool:
+        return ["true" if x else "false" for x in flat]
+    if a.dtype.kind in "iu":
+        return [str(int(x)) for x in flat]
+    long = FORMAT.long
+    sig = 15 if long else 5
+
+    def one(x: float) -> str:
+        sp = _special(x)
+        if sp is not None:
+            return sp
+        if x == int(x) and abs(x) < 1e15:
+            return str(int(x))
+        return f"{x:.{sig}g}"
+    if a.dtype.kind == "c":
+        out = []
+        for z in flat:
+            re_, im = float(np.real(z)), float(np.imag(z))
+            out.append(f"{one(re_)}{'-' if im < 0 else '+'}{one(abs(im))}i")
+        return out
+    return [one(float(x)) for x in flat]
+
+
+def _var_texts(col: Any, n: int) -> list[str]:
+    """One text per row for a table variable (all the same width)."""
+    def pad(texts: list[str], right: bool = False) -> list[str]:
+        w = max((len(t) for t in texts), default=0)
+        return [t.rjust(w) if right else t.ljust(w) for t in texts]
+
+    if isinstance(col, TableObject):
+        parts = [_var_texts(c, n) for c in col.columns]  # the inner variables, side by side
+        return pad(["    ".join(p[i] for p in parts) for i in range(n)])
+    if isinstance(col, Cell):
+        data = col.data.reshape(n, -1) if n else col.data.reshape(0, 0)
+        subs = []
+        for j in range(data.shape[1]):
+            texts = [summary(data[i, j], True) for i in range(n)]
+            w = max((len(t) for t in texts), default=0)
+            cells = []
+            for t in texts:
+                if t.startswith("[") and t.endswith("]"):
+                    cells.append("{[" + " " * (w - len(t)) + t[1:] + "}")
+                else:
+                    cells.append("{" + t + " " * (w - len(t)) + "}")
+            subs.append(cells)
+        return pad(["    ".join(s[i] for s in subs) for i in range(n)])
+    if isinstance(col, StringArray):
+        data = col.data.reshape(n, -1) if n else col.data.reshape(0, 0)
+        subs = [pad(["<missing>" if data[i, j] is None else f'"{data[i, j]}"' for i in range(n)])
+                for j in range(data.shape[1])]
+        return pad(["    ".join(s[i] for s in subs) for i in range(n)])
+    if is_char(col):
+        return pad(["".join(col[i]) if col.ndim == 2 else str(col[i]) for i in range(n)])
+    if _is_time(col) or (hasattr(col, "element_texts") and hasattr(col, "matlab_shape")):
+        texts = np.asarray(col.element_texts(), dtype=object).reshape(n, -1) if n else np.empty((0, 0), dtype=object)
+        subs = [pad([str(texts[i, j]) for i in range(n)]) for j in range(texts.shape[1])]
+        return pad(["    ".join(s[i] for s in subs) for i in range(n)])
+    if isinstance(col, Struct):
+        return pad([f"1{chr(215)}1 struct"] * n)
+    if isinstance(col, np.ndarray):
+        a = col.reshape(n, -1) if n else col.reshape(0, 0)
+        texts = [_number_texts(a[:, j]) for j in range(a.shape[1])]
+        w = max((len(x) for sub in texts for x in sub), default=0)  # one width for all the columns
+        subs = [[x.ljust(w) if a.dtype == bool else x.rjust(w) for x in sub] for sub in texts]
+        return pad(["    ".join(s[i] for s in subs) for i in range(n)])
+    return pad([str(col)] * n)
 
 
 def _assign_rows(col: Any, rows: np.ndarray, piece: Any) -> Any:
@@ -508,50 +725,6 @@ def _table(interp, args: list, nargout: int):
 
 
 builtin("table")(_table)
-
-
-@builtin("array2table")
-def _array2table(interp, args, nargout):
-    rest, opts = _split_opts(args, {"VariableNames", "RowNames"})
-    a = rest[0]
-    n = a.shape[1]
-    names = _names_from(opts["VariableNames"]) if "VariableNames" in opts else [f"Var{k + 1}" for k in range(n)]
-    return TableObject(names, [a[:, k:k + 1].copy() for k in range(n)], row_names=_row_names_opt(opts))
-
-
-@builtin("cell2table")
-def _cell2table(interp, args, nargout):
-    rest, opts = _split_opts(args, {"VariableNames", "RowNames"})
-    c = rest[0]
-    n = c.data.shape[1]
-    names = _names_from(opts["VariableNames"]) if "VariableNames" in opts else [f"Var{k + 1}" for k in range(n)]
-    cols = []
-    for k in range(n):
-        vals = [c.data[i, k] for i in range(c.data.shape[0])]
-        if vals and all(isinstance(v, np.ndarray) and v.dtype.kind in "biuf" and v.size == 1 for v in vals):
-            cols.append(np.array([[float(v.flat[0])] for v in vals]))
-        else:
-            d = np.empty((len(vals), 1), dtype=object)
-            for i, v in enumerate(vals):
-                d[i, 0] = v
-            cols.append(Cell(d))
-    return TableObject(names, cols, row_names=_row_names_opt(opts))
-
-
-@builtin("struct2table")
-def _struct2table(interp, args, nargout):
-    s = args[0]
-    if s.numel() == 1:
-        d = s.data.flat[0]
-        return TableObject(list(s.fields), [_as_column(d[f]) for f in s.fields])
-    elems = list(s.data.flatten(order="F"))
-    cols = []
-    for f in s.fields:
-        vals = [e[f] for e in elems]
-        cols.append(TableObject._column_like(Cell(np.empty((0, 1), dtype=object)), vals)
-                    if not all(isinstance(v, np.ndarray) and v.dtype.kind in "biuf" and v.size == 1 for v in vals)
-                    else np.array([[float(v.flat[0])] for v in vals]))
-    return TableObject(list(s.fields), cols)
 
 
 def _table2struct(interp, args, nargout):
@@ -975,32 +1148,6 @@ def _summarize(interp, t: "TableObject", group_names: list[str], methods: list, 
             names.append(f"{_method_name(method, k)}_{dn}")
             cols.append(_stack_results(results) if results else np.zeros((0, 1)))
     return TableObject(names, cols)
-
-
-@builtin("groupsummary")
-def _groupsummary(interp, args, nargout):
-    if len(args) < 2:
-        raise MatlabError("groupsummary expects (T, groupvars, ...).")
-    if not isinstance(args[0], TableObject):
-        # array form: groupsummary(X, G, method)
-        X = args[0]
-        Gv = args[1]
-        methods = _method_list(args[2]) if len(args) > 2 else []
-        Xc = _as_column(X)
-        t = TableObject(["G", "X"], [_as_column(Gv), Xc])
-        res = _summarize(interp, t, ["G"], methods, ["X"] if methods else [])
-        B = np.hstack([fnum(c) for c in res.columns[2:]]) if methods else np.zeros((len(res.columns[1]), 0))
-        return (B, res.columns[0], res.columns[1])[:max(nargout, 1)] if nargout > 1 else B
-    t = args[0]
-    rest, opts = _split_opts(list(args[1:]), {"IncludeMissingGroups", "IncludeEmptyGroups"})
-    group_names = [t.names[p] for p in t.var_positions(rest[0])]
-    methods = _method_list(rest[1]) if len(rest) > 1 else []
-    if len(rest) > 2:
-        data_names = [t.names[p] for p in t.var_positions(rest[2])]
-    else:
-        data_names = [n for n, c in zip(t.names, t.columns) if n not in group_names and _is_numeric_var(c)] \
-            if methods else []
-    return _summarize(interp, t, group_names, methods, data_names)
 
 
 def _varfun(interp, args, nargout):

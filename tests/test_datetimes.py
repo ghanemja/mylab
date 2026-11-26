@@ -95,12 +95,12 @@ def test_text_arrays_and_input_format(m):
 
 def test_text_errors(m):
     for code in ("datetime('garbage')", "datetime('2020-01-05','InputFormat','dd/MM/yyyy')",
-                 "datetime(2024,1,1,'TimeZone','Europe/Paris')", "datetime(2024,1)", "datetime({1,2})",
+                 "datetime(2024,1,1,'TimeZone','Europe/Nowhere')", "datetime(2024,1)", "datetime({1,2})",
                  "datetime(2024,1,1,'Format','bogus')", "datetime(5,'ConvertFrom','nonsense')"):
         with pytest.raises(MatlabError):
             m.run(code + ";")
-    with pytest.raises(MatlabError, match="UTC"):
-        m.run("datetime(2024,1,1,'TimeZone','Asia/Tokyo');")
+    with pytest.raises(MatlabError, match="UTC"):  # the message names the accepted forms
+        m.run("datetime(2024,1,1,'TimeZone','Mars/Olympus');")
 
 
 def test_convert_from(m):

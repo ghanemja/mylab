@@ -141,4 +141,19 @@ HELP = {
     "calendar": (["calendar", "calendar(year, month)", "calendar(date)", "c = calendar(...)"],
                  "Shows the calendar of a month (the current one by default), or returns it as a 6-by-7 "
                  "matrix with weeks as rows starting on Sunday and zeros for days outside the month."),
+    "isweekend": ("tf = isweekend(t)", "True for the datetimes that fall on a Saturday or Sunday."),
+    "tzoffset": (["dt = tzoffset(t)", "[dt, dst] = tzoffset(t)"],
+                 "The offset of a datetime array from UTC in its time zone, as a duration (NaN for datetimes "
+                 "without a time zone). dst is the part of the offset that is due to daylight saving time."),
+    "isdst": ("tf = isdst(t)", "True for the datetimes at which daylight saving time is in effect in their "
+              "time zone (false for datetimes without a time zone)."),
+    "timezones": (["T = timezones", "T = timezones(area)"],
+                  "A table of the time zone names that datetime accepts for 'TimeZone', with their area, "
+                  "their standard offset from UTC and their daylight saving shift in hours. area is "
+                  "'Africa', 'America', 'Asia', 'Europe', ... or 'All'. The list comes from the time zone "
+                  "database of the system (or the tzdata package)."),
+    "time": ("t = time(c)", "The time part of a calendarDuration array as a duration. The other parts are "
+             "read with calyears, calquarters, calmonths, calweeks, caldays or split."),
+    "isprotected": ("tf = isprotected(c)", "True when new categories cannot be added to the categorical "
+                    "array c by assigning values (it was created with 'Protected', true, or it is ordinal)."),
 }

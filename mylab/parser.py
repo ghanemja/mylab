@@ -503,13 +503,13 @@ class Parser:
             node.line = line
             return node
 
-        if t.kind == "ID" and self._is_increment():
-            # Octave's  x++  and  x--  as statements
-            self.next()
+        if t.kind == "ID" and self._ends_with_increment():
+            # Octave's  x++ ,  x-- ,  x(2)++  and  s.f--  as statements
+            target = self.parse_postfix(transpose=False)
             op = self.next().value
             self.next()
-            target = A.Ident(t.value)
-            target.line = line
+            if not self._is_lvalue(target):
+                raise self.error("invalid assignment target", t)
             self.end_statement()
             node = A.Assign([target], A.BinOp(op, target, A.Number(1.0)), False)
             node.line = line
@@ -521,7 +521,24 @@ class Parser:
             if not self._is_lvalue(expr):
                 raise self.error("invalid assignment target", t)
             value = self.parse_expr()
+            chain = [expr]
+            while self.is_op("=") and self._is_lvalue(value):
+                # Octave's chained assignment  a = b = 3
+                self.next()
+                chain.append(value)
+                value = self.parse_expr()
             show = self.end_statement()
+            if len(chain) > 1:
+                stmts: list[A.Node] = []
+                source = value
+                for target in reversed(chain):
+                    step = A.Assign([target], source, show and target is chain[0])
+                    step.line = line
+                    stmts.append(step)
+                    source = target
+                node = A.If([(A.Number(1.0), stmts)], None)
+                node.line = line
+                return node
             node = A.Assign([expr], value, show)
         elif self.tok.kind == "OP" and self.tok.value in COMPOUND_ASSIGN:
             # Octave's  x += e  (also -=, *=, /=, ^=, |=, &=)
@@ -537,15 +554,29 @@ class Parser:
         node.line = line
         return node
 
-    def _is_increment(self) -> bool:
-        """``name++`` / ``name--`` followed by the end of the statement."""
-        a, b, c = self.peek(1), self.peek(2), self.peek(3)
-        if not (a.kind == "OP" and b.kind == "OP" and a.value == b.value and a.value in ("+", "-")):
+    def _ends_with_increment(self) -> bool:
+        """The statement is ``lvalue++`` or ``lvalue--``: two adjacent signs right before its end."""
+        depth = 0
+        i = self.pos
+        prev = prev2 = None
+        while i < len(self.tokens):
+            c = self.tokens[i]
+            if c.kind == "OP" and c.value in ("(", "[", "{"):
+                depth += 1
+            elif c.kind == "OP" and c.value in (")", "]", "}"):
+                depth -= 1
+            at_end = c.kind in ("NL", "EOF") or (depth == 0 and (
+                (c.kind == "OP" and c.value in (";", ",")) or (c.kind == "KW" and c.value in BLOCK_END)))
+            if at_end:
+                break
+            if depth == 0 and c.kind == "OP" and c.value == "=":
+                return False
+            prev2, prev = prev, c
+            i += 1
+        if prev is None or prev2 is None:
             return False
-        if b.space_before:
-            return False
-        return c.kind in ("NL", "EOF") or (c.kind == "OP" and c.value in (";", ",")) or \
-            (c.kind == "KW" and c.value in BLOCK_END)
+        return prev.kind == "OP" and prev2.kind == "OP" and prev.value == prev2.value \
+            and prev.value in ("+", "-") and not prev.space_before and i - self.pos >= 3
 
     def parse_do_until(self) -> A.Node:
         self.expect_kw("do")

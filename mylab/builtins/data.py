@@ -178,10 +178,17 @@ def _isfield(interp, args, nargout):
 @builtin("rmfield")
 def _rmfield(interp, args, nargout):
     s = args[0].copy()
-    names = [to_str(x) for x in args[1].values_f()] if isinstance(args[1], Cell) else [text(args[1])]
+    if isinstance(args[1], Cell):
+        names = [to_str(x) for x in args[1].values_f()]
+    elif isinstance(args[1], StringArray):
+        names = [x for x in args[1].values_f() if x is not None]
+    elif isinstance(args[1], np.ndarray) and args[1].dtype.kind == "U" and args[1].ndim == 2 and args[1].shape[0] > 1:
+        names = ["".join(r).rstrip() for r in args[1]]
+    else:
+        names = [text(args[1])]
     for n in names:
         if n not in s.fields:
-            raise MatlabError(f"A field named '{n}' doesn't exist.")
+            raise MatlabError(f"A field named '{n}' doesn't exist.", "MATLAB:rmfield:InvalidFieldname")
         s.fields.remove(n)
         for d in s.data.flat:
             d.pop(n, None)

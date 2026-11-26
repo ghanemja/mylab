@@ -40,6 +40,8 @@ HELP = {
                     "a wrong way." + _OCT),
     "usage": ("usage(format, ...)", "Stops with an error whose message starts with 'usage: '." + _OCT),
     "NA": (["x = NA", "x = NA(m, n)"], "Octave's marker for a missing value. In mylab it is NaN." + _OCT),
+    "e": (["x = e", "x = e(m, n)"], "The base of the natural logarithm, 2.71828..., the same as exp(1). A "
+          "variable called e takes precedence, as for every function." + _OCT),
     # -- character tests ------------------------------------------------------------------------------
     "isalpha": _is("isalpha", "a letter (the same as isletter)"),
     "isdigit": _is("isdigit", "one of the decimal digits 0 to 9"),

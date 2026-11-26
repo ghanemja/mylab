@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from ..errors import MatlabError
+from ..objects import MObject
 from ..values import (
     Cell, MString, StringArray, Struct, char, class_name, is_char, shape_of, to_numeric, to_str,
 )
@@ -735,3 +736,230 @@ def _string_extreme(name: str, pick_last: bool) -> None:
 
 _string_extreme("max", True)
 _string_extreme("min", False)
+
+
+# -- missing --------------------------------------------------------------------------------------------------
+
+class MissingValue(MObject):
+    """The value of ``missing``: it becomes NaN, NaT, <missing> or <undefined> when it is put next to
+    (or assigned into) an array of another type."""
+
+    is_missing_value = True
+
+    def __init__(self, shape: tuple = (1, 1)):
+        self._shape = tuple(int(d) for d in shape)
+
+    def class_name(self) -> str:
+        return "missing"
+
+    def isa_class(self, name: str) -> bool:
+        return name == "missing"
+
+    def matlab_shape(self) -> tuple:
+        return self._shape
+
+    @property
+    def count(self) -> int:
+        n = 1
+        for d in self._shape:
+            n *= d
+        return n
+
+    def as_like(self, target: Any) -> Any:
+        """The missing value of the type of ``target``, with the shape of this value."""
+        shape = self._shape
+        if isinstance(target, (MString, StringArray)):
+            data = np.empty(shape, dtype=object)
+            data[...] = None
+            return StringArray(data)
+        if isinstance(target, Cell):
+            data = np.empty(shape, dtype=object)
+            for idx in np.ndindex(shape):
+                data[idx] = MissingValue()
+            return Cell(data)
+        if isinstance(target, np.ndarray):
+            if target.dtype.kind in "fc" or target.size == 0:
+                return np.full(shape, np.nan, dtype=target.dtype if target.dtype.kind == "f" else float)
+            raise MatlabError(f"Unable to convert missing to an element of a {class_name(target)} array: that "
+                              "class has no missing value.", "MATLAB:invalidConversion")
+        kind = getattr(target, "kind", None)
+        if kind in ("datetime", "duration", "categorical") and hasattr(target, "like"):
+            return target.like(np.full(shape, np.nan))
+        return self
+
+    @classmethod
+    def concat(cls, items: list, axis: int) -> Any:
+        from ..ops import concat
+        template = next((i for i in items if not isinstance(i, MissingValue)
+                         and not (isinstance(i, np.ndarray) and i.size == 0)), None)
+        if template is None:
+            shapes = [i._shape for i in items if isinstance(i, MissingValue)]
+            total = sum(s[axis] if axis < len(s) else 1 for s in shapes)
+            first = list(shapes[0]) + [1] * max(0, axis + 1 - len(shapes[0]))
+            first[axis] = total
+            return MissingValue(tuple(first))
+        return concat([i.as_like(template) if isinstance(i, MissingValue) else i for i in items], axis)
+
+    def empty_like(self) -> "MissingValue":
+        return MissingValue((0, 0))
+
+    def index_get(self, interp, args: list) -> Any:
+        from .. import indexing as ix
+        picked = ix.get(np.zeros(self._shape), list(args))
+        return MissingValue(picked.shape)
+
+    def index_set(self, interp, args: list, value: Any) -> Any:
+        from .. import indexing as ix
+        if not isinstance(value, MissingValue):
+            current = np.full(self._shape, np.nan)
+            target = value if not isinstance(value, np.ndarray) else current
+            if isinstance(value, np.ndarray):
+                return ix.set_(current, list(args), value.astype(float), lambda: np.nan)
+            return target
+        grown = ix.set_(np.zeros(self._shape), list(args), np.zeros(value._shape), lambda: 0)
+        return MissingValue(grown.shape)
+
+    _METHODS = {"ismissing", "string", "double", "isequal", "isequaln", "isnan", "numel", "size", "isempty",
+                "disp", "char"}
+
+    def has_method(self, name: str) -> bool:
+        return name in self._METHODS
+
+    def call_method(self, interp, name: str, args: list, nargout: int) -> list:
+        if name in ("ismissing", "isnan"):
+            return [np.ones(self._shape, dtype=bool)]
+        if name == "string":
+            return [self.as_like(MString(""))]
+        if name == "double":
+            return [np.full(self._shape, np.nan)]
+        if name == "isequal":
+            return [bool_scalar(False)]
+        if name == "isequaln":
+            return [bool_scalar(all(isinstance(a, MissingValue) and a._shape == self._shape for a in args))]
+        if name == "numel":
+            return [np.array([[float(self.count)]])]
+        if name == "isempty":
+            return [bool_scalar(self.count == 0)]
+        if name == "size":
+            return _size_outputs(self._shape, args[1:], nargout)
+        if name == "disp":
+            interp.out("\n".join(self.display_lines()[2:]) + "\n")
+            return []
+        if name == "char":
+            raise MatlabError("Conversion to char from missing is not possible.", "MATLAB:invalidConversion")
+        return super().call_method(interp, name, args, nargout)
+
+    def binary_op(self, interp, op: str, left: Any, right: Any) -> Any:
+        other = right if left is self else left
+        if op in ("==", "<", "<=", ">", ">="):
+            shape = np.broadcast_shapes(self._shape, shape_of(other))
+            return np.zeros(shape, dtype=bool)
+        if op == "~=":
+            shape = np.broadcast_shapes(self._shape, shape_of(other))
+            return np.ones(shape, dtype=bool)
+        if isinstance(other, MissingValue):
+            return NotImplemented
+        from ..interpreter import current_interpreter
+        it = interp or current_interpreter()
+        mine = self.as_like(other)
+        a, b = (mine, other) if left is self else (other, mine)
+        return it.binop_values(op, a, b) if it is not None else NotImplemented
+
+    def object_equals(self, other: Any) -> bool:
+        return False
+
+    def summary_text(self, in_cell: bool) -> str:
+        if self.count == 1:
+            return "1×1 missing" if in_cell else "<missing>"
+        text_ = "×".join(str(d) for d in self._shape) + " missing"
+        return text_ if in_cell else f"[{text_}]"
+
+    def display_lines(self) -> list[str]:
+        if self.count == 0:
+            return [f"  {'×'.join(str(d) for d in self._shape)} empty missing array"]
+        head = "  missing" if self.count == 1 else f"  {'×'.join(str(d) for d in self._shape)} missing array"
+        rows = self._shape[0]
+        cols = self.count // max(rows, 1)
+        return [head, ""] + ["    " + "    ".join(["<missing>"] * cols) for _ in range(rows)]
+
+    def format_display(self, name: str) -> str:
+        return f"{name} = \n\n" + "\n".join(self.display_lines()) + "\n\n"
+
+
+def _size_outputs(shape: tuple, extra: list, nargout: int) -> list:
+    if extra:
+        k = int(to_numeric(extra[0]).flat[0])
+        return [np.array([[float(shape[k - 1] if k <= len(shape) else 1)]])]
+    if nargout <= 1:
+        return [np.array([[float(d) for d in shape]])]
+    dims = list(shape) + [1] * max(0, nargout - len(shape))
+    if nargout < len(dims):
+        tail = 1
+        for d in dims[nargout - 1:]:
+            tail *= d
+        dims = dims[:nargout - 1] + [tail]
+    return [np.array([[float(d)]]) for d in dims[:nargout]]
+
+
+@builtin("missing")
+def _missing(interp, args, nargout):
+    """missing: a value that turns into NaN, NaT, <missing> or <undefined> in an array of another type."""
+    return MissingValue()
+
+
+# -- validators with options ----------------------------------------------------------------------------------
+
+@builtin("mustBeInRange")
+def _must_be_in_range(interp, args, nargout):
+    """mustBeInRange(value, lower, upper[, 'exclusive' | 'exclude-lower' | 'exclude-upper' ...])."""
+    nargs(args, 3, 5, "mustBeInRange")
+    v = args[0]
+    if not isinstance(v, np.ndarray) or v.dtype.kind not in "biuf":
+        _fail("mustBeInRange", "Value must be numeric or logical.")
+    a = v.astype(float)
+    lo = float(np.real(to_numeric(args[1])).flat[0])
+    hi = float(np.real(to_numeric(args[2])).flat[0])
+    lower_open = upper_open = False
+    for flag in args[3:]:
+        word = text(flag, "boundary option").lower()
+        if word == "exclusive":
+            lower_open = upper_open = True
+        elif word == "inclusive":
+            lower_open = upper_open = False
+        elif word == "exclude-lower":
+            lower_open = True
+        elif word == "exclude-upper":
+            upper_open = True
+        else:
+            raise MatlabError(f"mustBeInRange: unknown boundary option '{text(flag)}'. Use 'inclusive', "
+                              "'exclusive', 'exclude-lower' or 'exclude-upper'.",
+                              "MATLAB:validators:mustBeInRange:InvalidOption")
+    ok = np.all((a > lo) if lower_open else (a >= lo)) and np.all((a < hi) if upper_open else (a <= hi))
+    if not ok:
+        left = "greater than" if lower_open else "greater than or equal to"
+        right = "less than" if upper_open else "less than or equal to"
+        _fail("mustBeInRange", f"Value must be {left} {lo:g} and {right} {hi:g}.")
+    return None
+
+
+@builtin("mustBeVector")
+def _must_be_vector(interp, args, nargout):
+    """mustBeVector(value[, 'allow-all-empties'])."""
+    nargs(args, 1, 2, "mustBeVector")
+    shape = shape_of(args[0])
+    allow_empty = len(args) > 1 and text(args[1]).lower() == "allow-all-empties"
+    if len(args) > 1 and not allow_empty:
+        raise MatlabError(f"mustBeVector: unknown option '{text(args[1])}'.",
+                          "MATLAB:validators:mustBeVector:InvalidOption")
+    is_vector = len(shape) == 2 and (shape[0] == 1 or shape[1] == 1) and shape[0] * shape[1] >= 1
+    if not is_vector and not (allow_empty and 0 in shape):
+        _fail("mustBeVector", "Value must be a vector.")
+    return None
+
+
+@builtin("e")
+def _euler(interp, args, nargout):
+    """Octave's constant e (the base of the natural logarithm); e(n) and e(m, n) give arrays of it."""
+    from ._util import dims_from_args
+    dims, _cls = dims_from_args(list(args), "e")
+    return np.full(dims, np.e)

@@ -439,3 +439,24 @@ def test_clear_function_resets_its_persistent_variables(m, tmp_path):
         os.chdir(old)
     m.run("global GG; GG = 5; g1 = isglobal('GG'); clear GG; g2 = exist('GG', 'var'); global GG; g3 = GG;")
     assert m.num("g1").item() and m.num("g2").item() == 0 and m.num("g3").item() == 5
+
+
+def test_more_octave_statements(m):
+    m.run("a = b = c = 5; v = [1 2 3]; v(2)++; s.n = 4; s.n--; z = {1, 2}; z{2} += 5;")
+    assert (m.num("a").item(), m.num("b").item(), m.num("c").item()) == (5, 5, 5)
+    np.testing.assert_array_equal(m.num("v"), [[1, 3, 3]])
+    assert m.num("s.n").item() == 3 and m.num("z{2}").item() == 7
+    m.run("M = magic(3); M(2, :) *= 2; q.r.s = 1; q.r.s += 1; k = 0; for i = 1:3, k++; end")
+    np.testing.assert_array_equal(m.num("M(2, :)"), [[6, 10, 14]])
+    assert m.num("q.r.s").item() == 2 and m.num("k").item() == 3
+    assert abs(m.num("e").item() - np.e) < 1e-15
+    assert parse("dir *.m\n").body[0].expr.args[0].value == "*.m"
+
+
+def test_validators_with_options(m):
+    m.run("mustBeInRange(1, 1, 10); mustBeInRange(10, 1, 10, 'exclude-lower'); mustBeVector([], 'allow-all-empties')")
+    assert ident(m, "mustBeInRange(1, 1, 10, 'exclusive')")[0] == "MATLAB:validators:mustBeInRange"
+    assert ident(m, "mustBeInRange(1, 1, 10, 'exclude-lower')")[0] == "MATLAB:validators:mustBeInRange"
+    assert ident(m, "mustBeVector(ones(2))")[0] == "MATLAB:validators:mustBeVector"
+    with pytest.raises(MatlabError):
+        m.run("mustBeInRange(1, 0, 2, 'sideways')")

@@ -748,6 +748,8 @@ def display_lines(v: Any) -> list[str]:
         if v.size == 0:
             return []
         return _matrix_lines(v)
+    if hasattr(v, "disp_lines"):
+        return v.disp_lines()
     if hasattr(v, "display_lines"):
         return v.display_lines()
     return [str(v)]

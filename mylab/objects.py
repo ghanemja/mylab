@@ -94,7 +94,8 @@ def _is_one(a: Any) -> bool:
 
 # -- containers.Map --------------------------------------------------------------------------
 
-_NUMERIC_KEYS = {"double", "single", "int32", "uint32", "int64", "uint64"}
+_NUMERIC_KEYS = {"double", "single", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64"}
+_VALUE_TYPES = _NUMERIC_KEYS | {"any", "char", "logical"}
 
 
 class MapObject(MObject):
@@ -122,14 +123,44 @@ class MapObject(MObject):
         if self.key_type == "char":
             if isinstance(k, MString) or is_char(k):
                 return to_str(k)
-            raise MatlabError("Specified key type does not match the type expected for this container.")
+            raise MatlabError("Specified key type does not match the type expected for this container.",
+                              "MATLAB:Containers:Map:TypeMismatch")
         if isinstance(k, np.ndarray) and k.dtype.kind in "biuf" and k.size == 1:
             return float(k.flat[0])
-        raise MatlabError("Specified key type does not match the type expected for this container.")
+        raise MatlabError("Specified key type does not match the type expected for this container.",
+                          "MATLAB:Containers:Map:TypeMismatch")
+
+    def norm_value(self, v: Any) -> Any:
+        """Check (and convert) a value against the ValueType of the map."""
+        from .values import INT_TYPES, MString, char, is_char, saturate_int
+        vt = self.value_type
+        if vt == "any":
+            return v
+        if vt == "char":
+            if isinstance(v, MString):
+                return char(str(v))
+            if is_char(v):
+                return v
+        elif isinstance(v, np.ndarray) and v.dtype.kind in "biuf" and v.size == 1:
+            if vt == "logical":
+                return v != 0
+            if vt == "double":
+                return v.astype(float)
+            if vt == "single":
+                return v.astype(np.float32)
+            return saturate_int(v, INT_TYPES[vt])
+        raise MatlabError("Specified value type does not match the type expected for this container.",
+                          "MATLAB:Containers:Map:TypeMismatch")
 
     def key_value(self, k: Any) -> Any:
-        from .values import char
-        return char(k) if self.key_type == "char" else np.array([[k]])
+        from .values import INT_TYPES, char
+        if self.key_type == "char":
+            return char(k)
+        if self.key_type in INT_TYPES:
+            return np.array([[k]], dtype=INT_TYPES[self.key_type])
+        if self.key_type == "single":
+            return np.array([[k]], dtype=np.float32)
+        return np.array([[k]])
 
     def key_list(self, keys_val: Any) -> list:
         from .values import Cell, MString, StringArray, is_char
@@ -210,8 +241,36 @@ class MapObject(MObject):
     def index_set(self, interp, args: list, value: Any) -> Any:
         if len(args) != 1:
             raise MatlabError("Only one key may be used to index a containers.Map.")
-        self.store[self.norm_key(args[0])] = value
+        self.store[self.norm_key(args[0])] = self.norm_value(value)
         return self
+
+    def index_delete(self, interp, args: list) -> Any:
+        """m(key) = [] stores an empty value (use remove to delete a key)."""
+        return self.index_set(interp, args, np.zeros((0, 0)))
+
+    @classmethod
+    def concat(cls, items: list, axis: int) -> Any:
+        """[m1; m2] is a new map with the keys of both (later maps win)."""
+        maps = [i for i in items if not (isinstance(i, np.ndarray) and i.size == 0)]
+        if not all(isinstance(i, MapObject) for i in maps):
+            raise MatlabError("A containers.Map can only be concatenated with other containers.Map objects.",
+                              "MATLAB:Containers:Map:InvalidConcatenation")
+        if axis != 0:
+            raise MatlabError("Horizontal concatenation is not supported for containers.Map objects; use "
+                              "[m1; m2].", "MATLAB:Containers:Map:NoHorzcat")
+        first = maps[0]
+        out = MapObject(first.key_type, first.value_type)
+        for m in maps:
+            if (m.key_type == "char") != (first.key_type == "char"):
+                raise MatlabError("The maps must have the same kind of keys to be concatenated.",
+                                  "MATLAB:Containers:Map:TypeMismatch")
+            if m.value_type != out.value_type:
+                out.value_type = "any"
+            out.store.update(m.store)
+        return out
+
+    def object_equals(self, other: Any) -> bool:
+        return other is self
 
     def display_lines(self) -> list[str]:
         return ["  Map with properties:", "",
@@ -237,6 +296,12 @@ def make_map(args: list) -> MapObject:
         i += 1
     key_type = to_str(opts["KeyType"]) if "KeyType" in opts else None
     value_type = to_str(opts["ValueType"]) if "ValueType" in opts else "any"
+    if key_type is not None and key_type != "char" and key_type not in _NUMERIC_KEYS:
+        raise MatlabError(f"Unsupported KeyType '{key_type}'. Use 'char' or a numeric class such as 'double'.",
+                          "MATLAB:Containers:Map:UnsupportedKeyType")
+    if value_type not in _VALUE_TYPES:
+        raise MatlabError(f"Unsupported ValueType '{value_type}'. Use 'any', 'char', 'logical' or a numeric "
+                          "class.", "MATLAB:Containers:Map:UnsupportedValueType")
     if not positional:
         return MapObject(key_type or "char", value_type)
     if len(positional) != 2:
@@ -263,7 +328,10 @@ def make_map(args: list) -> MapObject:
     if len(values) != len(keys):
         raise MatlabError("The number of keys and values must be the same.")
     for k, v in zip(keys, values):
-        m.store[k] = v
+        m.store[k] = m.norm_value(v)
+    uniform = opts.get("UniformValues")
+    if uniform is not None and not bool(np.asarray(uniform).flat[0]):
+        return m
     if value_type == "any" and isinstance(vals_val, np.ndarray) and vals_val.dtype.kind in "biuf":
         m.value_type = "double"
     elif value_type == "any" and len(keys) == 1 and is_char(vals_val):
