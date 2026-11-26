@@ -195,6 +195,33 @@ def test_fused_expressions_match(monkeypatch):
 
 
 @pytest.mark.skipif(not fuse.AVAILABLE, reason="numexpr is not installed")
+@pytest.mark.parametrize("expr", [
+    "x / 3 + x",                       # numexpr would compute x * (1/3)
+    "x ./ -0 + 1", "(x - 1) ./ (0 * 2)",  # numexpr would raise ZeroDivisionError
+    "-0 + x .* 0",                     # numexpr would read the literal -0 as 0
+    "x.^3 + 1", "x.^-2 - x", "x.^7 .* x",  # numexpr would use repeated products
+    "exp(x) - tan(x) + sinh(x)", "cosh(x) + tanh(x) - atan(x) + expm1(x)",
+    "sin(x) .* cos(x) + abs(x) ./ 2",
+])
+def test_fused_corner_cases(expr, monkeypatch):
+    monkeypatch.setattr(fuse, "MIN_SIZE", 40)
+    check_all([f"x = [(-31:32) / 7, 0, -0, NaN, Inf, -Inf, 5e-324, 1e308]; y = {expr};"])
+
+
+def test_scalar_and_array_element_functions_agree():
+    """f(x(k)) is the k-th element of f(x): the scalar shortcuts call the same routines."""
+    from fuzz_fastpaths_util import run
+    names = ["exp", "log", "log2", "log10", "sin", "cos", "tan", "atan", "sinh", "cosh", "tanh", "sqrt"]
+    code = "x = [0.45 1.05 0.12 0.08 3.7 1e-5 22.5 700.5]; d = [];\n" + "\n".join(
+        f"y = {f}(x); for k = 1:numel(x), d(end + 1) = {f}(x(k)) - y(k); end" for f in names) + \
+        "\ny = atan2(x, 0.3); z = hypot(x, 0.7); for k = 1:numel(x), " \
+        "d(end + 1) = atan2(x(k), 0.3) - y(k); d(end + 1) = hypot(x(k), 0.7) - z(k); end"
+    for fast in (True, False):
+        ws, _, err = run(code, fast)
+        assert err is None and not ws["d"].any(), (fast, ws["d"])
+
+
+@pytest.mark.skipif(not fuse.AVAILABLE, reason="numexpr is not installed")
 def test_fused_expressions_match_at_the_real_threshold():
     rng = random.Random(99)
     side = int(fuse.MIN_SIZE ** 0.5) + 1
@@ -399,6 +426,13 @@ def test_compiled_loops_with_every_class(cls, fz_path):
     "x = 0; for k = 1:5, x = sign(-0) + abs(-0); end",
     "c = {}; for k = 1:5, c{end + 1} = k * 2; end",
     "v = [1 2 3]; for k = 1:5, v(end) = v(end) + k; end",
+    # differences found by the fuzzer, kept as fixed cases
+    "x = 0; for k = 1:5, x = round(0.49999999999999994) + round(-0.49999999999999994) + floor(-0); end",
+    "x = 0; for k = 1:5, x = sinh(0.12) + cosh(0.12) + tanh(0.12) + exp(0.45) + log(1.05) + tan(0.08); end",
+    "x = 0; for k = 1:5, x = atan2(0.3, k) + hypot(k, 0.7) + atan(0.12) + log2(k) + log10(k); end",
+    "s = 0; for k = 1:5, s = min(k == 1, k > 2); t = max(k > 3, false); end",
+    "v = 1:3; n = 0; for k = 1:6, if (1 | v(k / 2)) == 1, n = n + 1; end, end",
+    "v = 1:3; n = 0; for k = 1:6, t = 0 & v(k); n = n + t; end",
 ])
 def test_compiled_loop_corner_cases(code, fz_path):
     check_all([code], fz_path)
