@@ -79,3 +79,30 @@ _make_string_aware([
 from .. import fastnum as _fastnum  # noqa: E402
 
 _fastnum.install(BUILTINS)  # shortcuts for small and plain-double arguments in front of the hottest built-ins
+
+
+def _mark_lookup_changes(names):
+    """After a built-in that can change files or the path, cached function lookups are re-checked."""
+    for name in names:
+        fn = BUILTINS.get(name)
+        if fn is None:
+            continue
+
+        def wrapped(interp, args, nargout, _fn=fn):
+            try:
+                return _fn(interp, args, nargout)
+            finally:
+                interp.lookup_changed()
+
+        wrapped.__name__ = getattr(fn, "__name__", name)
+        wrapped.__wrapped__ = fn
+        BUILTINS[name] = wrapped
+
+
+_mark_lookup_changes([
+    "addpath", "rmpath", "path", "cd", "chdir", "restoredefaultpath", "rehash", "savepath",
+    "fopen", "fclose", "save", "delete", "movefile", "copyfile", "mkdir", "rmdir",
+    "system", "unix", "dos", "websave", "urlwrite", "unzip", "untar", "gunzip", "zip", "tar", "gzip",
+    "dlmwrite", "csvwrite", "writematrix", "writetable", "writecell", "writelines", "writestruct", "diary",
+    "run", "recycle",
+])
