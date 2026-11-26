@@ -309,6 +309,7 @@ class Interpreter:
                 self.exec_block(stmt.body, frame)
             except MatlabError as e:
                 self.last_error = e
+                e.__traceback__ = None  # lets go of the workspaces of the functions that failed
                 if stmt.ident:
                     frame.set(stmt.ident, make_exception(e))
                 self.exec_block(stmt.handler, frame)

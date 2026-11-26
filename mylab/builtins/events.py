@@ -51,10 +51,16 @@ class Listener(MObject):
     is_handle = True
 
     def __init__(self, source: Any, event: str, callback: Any):
-        self.source = source
+        import weakref
+        # a listener does not keep its source alive (the source keeps the listener)
+        self._source = weakref.ref(source) if source is not None else (lambda: None)
         self.event = event
         self.callback = callback
         self.enabled = True
+
+    @property
+    def source(self) -> Any:
+        return self._source()
 
     def class_name(self) -> str:
         return "event.listener"
@@ -73,7 +79,8 @@ class Listener(MObject):
         if name == "Callback":
             return self.callback
         if name == "Source":
-            return Cell.from_list([self.source])
+            src = self.source
+            return Cell.from_list([src] if src is not None else [])
         if name == "Recursive":
             return bool_scalar(False)
         raise MatlabError(f"Unrecognized property '{name}' for class 'event.listener'.")

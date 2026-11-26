@@ -193,8 +193,8 @@ class ClassInfo:
                                                                 "braceAssign"))
         if not getattr(interp, "index_overloads", False) and any(m in self.methods for m in _INDEX_METHODS):
             interp.index_overloads = True  # the interpreter now checks for indexing overloads
-        self.observed = any(p.attrs.get("GetObservable") or p.attrs.get("AbortSet")
-                            for p, _ in self.prop_defs.values())
+        # A handle class with a delete method: its objects run it when the last reference goes away.
+        self.has_destructor = self.is_handle and "delete" in self.methods
 
     def _load_folder_methods(self) -> None:
         """Methods stored as separate files next to the classdef in an ``@ClassName`` folder."""
@@ -400,7 +400,17 @@ class ClassInfo:
             raise MatlabError(f"Cannot access the constructor of class '{self.name}'.",
                               "MATLAB:class:MethodRestricted")
         made = self.run_constructor(interp, self.new_object(interp), args, nargout)
+        if self.has_destructor and made is not None:
+            self.arm(made)
         return [] if made is None else [made]
+
+    def arm(self, made: Any) -> None:
+        """Mark finished handle objects: from now on losing the last reference runs their delete method."""
+        if not self.has_destructor:
+            return
+        for obj in (made.data.flat if isinstance(made, ObjectArray) else (made,)):
+            if isinstance(obj, UserObject):
+                obj._alive = True
 
     def run_constructor(self, interp, obj: "UserObject", args: list, nargout: int = 1) -> Any:
         ctor = self.cd.methods.get(self.name)
@@ -600,6 +610,27 @@ class UserObject(MObject):
         self.props: dict[str, Any] = {}
         self._in_accessor: set[str] = set()
 
+    def __del__(self) -> None:
+        # MATLAB destroys a handle object when nothing refers to it any more (clear, reassignment,
+        # the end of a function) and runs the class's delete method at that moment.
+        d = self.__dict__
+        if not d.get("_alive") or d.get("_deleted"):
+            return
+        d["_alive"] = False
+        try:
+            from .interpreter import current_interpreter
+            interp = current_interpreter()
+            if interp is None:
+                return
+            from .builtins.objfuncs import delete_object
+            try:
+                delete_object(interp, self)
+            except MatlabError as e:
+                interp.warn(f"The following error was caught while executing '{self.cls.name}' class "
+                            f"destructor: {e.message}", "MATLAB:class:DestructorError")
+        except Exception:  # never let a destructor disturb the code that dropped the object
+            pass
+
     @property
     def is_handle(self) -> bool:  # type: ignore[override]
         return self.cls.is_handle
@@ -628,6 +659,9 @@ class UserObject(MObject):
         interp = current_interpreter()
         if self.cls.old_style:
             return Struct.scalar(dict(self.props))
+        if interp is not None:
+            interp.warn("Calling struct on an object exposes its private and hidden properties; prefer the "
+                        "object's own methods and properties.", "MATLAB:structOnObject")
         out = {}
         for n in self.cls.instance_props():
             try:

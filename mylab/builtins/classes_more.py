@@ -667,6 +667,7 @@ def shallow_copy(interp, obj: UserObject) -> UserObject:
         if prop.attrs.get("NonCopyable") and name in other.props:
             other.props[name] = defaults.get(name, _empty())
     other._data = obj._data
+    obj.cls.arm(other)
     if obj._dynprops:
         other._dynprops = {}
         for name, dyn in obj._dynprops.items():
@@ -868,13 +869,18 @@ class DynamicProperty(NativeItem):
               "NonCopyable")
 
     def __init__(self, owner: UserObject, name: str):
-        self.owner = owner
+        import weakref
+        self._owner = weakref.ref(owner)  # the object owns its dynamic properties, not the reverse
         self.name = name
         self.stored: Any = _empty()
         self.attrs: dict[str, Any] = {f: False for f in self._FLAGS}
         self.attrs.update({"GetAccess": "public", "SetAccess": "public", "GetMethod": _empty(),
                            "SetMethod": _empty(), "Description": "", "DetailedDescription": ""})
         self.busy = False
+
+    @property
+    def owner(self) -> Any:
+        return self._owner()
 
     @property
     def hidden(self) -> bool:
@@ -886,7 +892,8 @@ class DynamicProperty(NativeItem):
 
     def _allowed(self, interp, kind: str) -> bool:
         level = self.attrs[kind]
-        return level == "public" or self.owner.cls.allowed(interp, level, self.owner.cls)
+        owner = self.owner
+        return level == "public" or (owner is not None and owner.cls.allowed(interp, level, owner.cls))
 
     def read(self, interp, obj: UserObject) -> Any:
         if not self._allowed(interp, "GetAccess"):
@@ -969,8 +976,9 @@ class DynamicProperty(NativeItem):
     def call_method(self, interp, name: str, args: list, nargout: int) -> list:
         if name == "isvalid":
             return [bool_scalar(not getattr(self, "_deleted", False))]
-        if self.owner._dynprops and self.owner._dynprops.get(self.name) is self:
-            del self.owner._dynprops[self.name]  # delete(p): the object loses the property
+        owner = self.owner
+        if owner is not None and owner._dynprops and owner._dynprops.get(self.name) is self:
+            del owner._dynprops[self.name]  # delete(p): the object loses the property
         self._deleted = True
         return []
 
@@ -1744,6 +1752,7 @@ def _decode(interp, d: Any, memo: dict) -> Any:
             obj._dynprops = {}
         obj._dynprops[name] = DynamicProperty(obj, name)
         obj._dynprops[name].stored = _decode(interp, value, memo)
+    cls.arm(obj)
     if "loadobj" in cls.methods:
         res = cls.call(interp, "loadobj", [obj], 1)
         if res:

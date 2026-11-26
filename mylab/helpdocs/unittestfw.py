@@ -24,7 +24,72 @@ def _sel(name: str, call: str, what: str) -> tuple:
     return (f"s = {_S}{call}", what + _SEL.format(call=call))
 
 
+_KINDS = {
+    "verify": "A failure is recorded and the test goes on (the test ends as Failed).",
+    "assert": "A failure stops the current test at once (Failed and Incomplete); later tests still run.",
+    "assume": "A failure stops the current test and marks it Incomplete (filtered) without failing it: "
+              "use it for conditions the test needs but does not check.",
+    "fatalAssert": "A failure stops the whole test run: use it when later tests cannot be trusted.",
+}
+_QUALS = {
+    "Equal": ("(testCase, actual, expected)",
+              "Checks that actual equals expected in class, size and value (NaN equals NaN; cell arrays and "
+              "structs are compared element by element). 'AbsTol', t and 'RelTol', t allow numeric "
+              "differences up to t, or t times the expected value."),
+    "NotEqual": ("(testCase, actual, notExpected)", "Checks that the two values differ."),
+    "True": ("(testCase, actual)", "Checks that actual is the logical scalar true."),
+    "False": ("(testCase, actual)", "Checks that actual is the logical scalar false."),
+    "Empty": ("(testCase, actual)", "Checks that actual has no elements."),
+    "NotEmpty": ("(testCase, actual)", "Checks that actual has at least one element."),
+    "Size": ("(testCase, actual, expectedSize)", "Checks that size(actual) equals expectedSize."),
+    "Length": ("(testCase, actual, expectedLength)", "Checks that length(actual) equals expectedLength."),
+    "NumElements": ("(testCase, actual, expectedCount)", "Checks that numel(actual) equals expectedCount."),
+    "Class": ("(testCase, actual, className)", "Checks that the class of actual is exactly className."),
+    "InstanceOf": ("(testCase, actual, className)",
+                   "Checks that isa(actual, className) is true (subclasses count)."),
+    "SameHandle": ("(testCase, actual, expectedHandle)", "Checks that both are the same handle object."),
+    "NotSameHandle": ("(testCase, actual, otherHandle)", "Checks that the two are different handle objects."),
+    "Substring": ("(testCase, actual, substring)", "Checks that the text actual contains substring."),
+    "Matches": ("(testCase, actual, expression)", "Checks that the text actual matches the regular expression."),
+    "GreaterThan": ("(testCase, actual, bound)", "Checks that every element of actual is greater than bound."),
+    "GreaterThanOrEqual": ("(testCase, actual, bound)", "Checks that every element of actual is at least bound."),
+    "LessThan": ("(testCase, actual, bound)", "Checks that every element of actual is less than bound."),
+    "LessThanOrEqual": ("(testCase, actual, bound)", "Checks that every element of actual is at most bound."),
+    "ReturnsTrue": ("(testCase, functionHandle)", "Checks that the function returns the logical scalar true."),
+    "Error": ("(testCase, functionHandle, identifier)",
+              "Checks that calling the function raises an error with that identifier, for example "
+              "testCase.verifyError(@() myFun(-1), 'myFun:negative'). ?MException accepts any error."),
+    "Warning": ("(testCase, functionHandle, identifier)",
+                "Checks that calling the function issues a warning with that identifier. The function's "
+                "outputs are returned."),
+    "WarningFree": ("(testCase, functionHandle)",
+                    "Checks that calling the function issues no warning. The function's outputs are returned."),
+    "Fail": ("(testCase, diagnostic)", "Fails unconditionally, for code paths that must not be reached."),
+    "That": ("(testCase, actual, constraint)",
+             "Checks actual against a constraint object from matlab.unittest.constraints, for example "
+             "IsEqualTo(5, 'Within', AbsoluteTolerance(0.1)) or IsGreaterThan(3) & IsLessThan(9)."),
+}
+_QUAL_HELP = {}
+for _prefix, _note in _KINDS.items():
+    for _suffix, (_sig, _what) in _QUALS.items():
+        _usage = [f"{_prefix}{_suffix}{_sig}"]
+        if _suffix not in ("Fail",):
+            _usage.append(f"{_prefix}{_suffix}{_sig[:-1]}, diagnostic)")
+        _QUAL_HELP[_prefix + _suffix] = (
+            _usage, f"{_what} {_note} A method of the test case, also written testCase.{_prefix}{_suffix}(...). "
+            "The optional diagnostic (text, or a function handle to run) is shown on failure together with "
+            "the actual and expected values.")
+
 HELP = {
+    **_QUAL_HELP,
+    "addTeardown": ("addTeardown(testCase, @fcn, arg1, ...)",
+                    "Registers a function to run when the test finishes, whether it passed or not. Functions "
+                    "run in the reverse order of registration. In a setupOnce function or TestClassSetup "
+                    "method the function runs after the last test of the file or class."),
+    "applyFixture": ("f = applyFixture(testCase, fixture)",
+                     "Sets up a fixture such as matlab.unittest.fixtures.TemporaryFolderFixture and undoes "
+                     "it when the test finishes. Returns the fixture, whose properties (for example Folder) "
+                     "can then be read."),
     # -- running tests ---------------------------------------------------------------------------------
     "runtests": (["results = runtests", "results = runtests(tests)", "results = runtests(tests, Name, Value)"],
                  "Runs tests and returns an array of TestResult objects (Name, Passed, Failed, Incomplete, "

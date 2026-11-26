@@ -38,6 +38,17 @@ HELP = {
     "event.hasListener": ("tf = event.hasListener(obj, eventName)",
                           "True when at least one enabled listener is attached to the event of the handle "
                           "object obj."),
+    "addprop": ("p = addprop(obj, name)",
+                "Adds a property called name to one object of a class derived from dynamicprops. Other "
+                "objects of the class are not changed. The result is a meta.DynamicProperty whose "
+                "attributes can be set (SetAccess, GetAccess, Hidden, Transient, GetMethod, SetMethod, "
+                "SetObservable, NonCopyable); delete(p) removes the property from the object again."),
+    "copyElement": ("cp = copyElement(obj)",
+                    "The method a class derived from matlab.mixin.Copyable overrides (in a methods "
+                    "(Access = protected) block) to change what copy(obj) does, for example to copy the "
+                    "objects its properties refer to. Call copyElement@matlab.mixin.Copyable(obj) inside "
+                    "it for the standard shallow copy, in which NonCopyable properties get their default "
+                    "values."),
     # -- dominance of old-style classes ----------------------------------------------------------------
     "superiorto": ("superiorto('class1', 'class2', ...)",
                    "Called in the constructor of a class kept in an @folder: when an operator or function "
