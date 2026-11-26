@@ -464,10 +464,8 @@ def _builtin(interp, args, nargout):
         raise MatlabError("builtin needs a function name, e.g. builtin('disp', x).")
     f = args[0]
     name = f.name if hasattr(f, "name") and getattr(f, "name", None) else text(f, "function name")
-    fn = interp.builtins.get(name)
-    if fn is None:
-        raise MatlabError(f"'{name}' is not a built-in function.")
-    res = interp.call_builtin(name, fn, list(args[1:]), nargout)
+    from ..classdef import raw_builtin
+    res = raw_builtin(interp, name, list(args[1:]), nargout)  # skips class methods of that name
     return tuple(res) if res else None
 
 
@@ -612,24 +610,5 @@ def _unicode2native(interp, args, nargout):
 
 @builtin("findprop")
 def _findprop(interp, args, nargout):
-    from ..values import Struct
-    nargs(args, 2, 2, "findprop")
-    cls = getattr(args[0], "cls", None)
-    name = text(args[1], "property name")
-    if cls is None or name not in cls.prop_defs:
-        return np.zeros((0, 0))
-    prop, owner = cls.prop_defs[name]
-    attrs = prop.attrs
-
-    def access(kind: str) -> Any:
-        return char(str(attrs.get(kind, attrs.get("Access", "public"))).lower())
-
-    def flag(kind: str) -> Any:
-        return np.array([[bool(attrs.get(kind, False))]])
-
-    return Struct.scalar({"Name": char(name), "GetAccess": access("GetAccess"), "SetAccess": access("SetAccess"),
-                          "Dependent": flag("Dependent"), "Constant": flag("Constant"),
-                          "Abstract": flag("Abstract"), "Transient": flag("Transient"),
-                          "Hidden": flag("Hidden"), "SetObservable": flag("SetObservable"),
-                          "HasDefault": np.array([[prop.default is not None]]),
-                          "DefiningClass": char(owner.name)})
+    from .classes_more import _findprop as find  # the meta.property (or meta.DynamicProperty) object
+    return find(interp, args, nargout)

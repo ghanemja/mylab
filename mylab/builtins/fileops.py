@@ -1259,7 +1259,11 @@ def _apply_subs(interp, a, s, name: str, value=None, assign: bool = False):
 @builtin("subsref")
 def _subsref(interp, args, nargout):
     nargs(args, 2, 2, "subsref")
-    return _apply_subs(interp, args[0], args[1], "subsref")
+    if not isinstance(args[1], Struct) or "type" not in args[1].fields or "subs" not in args[1].fields:
+        raise MatlabError("subsref: the subscript must be a struct with fields 'type' and 'subs' (see substruct).")
+    from ..classdef import builtin_subsref, subs_levels  # standard indexing, one value per requested output
+    res = builtin_subsref(interp, args[0], subs_levels(args[1]), nargout)
+    return tuple(res) if len(res) != 1 else res[0]
 
 
 @builtin("subsasgn")

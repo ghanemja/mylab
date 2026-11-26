@@ -28,6 +28,11 @@ _INPLACE = {"+": np.add, "-": np.subtract, ".*": np.multiply, "./": np.divide}
 
 _CURRENT: list["Interpreter"] = []
 
+# Class folders that add functions for a built-in type (a file @double/name.m handles double inputs).
+_TYPE_FOLDERS = frozenset("@" + t for t in (
+    "double", "single", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
+    "logical", "char", "cell", "struct", "function_handle", "string"))
+
 # Built-ins without side effects: index expressions calling them may be evaluated twice.
 _PURE_FUNCS = frozenset({
     "mod", "rem", "floor", "ceil", "round", "fix", "abs", "min", "max", "numel", "length", "size",
@@ -51,6 +56,8 @@ class NestedRef:
 
 class Frame:
     """A workspace: the base workspace or one function call's local variables."""
+
+    imports: list | None = None  # names given to ``import`` in this workspace (see call_named)
 
     def __init__(self, interp: "Interpreter", functions: dict[str, A.Function] | None = None,
                  name: str = "base", nargin: int = 0, nargout: int = 0, file: str | None = None):
@@ -157,6 +164,8 @@ class Interpreter:
             sys.setrecursionlimit(40000)
         self._file_cache: dict[str, tuple[Any, A.Program]] = {}
         self._dir_cache: dict[str, tuple[int, frozenset]] = {}
+        self._type_dirs: dict[str, frozenset] = {}  # folders holding @double-style method folders
+        self._private_dirs: set[str] = set()  # folders known to hold a private subfolder
         self.state: dict[str, Any] = {}  # scratch space for builtins (tic, rng, figures...)
         self.classes: dict[str, Any] = {}  # classdef name -> ClassInfo
         self.trace_hook: Callable[[A.Node, Frame], None] | None = None  # called before each statement
@@ -166,6 +175,7 @@ class Interpreter:
         # Whether MATLAB code may call into Python (py.*, pyrun, pyrunfile). Hosts that run code
         # they do not trust set this to False (or start mylab with MYLAB_PYTHON=0).
         self.python_enabled = os.environ.get("MYLAB_PYTHON", "1") != "0"
+        self.index_overloads = False  # set once a class defines subsref, subsasgn, end, ... (classdef.py)
 
     # -- public API -------------------------------------------------------------------
     @property
@@ -207,6 +217,7 @@ class Interpreter:
                     self.classes[cd.name] = ClassInfo(cd, file, self, program.functions)
             if file:
                 frame.file = file
+                self._dir_listing(os.path.dirname(file))  # notes a private subfolder next to the script
             self.exec_block(program.body, frame)
         except ReturnSignal:
             pass
@@ -304,6 +315,7 @@ class Interpreter:
                 self.exec_block(stmt.body, frame)
             except MatlabError as e:
                 self.last_error = e
+                e.__traceback__ = None  # lets go of the workspaces of the functions that failed
                 if stmt.ident:
                     frame.set(stmt.ident, make_exception(e))
                 self.exec_block(stmt.handler, frame)
@@ -317,7 +329,10 @@ class Interpreter:
             if getattr(stmt, "persistent", False):
                 # One store per function definition: survives between calls, private to that function.
                 key = id(getattr(frame, "fn_node", None) or frame)
-                store = self.persistent_vars.setdefault(key, {})
+                store = self.persistent_vars.get(key)
+                if store is None:
+                    store = self.persistent_vars[key] = {}
+                    self.state.setdefault("persistent_owners", {})[key] = frame.name  # for clear name
             else:
                 store = self.global_vars
             for name in stmt.names:
@@ -341,22 +356,13 @@ class Interpreter:
 
     def show(self, name: str, value: Any) -> None:
         """Print a value the way an unsuppressed statement does (honouring disp/display methods)."""
-        from .classdef import UserObject
-        if isinstance(value, UserObject):
-            if "display" in value.cls.methods:
-                value.cls.call(self, "display", [value], 0)
-                return
-            if "disp" in value.cls.methods:
-                self.out(f"{name} = \n\n")
-                value.cls.call(self, "disp", [value], 0)
-                self.out("\n")
+        if isinstance(value, MObject) and hasattr(value, "cls"):
+            from .classdef import show_object
+            if show_object(self, name, value):
                 return
         self.out(format_display(name, value))
 
     def eval_super_call(self, node: A.SuperCall, frame: Frame) -> Any:
-        parent = self.find_class(node.parent)
-        if parent is None:
-            raise MatlabError(f"Superclass '{node.parent}' was not found.")
         args = self.eval_elements(node.args, frame)
         vals = self.super_call(node, frame, 1, args)
         if not vals:
@@ -365,10 +371,11 @@ class Interpreter:
 
     def super_call(self, node: A.SuperCall, frame: Frame, nargout: int, args: list | None = None) -> list:
         parent = self.find_class(node.parent)
-        if parent is None:
-            raise MatlabError(f"Superclass '{node.parent}' was not found.")
         if args is None:
             args = self.eval_elements(node.args, frame)
+        if parent is None:  # a base class the engine provides: double, handle, matlab.mixin.Copyable, ...
+            from .classdef import builtin_super_call
+            return builtin_super_call(self, node, frame, nargout, args)
         if frame.has(node.name):
             from .classdef import UserObject
             obj = frame.get(node.name)
@@ -552,6 +559,10 @@ class Interpreter:
             return
         if type(target) is A.Index and type(target.base) is A.Ident and self._assign_inplace(target, value, frame):
             return
+        if self.index_overloads:
+            from .classdef import overloaded_assign
+            if overloaded_assign(self, target, value, frame):  # a class with its own subsasgn
+                return
         current = self.lvalue_current(target, frame)
         new = self.assign_into(target, current, value, frame)
         self.assign(target.base, new, frame)
@@ -635,7 +646,8 @@ class Interpreter:
         try:
             if isinstance(base, MObject):
                 if isinstance(node, A.Index):
-                    return base.index_get(self, self.eval_index_args(node.args, base, frame))
+                    peek = getattr(base, "index_peek", None)  # objs(k).name = v may create objs(k)
+                    return (peek or base.index_get)(self, self.eval_index_args(node.args, base, frame))
                 if isinstance(node, (A.Field, A.DynField)):
                     return base.get_field(self, self.field_name(node, frame))
                 return None
@@ -792,6 +804,9 @@ class Interpreter:
                 if isinstance(value, (Cell, Struct, FunctionHandle, MString, StringArray)):
                     raise MatlabError(f"Unable to perform assignment: cannot put a {class_name(value)} "
                                       f"into a {class_name(current)} array.")
+                if isinstance(value, MObject):  # A(k) = obj: the object is converted to A's class
+                    from .classdef import object_to_builtin
+                    value = object_to_builtin(self, value, class_name(current))
                 cur, val = coerce_for_assignment(current, value)
                 if cur.dtype.kind == "U":
                     fill = lambda: "\0"  # noqa: E731
@@ -900,6 +915,8 @@ class Interpreter:
             if not self.end_stack:
                 raise MatlabError("'end' can only be used inside an index expression.")
             shape, pos, count = self.end_stack[-1]
+            if type(shape) is not tuple:
+                return shape.value(self, pos, count)  # an object with its own end, size or numel method
             return np.array([[float(ix.end_value(shape, pos, count))]])
         if t is A.Colon:
             return char(":")
@@ -910,7 +927,7 @@ class Interpreter:
                     # @obj.method: a handle that calls the method of this object
                     lam = parse(f"@(varargin) {node.name}(varargin{{:}})").body[0].expr
                     return self.make_lambda(lam, frame)
-            return FunctionHandle(name=node.name, closure={"__functions__": frame.functions})
+            return FunctionHandle(name=node.name, closure=self._handle_scope(frame))
         if t is A.Lambda:
             return self.make_lambda(node, frame)
         vals = self.eval_multi(node, frame, 1)
@@ -931,9 +948,21 @@ class Interpreter:
         for name in free_identifiers(node.body):
             if name not in node.params and frame.has(name):
                 captured[name] = frame.get(name)
-        captured["__functions__"] = frame.functions
+        captured.update(self._handle_scope(frame))
         return FunctionHandle(params=node.params, body=node.body, closure=captured,
                               text=f"@({','.join(node.params)}){unparse(node.body)}")
+
+    @staticmethod
+    def _handle_scope(frame: Frame) -> dict[str, Any]:
+        """What a function handle remembers about where it was made: local functions, file, imports."""
+        scope: dict[str, Any] = {"__functions__": frame.functions}
+        if frame.file:
+            scope["__file__"] = frame.file  # private functions stay reachable through the handle
+        if frame.imports:
+            scope["__imports__"] = frame.imports
+        if frame.owner_class is not None:
+            scope["__class__"] = frame.owner_class  # a handle made in a method keeps the class's access
+        return scope
 
     def eval_range(self, node: A.Range, frame: Frame) -> np.ndarray:
         start_v = self.eval(node.start, frame)
@@ -970,6 +999,9 @@ class Interpreter:
 
     def eval_index_args(self, args: list[A.Node], base: Any, frame: Frame) -> list[Any]:
         shape = shape_of(base)
+        if self.index_overloads:
+            from .classdef import index_args_overloaded
+            return index_args_overloaded(self, args, base, frame, shape)
         count = len(args)
         out: list[Any] = []
         for i, arg in enumerate(args):
@@ -986,6 +1018,9 @@ class Interpreter:
                     out.append(ix.COLON)
                 else:
                     out.append(v)
+        if self.index_overloads and not isinstance(base, MObject):
+            from .classdef import subsindex_value  # a class loaded while the indices were evaluated
+            out = [subsindex_value(self, v) for v in out]
         return out
 
     def eval_multi(self, node: A.Node, frame: Frame, nargout: int) -> list[Any]:
@@ -1002,6 +1037,11 @@ class Interpreter:
             return self.call_named(node.name, [], nargout, frame, node)
         if t is A.SuperCall:
             return self.super_call(node, frame, max(nargout, 0))
+        if self.index_overloads and (t is A.Index or t is A.Field or t is A.CellIndex or t is A.DynField):
+            from .classdef import overloaded_ref
+            res = overloaded_ref(self, node, frame, nargout)  # a class with its own subsref
+            if res is not None:
+                return res
         if t is A.Index:
             base = node.base
             if isinstance(base, A.Ident) and not frame.has(base.name):
@@ -1102,6 +1142,27 @@ class Interpreter:
 
     def call_dotted(self, dotted: str, get_args, nargout: int, frame: Frame) -> list[Any] | None:
         """Resolve pkg.func(...) or Class.staticMethod(...); None if the name is unknown."""
+        imports = frame.imports
+        if not imports:
+            return self._call_dotted(dotted, get_args, nargout)
+        # import pkg.Class makes Class.method(...) mean pkg.Class.method(...); import pkg.* comes last
+        head, _, rest = dotted.partition(".")
+        for imported in imports:
+            if not imported.endswith(".*") and imported.rsplit(".", 1)[-1] == head:
+                res = self._call_dotted(f"{imported}.{rest}", get_args, nargout)
+                if res is not None:
+                    return res
+        res = self._call_dotted(dotted, get_args, nargout)
+        if res is not None:
+            return res
+        for imported in imports:
+            if imported.endswith(".*"):
+                res = self._call_dotted(imported[:-1] + dotted, get_args, nargout)
+                if res is not None:
+                    return res
+        return None
+
+    def _call_dotted(self, dotted: str, get_args, nargout: int) -> list[Any] | None:
         builtin = self.builtins.get(dotted)
         if builtin is not None:
             return self.call_builtin(dotted, builtin, get_args(), nargout)
@@ -1186,19 +1247,45 @@ class Interpreter:
             for cd in found[0].classdefs.values():
                 self.classes[cd.name] = ClassInfo(cd, found[1], self, found[0].functions)
             return self.classes.get(name)
+        if found is not None and found[0].functions and "@" in found[1] \
+                and os.path.basename(os.path.dirname(found[1])) == "@" + name:
+            from .classdef import old_style_class
+            return old_style_class(self, name, found[1])  # an @name folder with a constructor function
         return None
 
     # -- calls ----------------------------------------------------------------------------
     def call_named(self, name: str, args: list[Any], nargout: int, frame: Frame,
                    node: A.Node | None = None) -> list[Any]:
-        for a in args:
-            if isinstance(a, MObject) and a.has_method(name):
-                return a.call_method(self, name, list(args), nargout)
+        # MATLAB's order: explicit imports, nested and local functions, wildcard imports, private
+        # functions, methods of an argument's class, constructors, files on the path, built-ins.
+        imports = frame.imports
+        if imports:
+            res = self._call_imported(name, args, nargout, imports, False)
+            if res is not None:
+                return res
         fn = frame.functions.get(name)
         if fn is not None:
             if isinstance(fn, NestedRef):
                 return self.call_user_function(fn.fn, args, nargout, frame.functions, frame.file, parent=fn.frame)
-            return self.call_user_function(fn, args, nargout, frame.functions, frame.file)
+            # A local function of a classdef file has the class's access to private members.
+            return self.call_user_function(fn, args, nargout, frame.functions, frame.file,
+                                           owner=frame.owner_class)
+        if imports:
+            res = self._call_imported(name, args, nargout, imports, True)
+            if res is not None:
+                return res
+        if self._private_dirs and frame.file:  # some folder read so far has a private subfolder
+            found = self.find_private_function(name, frame.file)
+            if found is not None:
+                main = next(iter(found[0].functions.values()))
+                return self.call_user_function(main, args, nargout, found[0].functions, found[1])
+        for a in args:
+            if isinstance(a, MObject) and a.has_method(name):
+                return a.call_method(self, name, list(args), nargout)
+        if self._type_dirs and args and "." not in name:
+            res = self._call_type_method(name, args, nargout)
+            if res is not None:
+                return res
         cls = self.classes.get(name)
         if cls is not None:
             return cls.construct(self, list(args), nargout)
@@ -1212,7 +1299,11 @@ class Interpreter:
                 return cls.construct(self, list(args), nargout)
             if program.functions and not program.body:
                 main = next(iter(program.functions.values()))
-                return self.call_user_function(main, args, nargout, program.functions, path)
+                owner = None
+                if "@" in path and os.path.basename(os.path.dirname(path)) == "@" + name:
+                    from .classdef import old_style_class
+                    owner = old_style_class(self, name, path)  # constructor of an @folder class
+                return self.call_user_function(main, args, nargout, program.functions, path, owner=owner)
             if args:
                 raise MatlabError(f"Attempt to execute SCRIPT {name} as a function.")
             self.run_program(program, frame, path)
@@ -1224,22 +1315,88 @@ class Interpreter:
             res = self.call_dotted(name, lambda: args, nargout, frame)
             if res is not None:
                 return res
-        else:
-            for imported in self.state.get("imports", ()):  # import pkg.*  /  import pkg.name
-                if imported.endswith(".*"):
-                    full = imported[:-1] + name
-                elif imported.rsplit(".", 1)[-1] == name:
-                    full = imported
-                else:
-                    continue
-                res = self.call_package_member(full, lambda: args, nargout)
-                if res is not None:
-                    return res
+        elif frame.file:  # a private folder made after its parent folder was last read
+            found = self.find_private_function(name, frame.file)
+            if found is not None:
+                main = next(iter(found[0].functions.values()))
+                return self.call_user_function(main, args, nargout, found[0].functions, found[1])
         raise MatlabError(f"Unrecognized function or variable '{name}'.", "MATLAB:UndefinedFunction")
+
+    def _call_imported(self, name: str, args: list[Any], nargout: int, imports: list,
+                       wildcard: bool) -> list[Any] | None:
+        """Call ``name`` through ``import pkg.name`` (wildcard False) or ``import pkg.*`` (True)."""
+        for imported in imports:
+            if imported.endswith(".*"):
+                if not wildcard:
+                    continue
+                full = imported[:-1] + name
+            elif wildcard or imported.rsplit(".", 1)[-1] != name:
+                continue
+            else:
+                full = imported
+            builtin = self.builtins.get(full)
+            if builtin is not None:
+                return self.call_builtin(full, builtin, args, nargout)
+            res = self.call_package_member(full, lambda: args, nargout)
+            if res is not None:
+                return res
+        return None
+
+    def find_private_function(self, name: str, file: str) -> tuple[A.Program, str] | None:
+        """``name.m`` in the private folder that code in ``file`` may use (None if there is none)."""
+        d = os.path.dirname(file)
+        if d in self._private_dirs or "private" in self._dir_listing(d):
+            folder = os.path.join(d, "private")
+        elif d.endswith("private") and os.path.basename(d) == "private":
+            folder = d  # functions in a private folder see each other
+        else:
+            return None
+        if name + ".m" not in self._dir_listing(folder):
+            return None
+        path = os.path.join(folder, name + ".m")
+        program = self._load_file(path)
+        if program is None or not program.functions or program.body:
+            return None
+        return program, path
+
+    def _call_type_method(self, name: str, args: list[Any], nargout: int) -> list[Any] | None:
+        """A function kept in an ``@double``-style folder on the path, for a built-in type."""
+        dirs = list(self.path)
+        cwd = os.getcwd()
+        if cwd not in dirs:
+            dirs.append(cwd)
+        kinds: list[str] = []
+        for a in args:
+            k = class_name(a)
+            if k not in kinds:
+                kinds.append(k)
+        for d in dirs:
+            have = self._type_dirs.get(d)
+            if not have:
+                continue
+            for k in kinds:
+                if "@" + k not in have:
+                    continue
+                folder = os.path.join(d, "@" + k)
+                if name + ".m" in self._dir_listing(folder):
+                    path = os.path.join(folder, name + ".m")
+                    program = self._load_file(path)
+                    if program is not None and program.functions and not program.body:
+                        main = next(iter(program.functions.values()))
+                        return self.call_user_function(main, args, nargout, program.functions, path)
+        return None
 
     def function_exists(self, name: str, frame: Frame | None = None) -> bool:
         frame = frame or self.frame
-        return name in frame.functions or name in self.builtins or self.find_file_function(name) is not None
+        return name in frame.functions or name in self.builtins or self.find_file_function(name) is not None \
+            or self.private_or_imported(name, frame)
+
+    def private_or_imported(self, name: str, frame: Frame) -> bool:
+        """Whether an import or a private function may give ``name`` a meaning other than the built-in."""
+        if frame.imports:
+            return True
+        return bool(self._private_dirs) and bool(frame.file) \
+            and self.find_private_function(name, frame.file) is not None
 
     def call_builtin(self, name: str, fn: Callable, args: list[Any], nargout: int) -> list[Any]:
         try:
@@ -1268,14 +1425,25 @@ class Interpreter:
             if fn is not None:
                 return self.call_user_function(fn, args, nargout, functions, None)
             tmp = Frame(self, functions)
+            closure = handle.closure
+            if len(closure) > 1:
+                tmp.file = closure.get("__file__")
+                tmp.imports = closure.get("__imports__")
+                tmp.owner_class = closure.get("__class__")
             return self.call_named(handle.name, args, nargout, tmp)
         params = handle.params
         if len(args) > len(params) and not (params and params[-1] == "varargin"):
             raise MatlabError("Too many input arguments.")
         frame = Frame(self, functions, name="anonymous function", nargin=len(args), nargout=nargout)
         for k, v in handle.closure.items():
-            if k != "__functions__":
+            if k[:2] != "__":
                 frame.vars[k] = v
+            elif k == "__file__":
+                frame.file = v
+            elif k == "__imports__":
+                frame.imports = v
+            elif k == "__class__":
+                frame.owner_class = v
         for i, p in enumerate(params):
             if p == "varargin" and i == len(params) - 1:
                 frame.vars[p] = Cell.from_list(args[i:])
@@ -1395,6 +1563,8 @@ class Interpreter:
             frame = Frame(self, functions, name=fn.name, nargin=len(args), nargout=nargout, file=file)
         frame.fn_node = fn
         frame.arg_names = self.state.pop("call_arg_names", None)
+        if file is None:
+            frame.file = fn.__dict__.get("file")
         if fn.subfunctions:
             frame.functions = {**functions, **{n: NestedRef(f, frame) for n, f in fn.subfunctions.items()}}
         for i, p in enumerate(fixed):
@@ -1454,11 +1624,20 @@ class Interpreter:
         if cached is not None and cached[0] == mtime:
             return cached[1]
         try:
-            # .m files, plus class folders (@Name) and package folders (+name).
-            names = frozenset(f for f in os.listdir(d) if f.endswith(".m") or f[:1] in "@+")
+            # .m files, plus class folders (@Name), package folders (+name) and a private folder.
+            names = frozenset(f for f in os.listdir(d) if f.endswith(".m") or f[:1] in "@+" or f == "private")
         except OSError:
             names = frozenset()
         self._dir_cache[d] = (mtime, names)
+        typed = frozenset(n for n in names if n in _TYPE_FOLDERS)
+        if typed:
+            self._type_dirs[d] = typed
+        else:
+            self._type_dirs.pop(d, None)
+        if "private" in names:
+            self._private_dirs.add(d)
+        else:
+            self._private_dirs.discard(d)
         return names
 
     def find_file_function(self, name: str) -> tuple[A.Program, str] | None:
@@ -1491,6 +1670,9 @@ class Interpreter:
             return cached[1]
         with open(path, encoding="utf-8") as fh:
             program = parse(fh.read())
+        self._dir_listing(os.path.dirname(path))  # notes a private subfolder next to the file
+        for fn in program.functions.values():
+            fn.file = path  # type: ignore[attr-defined]  # so calls through a handle know their file
         self._file_cache[path] = (mtime, program)
         return program
 

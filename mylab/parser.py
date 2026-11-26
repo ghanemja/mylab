@@ -341,13 +341,13 @@ class Parser:
                 outputs.append(self._ident_name())
             self.next()
             self.expect_op("=")
-            name = self._ident_name()
+            name = self._function_name()
         else:
-            first = self._ident_name()
+            first = self._function_name()
             if self.is_op("="):
                 self.next()
                 outputs = [first]
-                name = self._ident_name()
+                name = self._function_name()
             else:
                 name = first
         # Allow dotted names such as set.Prop (ignored beyond the first part).
@@ -405,6 +405,13 @@ class Parser:
         if attrs.get("Output") or attrs.get("Repeating"):
             return []
         return entries
+
+    def _function_name(self) -> str:
+        """The name in a function definition; a class may define a method called ``end``."""
+        if self.is_kw("end") and self.peek().kind == "OP" and self.peek().value == "(":
+            self.next()
+            return "end"
+        return self._ident_name()
 
     def _ident_name(self) -> str:
         t = self.tok
@@ -794,6 +801,13 @@ class Parser:
                 return A.CellArray(self.parse_rows("}"))
             if t.value == "@":
                 return self.parse_handle()
+            if t.value == "?" and self.peek().kind == "ID":  # ?ClassName: the class's meta.class object
+                self.next()
+                name = self.next().value
+                while self.is_op(".") and self.peek().kind == "ID":
+                    self.next()
+                    name += "." + self.next().value
+                return A.Index(A.Ident("meta.class.fromName"), [A.String(name, False)])
             if t.value == ":":
                 self.next()
                 return A.Colon()

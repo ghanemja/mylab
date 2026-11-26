@@ -227,6 +227,8 @@ class InputParser(MObject):
                 exact = text(rest[0]).lower() in [n.lower() for n in named] and len(rest) % 2 == 0
                 if is_name and (validator is None or exact or not self._accepts(interp, rest[0], validator)):
                     take = False  # the text names a parameter: the optional arguments end here
+                elif validator is not None and not self._accepts(interp, rest[0], validator):
+                    take = False  # text the validator rejects is read as a parameter name, as in MATLAB
             if take and isinstance(rest[0], Struct) and self.settings["StructExpand"] \
                     and not self._accepts(interp, rest[0], validator):
                 take = False  # a struct of name-value pairs

@@ -665,6 +665,10 @@ def _pagemtimes(interp, args, nargout):
 
 @builtin("class")
 def _class(interp, args, nargout):
+    nargs(args, 1, None, "class")
+    if len(args) > 1:  # class(s, 'name', parents...): an object of an old-style (@folder) class
+        from ..classdef import make_old_style
+        return make_old_style(interp, args[0], text(args[1], "class name"), list(args[2:]))
     return char(class_name(args[0]))
 
 
@@ -691,6 +695,7 @@ builtin("istext")(_type_pred(lambda v: isinstance(v, (MString, StringArray)) or 
 
 @builtin("isa")
 def _isa(interp, args, nargout):
+    nargs(args, 2, 2, "isa")
     cls = class_name(args[0])
     want = text(args[1])
     if hasattr(args[0], "isa_class"):

@@ -141,9 +141,12 @@ def test_access_abstract_validation(cm):
 def test_object_utilities(cm):
     m = cm
     m.run("c = Circle(1); d = c; e = Circle(1);")
-    assert m.num("isequal(c, d)").item() and not m.num("isequal(c, e)").item()
+    # isequal compares property values (two handles with equal contents are equal); == is identity
+    assert m.num("isequal(c, d)").item() and m.num("isequal(c, e)").item() and not m.num("c == e").item()
     assert m.num("isvalid(c)").item()
-    assert m.num("isprop(c, 'r')").item() and not m.num("isprop(c, 'secret')").item()
+    # isprop is true for any property of the class, also one that cannot be read from outside
+    assert m.num("isprop(c, 'r')").item() and m.num("isprop(c, 'secret')").item()
+    assert not m.num("isprop(c, 'nosuch')").item()
     assert m.num("ismethod(c, 'area')").item() and not m.num("ismethod(c, 'hidden')").item()
     m.run("p = properties(c); mm = methods(c);")
     assert "r" in [m.str(f"p{{{k}}}") for k in range(1, int(m.num('numel(p)').item()) + 1)]
