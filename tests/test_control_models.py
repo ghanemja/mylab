@@ -355,12 +355,12 @@ def test_frd_models(m):
 
 def test_tf_display(m):
     out = m.run("G = tf([1 2], [1 3 2])")
-    assert out == ("G =\n \n      s + 2\n  -------------\n  s^2 + 3 s + 2\n \n"
+    assert out == ("\nG =\n \n      s + 2\n  -------------\n  s^2 + 3 s + 2\n \n"
                    "Continuous-time transfer function.\n\n")
     out = m.run("H = tf([1 -0.5], [1 0.2 0.04], 0.1)")
     assert "  z^2 + 0.2 z + 0.04\n" in out
     assert "Sample time: 0.1 seconds\nDiscrete-time transfer function." in out
-    assert m.run("K = tf(5)") == "K =\n \n  5\n \nStatic gain.\n\n"
+    assert m.run("K = tf(5)") == "\nK =\n \n  5\n \nStatic gain.\n\n"
     assert "  exp(-0.5*s) * -----\n" in m.run("D = tf(1, [1 1], 'InputDelay', 0.5)")
     out = m.run("M = [tf(1, [1 1]); tf(-2, [1 0])]")
     assert "From input 1 to output...\n" in out and "   2:  --\n" in out

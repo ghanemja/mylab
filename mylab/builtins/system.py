@@ -146,6 +146,10 @@ def _issue_warning(interp, msg: str, ident: str) -> None:
     state = _warning_state(interp, ident) if ident else _warning_state(interp, "all")
     if state == "error":
         raise MatlabError(msg, ident)
+    capture = interp.__dict__.get("warn")
+    if capture is not None:  # something is collecting warnings (the unit-testing framework)
+        capture(msg, ident)
+        return
     interp.last_warning = msg
     interp.last_warning_id = ident
     if state == "on":

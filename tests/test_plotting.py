@@ -599,13 +599,13 @@ def test_save_with_handles(m, tmp_path):
         assert (tmp_path / name).exists(), name
 
 
-def test_fig_format_error(m, tmp_path):
+def test_fig_format_is_written(m, tmp_path):
     m.run("plot(1:3)")
-    with pytest.raises(MatlabError, match=r"\.fig format is not supported"):
-        m.run(f"saveas(gcf, '{tmp_path / 'x.fig'}')")
-    with pytest.raises(MatlabError, match=r"\.fig format is not supported"):
-        m.run(f"saveas(gcf, '{tmp_path / 'x'}', 'fig')")
-    assert not (tmp_path / "x.fig").exists()
+    m.run(f"saveas(gcf, '{tmp_path / 'x.fig'}')")
+    m.run(f"saveas(gcf, '{tmp_path / 'y'}', 'fig')")
+    assert (tmp_path / "x.fig").exists() and (tmp_path / "y.fig").exists()
+    m.run(f"close all; f = openfig('{tmp_path / 'x.fig'}', 'invisible'); n = numel(findobj(f, 'Type', 'line'));")
+    assert m.num("n") == 1
 
 
 def test_nested_handle_assignment(m):

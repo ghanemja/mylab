@@ -123,9 +123,8 @@ def test_videowriter_falls_back_to_gif_without_ffmpeg(m, tmp_path, monkeypatch):
     for k = 1:2, writeVideo(w, uint8(100 * k * ones(16, 16, 3))); end
     close(w); fn = w.Filename;
     """)
-    assert "Warning" in text and "movie.gif" in text and "ffmpeg" in text
-    assert not (tmp_path / "movie.avi").exists()
-    assert gif(tmp_path / "movie.gif").n_frames == 3
+    assert "Warning" in text and "clip.gif" in text and "ffmpeg" in text and "movie" not in text
+    assert (tmp_path / "movie.avi").exists() and not (tmp_path / "movie.gif").exists()
     assert m.str("fn") == "clip.mp4"
     assert gif(tmp_path / "clip.gif").n_frames == 2
 
@@ -427,13 +426,22 @@ def test_accepted_commands_do_nothing(m):
     h = light('Position', [1 0 1]); e = isempty(h); zoom on; zoom(2); pan off; rotate3d on;
     datacursormode on; refreshdata; drawnow limitrate; drawnow nocallbacks; z = zoom;
     """)
-    assert out == "" and m.num("e")
+    assert out == "" and not m.num("e") and m.str("class(h)") == "matlab.graphics.primitive.Light"
 
 
-def test_fig_files_and_gtext(m):
-    for code in ("hgsave(gcf, 'a.fig')", "hgload('a.fig')", "openfig('a.fig')", "savefig('a.fig')"):
-        with pytest.raises(MatlabError, match="fig"):
-            m.run(code)
+def test_fig_files_and_gtext(m, tmp_path):
+    # figure files can be written and read back, by either pair of functions
+    a, b = tmp_path / "a.fig", tmp_path / "b.fig"
+    m.run(f"""
+    plot(1:3, [4 5 6]); title('kept'); savefig('{a}'); hgsave(gcf, '{b}'); close all;
+    f = openfig('{a}', 'invisible'); la = findobj(f, 'Type', 'line'); ya = la(1).YData; ax = findobj(f, 'Type', 'axes');
+    ta = ax(1).Title.String; close all;
+    g = hgload('{b}'); lb = findobj(g, 'Type', 'line'); yb = lb(1).YData; close all;
+    """)
+    assert a.exists() and b.exists()
+    assert m.num("ya").tolist() == [[4, 5, 6]] and m.num("yb").tolist() == [[4, 5, 6]] and m.str("ta") == "kept"
+    with pytest.raises(MatlabError):
+        m.run(f"openfig('{tmp_path / 'missing.fig'}')")
     out = m.run("plot(1:3); t = gtext('here'); s = t.String;")
     assert "Warning" in out and m.str("s") == "here"
 
@@ -555,8 +563,8 @@ def test_comet_waterfall_ribbon_copyobj(m):
     assert m.num("zt").tolist() == [[1, 2, 3, 4]] and m.str("wt") == "surface" and m.num("nr") == 3
     assert m.num("qy").tolist() == [[4, 5, 6]] and m.num("qc").tolist() == [[1, 0, 0]]
     assert m.str("qt") == "src" and m.num("samefig")
-    with pytest.raises(MatlabError):
-        m.run("b = bar(1:3); copyobj(b, gca)")
+    m.run("figure; b = bar(1:3); figure; c = copyobj(b, gca); cy = c.YData; ct = c.Type;")
+    assert m.num("cy").tolist() == [[1, 2, 3]] and m.str("ct") == "bar"
 
 
 def test_ishandle_for_other_handle_objects(m, tmp_path):

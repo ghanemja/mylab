@@ -840,8 +840,12 @@ class Interpreter:
                     raise MatlabError(f"Unable to perform assignment: cannot put a {class_name(value)} "
                                       f"into a {class_name(current)} array.")
                 if isinstance(value, MObject):  # A(k) = obj: the object is converted to A's class
-                    from .classdef import object_to_builtin
-                    value = object_to_builtin(self, value, class_name(current))
+                    from .builtins.sparse import SparseMatrix
+                    if isinstance(value, SparseMatrix):  # sparse into a full array: stored as full
+                        value = value.to_dense()
+                    else:
+                        from .classdef import object_to_builtin
+                        value = object_to_builtin(self, value, class_name(current))
                 cur, val = coerce_for_assignment(current, value)
                 if cur.dtype.kind == "U":
                     fill = lambda: "\0"  # noqa: E731

@@ -103,7 +103,7 @@ class Encoder:
         from ..display import function_handle_text
         if not f.is_anonymous:
             return _marker("function_handle", function=char(str(f.name)), workspace=Struct())
-        ws = {k: self.encode(x, var) for k, x in f.closure.items() if k != "__functions__"}
+        ws = {k: self.encode(x, var) for k, x in f.closure.items() if not k.startswith("__")}  # skip engine entries
         return _marker("function_handle", function=char(function_handle_text(f)), workspace=Struct.scalar(ws))
 
     def _object(self, v: Any, var: str) -> Struct:
@@ -330,8 +330,12 @@ class Decoder:
             obj = self._loadobj(cls, data)
         else:
             from ..classdef import UserObject
-            obj = UserObject(cls)
-            obj.props = dict(cls.defaults(self.interp))
+            attrs = getattr(getattr(cls, "cd", None), "attrs", None) or {}
+            if attrs.get("ConstructOnLoad") and not getattr(cls, "is_abstract", False):
+                obj = cls.construct(self.interp, [], 1)[0]  # the constructor runs with no arguments
+            else:
+                obj = UserObject(cls)
+                obj.props = dict(cls.defaults(self.interp))
             if ident:
                 self.handles[ident] = obj  # registered first: its properties may refer back to it
             saved = d["data"]

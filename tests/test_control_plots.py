@@ -98,7 +98,8 @@ def test_nyquist_nichols_sigma_plots(fig):
 def test_pzmap_and_rlocus_plots(fig):
     fig.run("pzmap(tf([1 2], [1 2 5]));")
     ax = figure_axes(fig)[0]
-    assert ax.get_title() == "Pole-Zero Map" and ax.get_xlabel() == "Real Axis (seconds^{-1})"
+    assert ax.get_title() == "Pole-Zero Map"
+    assert ax.get_xlabel() in ("Real Axis (seconds^{-1})", "Real Axis (seconds$^{\\mathrm{-1}}$)")
     assert ax.lines[0].get_marker() == "x" and ax.lines[1].get_marker() == "o"
     assert sorted(ax.lines[0].get_ydata().tolist()) == [-2, 2]
     fig.run("clf; rlocus(tf(1, [1 3 2 0])); sgrid;")

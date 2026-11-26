@@ -499,7 +499,10 @@ def _f_norm(args, nargout):
     if type(a) is _ND and a.dtype is _F64 and a.ndim == 2 and a.size and (a.shape[0] == 1 or a.shape[1] == 1) \
             and (_CHECKED.get("norm") or _verified("norm")):
         v = a.ravel()
-        return scalar(math.sqrt(v.dot(v)))  # what numpy.linalg.norm computes for a real vector
+        s = v.dot(v)
+        if s != s:
+            return None  # NaN in the data: the general path decides which NaN comes back
+        return scalar(math.sqrt(s))  # what numpy.linalg.norm computes for a real vector
     return None
 
 

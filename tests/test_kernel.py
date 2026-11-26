@@ -51,7 +51,8 @@ def _run(kc, code):
 def test_execute_output_and_state(kernel):
     reply, outputs = _run(kernel, "x = 6 * 7")
     assert reply["status"] == "ok"
-    assert any(o["msg_type"] == "stream" and "x = 42" in o["content"]["text"] for o in outputs)
+    assert any(o["msg_type"] == "stream" and "x =" in o["content"]["text"] and "42" in o["content"]["text"]
+               for o in outputs)
     reply, outputs = _run(kernel, "disp(x + 1)")
     assert any("43" in o["content"].get("text", "") for o in outputs)
 

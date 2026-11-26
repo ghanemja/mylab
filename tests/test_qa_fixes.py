@@ -102,8 +102,10 @@ def test_warning_identifiers(m):
 
 def test_object_concatenation_is_a_clean_error(m):
     m.run("mp = containers.Map();")
-    with pytest.raises(MatlabError, match="cell array"):
+    with pytest.raises(MatlabError, match=r"\[m1; m2\]"):
         m.run("x = [mp, mp];")
+    m.run("mp('a') = 1; other = containers.Map(); other('b') = 2; both = [mp; other]; n = both.Count;")
+    assert m.num("n") == 2
 
 
 def test_nested_functions_share_variables(m):

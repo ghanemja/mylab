@@ -177,6 +177,9 @@ def _edge_text(x: float) -> str:
 def _discretize(interp, args, nargout):
     """discretize(X, edges | N[, values | 'categorical'[, names]], 'IncludedEdge', side)."""
     nargs(args, 2, None, "discretize")
+    if isinstance(args[0], np.ndarray) and args[0].dtype.kind in "biuf" and isinstance(args[1], np.ndarray):
+        from .special_more import _discretize as numeric_discretize  # plain numbers: the numeric version
+        return numeric_discretize(interp, args, nargout)
     rest, opts = _options(list(args), ("IncludedEdge",), "discretize", 2)
     right = "IncludedEdge" in opts and text(opts["IncludedEdge"]).lower() == "right"
     if "IncludedEdge" in opts and text(opts["IncludedEdge"]).lower() not in ("left", "right"):

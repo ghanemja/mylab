@@ -171,10 +171,10 @@ def test_prototypes_and_transformations(m):
     assert m.num("z").size == 0 and abs(m.num("k") - 1) < 1e-12
     assert np.allclose(np.abs(p), 1) and np.all(p.real < 0)
     m.run("[z, p, k] = cheb1ap(3, 1);")
-    b, a = ss.zpk2tf([], m.num("p").ravel(), m.num("k"))
+    b, a = ss.zpk2tf([], m.num("p").ravel(), m.num("k").item())
     close(abs(np.polyval(b, 1j) / np.polyval(a, 1j)), 10 ** (-1 / 20), 1e-9)   # 1 dB down at the edge
     m.run("[z, p, k] = cheb2ap(4, 40);")
-    b, a = ss.zpk2tf(m.num("z").ravel(), m.num("p").ravel(), m.num("k"))
+    b, a = ss.zpk2tf(m.num("z").ravel(), m.num("p").ravel(), m.num("k").item())
     close(abs(np.polyval(b, 1j) / np.polyval(a, 1j)), 10 ** (-40 / 20), 1e-9)  # 40 dB down at the stopband edge
     m.run("[z, p, k] = ellipap(3, 1, 40);")
     assert m.num("z").shape == (2, 1) and m.num("p").shape == (3, 1)
@@ -341,7 +341,13 @@ def test_linear_prediction(m):
     y = ss.lfilter([1], [1, -1.2, 0.5], np.r_[1.0, np.zeros(39)])
     m.interp.set_var("y", y.reshape(-1, 1))
     close(m.num("arcov(y(2:end), 2)").ravel(), [1, -1.2, 0.5], 1e-8)
-    close(m.num("armcov(y(3:end), 2)").ravel(), [1, -1.2, 0.5], 1e-8)
+    # the modified covariance method minimises forward plus backward prediction errors: compare with
+    # that least-squares problem solved directly (a decaying response is not predicted exactly backward)
+    v = y[2:]
+    fwd_back = np.vstack([np.column_stack([v[1:-1], v[:-2]]), np.column_stack([v[1:-1], v[2:]])])
+    target = np.concatenate([v[2:], v[:-2]])
+    coef = -np.linalg.lstsq(fwd_back, target, rcond=None)[0]
+    close(m.num("armcov(y(3:end), 2)").ravel(), np.concatenate([[1], coef]), 1e-8)
     m.run("[ab, eb, kb] = arburg(y, 2);")
     assert np.all(np.abs(m.num("kb")) < 1) and m.num("ab").shape == (1, 3)
     m.run("A = aryule([x' flipud(x')], 2);")
