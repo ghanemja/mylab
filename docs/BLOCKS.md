@@ -21,9 +21,19 @@ Contents: [In the browser](#in-the-browser) · [From code](#from-code) ·
 A model is a file in your project whose name ends in `.mlb.json`. Opening it
 shows the diagram editor instead of the text editor.
 
-To start: press Ctrl+Shift+P and choose **New block diagram…**, or pick one of
-the six examples there (*Example model: …*). The examples are also in the
-⋯ menu of the diagram toolbar.
+Where to find block diagrams:
+
+- **The examples.** Six example models are in the `models` folder of *My
+  files* in the Files panel, next to the `.m` examples; click one to open it.
+  The **Block diagrams** card of the welcome window (**Getting started** at
+  the bottom of the page) opens the mass-spring-damper example. The examples
+  are also in the command palette (Ctrl+Shift+P, *Example model: …*) and in
+  the ⋯ menu of the diagram toolbar.
+- **A new model.** The **+** button of the Files panel (New file, Alt+N)
+  offers *Block diagram* next to *Script or function*. It makes a small model
+  to start from (a step into a first-order system, shown on a scope); a name
+  typed with `.mlb.json` at the end chooses it too. Ctrl+Shift+P → **New block
+  diagram…** makes an empty one.
 
 ### Building a model
 
@@ -547,17 +557,18 @@ that does not exist, runs the script of that repository that assigns it.
 | Imported with placeholders for unsupported blocks | 32 |
 | Block libraries (collections of blocks, not models to run) | 14 |
 | Models | 68 |
-| … simulated to their stop time, every block real | 24 |
+| … simulated to their stop time, every block real | 25 |
 | … simulated, with a stand-in subsystem for a toolbox library block | 6 |
 | … have unsupported blocks | 24 |
 | … need workspace variables, toolbox classes or generated code that are not available | 8 |
 | … need data files that are not in the repository | 3 |
 | … stopped with an error | 0 |
-| … did not finish within the time limit | 1 |
+| … did not finish within the time limit | 0 |
 | … are empty diagrams | 2 |
 
-Without the `.m` files of the repositories, 20 of these 30 models still run;
-the other ten call functions of their project (vessel models, an S-function).
+Without the `.m` files of the repositories, 20 of these 31 models still run;
+the other eleven call functions of their project (eight vessel models, an
+S-function, a trajectory and the quadrotor's model).
 In the end no model needed a set-up script to be found for it: where
 variables were missing, they came from data files or toolbox classes that are
 not in the repositories.
@@ -568,7 +579,10 @@ Keep in mind what these numbers do and do not say.
   own Stop block) with every block a real one. Models that use a stand-in
   subsystem are counted apart. The time limit was 400 seconds of
   computing per model; the slow ones spend it in the interpreter, running
-  large MATLAB Function blocks at every step.
+  large MATLAB Function blocks at every step. The slowest is a quadrotor
+  whose dynamics are an S-function file that the interpreter runs several
+  times per step: about 330 s for its 3,607 steps, so a slower computer may
+  count it as "did not finish".
 - The results were **not compared with the original program**, which is not
   available here. Instead, 15 models with an obvious expected
   behaviour are checked for it in `tests/test_blocks_slx.py`:
@@ -619,9 +633,6 @@ What remains, by name:
   files (`.mat`) of three vessel models and one platform, objects of toolbox
   classes (`se2`, `se3`, a camera object), and a struct that a test model
   expects.
-- **Time**: one quadrotor model did not finish in 400 s; given 420 s it runs
-  to its stop time (its dynamics are an S-function file that the interpreter
-  runs several times per step, for 5,363 steps).
 
 Print the same report for your own files with
 

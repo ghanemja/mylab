@@ -4,11 +4,19 @@
 import { $, el, icon, toast, openMenu, closeMenu } from "../ui.js";
 import { CATALOG } from "./catalog.js";
 import { BLOCK_EXAMPLES } from "./examples.js";
-import { isModelPath, newModel, serializeModel, findType, portCounts, systemAt, EXT } from "./model.js";
+import { isModelPath, newModel, starterModel, serializeModel, findType, portCounts, systemAt, EXT } from "./model.js";
 import { DiagramEditor } from "./editor.js";
 import { ScopeDock, formatNumber } from "./scope.js";
 import { paletteIcon, CATEGORY_CLASS } from "./draw.js";
 import { paramsDialog, settingsDialog, pickDialog, keysDialog, textDialog, noticeDialog, portsWith } from "./dialogs.js";
+
+/** Folder of a project that the example models go into. */
+const EXAMPLE_FOLDER = "models";
+
+/** The example models as files of a project: [{ path, content }]. "My files" starts with them. */
+export function exampleModelFiles() {
+  return BLOCK_EXAMPLES.map((x) => ({ path: `${EXAMPLE_FOLDER}/${x.file}`, content: x.text }));
+}
 
 export function initBlocks(app) {
   const { state } = app;
@@ -757,10 +765,25 @@ export function initBlocks(app) {
   async function openExample(name) {
     const ex = BLOCK_EXAMPLES.find((x) => x.name === name);
     if (!ex) return;
-    const path = "models/" + ex.file;
+    const path = `${EXAMPLE_FOLDER}/${ex.file}`;
     if (!state.files.has(path)) await app.createFile(path, ex.text, { open: false });
     app.openFile(path);
   }
+
+  // "New file" in the Files panel offers a block diagram next to the .m file.
+  app.fileKinds = [
+    {
+      value: "diagram",
+      label: "Block diagram",
+      ext: EXT,
+      text: `A model built from blocks and lines, saved as a ${EXT} file. It opens in the diagram editor with a small model to start from: a step into a first-order system, shown on a scope. Press Run to simulate it.`,
+      warn: (path) =>
+        /^[A-Za-z]\w*$/.test(app.baseName(path).slice(0, -EXT.length))
+          ? ""
+          : "Tip: use a name that starts with a letter and has only letters, digits and _, so that sim('name') can find the model.",
+      content: (path) => serializeModel(starterModel(app.baseName(path).slice(0, -EXT.length) || "untitled")),
+    },
+  ];
 
   const slxInput = el("input", { type: "file", accept: ".slx", hidden: true });
   document.body.appendChild(slxInput);

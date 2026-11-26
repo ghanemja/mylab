@@ -70,7 +70,13 @@ export function dateStamp(d = new Date()) {
 
 /* ---------- dialogs ---------- */
 
-export function promptDialog({ title, text = "", value = "", okLabel = "OK", validate, selectAll = false, placeholder = "" }) {
+/**
+ * Ask for a name. With `choices`, radio buttons above the field offer kinds of thing to make:
+ * { legend, value, items: [{ value, label, detail }], pick(value, typed) -> { value?, text? },
+ *   detect(text) -> value | null }. pick() is called when a choice is made (it may rewrite the
+ * field and the explanation); detect() lets typing a name (for example its extension) select a choice.
+ */
+export function promptDialog({ title, text = "", value = "", okLabel = "OK", validate, selectAll = false, placeholder = "", choices = null }) {
   const dlg = $("dlg-prompt");
   $("prompt-title").textContent = title;
   $("prompt-text").textContent = text;
@@ -78,9 +84,19 @@ export function promptDialog({ title, text = "", value = "", okLabel = "OK", val
   $("prompt-ok").textContent = okLabel;
   const input = $("prompt-input");
   const err = $("prompt-error");
+  const box = $("prompt-choices");
   input.value = value;
   input.placeholder = placeholder;
   err.hidden = true;
+  box.replaceChildren();
+  box.hidden = !choices;
+  let chosen = choices ? choices.value : null;
+  /** Select the part of the name to type over: the name without its folder and extension. */
+  const selectName = (v, ext = null) => {
+    const slash = v.lastIndexOf("/") + 1;
+    const end = ext && v.toLowerCase().endsWith(ext.toLowerCase()) ? v.length - ext.length : v.lastIndexOf(".");
+    input.setSelectionRange(slash, end > slash ? end : v.length);
+  };
   return new Promise((resolve) => {
     const check = () => (validate ? validate(input.value) : { name: input.value.trim() });
     const onInput = () => {
@@ -90,25 +106,55 @@ export function promptDialog({ title, text = "", value = "", okLabel = "OK", val
       err.classList.toggle("muted", !r.error);
       $("prompt-ok").disabled = !!r.error;
     };
+    const choose = (v, typed) => {
+      chosen = v;
+      const r = choices.pick(v, typed) || {};
+      if (r.text !== undefined) {
+        $("prompt-text").textContent = r.text;
+        $("prompt-text").hidden = !r.text;
+      }
+      if (r.value !== undefined) input.value = r.value;
+      onInput();
+      if (!typed && !$("prompt-ok").disabled) err.hidden = true; // a choice is not typing: no tips yet
+      return r;
+    };
+    if (choices) {
+      box.append(el("legend", { class: "sr-only" }, choices.legend || "Kind"));
+      for (const it of choices.items) {
+        const radio = el("input", { type: "radio", name: "prompt-choice", id: "prompt-choice-" + it.value, value: it.value });
+        radio.checked = it.value === chosen;
+        radio.addEventListener("change", () => {
+          if (!radio.checked) return;
+          const r = choose(it.value, false);
+          if (r.value !== undefined) selectName(input.value, r.ext);
+        });
+        box.append(el("label", { class: "prompt-choice", for: radio.id }, radio, el("span", {}, it.label, it.detail ? el("small", {}, it.detail) : null)));
+      }
+    }
+    const onType = () => {
+      const v = choices && choices.detect ? choices.detect(input.value) : null;
+      if (v && v !== chosen) {
+        $("prompt-choice-" + v).checked = true;
+        choose(v, true);
+      } else onInput();
+    };
     const onClose = () => {
       dlg.removeEventListener("close", onClose);
-      input.removeEventListener("input", onInput);
+      input.removeEventListener("input", onType);
       if (dlg.returnValue !== "ok") return resolve(null);
       const r = check();
       resolve(r.error ? null : r.name);
     };
-    input.addEventListener("input", onInput);
+    input.addEventListener("input", onType);
     dlg.addEventListener("close", onClose);
     dlg.returnValue = "";
     $("prompt-ok").disabled = false;
     dlg.showModal();
     onInput();
     err.hidden = true; // don't nag before typing
-    const slash = value.lastIndexOf("/") + 1;
-    const dot = value.lastIndexOf(".");
     input.focus();
     if (selectAll) input.select();
-    else input.setSelectionRange(slash, dot > slash ? dot : value.length);
+    else selectName(value);
   });
 }
 

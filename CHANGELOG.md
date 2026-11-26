@@ -32,6 +32,10 @@
   time a program uses HDF5. `matfile` creates version 7.3 files, as MATLAB
   does. `MATLAB_class` attributes are null-terminated strings and `struct()`
   is an empty group, as in MATLAB's own files.
+- `.slx` import, measured again on the 82 public files: 31 of the 68 models
+  run (was 30). The quadrotor model, whose dynamics are an S-function file,
+  now finishes within the 400 s limit (about 330 s) with the faster
+  interpreter; nothing else changed.
 ### Web app
 - Editor conveniences: a command palette (Ctrl+Shift+P) and file switcher
   (Ctrl+P); find and replace, and search across the project; problems
@@ -47,6 +51,11 @@
   and a local version history with a diff view.
 - The assistant offers "Fix this error" and "Explain selection", and shows
   its edits as a diff to accept or reject.
+- Block diagrams are easier to find: the six example models are in the
+  `models` folder of *My files* (added once for people who already had the
+  `.m` examples), the welcome window has a *Block diagrams* card, and New file
+  offers *Block diagram* next to *Script or function* (a small model to start
+  from). Model files have their own icon in the Files panel.
 
 ## 1.0.0
 

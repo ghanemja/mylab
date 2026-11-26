@@ -31,6 +31,23 @@ export function newModel(name = "untitled") {
   return { format: FORMAT, name, config: { ...DEFAULT_CONFIG }, blocks: [], lines: [] };
 }
 
+/** A small model to start from, for "New file > Block diagram": a step into a first-order system, on a scope. */
+export function starterModel(name = "untitled") {
+  return {
+    ...newModel(name),
+    description: "A model to start from: a step into the first-order system 1/(s+1), shown on a scope. Press Run, then change it or replace the blocks with your own.",
+    blocks: [
+      { name: "Step", type: "Step", position: [40, 100, 50, 40], params: { Time: "1" } },
+      { name: "Plant", type: "TransferFcn", position: [150, 95, 90, 50], params: { Numerator: "[1]", Denominator: "[1 1]" } },
+      { name: "Scope", type: "Scope", position: [310, 90, 50, 60] },
+    ],
+    lines: [
+      { from: ["Step", 1], to: ["Plant", 1], name: "u" },
+      { from: ["Plant", 1], to: ["Scope", 1], name: "y" },
+    ],
+  };
+}
+
 /** Parse model text. Throws an Error with a readable message. */
 export function parseModel(text) {
   let m;

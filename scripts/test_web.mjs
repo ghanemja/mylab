@@ -315,13 +315,13 @@ async function main() {
 
     // First-run welcome
     await page.waitForSelector("#dlg-welcome[open]");
-    for (const id of ["welcome-examples", "welcome-github", "welcome-assignment", "welcome-step"]) {
+    for (const id of ["welcome-examples", "welcome-github", "welcome-assignment", "welcome-step", "welcome-blocks"]) {
       check(await page.locator("#" + id).isVisible(), `welcome card ${id} missing`);
     }
     await page.click("#welcome-close");
     await page.waitForSelector("#dlg-welcome", { state: "hidden" });
     await page.waitForFunction(() => localStorage.getItem("mylab.welcomed") === "2");
-    ok("first-run welcome points to examples, GitHub, the example assignment and step-through");
+    ok("first-run welcome points to examples, GitHub, the example assignment, step-through and block diagrams");
 
     await page.waitForSelector("#loader .steps li.active, body[data-engine='ready']", { timeout: 60000 });
     ok("loading screen shows progress steps");
@@ -1587,6 +1587,81 @@ async function main() {
       };
       const focusCanvas = () => page.evaluate(() => window.mylab.app.blocks.editor.svg.focus());
       const closeDialog = (id) => page.waitForFunction((d) => !document.getElementById(d), id);
+      let n;
+
+      // Where block diagrams are found: the example models in the Files panel, "Block diagram" in
+      // New file, and the "Block diagrams" card of the welcome dialog. Each opens the diagram editor.
+      const shown = async (path, block, count) => {
+        await page.waitForSelector(`.bd-svg .bd-block[data-name="${block}"]`);
+        const s = await page.evaluate(() => ({
+          current: window.mylab.app.blocks.current,
+          visible: !document.querySelector("#blocks-view").hidden,
+          blocks: document.querySelectorAll(".bd-svg .bd-block").length,
+          drawn: [...document.querySelectorAll(".bd-svg .bd-block .bd-body")].filter((b) => b.getBoundingClientRect().width > 4).length,
+        }));
+        check(s.current === path && s.visible && s.blocks === count && s.drawn === count, `${path} should be shown in the diagram editor with ${count} blocks drawn: ` + JSON.stringify(s));
+      };
+      const listed = await page.evaluate(() => [...document.querySelectorAll("#file-list .file-item")].map((e) => e.dataset.name));
+      check(await page.locator(".folder-item[data-folder='models'][aria-expanded='true']").count() === 1, "the models folder should be open in the Files panel");
+      check(["bouncing_ball", "mass_spring_damper", "pid_speed_control", "sampled_data_control", "thermostat", "van_der_pol"].every((x) => listed.includes(`models/${x}.mlb.json`)), "the Files panel should list the example models in the models folder: " + listed.join());
+      check((await page.locator(".file-item[data-name='models/pid_speed_control.mlb.json'] > svg > use").getAttribute("href")) === "#i-blocks", "a model file should have the diagram icon");
+      await page.locator(".file-item[data-name='models/pid_speed_control.mlb.json']").focus();
+      await page.keyboard.press("Enter");
+      await shown("models/pid_speed_control.mlb.json", "PID", 6);
+      check((await page.locator(".bd-svg .bd-line").count()) === 7, "the PID example should show its 7 lines");
+      ok("the example models are in the Files panel (models folder) and open in the diagram editor from the keyboard");
+
+      await page.click("#btn-new");
+      await page.waitForSelector("#dlg-prompt[open] #prompt-choices:not([hidden])");
+      check((await page.locator("#prompt-choice-m").isChecked()) && /\.m$/.test(await page.inputValue("#prompt-input")), "New file should start with a .m file chosen");
+      await page.fill("#prompt-input", "models/abc.mlb.json");
+      check((await page.locator("#prompt-choice-diagram").isChecked()) && /block/i.test(await page.locator("#prompt-text").innerText()), "typing a .mlb.json name should choose Block diagram");
+      await page.fill("#prompt-input", "models/abc.m");
+      check(await page.locator("#prompt-choice-m").isChecked(), "typing a .m name should choose the .m file again");
+      await page.fill("#prompt-input", "models/first_model");
+      await page.locator("#prompt-choice-diagram").focus();
+      await page.keyboard.press("Space");
+      check((await page.locator("#prompt-choice-diagram").isChecked()) && (await page.inputValue("#prompt-input")) === "models/first_model.mlb.json", "choosing Block diagram should give the name its extension: " + (await page.inputValue("#prompt-input")));
+      await page.fill("#prompt-input", "models/first_model");
+      await page.click("#prompt-ok");
+      await shown("models/first_model.mlb.json", "Plant", 3);
+      check((await model()).lines.length === 2 && (await problems()) === 0, "the new model should be a small working model");
+      n = await runs();
+      await page.click("#btn-run");
+      await waitRun(n);
+      check(Math.abs((await finals())[0][0] - (1 - Math.exp(-9))) < 2e-3, "the starter model should run: " + JSON.stringify(await finals()));
+      ok("New file offers Block diagram: a small model to start from opens in the diagram editor and runs");
+
+      await page.click("#foot-welcome");
+      await page.waitForSelector("#dlg-welcome[open]");
+      await page.click("#welcome-blocks");
+      await page.waitForSelector("#dlg-welcome", { state: "hidden" });
+      await shown("models/mass_spring_damper.mlb.json", "Position", 9);
+      ok("the welcome dialog's Block diagrams card opens an example model in the diagram editor");
+
+      // someone who had the .m examples before the models existed gets them once; their files are kept
+      const older = await browser.newContext({ viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1 });
+      const op = await older.newPage();
+      watchErrors(op, consoleErrors, "[older] ");
+      await op.goto(url);
+      await op.waitForSelector(".file-item[data-name='models/van_der_pol.mlb.json']");
+      await op.evaluate(async () => {
+        const app = window.mylab.app;
+        const mine = app.sortedPaths().filter((p) => p.startsWith("models/"));
+        for (const p of mine) app.closeTab(p);
+        await app.removePaths(mine);
+        await window.mylab.createFile("models/thermostat.mlb.json", '{"blocks": []}', { open: false });
+        localStorage.removeItem("mylab.seededModels");
+      });
+      await op.reload();
+      await op.waitForSelector(".file-item[data-name='models/van_der_pol.mlb.json']");
+      check((await op.evaluate(() => window.mylab.state.files.get("models/thermostat.mlb.json").content)) === '{"blocks": []}', "adding the example models must not overwrite a file");
+      await op.evaluate(() => window.mylab.app.removePaths(["models/van_der_pol.mlb.json"]));
+      await op.reload();
+      await op.waitForSelector(".file-item[data-name='models/bouncing_ball.mlb.json']");
+      check(!(await op.evaluate(() => window.mylab.state.files.has("models/van_der_pol.mlb.json"))), "the example models are added only once");
+      await older.close();
+      ok("people who already had the .m examples get the example models once, without losing their own files");
 
       // A. An example model: open, run with the app's Run button, read the scope
       await page.evaluate(() => window.mylab.app.blocks.openExample("mass_spring_damper"));
@@ -1595,7 +1670,7 @@ async function main() {
       check((await page.locator(".bd-svg .bd-block").count()) === 9 && (await page.locator(".bd-svg .bd-line").count()) === 11, "the example should show 9 blocks and 11 lines");
       check((await problems()) === 0, "the example should have no problems");
       check(await page.evaluate(() => window.mylab.state.files.has("models/mass_spring_damper.mlb.json")), "the example is a file of the project");
-      let n = await runs();
+      n = await runs();
       await page.click("#btn-run");
       await page.waitForSelector(".scope-panel[data-scope='Scope']");
       await waitRun(n);

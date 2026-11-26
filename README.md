@@ -21,7 +21,7 @@ students, researchers and engineers who can't afford a MATLAB license.
   lines in the browser, or with `add_block`/`add_line`, and simulate it with
   `sim`: variable- and fixed-step solvers, events, multi-rate, live scopes,
   `linmod`. `.slx` files can be imported: of 82 public files, 50 import
-  fully and 30 of the 68 models run. See
+  fully and 31 of the 68 models run. See
   [docs/BLOCKS.md](docs/BLOCKS.md).
 - **Built for classes.** Share code as a link, step through a program
   forwards and backwards, publish a report, and auto-grade assignments in the
