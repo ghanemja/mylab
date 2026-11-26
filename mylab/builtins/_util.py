@@ -159,6 +159,88 @@ def flag_present(args: list, *flags: str) -> tuple[list, set[str]]:
     return rest, found
 
 
+def match_option(name: str, known, *, partial: bool = True) -> str | None:
+    """The entry of ``known`` that ``name`` names, or None.
+
+    Matching ignores case; with ``partial`` a unique prefix is enough (an exact match always
+    wins). An ambiguous prefix returns None.
+    """
+    low = name.lower()
+    if not low:
+        return None
+    hits = []
+    for k in known:
+        kl = k.lower()
+        if kl == low:
+            return k
+        if partial and kl.startswith(low):
+            hits.append(k)
+    return hits[0] if len(hits) == 1 else None
+
+
+def unknown_option_error(fname: str, name: str, known, ident: str | None) -> MatlabError:
+    ident = ident or f"MATLAB:{fname}:UnknownOption"
+    hits = [k for k in known if k.lower().startswith(name.lower())] if name else []
+    if len(hits) > 1:
+        return MatlabError(f"{fname}: the option '{name}' is ambiguous; it could mean "
+                           + ", ".join(f"'{h}'" for h in hits) + ".", ident)
+    return MatlabError(f"{fname}: the option '{name}' is not supported.", ident)
+
+
+def parse_options(args: list, known, fname: str, *, partial: bool = True,
+                  ident: str | None = None, first_arg: int | None = None) -> dict:
+    """Strict name-value parsing: every element of ``args`` is part of a Name,Value pair.
+
+    ``known`` lists the accepted names; the result is keyed by those spellings. Raises a
+    MatlabError naming the problem for a name that is not text, a name without a value, and an
+    unknown (or ambiguous) name. ``first_arg`` is the 1-based position of ``args[0]`` in the
+    call, used in messages.
+    """
+    known = list(known)
+    opts: dict = {}
+    k = 0
+    while k < len(args):
+        a = args[k]
+        if not is_text(a):
+            from ..values import class_name
+            where = f" at argument {first_arg + k}" if first_arg else ""
+            raise MatlabError(f"{fname}: expected an option name{where}, but found a value of class "
+                              f"'{class_name(a)}'.", f"MATLAB:{fname}:InvalidOptionName")
+        name = text(a)
+        key = match_option(name, known, partial=partial)
+        if key is None:
+            raise unknown_option_error(fname, name, known, ident)
+        if k + 1 >= len(args):
+            raise MatlabError(f"{fname}: the option '{name}' needs a value.", f"MATLAB:{fname}:MissingValue")
+        opts[key] = args[k + 1]
+        k += 2
+    return opts
+
+
+def split_options(args: list, known, fname: str, *, flags=(), partial: bool = True,
+                  ident: str | None = None) -> tuple[list, dict]:
+    """Split leading positional arguments from trailing Name,Value pairs, strictly.
+
+    The options start at the first text argument that is not one of ``flags`` (text values the
+    function accepts as positional arguments, matched without regard to case); from there on
+    every argument must belong to a known Name,Value pair (see ``parse_options``).
+    """
+    flagset = {f.lower() for f in flags}
+    i = 0
+    while i < len(args) and not (is_text(args[i]) and text(args[i]).lower() not in flagset):
+        i += 1
+    return list(args[:i]), parse_options(list(args[i:]), known, fname, partial=partial, ident=ident)
+
+
+def check_no_options(args: list, fname: str, ident: str | None = None) -> None:
+    """Raise for a leftover argument that a function would otherwise ignore."""
+    for a in args:
+        if is_text(a):
+            raise unknown_option_error(fname, text(a), (), ident)
+    if args:
+        raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
+
+
 def as_row_or_col(values, like: np.ndarray) -> np.ndarray:
     arr = np.asarray(values)
     if like.shape[0] == 1 or like.ndim == 1:

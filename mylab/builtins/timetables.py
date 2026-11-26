@@ -354,7 +354,8 @@ def _table2timetable(interp, args, nargout):
     if not args or not isinstance(args[0], TableObject) or isinstance(args[0], TimetableObject):
         raise MatlabError("table2timetable: the input must be a table.", "MATLAB:table2timetable:InvalidInput")
     t = args[0]
-    _, opts = _options(list(args[1:]), ("RowTimes", "SampleRate", "TimeStep", "StartTime"), "table2timetable")
+    _, opts = _options(list(args[1:]), ("RowTimes", "SampleRate", "TimeStep", "StartTime"),
+                       "table2timetable", max_pos=0)
     names, cols = list(t.names), list(t.columns)
     time_name = "Time"
     if "RowTimes" in opts:
@@ -389,7 +390,7 @@ def _table2timetable(interp, args, nargout):
 def _timetable2table(interp, args, nargout):
     """T = timetable2table(TT[, 'ConvertRowTimes', tf]): the row times become the first variable."""
     tt = _need_tt(args, "timetable2table")
-    _, opts = _options(list(args[1:]), ("ConvertRowTimes",), "timetable2table")
+    _, opts = _options(list(args[1:]), ("ConvertRowTimes",), "timetable2table", max_pos=0)
     keep = _flag(opts["ConvertRowTimes"]) if "ConvertRowTimes" in opts else True
     names, cols = list(tt.names), list(tt.columns)
     if keep:

@@ -16,7 +16,7 @@ from ..values import (
     Cell, FunctionHandle, MString, StringArray, Struct, char, is_char, string_data, string_result, to_str,
 )
 from ._registry import builtin
-from ._util import bool_scalar, fnum, is_text, num, text
+from ._util import bool_scalar, fnum, is_text, num, parse_options, text
 
 
 def _height(v: Any) -> int:
@@ -1155,7 +1155,7 @@ def _varfun(interp, args, nargout):
     fn, t = args[0], args[1]
     if not isinstance(t, TableObject):
         raise MatlabError("varfun expects a function and a table.")
-    _, opts = _split_opts(list(args[2:]), {"GroupingVariables", "InputVariables", "OutputFormat"})
+    opts = parse_options(list(args[2:]), ("GroupingVariables", "InputVariables", "OutputFormat"), "varfun")
     fname = fn.name if getattr(fn, "name", None) else "Fun"
     groups = [t.names[p] for p in t.var_positions(opts["GroupingVariables"])] \
         if "GroupingVariables" in opts else []
@@ -1276,7 +1276,7 @@ _JOIN_OPTS = {"Keys", "LeftKeys", "RightKeys", "LeftVariables", "RightVariables"
 def _check_tables(args: list, name: str) -> tuple:
     if len(args) < 2 or not isinstance(args[0], TableObject) or not isinstance(args[1], TableObject):
         raise MatlabError(f"{name} expects two tables.")
-    _, opts = _split_opts(list(args[2:]), _JOIN_OPTS)
+    opts = parse_options(list(args[2:]), sorted(_JOIN_OPTS), name)
     return args[0], args[1], opts
 
 
@@ -1394,7 +1394,7 @@ def _movevars(interp, args, nargout):
     if len(args) < 2:
         raise MatlabError("movevars expects (T, vars, 'Before'|'After', location).")
     moving = [t.names[p] for p in t.var_positions(args[1])]
-    _, opts = _split_opts(list(args[2:]), {"Before", "After"})
+    opts = parse_options(list(args[2:]), ("Before", "After"), "movevars")
     rest = [n for n in t.names if n not in moving]
     if "Before" in opts or "After" in opts:
         where = opts.get("Before", opts.get("After"))
@@ -1598,7 +1598,7 @@ def _fillmissing(interp, args, nargout):
     axis = None
     if rest and not is_text(rest[0]):
         axis = int(num(rest.pop(0)).flat[0]) - 1
-    _, opts = _split_opts(rest, {"EndValues", "DataVariables", "SamplePoints", "MissingLocations"})
+    opts = parse_options(rest, ("EndValues", "DataVariables"), "fillmissing")
     endv = None
     if "EndValues" in opts:
         e = opts["EndValues"]

@@ -18,7 +18,7 @@ from ..values import (
     to_str,
 )
 from ._registry import BUILTINS, builtin
-from ._util import bool_scalar, is_text, nargs, text
+from ._util import bool_scalar, is_text, nargs, text, unknown_option_error
 from .table import (
     _MISSING, _TABLE_FUNCS, TableObject, _as_column, _col_keys, _group_rows, _height, _is_numeric_var, _is_time,
     _method_list, _missing_mask, _names_from, _rows, _sort_key, _stack_results,
@@ -32,14 +32,27 @@ def _need_table(args: list, name: str, pos: int = 0) -> TableObject:
     return args[pos]
 
 
-def _options(args: list, names: tuple, name: str, start: int = 0) -> tuple[list, dict]:
-    """Split trailing Name, Value pairs (names are not case sensitive) from the leading arguments."""
+def _options(args: list, names: tuple, name: str, start: int = 0,
+             max_pos: int | None = None) -> tuple[list, dict]:
+    """Split trailing Name, Value pairs (names are not case sensitive) from the leading arguments.
+
+    With ``max_pos``, more than that many leading arguments are an error that names the first
+    unknown option among them, so an unknown name is never silently left over.
+    """
     lookup = {n.lower(): n for n in names}
     rest = list(args)
     opts: dict = {}
     while len(rest) - start >= 2 and is_text(rest[-2]) and text(rest[-2]).lower() in lookup:
         opts[lookup[text(rest[-2]).lower()]] = rest[-1]
         del rest[-2:]
+    if max_pos is not None and len(rest) > max_pos:
+        extra = rest[max(max_pos, start):]
+        bad = next((a for a in extra if is_text(a) and text(a).lower() not in lookup), None)
+        if bad is None:
+            bad = next((a for a in extra if is_text(a)), None)
+        if bad is not None:
+            raise unknown_option_error(name, text(bad), names, None)
+        raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
     return rest, opts
 
 
@@ -266,7 +279,7 @@ def _stack(interp, args, nargout):
     """S = stack(U, vars, ...): several variables of a wide table become one variable of a tall table."""
     t = _need_table(args, "stack")
     rest, opts = _options(list(args[1:]), ("NewDataVariableName", "IndexVariableName", "ConstantVariables"),
-                          "stack", 1)
+                          "stack", 1, max_pos=1)
     if not rest:
         raise MatlabError("Not enough input arguments.", "MATLAB:minrhs")
     stacked = _var_names(t, rest[0])
@@ -303,7 +316,7 @@ def _unstack(interp, args, nargout):
     """U = unstack(S, vars, ivar, ...): one variable of a tall table is spread over several variables."""
     t = _need_table(args, "unstack")
     rest, opts = _options(list(args[1:]), ("GroupingVariables", "ConstantVariables", "NewDataVariableNames",
-                                           "AggregationFunction", "VariableNamingRule"), "unstack", 2)
+                                           "AggregationFunction", "VariableNamingRule"), "unstack", 2, max_pos=2)
     if len(rest) < 2:
         raise MatlabError("unstack needs the data variable and the indicator variable: unstack(S, vars, ivar).",
                           "MATLAB:minrhs")
@@ -449,7 +462,7 @@ def _rowfun(interp, args, nargout):
     t = _need_table(args, "rowfun", 1)
     _, opts = _options(list(args[2:]), ("InputVariables", "GroupingVariables", "OutputVariableNames",
                                         "NumOutputs", "SeparateInputs", "ExtractCellContents", "OutputFormat",
-                                        "ErrorHandler"), "rowfun")
+                                        "ErrorHandler"), "rowfun", max_pos=0)
     groups = _var_names(t, opts["GroupingVariables"]) if "GroupingVariables" in opts else []
     inputs = _var_names(t, opts["InputVariables"]) if "InputVariables" in opts else \
         [n for n in t.names if n not in groups]
@@ -528,7 +541,7 @@ def _varfun(interp, args, nargout):
     fn = args[0]
     t = _need_table(args, "varfun", 1)
     _, opts = _options(list(args[2:]), ("GroupingVariables", "InputVariables", "OutputFormat", "ErrorHandler"),
-                       "varfun")
+                       "varfun", max_pos=0)
     groups = _var_names(t, opts["GroupingVariables"]) if "GroupingVariables" in opts else []
     if "InputVariables" in opts:
         inputs = _var_names(t, opts["InputVariables"])
@@ -971,7 +984,7 @@ def _pivot(interp, args, nargout):
     _, opts = _options(list(args[1:]), ("Columns", "Rows", "DataVariable", "Method", "IncludeTotals",
                                         "IncludeMissingGroups", "IncludeEmptyGroups", "RowLabelPlacement",
                                         "OutputFormat", "IncludedEdge", "ColumnsBinMethod", "RowsBinMethod"),
-                       "pivot")
+                       "pivot", max_pos=0)
     col_vars = _var_names(t, opts["Columns"]) if "Columns" in opts else []
     row_vars = _var_names(t, opts["Rows"]) if "Rows" in opts else []
     if not col_vars and not row_vars:
@@ -1097,7 +1110,7 @@ def _total_label(like: Any) -> Any:
 def _mergevars(interp, args, nargout):
     """T2 = mergevars(T, vars, 'NewVariableName', name, 'MergeAsTable', tf)."""
     t = _need_table(args, "mergevars")
-    rest, opts = _options(list(args[1:]), ("NewVariableName", "MergeAsTable"), "mergevars", 1)
+    rest, opts = _options(list(args[1:]), ("NewVariableName", "MergeAsTable"), "mergevars", 1, max_pos=1)
     if not rest:
         raise MatlabError("Not enough input arguments.", "MATLAB:minrhs")
     vars_ = _var_names(t, rest[0])
@@ -1156,7 +1169,7 @@ def _split_one(name: str, col: Any, new_names: list[str] | None) -> tuple[list[s
 def _splitvars(interp, args, nargout):
     """T2 = splitvars(T[, vars], 'NewVariableNames', names)."""
     t = _need_table(args, "splitvars")
-    rest, opts = _options(list(args[1:]), ("NewVariableNames",), "splitvars")
+    rest, opts = _options(list(args[1:]), ("NewVariableNames",), "splitvars", max_pos=1)
     targets = _var_names(t, rest[0]) if rest else list(t.names)
     new = opts.get("NewVariableNames")
     per_var: dict[str, list[str]] = {}
@@ -1256,7 +1269,8 @@ def _addvars(interp, args, nargout):
 def _rows2vars(interp, args, nargout):
     """T2 = rows2vars(T, 'VariableNamesSource', v, 'DataVariables', vars, 'VariableNamingRule', rule)."""
     t = _need_table(args, "rows2vars")
-    _, opts = _options(list(args[1:]), ("VariableNamesSource", "DataVariables", "VariableNamingRule"), "rows2vars")
+    _, opts = _options(list(args[1:]), ("VariableNamesSource", "DataVariables", "VariableNamingRule"),
+                       "rows2vars", max_pos=0)
     source = _var_names(t, opts["VariableNamesSource"])[0] if "VariableNamesSource" in opts else None
     data_vars = _var_names(t, opts["DataVariables"]) if "DataVariables" in opts else \
         [n for n in t.names if n != source]
@@ -1412,7 +1426,7 @@ def _sort_spec(t: TableObject, rest: list, name: str) -> tuple[list[str], list[b
 def _sortrows(interp, args, nargout):
     """[T2, index] = sortrows(T[, vars][, direction], 'MissingPlacement', where, 'ComparisonMethod', m)."""
     t = _need_table(args, "sortrows")
-    rest, opts = _options(list(args[1:]), ("MissingPlacement", "ComparisonMethod"), "sortrows")
+    rest, opts = _options(list(args[1:]), ("MissingPlacement", "ComparisonMethod"), "sortrows", max_pos=2)
     keys, descend, by_rows, rest = _sort_spec(t, rest, "sortrows")
     if rest:
         raise MatlabError("sortrows: unexpected extra arguments.", "MATLAB:table:sortrows:TooManyInputs")
@@ -1438,7 +1452,7 @@ def _topkrows(interp, args, nargout):
     if len(args) < 2:
         raise MatlabError("topkrows needs the number of rows: topkrows(T, k).", "MATLAB:minrhs")
     k = int(np.real(to_numeric(args[1])).flat[0])
-    rest, opts = _options(list(args[2:]), ("ComparisonMethod",), "topkrows")
+    rest, opts = _options(list(args[2:]), ("ComparisonMethod",), "topkrows", max_pos=2)
     explicit = bool(rest) and is_text(rest[-1]) and text(rest[-1]).lower() in ("ascend", "descend") \
         or bool(rest) and isinstance(rest[-1], (Cell, StringArray)) and len(rest) > 1
     keys, descend, by_rows, _ = _sort_spec(t, rest, "topkrows")
@@ -1766,7 +1780,7 @@ def _apply_dim_names(t: TableObject, opts: dict) -> TableObject:
 @builtin("array2table")
 def _array2table(interp, args, nargout):
     """T = array2table(A, 'VariableNames', names, 'RowNames', names, 'DimensionNames', names)."""
-    rest, opts = _options(list(args), ("VariableNames", "RowNames", "DimensionNames"), "array2table", 1)
+    rest, opts = _options(list(args), ("VariableNames", "RowNames", "DimensionNames"), "array2table", 1, max_pos=1)
     nargs(rest, 1, 1, "array2table")
     a = rest[0]
     if isinstance(a, (Cell, StringArray)):
@@ -1796,7 +1810,7 @@ def _array2table(interp, args, nargout):
 @builtin("cell2table")
 def _cell2table(interp, args, nargout):
     """T = cell2table(C, 'VariableNames', names, 'RowNames', names, 'DimensionNames', names)."""
-    rest, opts = _options(list(args), ("VariableNames", "RowNames", "DimensionNames"), "cell2table", 1)
+    rest, opts = _options(list(args), ("VariableNames", "RowNames", "DimensionNames"), "cell2table", 1, max_pos=1)
     nargs(rest, 1, 1, "cell2table")
     c = rest[0]
     if not isinstance(c, Cell) or c.data.ndim != 2:
@@ -1823,7 +1837,7 @@ def _cell2table(interp, args, nargout):
 @builtin("struct2table")
 def _struct2table(interp, args, nargout):
     """T = struct2table(S, 'AsArray', tf, 'RowNames', names, 'DimensionNames', names)."""
-    rest, opts = _options(list(args), ("AsArray", "RowNames", "DimensionNames"), "struct2table", 1)
+    rest, opts = _options(list(args), ("AsArray", "RowNames", "DimensionNames"), "struct2table", 1, max_pos=1)
     nargs(rest, 1, 1, "struct2table")
     s = rest[0]
     if not isinstance(s, Struct):
@@ -1851,7 +1865,7 @@ def _struct2table(interp, args, nargout):
 def _table2struct(interp, args, nargout):
     """S = table2struct(T) (one element per row) or table2struct(T, 'ToScalar', true)."""
     t = _need_table(args, "table2struct")
-    _, opts = _options(list(args[1:]), ("ToScalar",), "table2struct")
+    _, opts = _options(list(args[1:]), ("ToScalar",), "table2struct", max_pos=0)
     if "ToScalar" in opts and _flag(opts["ToScalar"]):
         return Struct.scalar(dict(zip(t.names, t.columns)))
     data = np.empty((t.nrows, 1), dtype=object)
