@@ -14,7 +14,7 @@ and lists what differs.
 
 - 705 small scripts that assert documented MATLAB behaviour, and 469 more
   written afterwards and kept out of sight while gaps were closed. mylab
-  passes 695 and 469 of them. Corrections to checks whose expectation was
+  passes 700 and 469 of them. Corrections to checks whose expectation was
   wrong about MATLAB are listed in
   [tests/probes/heldout/CORRECTIONS.md](../tests/probes/heldout/CORRECTIONS.md).
 - 5,377 values compared with GNU Octave (see

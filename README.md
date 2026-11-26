@@ -213,7 +213,7 @@ Every push runs these on GitHub Actions:
   checks pass. See [tests/conformance](tests/conformance/README.md).
 - **MATLAB-behaviour checks:** 705 small scripts asserting documented MATLAB
   behaviour, and 469 more written afterwards and kept out of sight while
-  gaps were closed. 695 and 469 pass, and a check that passes may never fail
+  gaps were closed. 700 and 469 pass, and a check that passes may never fail
   again. Corrections to checks are listed in
   [tests/probes/heldout/CORRECTIONS.md](tests/probes/heldout/CORRECTIONS.md).
 - **MATLAB Tasks:** 157 programming tasks with checked answers; all pass.

@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (not yet released)
+## 1.1.0
 
 1.1.0 brings mylab's behaviour much closer to MATLAB's, adds the Curve
 Fitting core, HDF5 and version 7.3 MAT-files in the default install, and
