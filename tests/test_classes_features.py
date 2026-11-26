@@ -797,7 +797,7 @@ q.PartialMatching = false; t = false; try, parse(q, 'Verb', true); catch, t = tr
 s.Tol = 2; parse(q, s); assert(q.Results.Tol == 2); q.StructExpand = false; t = false; try, parse(q, s); catch, t = true; end; assert(t);
 t = false; try, parse(q, 'Nope', 1); catch e, t = true; end; assert(t);
 w = inputParser; addRequired(w, 'a'); addOptional(w, 'b', 'dflt'); addParameter(w, 'c', 0); parse(w, 1, 'c', 5); assert(strcmp(w.Results.b, 'dflt') && w.Results.c == 5);
-parse(w, 1, 'given'); assert(strcmp(w.Results.b, 'given')); parse(w, 1, 'given', 'c', 2); assert(w.Results.c == 2);
+t = false; try, parse(w, 1, 'given'); catch, t = true; end; assert(t); parse(w, 1, 'b', 'given', 'c', 2); assert(strcmp(w.Results.b, 'given') && w.Results.c == 2);
 
 ### cls/misc_semantics
 @file Acc.m

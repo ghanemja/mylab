@@ -284,10 +284,13 @@ def test_optional_inputs_given_by_name():
     m = Interpreter(out=lambda s: None)
     m.execute("p = inputParser; addOptional(p, 'K', 10); addOptional(p, 'L', 100); addOptional(p, 'lambda', .001);"
               "parse(p, 'K', 3, 'L', 7); r = [p.Results.K p.Results.L p.Results.lambda]; d = p.UsingDefaults;"
-              "q = inputParser; addOptional(q, 'units', 'inches'); parse(q, 'cm'); u = q.Results.units;")
+              "q = inputParser; addOptional(q, 'units', 'inches', @ischar); parse(q, 'cm'); u = q.Results.units;")
     assert num(m, "r").tolist() == [[3, 7, 0.001]]
     assert [to_str(x) for x in m.eval_expression("d").values_f()] == ["lambda"]
-    assert to_str(m.eval_expression("u")) == "cm"  # one text argument that names nothing stays positional
+    assert to_str(m.eval_expression("u")) == "cm"  # text its validator accepts that names nothing is positional
+    # without a validation function the parser cannot tell a text value from a name: it is a name
+    with pytest.raises(MatlabError, match="'cm' is not a recognized parameter"):
+        m.execute("q = inputParser; addOptional(q, 'units', 'inches'); parse(q, 'cm');")
 
 
 # -- racy timestamps: a file written in the same clock tick as the last look ------------------------------------

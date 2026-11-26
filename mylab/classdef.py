@@ -783,6 +783,17 @@ class UserObject(MObject):
             property_event(interp, self, name, "PostGet")
         return value
 
+    def method_statement(self, interp, name: str, nargout: int) -> list | None:
+        """``obj.name`` naming a method, called with ``nargout`` outputs (None when it names no method).
+
+        As a statement (``obj.update;``) the method is called with no outputs, so one that returns
+        nothing works; reading a value calls it with one.
+        """
+        if name in self.cls.prop_defs or (self._dynprops and name in self._dynprops) or name in self.props \
+                or self.cls.old_style or not self.has_method(name):
+            return None
+        return self.call_method(interp, name, [self], nargout)
+
     def _get_other(self, interp, name: str) -> Any:
         """``obj.name`` when ``name`` is not a declared property: dynamic property, field or method."""
         cls = self.cls
@@ -1208,6 +1219,9 @@ def _enum_method(interp, name: str, args: list) -> Any:
     return interp.call_builtin(name, interp.builtins[name], [obj._enum_value], 1)[0]
 
 
+_GAP = object()  # marks the elements a growing assignment leaves unset
+
+
 class ObjectArray(MObject):
     """An array of classdef objects, e.g. ``objs(3) = Point(1, 2)`` or ``[a, b, c]``."""
 
@@ -1366,7 +1380,14 @@ class ObjectArray(MObject):
         base = self
         if self.cls is None or (self.data.size == 0 and not _compatible(self.cls, value.cls)):
             base = ObjectArray(self.data, value.cls)  # an empty array takes the class of what it gets
-        data = ix.set_(base.data.copy(), list(args), rhs, lambda: base._fill(interp))
+        # Growing makes new elements; only those the assignment leaves unset need a default object,
+        # so objs(end + 1) = obj never calls the constructor with no arguments.
+        gap = _GAP
+        data = ix.set_(base.data.copy(), list(args), rhs, lambda: gap)
+        if data.size > self.data.size:
+            for idx in np.ndindex(data.shape):
+                if data[idx] is gap:
+                    data[idx] = base._fill(interp)
         klass = common_class(data.flat, base.cls)
         _check_mix(data.flat, klass)
         return ObjectArray(data, klass) if data.size != 1 else data.flat[0]
@@ -2525,13 +2546,17 @@ def _unable(name: str, cls: str) -> MatlabError:
 def _convert_class(interp, value: Any, cls: str, name: str) -> Any:
     from .values import (
         INT_TYPES, Cell, FunctionHandle, MString, StringArray, Struct, char, class_name, is_char,
-        saturate_int, string_data, string_result, to_numeric,
+        saturate_int, string_data, string_result, to_numeric, to_str,
     )
     if type(value) is UserObject and value.cls.numeric_base and cls in NUMERIC_BASES:
         value = _plain(value)
     if cls in ("double", "single") or cls in INT_TYPES or cls == "logical":
         if isinstance(value, (MString, StringArray)) and cls != "logical" and interp is not None:
             value = interp.call_builtin("double", interp.builtins["double"], [value], 1)[0]
+        if hasattr(value, "to_dense"):  # sparse: kept when it already has the class
+            if class_name(value) == cls:
+                return value
+            value = value.to_dense()
         if not isinstance(value, np.ndarray):
             raise _unable(name, cls)
         a = to_numeric(value)
@@ -2540,6 +2565,8 @@ def _convert_class(interp, value: Any, cls: str, name: str) -> Any:
         if cls == "single":
             return a.astype(np.complex64 if a.dtype.kind == "c" else np.float32)
         if cls == "logical":
+            if is_char(value) or a.dtype.kind == "c":  # as logical('a') and logical(1i), an error
+                raise _unable(name, cls)
             if a.dtype.kind == "f" and np.isnan(a).any():
                 raise MatlabError("NaN's cannot be converted to logicals.", "MATLAB:nologicalnan")
             return a != 0
@@ -2573,10 +2600,17 @@ def _convert_class(interp, value: Any, cls: str, name: str) -> Any:
             return value
     elif class_name(value) == cls:
         return value
-    if isinstance(value, np.ndarray) and value.size == 0 and value.dtype.kind == "f":
-        return value
     klass = interp.find_class(cls) if interp is not None else None
+    if isinstance(value, np.ndarray) and value.size == 0 and value.dtype.kind == "f":
+        if klass is not None and not klass.numeric_base:
+            return ObjectArray(np.empty(value.shape, dtype=object), klass)  # [] is an empty array of the class
+        return value
     if klass is not None:
+        if klass.enums and (isinstance(value, MString) or (is_char(value) and value.ndim == 2
+                                                           and value.shape[0] == 1)):
+            member = _enum_by_text(interp, klass, to_str(value))
+            if member is not None:
+                return member
         try:
             return convert_to_class(interp, value, klass)
         except MatlabError:
@@ -2591,36 +2625,109 @@ def _convert_class(interp, value: Any, cls: str, name: str) -> Any:
     raise _unable(name, cls)
 
 
-def _fit_size(value: Any, size: list) -> Any:
-    """Make ``value`` fit a declared size: as is, a scalar expanded, or a vector turned the other way."""
+def _enum_by_text(interp, klass: ClassInfo, text: str) -> Any:
+    """The enumeration member a text names when assigned to a property or argument of that class.
+
+    The match is inexact: case is ignored, and a leading part of one member's name is enough.
+    """
+    members = klass.enum_members(interp)
+    low = text.lower()
+    exact = [m for n, m in members.items() if n.lower() == low]
+    if exact:
+        return exact[0]
+    found = [m for n, m in members.items() if low and n.lower().startswith(low)]
+    return found[0] if len(found) == 1 else None
+
+
+def size_text(dims) -> str:
+    """A size as MATLAB writes it, with ':' for a dimension of any length (1×:, 3×4)."""
+    return "×".join(":" if d is None else str(d) for d in dims)
+
+
+def _size_error(size: list, shape: list) -> MatlabError:
+    got = size_text(shape)
+    if all(d == 1 for d in size):
+        return MatlabError("Value must be a scalar.", "MATLAB:validation:IncompatibleSize")
+    want = size_text(size)
+    if len(size) == 2 and size[0] == 1 and size[1] is None:
+        msg = f"Value must be a row vector (size {want}), but its size is {got}."
+    elif len(size) == 2 and size[0] is None and size[1] == 1:
+        msg = f"Value must be a column vector (size {want}), but its size is {got}."
+    elif None in size:
+        msg = f"Value must have size {want}, where ':' allows any length, but its size is {got}."
+    else:
+        msg = f"Value must have size {want} (or be a scalar, which fills that size), but its size is {got}."
+    return MatlabError(msg, "MATLAB:validation:IncompatibleSize")
+
+
+def fit_size(value: Any, size: list) -> Any:
+    """Make ``value`` fit a declared size such as (1,1), (1,:) or (:,3), as MATLAB does.
+
+    Besides a value that already fits, MATLAB accepts and converts
+      - an empty value, when the size allows an empty array (a ':' or a 0 in it): it becomes an
+        empty array of that size, so [] for (1,:) is 1×0 and for (:,3) is 0×3;
+      - a scalar, which is repeated to fill the size (a ':' dimension counts as 1);
+      - a vector with the right number of elements in another orientation, when the size describes
+        a vector: a column for (1,:) or (1,3) becomes a row, a row for (:,1) becomes a column.
+    Anything else is an error that names the expected size.
+    """
     from .values import MString, StringArray, shape_of
     shape = list(shape_of(value))
-    if len(size) == len(shape) and all(d is None or d == s for d, s in zip(size, shape)):
+    size = list(size)
+    while len(shape) < len(size):
+        shape.append(1)
+    padded = size + [1] * (len(shape) - len(size))
+    if all(d is None or d == s for d, s in zip(padded, shape)):
         return value
     count = int(np.prod(shape))
-    data = value if isinstance(value, np.ndarray) else getattr(value, "data", None)
-    fixed = [1 if d is None else d for d in size]
-    if count == 1 and len(shape) <= len(size) and int(np.prod(fixed)) != 1:
-        # scalar expansion to the declared size (dimensions written ':' stay 1)
+    if hasattr(value, "to_dense") and hasattr(value, "m"):  # sparse: converted as full, kept sparse
+        import scipy.sparse as sp
+        full = fit_size(value.to_dense(), size)
+        return type(value)(sp.csc_matrix(full)) if full.ndim == 2 else full
+    if isinstance(value, np.ndarray):
+        data = value
+    elif isinstance(value, MString):
+        data = np.array([[str(value)]], dtype=object)
+    elif type(value) is UserObject and value._data is not None:
+        data = value._data
+    elif type(value) is UserObject:
+        data = np.array([[value]], dtype=object)
+    else:
+        data = getattr(value, "data", None)
+    if not isinstance(data, np.ndarray) or data.size != count:
+        raise _size_error(size, shape)
+
+    def rebuild(new: np.ndarray) -> Any:
+        if isinstance(value, np.ndarray):
+            return new
         if isinstance(value, MString):
-            out = np.empty(fixed, dtype=object)
-            out.fill(str(value))
-            return StringArray(out)
-        if isinstance(data, np.ndarray):
-            tiled = np.tile(data.reshape((1,) * len(fixed)), fixed)
-            return tiled if isinstance(value, np.ndarray) else _with_data(value, tiled)
-    is_vector = len(shape) == 2 and 1 in shape
-    if is_vector and len(size) == 2 and isinstance(data, np.ndarray):
-        turned = [shape[1], shape[0]]
-        if all(d is None or d == s for d, s in zip(size, turned)):
-            flipped = data.reshape(turned, order="F")
-            return flipped if isinstance(value, np.ndarray) else _with_data(value, flipped)
-    want = "x".join(":" if d is None else str(d) for d in size)
-    got = "x".join(str(d) for d in shape)
-    if all(d == 1 for d in size):
-        raise MatlabError(f"Value must be a scalar: its size must be {want} (it is {got}).",
-                          "MATLAB:validation:IncompatibleSize")
-    raise MatlabError(f"Value must be {want} (it is {got}).", "MATLAB:validation:IncompatibleSize")
+            return StringArray(new)
+        if type(value) is UserObject and value._data is None:
+            return ObjectArray._unwrap(new, value.cls)
+        return _with_data(value, new)
+
+    if count == 0:
+        if len(shape) > len(size) and any(s != 1 for s in shape[len(size):]) and 0 not in shape[:len(size)]:
+            raise _size_error(size, shape)
+        target = [s if d is None else d for d, s in zip(size, shape)]
+        if int(np.prod(target)) != 0:
+            target = [0 if d is None else d for d in size]
+        if int(np.prod(target)) == 0:
+            return rebuild(data.reshape(target, order="F"))
+        raise _size_error(size, shape)
+    if len(shape) > len(size) and any(s != 1 for s in shape[len(size):]):
+        raise _size_error(size, shape)
+    shape = shape[:len(size)]
+    if count == 1:
+        fixed = [1 if d is None else d for d in size]
+        return rebuild(np.tile(data.reshape((1,) * len(fixed)), fixed))
+    free = [i for i, d in enumerate(size) if d != 1]
+    is_vector = sum(1 for s in shape if s != 1) == 1
+    if is_vector and len(free) == 1 and size[free[0]] in (None, count):
+        target = [1] * len(size)
+        target[free[0]] = count
+        return rebuild(data.reshape(target, order="F"))
+    raise _size_error(size, shape)
 
 
 def _with_data(value: Any, data: np.ndarray) -> Any:
@@ -2654,7 +2761,7 @@ def validate_value(interp, attrs: dict, value: Any, name: str, functions: dict, 
     size = attrs.get("_size")
     if size:
         try:
-            value = _fit_size(value, size)
+            value = fit_size(value, size)
         except MatlabError as e:
             raise MatlabError(f"{context} {e.message}", e.identifier) from None
     for v in attrs.get("_validators", ()):

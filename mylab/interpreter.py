@@ -1291,6 +1291,10 @@ class Interpreter:
             if isinstance(base_val, MObject):
                 if hasattr(base_val, "field_list"):
                     return base_val.field_list(self, name)
+                if nargout == 0 and hasattr(base_val, "method_statement"):
+                    res = base_val.method_statement(self, name, 0)
+                    if res is not None:
+                        return res
                 return [base_val.get_field(self, name)]
             if isinstance(base_val, Struct):
                 if name not in base_val.fields:
