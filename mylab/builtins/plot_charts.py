@@ -1012,29 +1012,6 @@ def _histogram2(interp, args, nargout):
     return h if nargout > 0 else None
 
 
-@builtin("histcounts2")
-def _histcounts2(interp, args, nargout):
-    """[N, Xedges, Yedges, binX, binY] = histcounts2(x, y, ...): bivariate bin counts."""
-    args, opts = _options(list(args), ("NumBins", "XBinEdges", "YBinEdges", "BinWidth", "XBinLimits",
-                                       "YBinLimits", "BinMethod", "Normalization"), "histcounts2")
-    _no_text_left(args, "histcounts2")
-    x, y, ex, ey, _ = _hist2_inputs(args, opts, "histcounts2")
-    norm = P._check_norm(text(opts["Normalization"])) if "Normalization" in opts else "count"
-    N = _normalize2(_counts2(x, y, ex, ey), ex, ey, norm)
-
-    def bins(v, e):
-        idx = np.searchsorted(e, v, side="right").astype(float)
-        idx[v == e[-1]] = e.size - 1
-        idx[(v < e[0]) | (v > e[-1]) | ~np.isfinite(v)] = 0
-        return idx
-    shape = _real(args[0]).shape
-    bx, by = bins(x, ex).reshape(shape, order="F"), bins(y, ey).reshape(shape, order="F")
-    out_x = (bx == 0) | (by == 0)
-    bx[out_x] = 0
-    by[out_x] = 0
-    return (N, P._row(ex), P._row(ey), bx, by)[:max(nargout, 1)] if nargout > 1 else N
-
-
 # -- 3-D bars and pies ---------------------------------------------------------------------------------------
 
 def _bar3_core(interp, args, nargout, horizontal: bool):
@@ -3287,11 +3264,15 @@ def _gscatter(interp, args, nargout):
     lead = [args.pop(0)] if args and isinstance(args[0], P.GraphicsHandle) else []
     if len(args) < 3:
         raise MatlabError("gscatter needs x, y and a grouping variable.")
+    if len(args) > 9:
+        raise MatlabError("gscatter: too many input arguments.")
     args += [None] * (9 - len(args))
     empty = lambda v: v is None or (isinstance(v, np.ndarray) and v.size == 0 and not is_char(v))  # noqa: E731
     x, y = _vec(args[0]), _vec(args[1])
-    from .ndmath import group_index
-    idx, names, _ = group_index(args[2])
+    from ._stats_util import group_list, multi_group
+    # a cell array of grouping variables makes one group per combination, named like "a,1"
+    codes, names, _, _ = multi_group(group_list(args[2]), sep=",")
+    idx = codes + 1
     if not x.size == y.size == idx.size:
         raise MatlabError("gscatter: x, y and the grouping variable must have the same number of elements.")
     colors = _color_list(args[3])

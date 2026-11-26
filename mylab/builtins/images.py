@@ -951,24 +951,6 @@ def _imfilter(interp, args, nargout):
     return out > 0.5 if a.dtype == bool else out
 
 
-@builtin("filter2")
-def _filter2(interp, args, nargout):
-    nargs(args, 2, 3, "filter2")
-    h = _img(args[0], "filter2", "filter").astype(float)
-    a = _img(args[1], "filter2", "data").astype(float)
-    shape = text(args[2]).lower() if len(args) > 2 else "same"
-    if shape not in ("same", "full", "valid"):
-        raise MatlabError("filter2: the shape must be 'same', 'full' or 'valid'.")
-    if shape == "valid":
-        full = _correlate(a, h, 0.0, "same", False, "filter2")
-        slices = []
-        for n, k in zip(a.shape, h.shape + (1,) * (a.ndim - h.ndim)):
-            c = (k - 1) // 2
-            slices.append(slice(c, c + max(n - k + 1, 0)))
-        return full[tuple(slices)]
-    return _correlate(a, h, 0.0, shape, False, "filter2")
-
-
 def _hsize(v, default: int) -> tuple[int, int]:
     if v is None:
         return default, default

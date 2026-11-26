@@ -10,7 +10,7 @@ from ..errors import MatlabError
 from ..values import Cell, FunctionHandle, char
 from ._registry import builtin
 from ._stats_util import (
-    StatObject, as_bool, builtin_call, call, cellstr, choice, get_opts, given, group_codes, group_list, intval,
+    StatObject, as_bool, call, choice, get_opts, given, group_codes, group_list, intval,
     is_categorical, is_empty_arg, is_table, make_table, multi_group, num_text, outs, rng_of, scalar, text_list,
     tied_rank, vec,
 )
@@ -695,44 +695,6 @@ def _dummyvar(interp, args, nargout):
         D[np.arange(G.shape[0]), G[:, j].astype(int) - 1] = 1
         blocks.append(D)
     return np.hstack(blocks) if blocks else np.zeros((0, 0))
-
-
-@builtin("gscatter")
-def _gscatter(interp, args, nargout):
-    if len(args) < 3:
-        raise MatlabError("gscatter: expected gscatter(x, y, g).")
-    if len(args) > 9:
-        raise MatlabError("gscatter: too many input arguments.")
-    x, y = vec(args[0]), vec(args[1])
-    codes, names, _, _ = multi_group(group_list(args[2]), sep=",")
-    if x.size != y.size or codes.size != x.size:
-        raise MatlabError("gscatter: x, y and g must have the same number of elements.")
-    colors = text(args[3]) if given(args, 3) and is_text(args[3]) else "bgrcmyk"
-    if given(args, 3) and not is_text(args[3]):
-        raise MatlabError("gscatter: colors must be given as letters, e.g. 'rgb'.")
-    syms = text(args[4]) if given(args, 4) else "."
-    sizes = vec(args[5]) if given(args, 5) else np.array([])
-    doleg = as_bool(args[6], "doleg") if given(args, 6) else True
-    hs = []
-    for g in range(len(names)):
-        sel = codes == g
-        spec = colors[g % len(colors)] + syms[g % len(syms)]
-        extra = [char("MarkerSize"), np.array([[float(sizes[g % sizes.size])]])] if sizes.size else \
-            ([char("MarkerSize"), np.array([[15.0]])] if syms[g % len(syms)] == "." else [])
-        h = builtin_call(interp, "plot", [x[sel].reshape(1, -1), y[sel].reshape(1, -1), char(spec)] + extra, 1)
-        hs.append(h[0])
-        builtin_call(interp, "hold", [char("on")], 0)
-    builtin_call(interp, "hold", [char("off")], 0)
-    if doleg and names:
-        builtin_call(interp, "legend", [cellstr(names, column=False)], 0)
-    if given(args, 7):
-        builtin_call(interp, "xlabel", [args[7]], 0)
-    if given(args, 8):
-        builtin_call(interp, "ylabel", [args[8]], 0)
-    if not nargout:
-        return None
-    from .plotting import GraphicsArray
-    return hs[0] if len(hs) == 1 else GraphicsArray(hs)
 
 
 # -- resampling ------------------------------------------------------------------------------------------------
