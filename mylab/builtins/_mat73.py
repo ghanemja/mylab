@@ -365,3 +365,336 @@ def read(path: str, wanted, warn) -> dict:
                 continue
             out[name] = r.read(f[name])
     return out
+
+
+# -- parts of variables, for matfile ---------------------------------------------------------------
+# A numeric, char or logical variable is one dataset whose C-order element sequence is the column-major
+# sequence of the MATLAB array (the file stores the dimensions reversed). Reading m.x(i, j) selects the
+# matching hyperslab of that dataset, so only the requested block is read from the file.
+
+_PLAIN = set(_DTYPES) | {"char", "logical"}
+_ITEM_BYTES = {"double": 8, "single": 4, "int8": 1, "uint8": 1, "int16": 2, "uint16": 2, "int32": 4, "uint32": 4,
+               "int64": 8, "uint64": 8, "char": 2, "logical": 1}
+
+
+def _matlab_class(obj) -> str:
+    cls = obj.attrs.get("MATLAB_class", b"")
+    return cls.decode("ascii", errors="replace") if isinstance(cls, bytes) else str(cls)
+
+
+def _is_refs(h5, ds) -> bool:
+    return ds.dtype == h5.ref_dtype or (ds.dtype.kind == "O" and h5.check_ref_dtype(ds.dtype) is not None)
+
+
+def _is_empty(obj) -> bool:
+    return "MATLAB_empty" in obj.attrs and bool(int(np.asarray(obj.attrs["MATLAB_empty"]).flat[0]))
+
+
+def _matlab_shape(file_shape: tuple) -> tuple:
+    if len(file_shape) == 0:
+        return (1, 1)
+    if len(file_shape) == 1:
+        return (1, int(file_shape[0]))
+    return tuple(int(n) for n in file_shape[::-1])
+
+
+def _is_complex(ds) -> bool:
+    return bool(ds.dtype.names) and {"real", "imag"} <= set(ds.dtype.names)
+
+
+def _describe(h5, f, obj, depth: int = 0) -> dict | None:
+    """size, class, bytes, complex and sparse of a stored value from its metadata; None when unsure."""
+    if depth > 20:
+        return None
+    cls = _matlab_class(obj)
+    if isinstance(obj, h5.Group):
+        if "MATLAB_sparse" in obj.attrs:
+            rows = int(np.asarray(obj.attrs["MATLAB_sparse"]).flat[0])
+            cols = int(obj["jc"].size) - 1
+            nnz = int(obj["data"].size) if "data" in obj else 0
+            cplx = "data" in obj and _is_complex(obj["data"])
+            per = 1 if cls == "logical" else (16 if cplx else 8)
+            return {"size": (rows, cols), "class": cls or "double", "bytes": max(nnz, 1) * (per + 8) + (cols + 1) * 8,
+                    "complex": cplx, "sparse": True}
+        if cls != "struct":
+            return None
+        fields = [x for x in (_Reader(h5, f, None)._fields(obj) or list(obj.keys())) if x in obj]
+        total = 64 * len(fields)
+        shape: tuple = (1, 1)
+        for x in fields:
+            child = obj[x]
+            if isinstance(child, h5.Dataset) and "MATLAB_class" not in child.attrs and _is_refs(h5, child):
+                shape = _matlab_shape(child.shape)
+                part = _refs_bytes(h5, f, child, depth)
+            else:
+                d = _describe(h5, f, child, depth + 1)
+                part = None if d is None else 104 + d["bytes"]
+            if part is None:
+                return None
+            total += part
+        return {"size": shape, "class": "struct", "bytes": total, "complex": False, "sparse": False}
+    if _is_empty(obj):
+        dims = tuple(int(x) for x in np.asarray(obj[()]).flatten())
+        if cls not in _PLAIN and cls not in ("cell", "struct"):
+            return None
+        return {"size": dims if len(dims) >= 2 else (0, 0), "class": cls, "bytes": 0, "complex": False,
+                "sparse": False}
+    if cls == "canonical empty":
+        return {"size": (0, 0), "class": "double", "bytes": 0, "complex": False, "sparse": False}
+    if cls == "cell" and _is_refs(h5, obj):
+        total = _refs_bytes(h5, f, obj, depth)
+        if total is None:
+            return None
+        return {"size": _matlab_shape(obj.shape), "class": "cell", "bytes": total, "complex": False, "sparse": False}
+    if cls in _PLAIN and not _is_refs(h5, obj):
+        shape = _matlab_shape(obj.shape)
+        cplx = _is_complex(obj)
+        return {"size": shape, "class": cls, "bytes": int(np.prod(shape)) * _ITEM_BYTES[cls] * (2 if cplx else 1),
+                "complex": cplx, "sparse": False}
+    return None
+
+
+def _refs_bytes(h5, f, ds, depth: int) -> int | None:
+    total = 0
+    for r in np.asarray(ds[()], dtype=object).reshape(-1):
+        d = _describe(h5, f, f[r], depth + 1) if r else {"bytes": 0}
+        if d is None:
+            return None
+        total += 104 + d["bytes"]
+    return total
+
+
+def describe(path: str, name: str) -> dict | None:
+    """What whos and size report about one variable, read from the metadata only (None: read the value)."""
+    h5 = h5py_module()
+    with h5.File(path, "r") as f:
+        if name.startswith("#") or name not in f:
+            return None
+        return _describe(h5, f, f[name])
+
+
+def _plain_dataset(h5, f, name: str):
+    """The dataset of a non-empty numeric, char or logical variable, else None."""
+    if name.startswith("#") or name not in f:
+        return None
+    ds = f[name]
+    if not isinstance(ds, h5.Dataset) or _is_empty(ds) or _is_refs(h5, ds) or _matlab_class(ds) not in _PLAIN:
+        return None
+    return ds
+
+
+def _to_matlab(raw: np.ndarray, cls: str) -> np.ndarray:
+    """Stored values (any shape) converted to the MATLAB class, keeping the shape."""
+    a = np.asarray(raw)
+    if a.dtype.names and {"real", "imag"} <= set(a.dtype.names):
+        a = a["real"] + 1j * a["imag"]
+    if cls == "char":
+        return np.ascontiguousarray(a.astype("<u4")).view("<U1").reshape(a.shape)
+    if cls == "logical":
+        return a != 0
+    if a.dtype.kind != "c":
+        return a.astype(_DTYPES[cls])
+    return a.astype(np.complex64 if cls == "single" else np.complex128)
+
+
+def _to_stored(a: np.ndarray, cls: str, dtype) -> np.ndarray:
+    if cls == "char":
+        return np.ascontiguousarray(a.astype("<U1")).view("<u4").reshape(a.shape).astype(np.uint16)
+    if cls == "logical":
+        return a.astype(np.uint8)
+    if dtype.names:
+        out = np.empty(a.shape, dtype=dtype)
+        out["real"] = a.real
+        out["imag"] = a.imag
+        return out
+    return a.astype(dtype)
+
+
+def _selection(args: list, mshape: tuple):
+    """Per MATLAB dimension: (slice of the stored data, positions within that slice); None: read all.
+
+    The slice covers the requested positions, with their step when they are evenly spaced, so a range
+    a:s:b reads only the elements asked for. Raises MATLAB's index errors for bad or too large indices.
+    """
+    from .. import indexing as ix
+    k = len(args)
+    eshape = ix._effective_shape(mshape, k)
+    if k < len(mshape) and eshape[k - 1] != mshape[k - 1]:
+        return None  # trailing dimensions folded into the last index
+    out = []
+    for d in range(k):
+        try:
+            pos, _ = ix._to_positions(args[d], eshape[d], for_set=False)
+        except MatlabError:
+            ix.get(np.broadcast_to(np.zeros((), dtype=bool), mshape), args)  # MATLAB's message for the error
+            raise
+        if pos.size == 0:
+            return None
+        lo, hi = int(pos.min()), int(pos.max())
+        step = 1
+        if pos.size > 1:
+            diffs = np.diff(pos)
+            if diffs[0] > 0 and np.all(diffs == diffs[0]):
+                step = int(diffs[0])
+        out.append((slice(lo, hi + 1, step), (pos - lo) // step))
+    for _ in range(k, len(mshape)):
+        out.append((slice(0, 1, 1), np.zeros(1, dtype=np.int64)))
+    return out
+
+
+def _file_index(sel: list, file_ndim: int) -> tuple:
+    """h5py index of the stored dataset from per-MATLAB-dimension slices (the dimensions reversed)."""
+    if file_ndim == 1:
+        return (sel[1][0],)
+    return tuple(s for s, _ in sel[:file_ndim])[::-1]
+
+
+def _block_shape(sel: list) -> tuple:
+    return tuple(len(range(s.start, s.stop, s.step)) for s, _ in sel)
+
+
+def read_part(path: str, name: str, args: list) -> Any:
+    """name(args...) of a numeric, char or logical variable, reading only the needed part of the file.
+
+    Returns None when the variable is of another kind or the indexing form is not handled here; the
+    caller then reads the whole variable.
+    """
+    from .. import indexing as ix
+    h5 = h5py_module()
+    with h5.File(path, "r") as f:
+        ds = _plain_dataset(h5, f, name)
+        if ds is None or not args:
+            return None
+        cls = _matlab_class(ds)
+        mshape = _matlab_shape(ds.shape)
+        if len(args) == 1:
+            if args[0] is ix.COLON:
+                return None
+            n = int(np.prod(mshape))
+            pos, ishape = ix._to_positions(args[0], n, for_set=False)
+            if pos.size == 0 or ishape is None:
+                return None
+            lo = int(pos.min())
+            vals = _linear_read(ds, lo, int(pos.max()))[pos - lo]
+            shape = ix._linear_result_shape(mshape, ishape, pos.size)
+            return ix.canonical(np.ascontiguousarray(_to_matlab(vals, cls).reshape(shape, order="F")))
+        sel = _selection(args, mshape)
+        if sel is None:
+            return _folded_read(ds, cls, args, mshape)
+        raw = ds[_file_index(sel, ds.ndim)] if ds.ndim else ds[()]
+        block = np.asarray(raw).transpose().reshape(_block_shape(sel))
+        picked = block[np.ix_(*[p for _, p in sel])]
+        return ix.canonical(np.ascontiguousarray(_to_matlab(picked, cls)))
+
+
+def _folded_read(ds, cls: str, args: list, mshape: tuple) -> Any:
+    """A(i, j) with fewer indices than dimensions: the last index runs over the trailing dimensions
+    together. The elements are found by their column-major positions."""
+    from .. import indexing as ix
+    eshape = ix._effective_shape(mshape, len(args))
+    pos = [ix._to_positions(a, n, for_set=False)[0] for a, n in zip(args, eshape)]
+    if any(p.size == 0 for p in pos):
+        return None
+    linear = np.ravel_multi_index(np.ix_(*pos), eshape, order="F")
+    lo, hi = int(linear.min()), int(linear.max())
+    vals = _linear_read(ds, lo, hi)[linear - lo]
+    return ix.canonical(np.ascontiguousarray(_to_matlab(vals, cls)))
+
+
+def _linear_region(ds, lo: int, hi: int) -> tuple[tuple, int]:
+    """h5py index covering elements lo..hi (0-based, MATLAB's column-major order), and the offset of
+    its first element. Singleton dimensions do not change the order, so a vector reads only lo..hi."""
+    shape = [int(n) for n in ds.shape]
+    keep = [d for d, n in enumerate(shape) if n != 1]
+    index: list = [slice(0, 1)] * len(shape)
+    if not keep:
+        return tuple(index), 0
+    slab = int(np.prod([shape[d] for d in keep[1:]], dtype=np.int64))
+    first, last = lo // slab, hi // slab
+    for d in keep[1:]:
+        index[d] = slice(None)
+    index[keep[0]] = slice(first, last + 1)
+    return tuple(index), first * slab
+
+
+def _linear_read(ds, lo: int, hi: int) -> np.ndarray:
+    if not ds.shape:
+        return np.asarray(ds[()]).reshape(-1)
+    index, offset = _linear_region(ds, lo, hi)
+    return np.asarray(ds[index]).reshape(-1)[lo - offset:hi - offset + 1]
+
+
+def _linear_write(ds, lo: int, hi: int, values: np.ndarray) -> None:
+    if not ds.shape:
+        ds[()] = values.reshape(())
+        return
+    index, offset = _linear_region(ds, lo, hi)
+    current = np.asarray(ds[index])
+    flat = current.reshape(-1).copy()
+    flat[lo - offset:hi - offset + 1] = values
+    ds[index] = flat.reshape(current.shape)
+
+
+def _selection_for_set(args: list, mshape: tuple):
+    from .. import indexing as ix
+    eshape = ix._effective_shape(mshape, len(args))
+    for d, a in enumerate(args):
+        if a is not ix.COLON:
+            pos, _ = ix._to_positions(a, eshape[d], for_set=True)
+            if pos.size and pos.max() >= eshape[d]:
+                return None  # the variable grows: it is rewritten as a whole
+    return _selection(args, mshape)
+
+
+def write_part(path: str, name: str, args: list, value: np.ndarray) -> bool:
+    """name(args...) = value, in place, when the selection lies inside the variable and its class stays.
+
+    Returns False, having changed nothing, when the whole variable must be rewritten instead.
+    """
+    from .. import indexing as ix
+    from ..interpreter import coerce_for_assignment
+    h5 = h5py_module()
+    with h5.File(path, "r+") as f:
+        ds = _plain_dataset(h5, f, name)
+        if ds is None or not args:
+            return False
+        cls = _matlab_class(ds)
+        mshape = _matlab_shape(ds.shape)
+        kind = "<U1" if cls == "char" else bool if cls == "logical" else \
+            (np.complex64 if cls == "single" else np.complex128) if _is_complex(ds) else _DTYPES[cls]
+        probe = np.zeros((1, 1), dtype=kind)
+        cur, val = coerce_for_assignment(probe, value)
+        if cur.dtype != probe.dtype:
+            return False  # the variable would change class
+        try:
+            if len(args) == 1:
+                if args[0] is ix.COLON:
+                    return False
+                n = int(np.prod(mshape))
+                pos, _ = ix._to_positions(args[0], n, for_set=True)
+                if pos.size == 0 or pos.max() >= n or val.size not in (1, pos.size):
+                    return False
+                lo, hi = int(pos.min()), int(pos.max())
+                flat = _to_matlab(_linear_read(ds, lo, hi), cls).copy()
+                flat[pos - lo] = val.reshape(-1, order="F")
+                _linear_write(ds, lo, hi, _to_stored(flat, cls, ds.dtype))
+                return True
+            sel = _selection_for_set(args, mshape)
+            if sel is None:
+                return False
+            index = _file_index(sel, ds.ndim) if ds.ndim else ()
+            raw = np.asarray(ds[index] if ds.ndim else ds[()])
+            bshape = _block_shape(sel)
+            block = np.array(_to_matlab(raw, cls).transpose().reshape(bshape))
+            local = [np.asarray(p, dtype=float) + 1 for _, p in sel]
+            new = ix.set_(block, local, val, lambda: 0)
+            if new.size != block.size:
+                return False
+            stored = _to_stored(new.reshape(bshape[:len(mshape)]).transpose(), cls, ds.dtype).reshape(raw.shape)
+            if ds.ndim:
+                ds[index] = stored
+            else:
+                ds[()] = stored
+            return True
+        except MatlabError:
+            return False  # the general path reports the error

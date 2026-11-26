@@ -662,6 +662,60 @@ class MatFileObject(MObject):
             return Struct.scalar({"Source": char(self.path), "Writable": np.array([[self.writable]])})
         return self.value(interp, name)
 
+    def _is_v73(self, interp) -> bool:
+        src = self._open(interp)
+        return src is not None and src.kind == "7.3"
+
+    def _describe(self, interp, name: str) -> dict | None:
+        """size, class and bytes of a variable of a version 7.3 file without reading its data."""
+        if name in self._cache or not self._is_v73(interp) or name not in self.names(interp):
+            return None
+        from . import _mat73
+        return _mat73.describe(self.path, name)
+
+    def index_field(self, interp, name: str, arg_nodes: list, frame) -> Any:
+        """m.name(i, j, ...): read only the selected part of a numeric, char or logical variable.
+
+        Returns None, before evaluating any index, when the general path (reading the whole variable)
+        applies: version 7 files, variables already read, and variables of other classes.
+        """
+        info = self._describe(interp, name)
+        if info is None or info["sparse"] or info["class"] in ("cell", "struct") or 0 in info["size"]:
+            return None
+        from ..interpreter import index_value
+        from . import _mat73
+        shape_only = np.broadcast_to(np.zeros((), dtype=float), info["size"])  # for 'end'; holds no data
+        args = interp.eval_index_args(arg_nodes, shape_only, frame)
+        part = _mat73.read_part(self.path, name, args)
+        if part is not None:
+            return part
+        return index_value(self.value(interp, name), args)
+
+    def assign_field_index(self, interp, name: str, arg_nodes: list, value: Any, frame) -> bool:
+        """m.name(i, j, ...) = value: write only that part of the file when the variable keeps its size
+        and class. False, before evaluating any index, when the general path applies."""
+        if not self.writable or not isinstance(value, np.ndarray) or value.dtype.kind not in "biufcU" \
+                or (value.shape == (0, 0) and value.dtype == float):
+            return False
+        info = self._describe(interp, name)
+        if info is None or info["sparse"] or info["class"] in ("cell", "struct") or 0 in info["size"]:
+            return False
+        from . import _mat73
+        shape_only = np.broadcast_to(np.zeros((), dtype=float), info["size"])
+        args = interp.eval_index_args(arg_nodes, shape_only, frame)
+        try:
+            done = _mat73.write_part(self.path, name, args, value)
+        except OSError as e:
+            raise MatlabError(f"Unable to write the file '{self.path}': {e}") from None
+        self._stamp = None  # the next read sees the change
+        if not done:  # the variable grows or changes class: rewrite it as a whole
+            from .. import indexing as ix
+            from ..interpreter import coerce_for_assignment
+            cur, val = coerce_for_assignment(self.value(interp, name), value)
+            fill = (lambda: "\0") if cur.dtype.kind == "U" else (lambda: False) if cur.dtype == bool else (lambda: 0)
+            self.set_field(interp, name, ix.set_(cur, args, val, fill))
+        return True
+
     def set_field(self, interp, name: str, value: Any) -> "MatFileObject":
         if name == "Properties":
             if not isinstance(value, Struct) or value.data.size != 1 or "Writable" not in value.fields:
@@ -694,7 +748,7 @@ class MatFileObject(MObject):
         if name == "whos":
             wanted = [text(a) for a in rest]
             names, _ = select_names(sorted(self.names(interp)), wanted, [])
-            rows = [whos_row(n, self.value(interp, n)) for n in names]
+            rows = [self._whos_row(interp, n) for n in names]
             if nargout:
                 return [whos_struct(rows)]
             interp.out(whos_text(rows))
@@ -706,7 +760,7 @@ class MatFileObject(MObject):
             if not rest:
                 dims: tuple = (1, 1)
             else:
-                dims = tuple(shape_of(self.value(interp, text(rest[0], "variable name"))))
+                dims = self._size(interp, text(rest[0], "variable name"))
                 if len(rest) > 1:
                     d = int(np.asarray(rest[1]).flat[0])
                     return [np.array([[float(dims[d - 1] if d <= len(dims) else 1)]])]
@@ -717,6 +771,17 @@ class MatFileObject(MObject):
             return [np.array([[x]]) for x in vals]
         return super().call_method(interp, name, args, nargout)
 
+    def _whos_row(self, interp, name: str) -> dict:
+        info = self._describe(interp, name)
+        if info is None:
+            return whos_row(name, self.value(interp, name))
+        return {"name": name, "size": tuple(info["size"]), "bytes": info["bytes"], "class": info["class"],
+                "global": False, "sparse": info["sparse"], "persistent": False, "complex": info["complex"]}
+
+    def _size(self, interp, name: str) -> tuple:
+        info = self._describe(interp, name)
+        return tuple(info["size"]) if info is not None else tuple(shape_of(self.value(interp, name)))
+
     def display_lines(self) -> list[str]:
         from ..interpreter import current_interpreter
         interp = current_interpreter()
@@ -725,9 +790,9 @@ class MatFileObject(MObject):
         if interp is not None:
             try:
                 for n in sorted(self.names(interp)):
-                    v = self.value(interp, n)
-                    size = "x".join(str(d) for d in shape_of(v))
-                    lines.append(f"    {n:>19}: [{size} {class_name(v)}]")
+                    row = self._whos_row(interp, n)
+                    size = "x".join(str(d) for d in row["size"])
+                    lines.append(f"    {n:>19}: [{size} {row['class']}]")
             except MatlabError:
                 pass
         return lines
@@ -1938,6 +2003,61 @@ def _nc_attr_out(v: Any) -> Any:
     return np.ascontiguousarray(a.astype(a.dtype.newbyteorder("="))).reshape(1, -1)
 
 
+# NetCDF-4 files (HDF5 storage) are handled by _netcdf4, through h5py; the format is detected on reading.
+_NC4_FORMATS = ("netcdf4", "netcdf4_classic")
+
+
+def _nc_is4(path: str) -> bool:
+    from . import _netcdf4
+    return _netcdf4.is_netcdf4(path)
+
+
+def _nc4_dims(spec: Any) -> list:
+    """{'x', 10, 'y', Inf, 'z'} -> [(name, length or None, unlimited)] in MATLAB order."""
+    if not isinstance(spec, Cell):
+        raise MatlabError("nccreate: Dimensions must be a cell array such as {'x', 10, 'y', Inf}.")
+    items = spec.values_f()
+    out = []
+    k = 0
+    while k < len(items):
+        dname = text(items[k], "the dimension name")
+        if k + 1 < len(items) and not is_text(items[k + 1]):
+            x = float(np.asarray(items[k + 1], dtype=float).flat[0])
+            if not np.isinf(x) and (x < 1 or x != int(x)):
+                raise MatlabError(f"nccreate: the length of dimension '{dname}' must be a positive integer or Inf.")
+            out.append((dname, None if np.isinf(x) else int(x), bool(np.isinf(x))))
+            k += 2
+        else:
+            out.append((dname, None, False))
+            k += 1
+    return out
+
+
+def _nc4_location(h5, f, loc: str, fn: str):
+    """The group or variable an attribute location names: '/', '/grp', 'var' or '/grp/var'."""
+    from . import _netcdf4
+    obj = f.get("/" + loc.strip("/")) if loc.strip("/") else f
+    if isinstance(obj, h5.Group):
+        return obj
+    return _netcdf4.find_var(h5, f, loc, fn)
+
+
+def _nccreate4(path: str, loc: str, opts: dict, fmt: str | None, exists: bool) -> None:
+    from . import _netcdf4
+    dims = _nc4_dims(opts["Dimensions"]) if "Dimensions" in opts else []
+    kind = text(opts["Datatype"]) if "Datatype" in opts else "double"
+    if exists:
+        h5, f = _netcdf4.open_file(path, "r+")
+        have = _netcdf4.file_format(f)
+        if fmt is not None and fmt != have:
+            f.close()
+            raise MatlabError(f"nccreate: '{path}' is a {have} file; its format cannot be changed to '{fmt}'.")
+    else:
+        h5, f = _netcdf4.create_file(path, fmt)
+    with f:
+        _netcdf4.create_var(h5, f, loc, dims, kind, opts)
+
+
 @builtin("nccreate")
 def _nccreate(interp, args, nargout):
     if len(args) < 2:
@@ -1946,14 +2066,22 @@ def _nccreate(interp, args, nargout):
     name = text(args[1], "the variable name").lstrip("/")
     opts = _struct_options(list(args[2:]), ("Dimensions", "Datatype", "Format", "FillValue", "ChunkSize",
                                              "DeflateLevel", "Shuffle"), "nccreate")
+    fmt = text(opts["Format"]).lower() if "Format" in opts else None
+    if fmt is not None and fmt not in ("classic", "64bit") + _NC4_FORMATS:
+        raise MatlabError(f"nccreate: the format '{fmt}' is not supported; use 'classic', '64bit', 'netcdf4' or "
+                          "'netcdf4_classic'.")
+    exists = os.path.isfile(path)
+    if (exists and _nc_is4(path)) or (not exists and fmt in _NC4_FORMATS):
+        _nccreate4(path, text(args[1], "the variable name"), opts, fmt, exists)
+        return None
+    if exists and fmt in _NC4_FORMATS:
+        raise MatlabError(f"nccreate: '{path}' is a classic NetCDF file; adding a variable with 'Format', '{fmt}' is "
+                          "not supported, because the format of an existing file cannot be changed.")
     for key in ("ChunkSize", "DeflateLevel", "Shuffle"):
         if key in opts:
-            raise MatlabError(f"nccreate: '{key}' applies to NetCDF-4 files, which are not supported. mylab writes "
-                              "the classic NetCDF format.")
-    fmt = text(opts["Format"]).lower() if "Format" in opts else "classic"
-    if fmt not in ("classic", "64bit"):
-        raise MatlabError(f"nccreate: the format '{fmt}' is not supported; use 'classic' or '64bit'.")
-    exists = os.path.isfile(path)
+            raise MatlabError(f"nccreate: '{key}' applies to NetCDF-4 files only; create the file with 'Format', "
+                              "'netcdf4' or 'netcdf4_classic'.")
+    fmt = fmt or "classic"
     nc = _nc_load(path) if exists else _NcFile()
     if not exists:
         nc.version = 2 if fmt == "64bit" else 1
@@ -2038,6 +2166,18 @@ def _ncwrite(interp, args, nargout):
     if len(args) < 3 or len(args) > 5:
         raise MatlabError("ncwrite(filename, varname, data) or ncwrite(filename, varname, data, start, stride).")
     path = _nc_path(interp, args[0])
+    if _nc_is4(path):
+        from . import _netcdf4
+        h5, f = _netcdf4.open_file(path, "r+")
+        with f:
+            name = text(args[1], "the variable name")
+            ds = _netcdf4.find_var(h5, f, name, "ncwrite")
+            nd = len(_netcdf4.var_dims(h5, f, ds))
+            mshape = (1,) * max(nd, 1)
+            start, _, stride = _nc_region(([args[3], np.full((1, max(nd, 1)), np.inf), args[4]] if len(args) > 4
+                                           else [args[3]] if len(args) > 3 else []), mshape, "ncwrite")
+            _netcdf4.write_var(h5, f, ds, args[2], start[::-1][:nd], stride[::-1][:nd], name)
+        return None
     nc = _nc_load(path)
     name = text(args[1], "the variable name")
     var = _nc_var(nc, name)
@@ -2120,7 +2260,18 @@ def _ncwrite(interp, args, nargout):
 def _ncread(interp, args, nargout):
     if len(args) < 2 or len(args) > 5:
         raise MatlabError("ncread(filename, varname) or ncread(filename, varname, start, count, stride).")
-    nc = _nc_load(_nc_path(interp, args[0]))
+    path = _nc_path(interp, args[0])
+    if _nc_is4(path):
+        from . import _netcdf4
+        h5, f = _netcdf4.open_file(path)
+        with f:
+            name = text(args[1], "the variable name")
+            ds = _netcdf4.find_var(h5, f, name, "ncread")
+            nd = len(_netcdf4.var_dims(h5, f, ds))
+            start, count, stride = _nc_region(list(args[2:]), (1,) * nd, "ncread")
+            raw, cls = _netcdf4.read_var(h5, f, ds, start[::-1][:nd], count[::-1][:nd], stride[::-1][:nd], name)
+            return _netcdf4.unpack(h5, ds, _netcdf4.to_matlab(h5, raw, cls, nd), cls)
+    nc = _nc_load(path)
     name = text(args[1], "the variable name")
     var = _nc_var(nc, name)
     data = var["data"]
@@ -2197,6 +2348,15 @@ def _ncinfo(interp, args, nargout):
     if not args or len(args) > 2:
         raise MatlabError("ncinfo(filename) or ncinfo(filename, varname).")
     path = _nc_path(interp, args[0])
+    if _nc_is4(path):
+        from . import _netcdf4
+        h5, f = _netcdf4.open_file(path)
+        with f:
+            loc = text(args[1], "the location") if len(args) == 2 else "/"
+            obj = f.get("/" + loc.strip("/")) if loc.strip("/") else f
+            if isinstance(obj, h5.Group):
+                return Struct.scalar(_netcdf4.group_info(h5, f, obj, path))
+            return Struct.scalar(_netcdf4.var_info(h5, f, _netcdf4.find_var(h5, f, loc, "ncinfo"), path))
     nc = _nc_load(path)
     if len(args) == 2 and text(args[1]).strip("/") != "":
         name = text(args[1]).lstrip("/")
@@ -2227,6 +2387,21 @@ def _ncdisp(interp, args, nargout):
     if not args or len(args) > 3:
         raise MatlabError("ncdisp(filename) or ncdisp(filename, varname).")
     path = _nc_path(interp, args[0])
+    if _nc_is4(path):
+        from . import _netcdf4
+        h5, f = _netcdf4.open_file(path)
+        with f:
+            loc = text(args[1], "the location") if len(args) > 1 else "/"
+            obj = f.get("/" + loc.strip("/")) if loc.strip("/") else f
+            only = None
+            if not isinstance(obj, h5.Group):
+                ds = _netcdf4.find_var(h5, f, loc, "ncdisp")
+                obj, only = ds.parent, ds.name.rsplit("/", 1)[-1]
+            lines = ["Source:", f"           {os.path.abspath(path)}", "Format:",
+                     f"           {_netcdf4.file_format(f)}"]
+            lines += _netcdf4.disp_lines(h5, f, obj, only, "")
+        interp.out("\n".join(lines) + "\n")
+        return None
     nc = _nc_load(path)
     only = text(args[1]).lstrip("/") if len(args) > 1 and text(args[1]).strip("/") else None
     if only is not None:
@@ -2264,8 +2439,18 @@ def _ncdisp(interp, args, nargout):
 def _ncreadatt(interp, args, nargout):
     if len(args) != 3:
         raise MatlabError("ncreadatt(filename, location, attname): the location is '/' or a variable name.")
-    nc = _nc_load(_nc_path(interp, args[0]))
+    path = _nc_path(interp, args[0])
     loc, att = text(args[1], "the location"), text(args[2], "the attribute name")
+    if _nc_is4(path):
+        from . import _netcdf4
+        h5, f = _netcdf4.open_file(path)
+        with f:
+            obj = _nc4_location(h5, f, loc, "ncreadatt")
+            if att not in obj.attrs:
+                raise MatlabError(f"The attribute '{att}' was not found at '{loc}'.",
+                                  "MATLAB:imagesci:netcdf:libraryFailure")
+            return _netcdf4.attr_out(h5, obj, att)
+    nc = _nc_load(path)
     attrs = nc.attrs if loc.strip("/") == "" else _nc_var(nc, loc)["attrs"]
     if att not in attrs:
         raise MatlabError(f"The attribute '{att}' was not found at '{loc}'.", "MATLAB:imagesci:netcdf:libraryFailure")
@@ -2277,6 +2462,17 @@ def _ncwriteatt(interp, args, nargout):
     if len(args) != 4:
         raise MatlabError("ncwriteatt(filename, location, attname, value): the location is '/' or a variable name.")
     path = _nc_path(interp, args[0])
+    if _nc_is4(path):
+        from . import _netcdf4
+        h5, f = _netcdf4.open_file(path, "r+")
+        with f:
+            loc, att = text(args[1], "the location"), text(args[2], "the attribute name")
+            obj = _nc4_location(h5, f, loc, "ncwriteatt")
+            if att in _netcdf4._HIDDEN:
+                raise MatlabError(f"ncwriteatt: '{att}' is reserved for the NetCDF-4 storage layout.")
+            dtype = obj.dtype if att == "_FillValue" and isinstance(obj, h5.Dataset) else None
+            _netcdf4.attr_write(h5, obj, att, args[3], _netcdf4.file_format(f) == "netcdf4_classic", dtype)
+        return None
     nc = _nc_load(path)
     loc, att = text(args[1], "the location"), text(args[2], "the attribute name")
     attrs = nc.attrs if loc.strip("/") == "" else _nc_var(nc, loc)["attrs"]
