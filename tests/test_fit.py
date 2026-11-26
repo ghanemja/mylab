@@ -1,6 +1,6 @@
 """fit, fittype, fitoptions, cfit and sfit, checked against values computed here with NumPy/SciPy.
 
-The census data and the quoted bounds of its quadratic fit are those of MATLAB's fit documentation.
+CDATE/POP are the U.S. decennial census counts 1790-1990 in millions (U.S. Census Bureau, public domain).
 """
 
 import numpy as np
@@ -48,10 +48,9 @@ def test_poly2_census_coefficients_bounds_and_display(census):
     assert "Linear model Poly2:" in out
     assert "f(x) = p1*x^2 + p2*x + p3" in out
     assert "Coefficients (with 95% confidence bounds):" in out
-    # the values printed in MATLAB's documentation for this fit
-    assert "p1 =    0.006541  (0.006124, 0.006958)" in out
-    assert "p2 =      -23.51  (-25.09, -21.93)" in out
-    assert "p3 =   2.113e+04  (1.964e+04, 2.262e+04)" in out
+    # one line per coefficient: the value right-aligned in 11 columns, then its bounds, all with %.4g
+    for k, name in enumerate(("p1", "p2", "p3")):
+        assert f"{name} = {c[k]:11.4g}  ({ci[0, k]:.4g}, {ci[1, k]:.4g})" in out
     assert m.num("f.p1").item() == pytest.approx(c[0], rel=1e-9)
     assert m.str("class(f)") == "cfit" and m.num("isa(f, 'cfit')").item()
 
