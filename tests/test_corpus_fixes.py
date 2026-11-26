@@ -235,3 +235,28 @@ def test_voronoin():
     corners = sorted(map(tuple, V[inner - 1].round(9).tolist()))
     assert corners == [(0.0, 0.5), (0.5, 0.0), (0.5, 1.0), (1.0, 0.5)]
     assert all(1 in num(m, f"C{{{k}}}").ravel() for k in range(1, 5))  # the corner cells are unbounded
+
+
+# -- split collapses delimiters, exact bucky coordinates, limits kept when the axes turn 3-D -------------------
+
+def test_split_collapses_consecutive_delimiters():
+    m = Interpreter(out=lambda s: None)
+    m.execute("t = split('3  16 1 0'); u = split('a,,b', ','); w = split('a,,b', ',', 'CollapseDelimiters', false);")
+    assert [to_str(x) for x in m.eval_expression("t").values_f()] == ["3", "16", "1", "0"]
+    assert num(m, "numel(u)").item() == 2 and num(m, "numel(w)").item() == 3
+    with pytest.raises(MatlabError, match="'Collapse' is not supported|CollapseDelims"):
+        m.execute("split('a b', ' ', 'CollapseDelims', true)")
+
+
+def test_bucky_faces_are_exactly_planar():
+    m = Interpreter(out=lambda s: None)
+    m.execute("[B, V] = bucky; f = convhulln(V); n = cross(V(f(:,2),:) - V(f(:,1),:), V(f(:,3),:) - V(f(:,1),:));"
+              "n = n ./ sqrt(sum(n .^ 2, 2)); d = n * n'; k = sum(d(:) > 1 - 1e-14);")
+    # the 116 hull triangles lie in 32 planes (12 pentagons in 3 triangles, 20 hexagons in 4)
+    assert num(m, "size(f, 1)").item() == 116 and num(m, "k").item() == 12 * 9 + 20 * 16
+
+
+def test_axis_limits_survive_view3():
+    m = Interpreter(out=lambda s: None)
+    m.execute("figure; axis([-10 10 -10 10 -10 10]); hold on; view(3); x = xlim; z = zlim;")
+    assert num(m, "x").tolist() == [[-10, 10]] and num(m, "z").tolist() == [[-10, 10]]

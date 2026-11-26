@@ -1694,7 +1694,7 @@ def _bucky_geometry():
         for perm in even:
             v = [b[i] for i in perm]
             for signs in itertools.product((1, -1), repeat=3):
-                pts.add(tuple(round(s * x, 12) for s, x in zip(signs, v)))
+                pts.add(tuple(s * x + 0.0 for s, x in zip(signs, v)))  # exact; + 0.0 makes -0 into 0
     V = np.array(sorted(pts, key=lambda q: (-q[2], np.arctan2(q[1], q[0]))))
     d = np.linalg.norm(V[:, None, :] - V[None, :, :], axis=2)
     A = (np.abs(d - 2.0) < 1e-9).astype(float)

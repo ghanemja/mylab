@@ -862,7 +862,10 @@ class TestText:
         assert m.str("erase('abcabc', {'a', 'c'})") == "bb"
 
     def test_split_join(self, m):
-        c = m.interp.eval_expression("split('a b  c')")  # every blank separates: two blanks give an empty piece
+        # MATLAB's split treats consecutive delimiters as one ('CollapseDelimiters' is true by default)
+        c = m.interp.eval_expression("split('a b  c')")
+        assert c.shape == (3, 1) and [to_s(x) for x in c.data.ravel()] == ["a", "b", "c"]
+        c = m.interp.eval_expression("split('a b  c', ' ', 'CollapseDelimiters', false)")
         assert c.shape == (4, 1) and [to_s(x) for x in c.data.ravel()] == ["a", "b", "", "c"]
         c = m.interp.eval_expression("split('a,b;c', {',', ';'})")
         assert [to_s(x) for x in c.data.ravel()] == ["a", "b", "c"]

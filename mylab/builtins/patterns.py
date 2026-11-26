@@ -19,7 +19,7 @@ from ..errors import MatlabError
 from ..objects import MObject
 from ..values import Cell, MString, StringArray, char, class_name, is_char, string_result, to_numeric, to_str
 from ._registry import BUILTINS, builtin
-from ._util import nargs, parse_options
+from ._util import is_text, nargs, parse_options, text, unknown_option_error
 
 _LETTER = r"[^\W\d_]"
 _ALNUM = r"[^\W_]"
@@ -943,12 +943,22 @@ def _first_unit_dim(shape: tuple) -> int:
 
 @builtin("split")
 def _split(interp, args, nargout):
+    args = list(args)
+    collapse = True  # consecutive delimiters count as one unless 'CollapseDelimiters' is false
+    if len(args) >= 3 and is_text(args[-2]) and len(text(args[-2])) > 1 \
+            and "collapsedelimiters".startswith(text(args[-2]).lower()):
+        collapse = bool(np.asarray(to_numeric(args[-1])).flat[0])
+        args = args[:-2]
+    elif len(args) >= 3 and is_text(args[-2]) and len(args) % 2 == 0:
+        raise unknown_option_error("split", text(args[-2]), ["CollapseDelimiters"], None)
     nargs(args, 1, 3, "split")
     t = TextArg(args[0], "split")
     if len(args) > 1 and not (isinstance(args[1], np.ndarray) and args[1].size == 0 and not is_char(args[1])):
         rx = _search(args[1], False)
     else:
         rx = re.compile(r"\s")
+    if collapse:
+        rx = re.compile(f"(?:{rx.pattern})+", rx.flags)
     if any(s is None for s in t.items):
         raise MatlabError("split: the text must not have missing values.", "MATLAB:string:MissingNotSupported")
     results = [_split_one(s, rx) for s in t.items]

@@ -15,7 +15,9 @@ MODERN_TEXT = [
     'assert(isequal(split("a,b;c", [",", ";"]), ["a"; "b"; "c"]));',
     "assert(isequal(split('a b c'), {'a'; 'b'; 'c'}));",
     'assert(isequal(split(["a b"; "c d"]), ["a" "b"; "c" "d"]));',
-    'assert(isequal(split("a  b"), ["a"; ""; "b"]));',
+    'assert(isequal(split("a  b"), ["a"; "b"]));',  # consecutive delimiters count as one by default
+    'assert(isequal(split("a  b", " ", "CollapseDelimiters", false), ["a"; ""; "b"]));',
+    'assert(isequal(split("a,,b", ","), ["a"; "b"]));',
     '[parts, delims] = split("a,b;c", [",", ";"]); assert(isequal(delims, [","; ";"]));',
     'assert(isequal(split("a-b-c", "-", 2), ["a" "b" "c"]));',
     'assert(isequal(splitlines("a" + newline + "b"), ["a"; "b"]));',

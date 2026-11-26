@@ -163,9 +163,22 @@ def _replace_axes(interp, ax, projection: str):
     spec = ax.get_subplotspec() if hasattr(ax, "get_subplotspec") else None
     pos = ax.get_position()
     layout = st.layouts.get(_fig_number(interp, fig) or -1)
+    keep = {}  # limits set by hand survive the change between 2-D and 3-D, as in MATLAB
+    if getattr(ax, "name", "") in ("rectilinear", "3d") and projection in ("rectilinear", "3d"):
+        for axis_name in ("x", "y", "z"):
+            if axis_name == "z" and not hasattr(ax, "get_zlim"):
+                if getattr(ax, "_mylab_zlim", None) is not None:
+                    keep["z"] = ax._mylab_zlim
+            elif not getattr(ax, f"get_autoscale{axis_name}_on")():
+                keep[axis_name] = getattr(ax, f"get_{axis_name}lim")()
     ax.remove()
     kw = {} if projection == "rectilinear" else {"projection": projection}
     new = fig.add_subplot(spec, **kw) if spec is not None else fig.add_axes(pos, **kw)
+    for axis_name, lims in keep.items():
+        if axis_name == "z" and not hasattr(new, "set_zlim"):
+            new._mylab_zlim = tuple(lims)
+        else:
+            getattr(new, f"set_{axis_name}lim")(*lims)
     if layout is not None:
         layout.replace(ax, new)
     known = st.handles.pop(id(ax), None)
@@ -6150,6 +6163,8 @@ def _axis(interp, args, nargout):
             _set_lim(ax, "y", lim[2], lim[3])
             if lim.size >= 6 and three_d:
                 _set_lim(ax, "z", lim[4], lim[5])
+            elif lim.size >= 6:
+                ax._mylab_zlim = (float(lim[4]), float(lim[5]))  # used once the axes turn 3-D (view(3))
             if lim.size == 8:
                 for m in _mappables(ax):
                     m.set_clim(lim[6], lim[7])
@@ -7792,7 +7807,15 @@ def _getpoints(interp, args, nargout):
 # -- axes, rectangles and finding objects ----------------------------------------------------------
 
 def _name_values(args, fname: str) -> list:
-    """[(name, value), ...] from trailing Name,Value arguments."""
+    """[(name, value), ...] from trailing Name,Value arguments (a structure stands for its fields)."""
+    flat = []
+    for a in args:
+        if isinstance(a, Struct) and a.data.size == 1:
+            for f in a.fields:
+                flat += [char(f), a.get_field(0, f)]
+        else:
+            flat.append(a)
+    args = flat
     if len(args) % 2 or not all(is_text(a) for a in args[::2]):
         raise MatlabError(f"{fname} options must be name/value pairs.")
     return [(text(args[i]), args[i + 1]) for i in range(0, len(args), 2)]
