@@ -92,8 +92,8 @@ class FitType(MObject):
 
     def method(self) -> str:
         if self.category == "interpolant":
-            return {"linearinterp": "LinearInterpolant", "nearestinterp": "NearestInterpolant",
-                    "cubicinterp": "CubicSplineInterpolant", "pchipinterp": "PchipInterpolant"}[self.name]
+            from ._surffit import METHODS
+            return {**METHODS, "pchipinterp": "PchipInterpolant"}[self.name]
         if self.category == "spline":
             return "SmoothingSpline"
         if self.category == "lowess":
@@ -126,10 +126,15 @@ class FitType(MObject):
         return self.coeffs + self.probs + self.indep
 
     def formula_text(self) -> str:
+        if self.category == "interpolant" and len(self.indep) == 2:
+            return {"biharmonicinterp": "biharmonic surface computed from p",
+                    "thinplateinterp": "thin-plate spline surface computed from p"}.get(
+                        self.name, "piecewise polynomial surface computed from p")
         if self.category == "interpolant" or self.category == "spline":
             return "piecewise polynomial computed from p"
         if self.category == "lowess":
-            return "lowess (linear) smoothing regression computed from p"
+            return ("lowess (linear)" if self.name == "lowess" else "loess (quadratic)") + \
+                " smoothing regression computed from p"
         return self.expr
 
     def header(self) -> str:
@@ -493,8 +498,16 @@ _INTERP_LABELS = {"linearinterp": "Linear interpolant", "nearestinterp": "Neares
                   "cubicinterp": "Cubic interpolant", "pchipinterp": "Shape-preserving (pchip) interpolant"}
 
 
+def _surface_interp(n: str) -> FitType:
+    from ._surffit import SURFACE_INTERPS
+    return FitType(name=n, label=SURFACE_INTERPS[n], category="interpolant", coeffs=["p"], expr="",
+                   indep=["x", "y"], dep="z")
+
+
 def _library(name: str) -> FitType | None:
     n = name.lower()
+    if n in ("biharmonicinterp", "thinplateinterp"):  # surfaces only
+        return _surface_interp(n)
     if n in _INTERP_LABELS:
         return FitType(name=n, label=_INTERP_LABELS[n], category="interpolant", coeffs=["p"], expr="")
     if n == "smoothingspline":
@@ -737,6 +750,7 @@ _METHOD_OPTS = {
     "NonlinearLeastSquares": ["StartPoint", "Lower", "Upper", "Algorithm", "DiffMinChange", "DiffMaxChange",
                               "Display", "MaxFunEvals", "MaxIter", "TolFun", "TolX", "Robust"],
     "LinearInterpolant": [], "NearestInterpolant": [], "CubicSplineInterpolant": [], "PchipInterpolant": [],
+    "BiharmonicInterpolant": [], "ThinPlateInterpolant": [],
     "SmoothingSpline": ["SmoothingParam"],
     "LowessFit": ["Span", "Robust"],
 }
@@ -1239,6 +1253,8 @@ def _parse_fit_args(interp, args: list):
         user_opts = rest.pop(0)
     pairs = parse_options(rest, _ALL_OPTS + ["problem"], "fit")
     ft = _make_fittype(interp, spec, [], "fit")
+    if ft.category == "interpolant" and X.shape[1] == 2 and len(ft.indep) == 1 and ft.name != "pchipinterp":
+        ft = _surface_interp(ft.name)  # linear, nearest and cubic interpolants also fit surfaces
     if len(ft.indep) != X.shape[1]:
         if X.shape[1] == 2:
             raise MatlabError(f"fit: the model {ft.name} is a curve model (one independent variable), but X has "
@@ -1322,18 +1338,27 @@ def _fit(interp, args, nargout):
                       xrange=_ranges(Xk))
         numparam = p
     else:
+        from . import _surffit
         if ft.category == "lowess":
-            raise MatlabError("fit: lowess and loess surface fits are not supported yet.",
-                              "curvefit:fit:notSupported")
-        if len(ft.indep) != 1:
-            raise MatlabError("fit: interpolant surface fits are not supported yet.", "curvefit:fit:notSupported")
-        pp, extra = _fit_pp(ft, cols[0], yk, wk, o, interp)
-        fitobj = CFit(ft, np.zeros(0), [], mu, sd, pp=pp, xrange=_ranges(Xk), extra=extra)
-        yhat = fitobj.eval_norm([cols[0]])
+            robust = o.values.get("Robust") or "Off"
+            model = _surffit.Lowess(ft.name, cols[0], cols[1], yk, wk, float(o.values.get("Span") or 0.25),
+                                    "Bisquare" if robust == "On" else robust)
+            fitobj = CFit(ft, np.zeros(0), [], mu, sd, pp=model, xrange=_ranges(Xk))
+            yhat = fitobj.eval_norm(cols)
+            numparam = model.dof()
+        elif len(ft.indep) == 2:
+            model = _surffit.Interpolant(ft.name, cols[0], cols[1], yk)
+            fitobj = CFit(ft, np.zeros(0), [], mu, sd, pp=model, xrange=_ranges(Xk))
+            yhat = fitobj.eval_norm(cols)
+            numparam = nobs
+        else:
+            pp, extra = _fit_pp(ft, cols[0], yk, wk, o, interp)
+            fitobj = CFit(ft, np.zeros(0), [], mu, sd, pp=pp, xrange=_ranges(Xk), extra=extra)
+            yhat = fitobj.eval_norm([cols[0]])
+            numparam = nobs if ft.category == "interpolant" else _spline_dof(fitobj, cols[0], yk, wk)
         info = {"exitflag": 1, "algorithm": ""}
         J = np.zeros((nobs, 0))
         wfin = wk
-        numparam = nobs if ft.category == "interpolant" else _spline_dof(fitobj, cols[0], yk, wk)
     r = yk - yhat
     sse = float(np.sum(wk * r ** 2)) if ft.category != "interpolant" else 0.0
     ybar = float(np.sum(wk * yk) / np.sum(wk)) if np.sum(wk) > 0 else float(np.mean(yk))
@@ -1430,8 +1455,7 @@ class CFit(MObject):
     def get_field(self, interp, name: str) -> Any:
         if name in self.ft.coeffs:
             if self.pp is not None:
-                from .numerics import _pp_from_ppoly
-                return _pp_from_ppoly(self.pp, 1)
+                return _p_value(self)
             return np.array([[self.coef[self.ft.coeffs.index(name)]]])
         if name in self.ft.probs:
             return np.array([[self.P[self.ft.probs.index(name)]]])
@@ -1463,6 +1487,8 @@ class CFit(MObject):
 
     def eval_norm(self, Xn: list[np.ndarray]) -> np.ndarray:
         if self.pp is not None:
+            if self.surface:
+                return np.asarray(self.pp(Xn[0], Xn[1]), dtype=float)
             return np.asarray(self.pp(Xn[0]), dtype=float)
         with np.errstate(all="ignore"):
             return np.asarray(self.ft.evaluate(self.coef, Xn, self.P), dtype=float)
@@ -1536,6 +1562,19 @@ class CFit(MObject):
 
     def format_display(self, name: str) -> str:
         return f"{name} = \n\n" + "\n".join(self.lines(name)) + "\n\n"
+
+
+def _p_value(f: CFit) -> Any:
+    """The 'p' coefficient of a nonparametric fit: a piecewise polynomial, or a struct for a surface."""
+    if f.surface:
+        def conv(v):
+            if isinstance(v, str):
+                return char(v)
+            a = np.asarray(v, dtype=float)
+            return a.reshape(1, 1) if a.ndim == 0 else (a.reshape(-1, 1) if a.ndim == 1 else a)
+        return Struct.scalar({k: conv(v) for k, v in f.pp.describe().items()})
+    from .numerics import _pp_from_ppoly
+    return _pp_from_ppoly(f.pp, 1)
 
 
 def _confint(f: CFit, level: float) -> np.ndarray:
@@ -1693,8 +1732,7 @@ def _coeffvalues(obj, interp, args, nargout):
     f = _need_cfit(obj, "coeffvalues")
     _no_args(args, "coeffvalues")
     if f.pp is not None:
-        from .numerics import _pp_from_ppoly
-        return Cell.from_list([_pp_from_ppoly(f.pp, 1)])
+        return Cell.from_list([_p_value(f)])
     return _row(f.coef)
 
 

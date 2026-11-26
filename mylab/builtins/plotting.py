@@ -159,9 +159,20 @@ def _yy_restyle(ax) -> None:
     ax.yaxis.label.set_color(color)
 
 
-def _replace_axes(interp, ax, projection: str):
-    """Replace ``ax`` by a new axes with another projection in the same place."""
+def _replace_axes(interp, ax, projection: str, carry: bool = False):
+    """Replace ``ax`` by a new axes with another projection in the same place.
+
+    ``carry``: the objects drawn in a 2-D axes move into the new 3-D one (and back to 2-D, for an axes
+    that view(3) turned into 3-D with nothing 3-D added since), keeping their handles.
+    """
+    from . import _axes3d_convert as conv
     st = _state(interp)
+    info = None
+    kind = getattr(ax, "name", "")
+    if carry and kind == "rectilinear" and projection == "3d" and not _is_colorbar_axes(ax):
+        info = conv.detach_2d(ax)
+    elif carry and kind == "3d" and projection == "rectilinear" and conv.can_return_to_2d(ax):
+        info = conv.detach_3d(ax)
     fig = ax.figure
     hold = st.hold.get(id(ax), False)
     spec = ax.get_subplotspec() if hasattr(ax, "get_subplotspec") else None
@@ -178,6 +189,8 @@ def _replace_axes(interp, ax, projection: str):
     ax.remove()
     kw = {} if projection == "rectilinear" else {"projection": projection}
     new = fig.add_subplot(spec, **kw) if spec is not None else fig.add_axes(pos, **kw)
+    if info is not None:
+        (conv.attach_3d if projection == "3d" else conv.attach_2d)(interp, ax, new, info)
     for axis_name, lims in keep.items():
         if axis_name == "z" and not hasattr(new, "set_zlim"):
             new._mylab_zlim = tuple(lims)
@@ -219,7 +232,8 @@ def _axes(interp, fresh: bool = True, projection: str | None = None):
                 ax = fig.add_subplot(subplot_grid(fig, 1, 1)[0, 0], **kw)
             st.axes[st.current] = ax
     if projection is not None and getattr(ax, "name", "rectilinear") != projection:
-        ax = _replace_axes(interp, ax, projection)
+        # with hold on (or no clearing), what the axes holds carries over between 2-D and 3-D
+        ax = _replace_axes(interp, ax, projection, carry=not fresh or st.hold.get(id(ax), False))
         _axes_created(interp, ax)
         _tick_aligned(ax)
         return ax
@@ -909,19 +923,49 @@ class _GraphicsBase(MObject):
 
     @staticmethod
     def concat(items: list, axis: int):
-        hs: list[GraphicsHandle] = []
+        grids = []
         for it in items:
-            if isinstance(it, GraphicsHandle):
-                hs.append(it)
-            elif isinstance(it, GraphicsArray):
-                hs.extend(it.items)
+            if isinstance(it, (GraphicsHandle, GraphicsArray)):
+                grids.append(_handle_grid(it))
             elif isinstance(it, np.ndarray) and it.size == 0:
                 continue
             else:
                 raise MatlabError("Graphics handles can only be concatenated with other graphics handles.")
-        if len(hs) == 1:
-            return hs[0]
-        return GraphicsArray(hs, row=(axis == 1))
+        if not grids:
+            return np.zeros((0, 0))
+        try:
+            joined = np.concatenate(grids, axis=min(axis, 1))
+        except ValueError:
+            if not all(1 in g.shape for g in grids):
+                raise MatlabError("Dimensions of arrays being concatenated are not consistent.") from None
+            # vectors of different orientations: joined end to end (MATLAB asks for matching shapes)
+            flat = [x for g in grids for x in g.flatten(order="F")]
+            return GraphicsArray(flat, row=(axis == 1))
+        return _from_handle_grid(joined)
+
+
+def _handle_grid(v) -> np.ndarray:
+    """Graphics handles as a 2-D numpy object array in MATLAB's shape."""
+    if isinstance(v, GraphicsHandle):
+        g = np.empty((1, 1), dtype=object)
+        g[0, 0] = v
+        return g
+    g = np.empty(len(v.items), dtype=object)
+    for k, h in enumerate(v.items):
+        g[k] = h
+    return g.reshape(v.matlab_shape(), order="F")
+
+
+def _from_handle_grid(g: np.ndarray):
+    """The value for a numpy object array of handles: one handle, or an array of them."""
+    if g.ndim > 2:
+        if any(d != 1 for d in g.shape[2:]):
+            raise MatlabError("Arrays of graphics objects have two dimensions here; use reshape to keep them 2-D.")
+        g = g.reshape(g.shape[:2], order="F")
+    if g.size == 1:
+        return g.flat[0]
+    items = list(g.flatten(order="F"))
+    return GraphicsArray(items, row=g.shape[0] == 1 and g.shape[1] != 1, shape=g.shape)
 
 
 class GraphicsHandle(_GraphicsBase):
@@ -1049,8 +1093,8 @@ class GraphicsArray(_GraphicsBase):
     def __init__(self, items: list[GraphicsHandle], row: bool = False, shape: tuple | None = None):
         self.items = list(items)   # column-major order
         self.row = row
-        self.shape2 = tuple(shape) if shape is not None and int(np.prod(shape)) == len(self.items) \
-            and len(shape) == 2 and 1 not in shape else None
+        self.shape2 = tuple(int(d) for d in shape) if shape is not None and len(shape) == 2 \
+            and int(np.prod(shape)) == len(self.items) and 1 not in shape else None
 
     def class_name(self) -> str:
         kinds = {h.kind for h in self.items}
@@ -1078,9 +1122,16 @@ class GraphicsArray(_GraphicsBase):
         return NotImplemented
 
     def has_method(self, name: str) -> bool:
-        return name in ("delete", "isvalid", "double")
+        return name in ("delete", "isvalid", "double") or name in _GRID_FUNCS
+
+    def unary_op(self, interp, op: str) -> Any:
+        if op in ("'", ".'"):
+            return _from_handle_grid(_handle_grid(self).T)
+        return NotImplemented
 
     def call_method(self, interp, name: str, args: list, nargout: int) -> list:
+        if name in _GRID_FUNCS:
+            return [_grid_call(interp, name, args, nargout)]
         if name == "delete":
             for h in self.items:
                 _delete_handle(interp, h)
@@ -1107,42 +1158,18 @@ class GraphicsArray(_GraphicsBase):
         _redraw(interp)
         return self
 
-    def _indices(self, args: list) -> list[int]:
-        if len(args) == 2 and self.shape2 is not None:  # h(i, j) into a matrix of handles
-            r, c = self.shape2
-            sub = []
-            for a, n in zip(args, (r, c)):
-                if is_char(a) and text(a) == ":":
-                    sub.append(list(range(n)))
-                else:
-                    sub.append([int(round(float(x))) - 1 for x in np.real(fnum(a)).flatten(order="F")])
-            for vals, n in zip(sub, (r, c)):
-                if any(i < 0 or i >= n for i in vals):
-                    raise MatlabError("Index exceeds the size of the array of graphics handles.")
-            return [i + j * r for j in sub[1] for i in sub[0]]
-        if len(args) == 2:  # h(1, k) / h(k, 1)
-            a, b = args
-            args = [b] if self.row else [a]
-        if len(args) != 1:
-            raise MatlabError("Use one index into an array of graphics handles.")
-        a = args[0]
-        if is_char(a) and text(a) == ":":
-            return list(range(len(self.items)))
-        v = np.asarray(a)
-        if v.dtype == bool:
-            return [int(i) for i in np.flatnonzero(v.flatten(order="F"))]
-        idx = [int(round(float(x))) - 1 for x in np.real(fnum(a)).flatten(order="F")]
-        for i in idx:
-            if i < 0 or i >= len(self.items):
-                raise MatlabError(f"Index exceeds the number of array elements. Index must not exceed "
-                                  f"{len(self.items)}.")
-        return idx
-
     def index_get(self, interp, args: list) -> Any:
-        idx = self._indices(args)
-        if len(idx) == 1:
-            return self.items[idx[0]]
-        return GraphicsArray([self.items[i] for i in idx], self.row)
+        from .. import indexing
+        args = [indexing.COLON if (isinstance(a, np.ndarray) and is_char(a) and text(a) == ":") else a
+                for a in args]
+        try:
+            picked = indexing.get(_handle_grid(self), args)
+        except MatlabError as e:
+            if "exceed" in str(e):
+                raise MatlabError(f"Index exceeds the number of array elements. Index must not exceed "
+                                  f"{len(self.items)}.") from None
+            raise
+        return _from_handle_grid(picked)
 
     def index_set(self, interp, args: list, value: Any) -> Any:
         k = _single_index(args)
@@ -1162,6 +1189,33 @@ class GraphicsArray(_GraphicsBase):
         for h in self.items:
             lines.append(f"    {_short(h.kind)}" + ("" if _alive(h) else " (deleted)"))
         return lines
+
+
+_GRID_FUNCS = frozenset({"transpose", "ctranspose", "reshape", "flip", "fliplr", "flipud", "permute",
+                         "rot90", "circshift", "squeeze", "repmat", "horzcat", "vertcat", "cat"})
+
+
+def _grid_call(interp, name: str, args: list, nargout: int) -> Any:
+    """Shape functions (reshape, flip, permute, ...) on arrays of graphics handles: the built-in
+    function rearranges the positions 1..n, which then pick the handles."""
+    from ._registry import BUILTINS
+    if name in ("horzcat", "vertcat", "cat"):
+        if name == "cat":
+            dim = to_int(args[0], "dim")
+            return _GraphicsBase.concat(list(args[1:]), 0 if dim == 1 else dim - 1)
+        return _GraphicsBase.concat(list(args), 1 if name == "horzcat" else 0)
+    if name == "repmat":
+        reps = [to_int(x, "count") for a in args[1:] for x in np.asarray(fnum(a)).flatten()]
+        if len(reps) == 1:
+            reps *= 2
+        return _from_handle_grid(np.tile(_handle_grid(args[0]), reps))
+    src = next(a for a in args if isinstance(a, (GraphicsHandle, GraphicsArray)))
+    grid = _handle_grid(src)
+    positions = np.arange(1.0, grid.size + 1).reshape(grid.shape, order="F")
+    rest = [positions if a is src else a for a in args]
+    moved = np.asarray(BUILTINS[name](interp, rest, 1))
+    picked = grid.flatten(order="F")[moved.astype(np.int64) - 1] if moved.size else np.empty(moved.shape, object)
+    return _from_handle_grid(picked.reshape(moved.shape))
 
 
 def _single_index(args: list) -> int | None:
@@ -2683,12 +2737,29 @@ def _view_set(h, v):
     vals = np.real(fnum(v)).flatten()
     if vals.size != 2:
         raise MatlabError("View must be [azimuth elevation] in degrees.")
-    if not hasattr(h.obj, "view_init"):
-        if abs(vals[1] - 90) > 1e-9 or abs(vals[0]) > 1e-9:
-            raise MatlabError("These axes hold a 2-D plot, which is always seen from above.")
-        return
-    h.obj.view_init(elev=float(vals[1]), azim=float(vals[0]) - 90)
-    h.obj._mylab_view = (float(vals[0]), float(vals[1]))
+    _view_apply(h.interp, h.obj, (float(vals[0]), float(vals[1])))
+
+
+def _view_apply(interp, ax, want: tuple):
+    """Look at ``ax`` from azimuth/elevation ``want`` (degrees, MATLAB's convention); returns the axes.
+
+    A 2-D axes seen from anywhere but straight above becomes a 3-D axes holding the same objects, and an
+    axes made 3-D that way returns to 2-D when it is seen from above again (view(2))."""
+    from . import _axes3d_convert as conv
+    az, el = float(want[0]), float(want[1])
+    flat = abs(el - 90) < 1e-9 and abs(((az + 180) % 360) - 180) < 1e-9
+    if not hasattr(ax, "view_init"):
+        if flat or getattr(ax, "name", "") != "rectilinear":
+            return ax
+        ax = _replace_axes(interp, ax, "3d", carry=True)
+    elif flat and conv.can_return_to_2d(ax):
+        ax = _replace_axes(interp, ax, "rectilinear", carry=True)
+        _tick_aligned(ax)
+        return ax
+    # matplotlib measures azimuth from the x-axis; MATLAB from the negative y-axis
+    ax.view_init(elev=el, azim=az - 90)
+    ax._mylab_view = (az, el)
+    return ax
 
 
 def _axcolor_set(which):
@@ -5041,17 +5112,7 @@ def _view(interp, args, nargout):
     elif len(args) > 2:
         raise MatlabError("view expects view(az, el), view([az el]), view([x y z]), view(2) or view(3).")
     if want is not None:
-        if not hasattr(ax, "view_init"):
-            flat = abs(want[1] - 90) < 1e-9 and abs(((want[0] + 180) % 360) - 180) < 1e-9
-            if flat:
-                return (_row([0, 90]) if nargout == 1 else (_num_val(0), _num_val(90))) if nargout else None
-            if ax.has_data():
-                raise MatlabError("These axes hold a 2-D plot, which is always seen from above. Draw with a 3-D "
-                                  "function (plot3, surf, ...) to change the view.")
-            ax = _axes(interp, fresh=False, projection="3d")
-        # matplotlib measures azimuth from the x-axis; MATLAB from the negative y-axis
-        ax.view_init(elev=want[1], azim=want[0] - 90)
-        ax._mylab_view = want
+        ax = _view_apply(interp, ax, want)
         _redraw(interp)
     if nargout > 0:
         if hasattr(ax, "azim"):
