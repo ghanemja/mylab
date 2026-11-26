@@ -19,6 +19,7 @@ from ..errors import MatlabError
 from ..values import (
     Cell, MString, StringArray, Struct, char, is_char, string_result, to_int, to_str,
 )
+from . import _fastcsv
 from ._registry import builtin
 from ._util import bool_scalar, fnum, is_text, nargs, num, text
 from .system import file_handle
@@ -65,7 +66,12 @@ def _lines_of(content: str) -> list[str]:
 
 def _sniff_delimiter(lines: list[str]) -> str | None:
     """Guess the field delimiter; None means runs of whitespace."""
-    sample = [ln for ln in lines if ln.strip()][:50]
+    sample = []
+    for ln in lines:  # the first 50 non-blank lines
+        if ln.strip():
+            sample.append(ln)
+            if len(sample) == 50:
+                break
     for d in (",", "\t", ";", "|"):
         counts = [ln.count(d) for ln in sample[-20:]]
         if counts and min(counts) > 0:
@@ -102,6 +108,10 @@ def _is_text_row(fields: list[str]) -> bool:
 
 def _numeric_table(lines: list[str], delim: str | None, header: int | None) -> tuple[np.ndarray, list[str], int]:
     """Parse delimited numeric text; returns (matrix, header lines, number of header lines)."""
+    if not header:
+        fast = _fastcsv.parse_numeric(lines, delim)  # nothing but plain numbers: convert in bulk
+        if fast is not None:
+            return fast, [], 0
     rows = [_split_fields(ln, delim) for ln in lines]
     if header is None:
         header = 0
@@ -219,6 +229,12 @@ def _write_rows(fname: str, rows: list[list[str]], delim: str, append: bool, new
         raise MatlabError(f"Unable to write to '{fname}': {e.strerror}.")
 
 
+def _write_matrix(fname: str, a, delim: str, fmt: str | None, append: bool, newline: str = "\n") -> None:
+    """Write a matrix (or cell/string array) as delimited text."""
+    if not _fastcsv.write_numeric(fname, a, delim, fmt, append, newline):
+        _write_rows(fname, _matrix_rows(a, delim, fmt), delim, append, newline)
+
+
 def _matrix_rows(a, delim: str, fmt: str | None) -> list[list[str]]:
     if isinstance(a, Cell):
         return [[_cell_text(a.data[i, j], delim, fmt) for j in range(a.data.shape[1])]
@@ -251,7 +267,7 @@ def _writematrix(interp, args, nargout):
     _, opts = _name_value(rest, {"Delimiter", "WriteMode", "FileType", "QuoteStrings"})
     delim = _delimiter(opts["delimiter"]) if "delimiter" in opts else _default_delim(fname)
     append = "writemode" in opts and text(opts["writemode"]).lower() == "append"
-    _write_rows(fname, _matrix_rows(a, delim, None), delim, append)
+    _write_matrix(fname, a, delim, None, append)
     return None
 
 
@@ -260,7 +276,7 @@ def _csvwrite(interp, args, nargout):
     nargs(args, 2, 4, "csvwrite")
     fname, a = text(args[0]), num(args[1])
     a = _pad_offset(a, args[2:])
-    _write_rows(fname, _matrix_rows(a, ",", "%.5g"), ",", False)
+    _write_matrix(fname, a, ",", "%.5g", False)
     return None
 
 
@@ -303,7 +319,7 @@ def _dlmwrite(interp, args, nargout):
         r = to_int(opts.get("roffset", np.array([[0.0]])), "roffset")
         c = to_int(opts.get("coffset", np.array([[0.0]])), "coffset")
         a = _pad_offset(num(a), [np.array([[float(r)]]), np.array([[float(c)]])])
-    _write_rows(fname, _matrix_rows(a if not is_char(a) else num(a), delim, fmt), delim, append, newline)
+    _write_matrix(fname, a if not is_char(a) else num(a), delim, fmt, append, newline)
     return None
 
 
