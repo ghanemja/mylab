@@ -4,7 +4,7 @@ from mylab.api import Session
 def test_session_run_output_and_error():
     s = Session()
     r = s.run("x = 2 + 3")
-    assert r.ok and r.output == "x = 5\n"
+    assert r.ok and r.output == "\nx =\n\n     5\n\n"
     r = s.run("y = x * 2; undefined_fn(1)")
     assert not r.ok and "undefined_fn" in r.error and r.error_line == 1
     assert s.get("y") == 10

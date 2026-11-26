@@ -158,6 +158,20 @@ class While(Node):
 
 
 @dataclass
+class DoUntil(Node):
+    """Octave's ``do ... until cond``."""
+    body: list[Node]
+    cond: Node
+
+
+@dataclass
+class UnwindProtect(Node):
+    """Octave's ``unwind_protect ... unwind_protect_cleanup ... end_unwind_protect``."""
+    body: list[Node]
+    cleanup: list[Node]
+
+
+@dataclass
 class Switch(Node):
     subject: Node
     cases: list[tuple[Node, list[Node]]]

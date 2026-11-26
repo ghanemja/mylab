@@ -14,9 +14,9 @@ from ..values import (
 
 def nargs(args: list, lo: int, hi: int | None, name: str) -> None:
     if len(args) < lo:
-        raise MatlabError(f"Not enough input arguments for {name}.")
+        raise MatlabError("Not enough input arguments.", "MATLAB:minrhs")
     if hi is not None and len(args) > hi:
-        raise MatlabError(f"Too many input arguments for {name}.")
+        raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
 
 
 def num(v: Any) -> np.ndarray:

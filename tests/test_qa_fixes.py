@@ -139,18 +139,18 @@ def test_functions_without_end_still_work(m):
 
 
 def test_complex_and_format_display(m):
-    assert m.run("a = 1.5 + 2i") == "a = 1.5000 + 2.0000i\n"
-    assert m.run("b = sqrt(-2)") == "b = 0.0000 + 1.4142i\n"
-    assert m.run("c = 3 - 4i") == "c = 3 - 4i\n"
+    assert m.run("a = 1.5 + 2i") == "\na =\n\n   1.5000 + 2.0000i\n\n"
+    assert m.run("b = sqrt(-2)") == "\nb =\n\n   0.0000 + 1.4142i\n\n"
+    assert m.run("c = 3 - 4i") == "\nc =\n\n   3.0000 - 4.0000i\n\n"
     out = m.run("r = [2.0946; -1.0473+1.1359i]")
     assert "2.0946 + 0.0000i" in out and "-1.0473 + 1.1359i" in out
     m.run("format long")
-    assert m.run("pi*1000") == "ans = 3.141592653589793e+03\n"
-    assert m.run("pi") == "ans = 3.141592653589793\n"
+    assert m.run("pi*1000") == "\nans =\n\n     3.141592653589793e+03\n\n"
+    assert m.run("pi") == "\nans =\n\n   3.141592653589793\n\n"
     m.run("format short g")
     assert "2.5" in m.run("[1e-5 2.5 1000]") and "0.0000" not in m.run("[1e-5 2.5 1000]")
     m.run("format short")
-    assert m.run("pi") == "ans = 3.1416\n"
+    assert m.run("pi") == "\nans =\n\n    3.1416\n\n"
 
 
 def test_small_numeric_cases(m):
@@ -184,7 +184,7 @@ def test_command_syntax_after_semicolon_and_type_headers(m):
     assert len(parse("surf(peaks(10)); shading interp\n").body) == 2
     assert "3×1 logical array" in m.run("b = [true; true; false]")
     assert "1×3 int32 row vector" in m.run("k = int32([1 2 3])")
-    assert m.run("t = true") == "t =\n\n  logical\n\n   1\n\n"
+    assert m.run("t = true") == "\nt =\n\n  logical\n\n   1\n\n"
     assert "{0×0 char}" in m.run("c = {''}")
 
 

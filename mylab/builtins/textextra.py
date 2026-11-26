@@ -74,8 +74,8 @@ def _last_error(interp) -> MatlabError | None:
     while exc is not None and not isinstance(exc, MatlabError):
         exc = exc.__context__
     if exc is not None:
-        interp._last_error = exc
-    return getattr(interp, "_last_error", None)
+        interp.last_error = exc
+    return interp.last_error
 
 
 @builtin("lasterr")
@@ -85,7 +85,7 @@ def _lasterr(interp, args, nargout):
     msg = char(err.message if err else "")
     ident = char(err.identifier if err else "")
     if args:
-        interp._last_error = MatlabError(text(args[0]), text(args[1]) if len(args) > 1 else "")
+        interp.last_error = MatlabError(text(args[0]), text(args[1]) if len(args) > 1 else "")
     return (msg, ident) if nargout > 1 else msg
 
 
@@ -99,10 +99,10 @@ def _lasterror(interp, args, nargout):
     if args:
         a = args[0]
         if is_text(a) and text(a).lower() == "reset":
-            interp._last_error = None
+            interp.last_error = None
         elif isinstance(a, Struct) and a.data.size == 1:
             d = a.data.flat[0]
-            interp._last_error = MatlabError(to_str(d.get("message", char(""))), to_str(d.get("identifier", char(""))))
+            interp.last_error = MatlabError(to_str(d.get("message", char(""))), to_str(d.get("identifier", char(""))))
         else:
             raise MatlabError("lasterror: the input must be 'reset' or an error struct.")
     return out

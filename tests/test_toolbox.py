@@ -901,11 +901,11 @@ class TestCells:
 
     def test_celldisp(self, m):
         out = m.run("celldisp({1, 'two', [3 4]})")
-        assert "C{1} = 1" in out and "C{2} = 'two'" in out and "C{3} =" in out
+        assert "C{1} =\n\n     1\n" in out and "C{2} =\n\n    'two'\n" in out and "C{3} =\n\n     3     4\n" in out
         out = m.run("q = {5; 6}; q{1} = {7, 8}; celldisp(q, 'Q')")
-        assert "Q{1}{1} = 7" in out and "Q{2} = 6" in out
+        assert "Q{1}{1} =\n\n     7\n" in out and "Q{2} =\n\n     6\n" in out
         out = m.run("celldisp({1 2; 3 4})")
-        assert "C{2,1} = 3" in out
+        assert "C{2,1} =\n\n     3\n" in out
 
 
 class TestMatrixTests:

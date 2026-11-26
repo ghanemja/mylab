@@ -17,6 +17,9 @@ def _is_str(v: Any) -> bool:
     return isinstance(v, (MString, StringArray))
 
 
+_NO_OPERATORS = (Cell, Struct, FunctionHandle)  # values that arithmetic and comparison reject
+
+
 def _string_binop(op: str, a: Any, b: Any) -> Any:
     """Elementwise + (join) and comparisons on string arrays, with implicit expansion."""
     x, y = align(string_data(a), string_data(b))
@@ -59,10 +62,8 @@ def _dims(shape) -> str:
 def _check_broadcast(a: np.ndarray, b: np.ndarray, op: str) -> None:
     for da, db in zip(a.shape, b.shape):
         if da != db and da != 1 and db != 1:
-            raise MatlabError(
-                f"Arrays have incompatible sizes for this operation ({_dims(a.shape)} {op} {_dims(b.shape)}).",
-                "MATLAB:sizeDimensionsMustMatch",
-            )
+            raise MatlabError("Arrays have incompatible sizes for this operation.",
+                              "MATLAB:sizeDimensionsMustMatch")
 
 
 _SINGLE = (np.dtype(np.float32), np.dtype(np.complex64))
@@ -358,6 +359,11 @@ def binop(op: str, a: Any, b: Any) -> Any:
         r = _scalar_fast(op, float(a[0, 0]), float(b[0, 0]))
         if r is not None:
             return np.array([[r]], dtype=bool if isinstance(r, bool) else float)
+    if isinstance(a, _NO_OPERATORS) or isinstance(b, _NO_OPERATORS):
+        from .values import class_name
+        bad = a if isinstance(a, _NO_OPERATORS) else b
+        raise MatlabError(f"Operator '{op}' is not supported for operands of type '{class_name(bad)}'.",
+                          "MATLAB:UndefinedFunction")
     if op in COMPARE:
         return compare(op, a, b)
     if op in ("&", "|"):

@@ -187,11 +187,11 @@ def test_text_conversions(m):
 
 
 def test_display(m):
-    assert m.run("t = datetime(2024,1,5)") == "t = \n\n  datetime\n\n   05-Jan-2024\n\n"
+    assert m.run("t = datetime(2024,1,5)") == "\nt = \n\n  datetime\n\n   05-Jan-2024\n\n"
     assert m.run("t = datetime(2024,1,5:6)") == \
-        "t = \n\n  1×2 datetime array\n\n   05-Jan-2024   06-Jan-2024\n\n"
+        "\nt = \n\n  1×2 datetime array\n\n   05-Jan-2024   06-Jan-2024\n\n"
     assert m.run("t = [datetime(2024,1,5,1,2,3); NaT]") == \
-        "t = \n\n  2×1 datetime array\n\n   05-Jan-2024 01:02:03\n   NaT\n\n"
+        "\nt = \n\n  2×1 datetime array\n\n   05-Jan-2024 01:02:03\n   NaT\n\n"
     assert m.run("disp(datetime(2024,1,5))") == "   05-Jan-2024\n"
     assert "0×0 empty datetime array" in m.run("t = datetime.empty")
     assert "{[05-Jan-2024]}" in m.run("c = {datetime(2024,1,5)}")
@@ -447,8 +447,8 @@ def test_duration_display(m, expr, want):
 def test_duration_format_property(m):
     m.run("d = [hours(1) minutes(30)]; d.Format = 'hh:mm:ss'; f = d.Format;")
     assert m.str("f") == "hh:mm:ss"
-    assert m.run("d") == "d = \n\n  1×2 duration array\n\n   01:00:00   00:30:00\n\n"
-    assert m.run("x = hours(2)") == "x = \n\n  duration\n\n   2 hr\n\n"
+    assert m.run("d") == "\nd = \n\n  1×2 duration array\n\n   01:00:00   00:30:00\n\n"
+    assert m.run("x = hours(2)") == "\nx = \n\n  duration\n\n   2 hr\n\n"
     with pytest.raises(MatlabError):
         m.run("d.Format = 'bogus';")
 

@@ -13,7 +13,7 @@ from . import indexing as ix
 from . import fuse
 from . import jit
 from . import ops
-from .display import format_display, function_handle_text, unparse
+from .display import FORMAT, finish_layout, format_display, function_handle_text, object_header, unparse
 from .errors import BreakSignal, ContinueSignal, MatlabError, ReturnSignal
 from .objects import MObject
 from .parser import parse
@@ -161,6 +161,7 @@ class Interpreter:
         self.jit_enabled = os.environ.get("MYLAB_JIT", "1") != "0"  # loop compiler (see jit.py)
         self.input_func: Callable[[str], str] = input
         self.cleanup_count = 0  # live onCleanup objects; non-zero makes function exit look for them
+        FORMAT.reset()  # a new session starts with 'format short' and 'format loose'
 
     # -- public API -------------------------------------------------------------------
     @property
@@ -301,6 +302,21 @@ class Interpreter:
                 if stmt.ident:
                     frame.set(stmt.ident, make_exception(e))
                 self.exec_block(stmt.handler, frame)
+        elif t is A.DoUntil:  # Octave: do ... until cond
+            while True:
+                try:
+                    self.exec_block(stmt.body, frame)
+                except BreakSignal:
+                    break
+                except ContinueSignal:
+                    pass
+                if is_true(self.eval(stmt.cond, frame)):
+                    break
+        elif t is A.UnwindProtect:  # Octave: the cleanup block always runs
+            try:
+                self.exec_block(stmt.body, frame)
+            finally:
+                self.exec_block(stmt.cleanup, frame)
         elif t is A.Break:
             raise BreakSignal()
         elif t is A.Continue:
@@ -341,9 +357,9 @@ class Interpreter:
                 value.cls.call(self, "display", [value], 0)
                 return
             if "disp" in value.cls.methods:
-                self.out(f"{name} = \n\n")
+                self.out(object_header(name))
                 value.cls.call(self, "disp", [value], 0)
-                self.out("\n")
+                self.out(finish_layout("\n"))
                 return
         self.out(format_display(name, value))
 
@@ -917,7 +933,9 @@ class Interpreter:
     def _short_circuit_operand(self, v: Any, op: str) -> bool:
         a = to_numeric(v)
         if a.size != 1:
-            raise MatlabError(f"Operands to the {op} operator must be convertible to logical scalar values.")
+            raise MatlabError("Operands to the logical AND (&&) and OR (||) operators must be convertible to "
+                              "logical scalar values. Use the ANY or ALL functions to reduce operands to "
+                              "logical scalar values.", "MATLAB:nonLogicalConditional")
         return bool(np.real(a.flat[0]) != 0)
 
     def make_lambda(self, node: A.Lambda, frame: Frame) -> FunctionHandle:
@@ -1047,8 +1065,8 @@ class Interpreter:
                 picked = ix.get(string_data(base_val), args)
                 return [char(x or "") for x in picked.flatten(order="F")]
             if not isinstance(base_val, Cell):
-                raise MatlabError(f"Brace indexing is not supported for variables of type "
-                                  f"'{class_name(base_val)}'.")
+                raise MatlabError("Brace indexing is not supported for variables of this type.",
+                                  "MATLAB:cellRefFromNonCell")
             args = self.eval_index_args(node.args, base_val, frame)
             return Cell(ix.get(base_val.data, args)).values_f()
         if t is A.Field or t is A.DynField:
@@ -1071,7 +1089,8 @@ class Interpreter:
                 if name not in base_val.fields:
                     raise MatlabError(f"Unrecognized field name \"{name}\".", "MATLAB:nonExistentField")
                 return [d[name] for d in base_val.data.flatten(order="F")]
-            raise MatlabError(f"Dot indexing is not supported for variables of type '{class_name(base_val)}'.")
+            raise MatlabError("Dot indexing is not supported for variables of this type.",
+                              "MATLAB:structRefFromNonStruct")
         return [self.eval(node, frame)]
 
     def _struct_field(self, s: Struct, name: str) -> Any:
@@ -1241,6 +1260,9 @@ class Interpreter:
             raise MatlabError("Maximum recursion limit reached.")
         except (ValueError, TypeError, IndexError, np.linalg.LinAlgError, ZeroDivisionError,
                 OverflowError, KeyError) as e:
+            if isinstance(e, IndexError) and str(e) == "list index out of range" and len(args) < 3:
+                # a built-in that read an argument the caller did not pass
+                raise MatlabError("Not enough input arguments.", "MATLAB:minrhs") from e
             raise MatlabError(f"Error using {name}: {e}") from e
         if result is None:
             return []
@@ -1289,54 +1311,8 @@ class Interpreter:
     def _apply_arguments_block(self, fn: A.Function, args: list[Any], frame: Frame,
                                functions: dict) -> None:
         """Defaults, conversion and validation from a function's ``arguments`` block."""
-        from .classdef import validate_value
-        positional = [e for e in fn.arguments if "." not in e.name]
-        name_value = [e for e in fn.arguments if "." in e.name]
-        n_pos = len(positional)
-        self.frames.append(frame)
-        try:
-            for k, entry in enumerate(positional):
-                context = f"Invalid argument at position {k + 1}."
-                if k < len(args):
-                    frame.vars[entry.name] = validate_value(self, entry.attrs, args[k], entry.name, functions,
-                                                            context)
-                elif entry.default is not None:
-                    value = self.eval(entry.default, frame)
-                    frame.vars[entry.name] = validate_value(self, entry.attrs, value, entry.name, functions,
-                                                            context)
-                    frame.missing_inputs = frame.missing_inputs - {entry.name}
-                else:
-                    raise MatlabError(f"Invalid argument at position {k + 1}. Not enough input arguments.",
-                                      "MATLAB:minrhs")
-            if name_value:
-                group = name_value[0].name.split(".")[0]
-                fields = {e.name.split(".", 1)[1]: e for e in name_value}
-                pairs = args[n_pos:]
-                if len(pairs) % 2:
-                    raise MatlabError("Name-value arguments must come in pairs.")
-                given: dict[str, Any] = {}
-                for k in range(0, len(pairs), 2):
-                    key = to_str(pairs[k], "argument name")
-                    match = [f for f in fields if f.lower() == key.lower()]
-                    if not match:
-                        raise MatlabError(f"Invalid name-value argument '{key}'. Valid names are: "
-                                          + ", ".join(fields) + ".")
-                    given[match[0]] = pairs[k + 1]
-                opts = Struct()
-                for fname, entry in fields.items():
-                    context = f"Invalid value for '{fname}' argument."
-                    if fname in given:
-                        opts.set_field(0, fname, validate_value(self, entry.attrs, given[fname], entry.name,
-                                                                functions, context))
-                    elif entry.default is not None:
-                        opts.set_field(0, fname, validate_value(self, entry.attrs, self.eval(entry.default, frame),
-                                                                entry.name, functions, context))
-                frame.vars[group] = opts
-                frame.missing_inputs = frame.missing_inputs - {group}
-            elif len(args) > n_pos and not (fn.params and fn.params[-1] == "varargin"):
-                raise MatlabError(f"Too many input arguments for function '{fn.name}'.", "MATLAB:TooManyInputs")
-        finally:
-            self.frames.pop()
+        from .argblock import apply_inputs
+        apply_inputs(self, fn, args, frame, functions)
 
     def run_cleanups(self, frame: Frame, keep: list[str] | tuple = ()) -> None:
         """Run the onCleanup objects a finished function leaves behind (not the ones it returns)."""
@@ -1366,14 +1342,14 @@ class Interpreter:
             has_varargout = bool(outputs) and outputs[-1] == "varargout"
             info = fn._callinfo = (
                 has_varargin, params[:-1] if has_varargin else params,
-                any("." in e.name for e in fn.arguments),
+                any("." in e.name or e.attrs.get("_repeating") for e in fn.arguments),
                 has_varargout, outputs[:-1] if has_varargout else outputs,
             )
         has_varargin, fixed, takes_name_value, has_varargout, fixed_out = info
         if len(args) > len(fixed) and not has_varargin and not takes_name_value:
-            raise MatlabError(f"Too many input arguments for function '{fn.name}'.", "MATLAB:TooManyInputs")
+            raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
         if nargout > len(fixed_out) and not has_varargout:
-            raise MatlabError(f"Too many output arguments for function '{fn.name}'.")
+            raise MatlabError("Too many output arguments.", "MATLAB:TooManyOutputs")
         if parent is not None:
             shared = _shared_names(fn, parent)
             frame: Frame = SharedFrame(self, parent, shared, functions=functions, name=fn.name,
@@ -1410,6 +1386,9 @@ class Interpreter:
                 self.run_cleanups(frame, fixed_out)
         results: list[Any] = []
         wanted = max(nargout, 1)
+        if fn.__dict__.get("out_arguments"):
+            from .argblock import apply_outputs
+            apply_outputs(self, fn, frame)
         for i, name in enumerate(fixed_out):
             if i >= wanted:
                 break
@@ -1417,7 +1396,8 @@ class Interpreter:
                 if i == 0 and nargout == 0:
                     return []
                 raise MatlabError(f"Output argument \"{name}\" (and possibly others) not assigned a "
-                                  f"value in the execution with \"{fn.name}\" function.")
+                                  f"value in the execution with \"{fn.name}\" function.",
+                                  "MATLAB:unassignedOutputs")
             results.append(frame.get(name))
         if has_varargout and len(results) < wanted:
             extra = frame.lookup("varargout")

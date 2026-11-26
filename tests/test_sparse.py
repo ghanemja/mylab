@@ -533,9 +533,9 @@ def test_iteration_limit_and_report(s):
 
 def test_display(s):
     out = s.run("S = sparse([1 2],[1 3],[1.5 -2])")
-    assert out == ("S =\n\n  2×3 sparse double matrix (2 nonzeros)\n\n"
+    assert out == ("\nS =\n\n  2×3 sparse double matrix (2 nonzeros)\n\n"
                    "   (1,1)      1.5000\n   (2,3)     -2.0000\n\n")
-    assert s.run("Z = sparse(2,3)") == "Z =\n\n   All zero sparse: 2×3\n\n"
+    assert s.run("Z = sparse(2,3)") == "\nZ =\n\n   All zero sparse: 2×3\n\n"
     assert "sparse logical matrix (1 nonzero)" in s.run("S > 1")
     assert s.run("disp(sparse([0 3]))") == "   (1,2)       3\n"
     assert "{2×3 sparse double}" in s.run("c = {S}")
