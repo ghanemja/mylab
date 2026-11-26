@@ -2,7 +2,7 @@
 
 A MAT-file stores numeric, logical and char arrays, sparse matrices, cells and structs. Values of
 any other kind (string arrays, tables, datetimes, durations, categoricals, containers.Map,
-function handles, classdef objects) are written as a scalar struct whose first field,
+timeseries, function handles, classdef objects) are written as a scalar struct whose first field,
 ``mylab_class_``, names the kind. MATLAB and Octave read such a variable as an ordinary struct;
 mylab turns it back into the original value.
 
@@ -132,6 +132,9 @@ class Encoder:
                            values=Cell.from_list([self.encode(v.store[k], var) for k in keys]))
         if isinstance(v, MExceptionObject):
             return _marker("MException", identifier=char(v.identifier), message=char(v.message))
+        from .timeseries import TimeSeries, to_saved
+        if isinstance(v, TimeSeries):
+            return _marker("timeseries", **{k: self.encode(x, var) for k, x in to_saved(v).items()})
         if isinstance(v, ObjectArray):
             return _marker("object_array", name=char(v.cls.full_name if v.cls else ""), size=_dims(v.data.shape),
                            items=Cell.from_list([self.encode(x, var) for x in v.elements()]))
@@ -262,6 +265,9 @@ class Decoder:
             for k, x in zip(d["keys"].values_f(), d["values"].values_f()):
                 m.store[m.norm_key(k)] = self.decode(x)
             return m
+        if kind == "timeseries":
+            from .timeseries import from_saved
+            return from_saved({k: self.decode(x) for k, x in d.items() if k != MARK})
         if kind == "MException":
             from ..objects import MExceptionObject
             return MExceptionObject(_opt_text(d["identifier"]) or "", _opt_text(d["message"]) or "")

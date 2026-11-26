@@ -19,6 +19,8 @@ CASES = [
     ("categorical({'a', 'b'})", []),
     ('["a" "b"]', []),
     ("containers.Map({'a'}, {1})", ["Count", "KeyType", "ValueType"]),
+    ("timeseries([1; 2])", ["Events", "Name", "UserData", "Data", "DataInfo", "Time", "TimeInfo", "Quality",
+                            "QualityInfo", "IsTimeFirst", "TreatNaNasMissing", "Length"]),
     ("griddedInterpolant(1:3, [4 5 6])", ["GridVectors", "Values", "Method", "ExtrapolationMethod"]),
     ("scatteredInterpolant([0; 1; 0; 1], [0; 0; 1; 1], [1; 2; 3; 4])",
      ["Points", "Values", "Method", "ExtrapolationMethod"]),
