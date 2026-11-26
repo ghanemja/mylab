@@ -101,6 +101,8 @@ def describe_object(interp, h) -> dict | None:
         if getattr(obj, "_mylab_constant", None) is not None:
             axis, value = obj._mylab_constant
             props.update(Value=np.array([[float(value)]]), InterceptAxis=char(axis))
+            if getattr(obj, "_mylab_affect_limits", False):
+                props["AffectAutoLimits"] = char("on")
             return _node("constantline", props)
         props["XData"], props["YData"] = _f(obj.get_xdata()).reshape(1, -1), _f(obj.get_ydata()).reshape(1, -1)
         if hasattr(obj, "get_data_3d"):
@@ -422,7 +424,8 @@ def build_object(interp, ax, node: dict):
         return hs[0] if hs else None
     if kind == "constantline":
         which = _txt(p.get("InterceptAxis"), "x")
-        h = call("xline" if which == "x" else "yline", p["Value"])
+        more = [char("AffectAutoLimits"), char("on")] if _txt(p.get("AffectAutoLimits"), "off") == "on" else []
+        h = call("xline" if which == "x" else "yline", p["Value"], *more)
     elif kind in ("line", "stair"):
         if not (_has(p, "XData") and _has(p, "YData")):
             return None

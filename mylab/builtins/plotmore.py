@@ -295,11 +295,96 @@ def _stem3(interp, args, nargout):
 
 # -- reference lines ------------------------------------------------------------------------------
 
+_CONSTANT_CLASSES: dict = {}
+
+
+def _constant_classes() -> dict:
+    """The matplotlib classes behind xline/yline (made on first use: matplotlib is imported lazily).
+
+    ``line``: a Line2D that is drawn without clipping, so that a line lying on an axis limit shows in
+    full on top of the axes frame, and that is not drawn at all while its value is outside the limits.
+    ``transform``: the usual axes-and-data transform of such a line, except that matplotlib does not take
+    it for data, so the line leaves the automatic limits alone (AffectAutoLimits 'off')."""
+    if not _CONSTANT_CLASSES:
+        from matplotlib.lines import Line2D
+        from matplotlib.transforms import BlendedGenericTransform
+
+        class ConstantLine2D(Line2D):
+            def draw(self, renderer):
+                ax, info = self.axes, getattr(self, "_mylab_constant", None)
+                if ax is not None and info is not None:
+                    axis, value = info
+                    lo, hi = sorted(float(v) for v in getattr(ax, f"get_{axis}lim")())
+                    tol = 1e-9 * max(hi - lo, abs(lo), abs(hi), 1e-300)
+                    if not lo - tol <= value <= hi + tol:
+                        return
+                super().draw(renderer)
+
+        class OutsideLimitsTransform(BlendedGenericTransform):
+            # Matplotlib asks this when it updates the data limits from a line; the method was renamed
+            # (spelling) in Matplotlib 3.10, so both names answer.
+            def contains_branch_separately(self, other_transform):
+                return (False, False)
+
+            contains_branch_seperately = contains_branch_separately
+
+        _CONSTANT_CLASSES.update(line=ConstantLine2D, transform=OutsideLimitsTransform)
+    return _CONSTANT_CLASSES
+
+
+def _constant_transform(ax, axis: str, affects: bool):
+    """Data units along the line's own axis, axes units (0 to 1) across the whole axes along the other."""
+    if affects:
+        return ax.get_xaxis_transform(which="grid") if axis == "x" else ax.get_yaxis_transform(which="grid")
+    cls = _constant_classes()["transform"]
+    return cls(ax.transData, ax.transAxes) if axis == "x" else cls(ax.transAxes, ax.transData)
+
+
+def _new_constant_line(ax, axis: str, value: float, affects: bool, kw: dict):
+    """An xline/yline in a 2-D axes (see :func:`_constant_classes`)."""
+    xs, ys = ([value, value], [0.0, 1.0]) if axis == "x" else ([0.0, 1.0], [value, value])
+    # Above the axes frame (zorder 2.5) and plotted lines, below text; flat ends, as it is not clipped.
+    ln = _constant_classes()["line"](xs, ys, zorder=2.6, solid_capstyle="butt", dash_capstyle="butt", **kw)
+    ln._mylab_constant = (axis, float(value))
+    ln._mylab_affect_limits = affects
+    ln.set_transform(_constant_transform(ax, axis, affects))
+    ax.add_line(ln)
+    ln.set_clip_on(False)
+    if affects:
+        ax.autoscale_view(scalex=axis == "x", scaley=axis == "y")
+    return ln
+
+
+def _constant_affect_get(h):
+    return char("on" if getattr(h.obj, "_mylab_affect_limits", False) else "off")
+
+
+def _constant_affect_set(h, v):
+    on = _onoff(v)
+    ln = h.obj
+    if on == getattr(ln, "_mylab_affect_limits", False):
+        return
+    ln._mylab_affect_limits = on
+    ax = ln.axes
+    if ax is None or not isinstance(ln, _constant_classes()["line"]):
+        return  # a line in polar or 3-D axes: the setting is kept
+    axis = ln._mylab_constant[0]
+    ln.set_transform(_constant_transform(ax, axis, on))
+    ax.relim()
+    for coll in ax.collections:  # relim leaves collections (scatter, fill, ...) out of the data limits
+        try:
+            ax.update_datalim(coll.get_datalim(ax.transData).get_points())
+        except (ValueError, TypeError, AttributeError):
+            pass
+    ax.autoscale_view(scalex=axis == "x", scaley=axis == "y")
+
+
 def _ref_line(interp, args, nargout, vertical: bool):
     name = "xline" if vertical else "yline"
     args, opts = _split_name_values(args, {"color", "linewidth", "linestyle", "label", "displayname",
                                            "labelhorizontalalignment", "labelverticalalignment",
-                                           "labelorientation", "alpha", "handlevisibility"})
+                                           "labelorientation", "alpha", "handlevisibility",
+                                           "affectautolimits"})
     if not args or is_text(args[0]):
         raise MatlabError(f"{name} needs a position, e.g. {name}(2.5).")
     values = np.real(fnum(args[0])).flatten()
@@ -338,10 +423,17 @@ def _ref_line(interp, args, nargout, vertical: bool):
         kw["alpha"] = _scalar(opts["alpha"])
     if "displayname" in opts:
         kw["label"] = text(opts["displayname"])
+    # MATLAB leaves constant lines out of the automatic axis limits unless AffectAutoLimits is 'on'.
+    affects = _onoff(opts["affectautolimits"]) if "affectautolimits" in opts else False
+    flat = getattr(ax, "name", "") == "rectilinear"
     lines = []
     for k, value in enumerate(values):
-        ln = ax.axvline(value, **kw) if vertical else ax.axhline(value, **kw)
-        ln._mylab_constant = ("x" if vertical else "y", float(value))
+        if flat:
+            ln = _new_constant_line(ax, "x" if vertical else "y", float(value), affects, kw)
+        else:
+            ln = ax.axvline(value, **kw) if vertical else ax.axhline(value, **kw)
+            ln._mylab_constant = ("x" if vertical else "y", float(value))
+            ln._mylab_affect_limits = affects
         lines.append(ln)
         label = texts[k] if k < len(texts) else (texts[0] if len(texts) == 1 else "")
         if label:
@@ -438,6 +530,7 @@ def _constant_props():
                                              ("aligned", "horizontal"), "aligned"),
         "Alpha": (lambda h: P._num_val(1.0 if h.obj.get_alpha() is None else h.obj.get_alpha()),
                   lambda h, v: h.obj.set_alpha(_scalar(v))),
+        "AffectAutoLimits": (_constant_affect_get, _constant_affect_set),
     }
 
 

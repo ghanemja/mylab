@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from matplotlib.colors import to_rgb
 
+from mylab.errors import MatlabError
 
 
 @pytest.fixture(autouse=True)
@@ -154,3 +155,89 @@ def test_cla_reset_removes_the_right_side(m):
     assert len(_fig(m).axes) == 1
     m.run("plot(r, 1:3); k = numel(ax.Children);")  # a handle taken on the right still names the axes
     assert m.num("k") == 1
+
+
+# -- 2. xline / yline ----------------------------------------------------------------------------------
+
+def _frame_row(fig, ax) -> int:
+    """Pixel row of the top edge of the axes frame."""
+    fig.canvas.draw()
+    return int(round(fig.bbox.height - ax.get_window_extent().y1 - 0.5))
+
+
+def test_yline_at_the_limit_keeps_the_limits_and_shows_on_the_frame(m):
+    m.run("figure; plot(1:3, 'b'); yl = yline(3, 'r'); L = ylim;")
+    assert m.num("L").tolist() == [[1, 3]]  # constant lines do not change automatic limits
+    fig = _fig(m)
+    ax = fig.axes[0]
+    line = next(ln for ln in ax.lines if getattr(ln, "_mylab_constant", None))
+    img = _image(fig)
+    row = _frame_row(fig, ax)
+    bb = ax.get_window_extent()
+    mid = img[row - 1:row + 2, int(bb.x0) + 10:int(bb.x1) - 10]
+    red = (mid[..., 0] > 200) & (mid[..., 1] < 80) & (mid[..., 2] < 80)
+    assert red.any(axis=0).mean() > 0.95  # drawn over the frame along its whole length
+    assert _drawn(fig, line).any()
+
+
+def test_xline_at_the_limit_shows_on_the_frame(m):
+    m.run("figure; plot(1:3, 'b'); xline(1, 'r', 'LineWidth', 2);")
+    fig = _fig(m)
+    ax = fig.axes[0]
+    img = _image(fig)
+    bb = ax.get_window_extent()
+    col = int(round(bb.x0 - 0.5))
+    top, bottom = int(fig.bbox.height - bb.y1) + 10, int(fig.bbox.height - bb.y0) - 10
+    strip = img[top:bottom, col - 1:col + 2]
+    red = (strip[..., 0] > 200) & (strip[..., 1] < 80) & (strip[..., 2] < 80)
+    assert red.any(axis=1).mean() > 0.95
+
+
+def test_constant_line_outside_the_limits_is_not_drawn(m):
+    m.run("figure; plot(1:3, 'b'); yl = yline(5, 'r'); xl = xline(-1, 'r'); L = [xlim ylim];")
+    assert m.num("L").tolist() == [[1, 3, 1, 3]]
+    fig = _fig(m)
+    img = _image(fig)
+    assert not ((img[..., 0] > 200) & (img[..., 1] < 80) & (img[..., 2] < 80)).any()
+    m.run("ylim([0 6])")  # once the value is inside the limits the line appears
+    img = _image(fig)
+    assert ((img[..., 0] > 200) & (img[..., 1] < 80) & (img[..., 2] < 80)).any()
+
+
+def test_affect_auto_limits(m):
+    m.run("figure; plot(1:3); yl = yline(5); a = yl.AffectAutoLimits; L1 = ylim;")
+    assert m.str("a") == "off" and m.num("L1").tolist() == [[1, 3]]
+    m.run("yl.AffectAutoLimits = 'on'; L2 = ylim; b = get(yl, 'AffectAutoLimits');")
+    assert m.num("L2").tolist() == [[1, 5]] and m.str("b") == "on"
+    m.run("set(yl, 'AffectAutoLimits', 'off'); L3 = ylim;")
+    assert m.num("L3").tolist() == [[1, 3]]
+    m.run("xl = xline(-2, 'AffectAutoLimits', 'on', 'Color', 'r'); L4 = xlim; c = xl.AffectAutoLimits;")
+    assert m.num("L4").tolist() == [[-2, 3]] and m.str("c") == "on"
+    assert m.num("xl.Color").ravel().tolist() == [1, 0, 0]
+    m.run("hs = yline([0 7], '--', 'AffectAutoLimits', true); L5 = ylim;")
+    assert m.num("L5").tolist() == [[0, 7]]
+    with pytest.raises(MatlabError):
+        m.run("yl.AffectAutoLimits = 'sometimes';")
+
+
+def test_affect_auto_limits_off_keeps_other_objects_in_the_limits(m):
+    m.run("figure; scatter([0 10], [0 10]); hold on; yl = yline(-4, 'AffectAutoLimits', 'on'); L1 = ylim;")
+    assert m.num("L1").tolist() == [[-4, 10]]
+    m.run("yl.AffectAutoLimits = 'off'; L2 = ylim;")
+    assert m.num("L2").tolist() == [[0, 10]]
+
+
+def test_constant_line_with_limits_on_survives_copyobj(m):
+    m.run("figure; plot(1:3); yline(6, 'AffectAutoLimits', 'on'); f2 = figure; copyobj(get(1, 'Children'), f2);"
+          "L = ylim(gca);")
+    assert m.num("L").tolist() == [[1, 6]]
+
+
+def test_constant_line_still_has_its_label_and_legend_entry(m):
+    m.run("figure; plot(1:3, 'DisplayName', 'data'); yline(2, 'r', 'limit', 'DisplayName', 'max'); lg = legend;")
+    fig = _fig(m)
+    ax = fig.axes[0]
+    assert any(t.get_text() == "limit" for t in ax.texts)
+    assert [t.get_text() for t in ax.get_legend().get_texts()] == ["data", "max"]
+    line = next(ln for ln in ax.lines if getattr(ln, "_mylab_constant", None))
+    assert to_rgb(line.get_color()) == (1, 0, 0)
