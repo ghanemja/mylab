@@ -21,9 +21,7 @@ riskiest items. It is a screening, not a guarantee; see
   against the live reference pages. One 9-word definitional phrase in the
   `condeig` help matched MathWorks' wording. It was rewritten as a precaution.
 - **Two new test files reuse examples from MathWorks documentation**, and
-  their own docstrings say so. `tests/test_fit.py` was fixed; see
-  [Rewritten](#rewritten). `tests/test_triangulation.py` still needs a
-  decision: its fixture is the `triangulation` reference-page example.
+  their own docstrings say so. Both were fixed; see [Rewritten](#rewritten).
 - No copyright headers, GPL text, `$Revision` tags or "ported from" notes
   were found in the new code.
 
@@ -330,44 +328,43 @@ independent.
      `tests/test_fit.py` and `tests/test_linalg_more.py` pass (42 tests), as
      do all help-related tests (2,802 selected by `-k "help or condeig"`).
      `ruff check .` passes.
+3. **`tests/test_triangulation.py`** (done after this review, in the same
+   release).
+   - Before: the 2-D fixture was the six-point, four-triangle example of
+     MathWorks' `triangulation` reference page, which CLEANROOM.md does not
+     allow in tests.
+   - After: an original mesh, an open fan of four triangles around one
+     vertex. The expected edges, neighbours, attachments, barycentric
+     coordinates, point locations and nearest neighbours were worked out by
+     hand for it; incentres and circumcentres are computed in the test with
+     NumPy from their definitions. Where MATLAB does not define an order
+     (the start of the boundary loop, the order of attached triangles), the
+     test checks the property instead: a closed counterclockwise loop with
+     exactly the boundary edges, or the set of triangles.
+   - All 27 tests pass.
 
 ## Needs a decision
 
-1. **`tests/test_triangulation.py` uses the example from MathWorks'
-   `triangulation` reference page.** Its docstring says so. The fixture is
-   `P = [2.5 8.0; 6.5 8.0; 2.5 5.0; 6.5 5.0; 1.0 6.5; 8.0 6.5]` with
-   `T = [5 3 1; 3 2 1; 3 4 2; 4 6 2]`, and 12 of its 27 tests depend on it.
-   - The expected values were worked out by hand, so no MathWorks output was
-     copied.
-   - However, CLEANROOM.md says "do not copy example code from MathWorks
-     documentation into tests". The expressive content is tiny (six points
-     and four triangles), but it breaks the letter of the rule.
-   - Recommendation: replace it with an original mesh and recompute the
-     expected values by hand. This was not done here, because all 12 tests'
-     geometry (edges, boundary loop, neighbours, attachments, incentres,
-     circumcentres, barycentric coordinates, point location, nearest
-     neighbours, feature edges) would need new hand-derived values.
-2. **`tests/test_fit.py` still uses the same scenario as MathWorks' `fit`
+1. **`tests/test_fit.py` still uses the same scenario as MathWorks' `fit`
    example:** a `poly2` fit of census data. The data is public domain, and
    the call `fit(cdate, pop, 'poly2')` is a one-line functional call. After
    the rewrite, no expected value depends on MathWorks text. If you want no
    overlap at all, swap in another dataset; the four `census` tests compute
    everything from the data, so only the data needs to change.
-3. **Verbatim MATLAB runtime error messages.** For example,
+2. **Verbatim MATLAB runtime error messages.** For example,
    `gridinterp.py` raises "Interpolation requires at least two sample points
    in each dimension." This review treats short runtime messages, like error
    identifiers, as behaviour that programs and users may match on, not as
    documentation prose. Please confirm that this is the project's policy,
    and consider adding a line about it to CLEANROOM.md.
-4. **Standard-terminology phrases shared with Octave Forge help** were left
+3. **Standard-terminology phrases shared with Octave Forge help** were left
    as they are. Examples: the `betacdf` and `normcdf` definitions and the
    `ellip` "Rp dB of passband ripple" clause. They are single clauses of
    ordinary mathematical language inside entries that are otherwise
    independent.
-5. **Unrelated finding:** `editors/vscode/data/functions.json` is out of
-   date at `8dee3c2`. `python scripts/gen_editor_data.py --check` exits 1:
-   the file has 1,249 functions, and the generator now produces 2,776. It
-   was not regenerated here, to keep this change focused.
+
+(The review also found `editors/vscode/data/functions.json` out of date at
+`8dee3c2`; it was regenerated in the release preparation, commit `7d8b89a`.)
 
 ## Limits of this review
 

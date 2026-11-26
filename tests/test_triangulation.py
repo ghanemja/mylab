@@ -1,7 +1,7 @@
 """triangulation and delaunayTriangulation objects.
 
-The 2-D example (P, T) is the one in MATLAB's triangulation documentation; the expected values
-were worked out by hand from the coordinates.
+The 2-D mesh is made up for these tests: an open fan of four counterclockwise triangles around vertex 1.
+Expected values are worked out by hand from the coordinates or computed here with NumPy.
 """
 
 import numpy as np
@@ -9,29 +9,36 @@ import pytest
 
 from mylab.errors import MatlabError
 
-DOC = """
-P = [2.5 8.0; 6.5 8.0; 2.5 5.0; 6.5 5.0; 1.0 6.5; 8.0 6.5];
-T = [5 3 1; 3 2 1; 3 4 2; 4 6 2];
+FAN = """
+P = [0 0; 3 0; 2 2; -1 2; -2 -1; 1 -2];
+T = [1 2 3; 1 3 4; 1 4 5; 1 5 6];
 TR = triangulation(T, P);
 """
+P_FAN = np.array([[0, 0], [3, 0], [2, 2], [-1, 2], [-2, -1], [1, -2]], dtype=float)
+T_FAN = np.array([[1, 2, 3], [1, 3, 4], [1, 4, 5], [1, 5, 6]])
+BOUNDARY = {(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (1, 6)}  # every edge but the three inner spokes 1-3, 1-4, 1-5
 
 
 @pytest.fixture
-def doc(m):
-    m.run(DOC)
+def fan(m):
+    m.run(FAN)
     return m
 
 
-def test_construct_and_properties(doc):
-    m = doc
+def _cells(m, expr, n):
+    return [sorted(m.num(f"{expr}{{{k}}}").astype(int).ravel().tolist()) for k in range(1, n + 1)]
+
+
+def test_construct_and_properties(fan):
+    m = fan
     assert m.str("class(TR)") == "triangulation"
     assert m.num("isa(TR, 'triangulation')").item()
     assert m.num("isobject(TR)").item()
-    np.testing.assert_array_equal(m.num("TR.Points"), m.num("P"))
-    np.testing.assert_array_equal(m.num("TR.ConnectivityList"), m.num("T"))
-    np.testing.assert_array_equal(m.num("TR.ConnectivityList(2, :)"), [[3, 2, 1]])
-    np.testing.assert_array_equal(m.num("TR(2, :)"), [[3, 2, 1]])
-    np.testing.assert_array_equal(m.num("TR(4, 2)"), [[6]])
+    np.testing.assert_array_equal(m.num("TR.Points"), P_FAN)
+    np.testing.assert_array_equal(m.num("TR.ConnectivityList"), T_FAN)
+    np.testing.assert_array_equal(m.num("TR.ConnectivityList(2, :)"), [[1, 3, 4]])
+    np.testing.assert_array_equal(m.num("TR(2, :)"), [[1, 3, 4]])
+    np.testing.assert_array_equal(m.num("TR(4, 2)"), [[5]])
     m.run("TR2 = triangulation(T, P(:, 1), P(:, 2));")
     assert m.num("isequal(TR, TR2)").item()
     out = m.run("TR")
@@ -40,8 +47,8 @@ def test_construct_and_properties(doc):
     assert "Constraints" not in out
 
 
-def test_size(doc):
-    m = doc
+def test_size(fan):
+    m = fan
     np.testing.assert_array_equal(m.num("size(TR)"), [[4, 3]])
     assert m.num("size(TR, 1)").item() == 4
     m.run("[a, b] = size(TR);")
@@ -49,91 +56,107 @@ def test_size(doc):
     assert m.num("numel(TR)").item() == 1
 
 
-def test_edges_sorted_unique(doc):
-    m = doc
-    expected = [[1, 2], [1, 3], [1, 5], [2, 3], [2, 4], [2, 6], [3, 4], [3, 5], [4, 6]]
+def test_edges_sorted_unique(fan):
+    m = fan
+    expected = [[1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [2, 3], [3, 4], [4, 5], [5, 6]]
     np.testing.assert_array_equal(m.num("edges(TR)"), expected)
     np.testing.assert_array_equal(m.num("TR.edges()"), expected)
     np.testing.assert_array_equal(m.num("TR.edges"), expected)
 
 
-def test_free_boundary_is_a_counterclockwise_loop(doc):
-    m = doc
+def test_free_boundary_is_a_counterclockwise_loop(fan):
+    m = fan
     m.run("F = freeBoundary(TR);")
-    np.testing.assert_array_equal(m.num("F"), [[1, 5], [5, 3], [3, 4], [4, 6], [6, 2], [2, 1]])
+    F = m.num("F").astype(int)
+    assert F.shape == (6, 2)
+    assert all(F[k, 1] == F[(k + 1) % 6, 0] for k in range(6))  # one closed loop
+    assert {tuple(sorted(e)) for e in F.tolist()} == BOUNDARY
+    loop = P_FAN[F[:, 0] - 1]
+    area2 = np.sum(loop[:, 0] * np.roll(loop[:, 1], -1) - np.roll(loop[:, 0], -1) * loop[:, 1])
+    assert area2 == pytest.approx(22.0)  # counterclockwise, twice the area 6 + 6 + 5 + 5 of the triangles
     m.run("[F2, P2] = freeBoundary(TR);")
     np.testing.assert_array_equal(m.num("P2(F2)"), m.num("P(F)"))
 
 
-def test_neighbors(doc):
-    m = doc
+def test_neighbors(fan):
+    m = fan
     nan = np.nan
-    expected = np.array([[2, nan, nan], [nan, 1, 3], [4, 2, nan], [nan, 3, nan]])
+    # column j: the triangle across the edge opposite vertex j
+    expected = np.array([[nan, 2, nan], [nan, 3, 1], [nan, 4, 2], [nan, nan, 3]])
     np.testing.assert_array_equal(m.num("neighbors(TR)"), expected)
     np.testing.assert_array_equal(m.num("neighbors(TR, [2 3])"), expected[[1, 2]])
     np.testing.assert_array_equal(m.num("TR.neighbors(4)"), expected[[3]])
 
 
-def test_vertex_and_edge_attachments(doc):
-    m = doc
-    m.run("V = vertexAttachments(TR); V1 = vertexAttachments(TR, 1); E = edgeAttachments(TR, 3, 1);")
+def test_vertex_and_edge_attachments(fan):
+    m = fan
+    m.run("V = vertexAttachments(TR); V1 = vertexAttachments(TR, 3); E = edgeAttachments(TR, 1, 3);")
     assert m.num("size(V)").tolist() == [[6, 1]]
     assert m.num("iscell(V)").item()
-    np.testing.assert_array_equal(m.num("V{2}"), [[2, 3, 4]])
-    np.testing.assert_array_equal(m.num("V{6}"), [[4]])
-    np.testing.assert_array_equal(m.num("V1{1}"), [[1, 2]])
-    np.testing.assert_array_equal(m.num("E{1}"), [[1, 2]])
-    m.run("E2 = edgeAttachments(TR, [1 5; 1 6]);")
+    assert _cells(m, "V", 6) == [[1, 2, 3, 4], [1], [1, 2], [2, 3], [3, 4], [4]]
+    assert _cells(m, "V1", 1) == [[1, 2]]
+    assert _cells(m, "E", 1) == [[1, 2]]
+    m.run("E2 = edgeAttachments(TR, [2 3; 2 4]);")
     np.testing.assert_array_equal(m.num("E2{1}"), [[1]])
-    assert m.num("isempty(E2{2})").item()
+    assert m.num("isempty(E2{2})").item()  # 2-4 is not an edge
 
 
-def test_is_connected(doc):
-    m = doc
-    np.testing.assert_array_equal(m.num("isConnected(TR, [1 3; 1 4])"), [[True], [False]])
-    assert m.num("isConnected(TR, 6, 4)").item()
+def test_is_connected(fan):
+    m = fan
+    np.testing.assert_array_equal(m.num("isConnected(TR, [1 3; 2 4])"), [[True], [False]])
+    assert m.num("isConnected(TR, 6, 1)").item()
 
 
-def test_incenter_and_circumcenter(doc):
-    m = doc
+def _circumcenter(a, b, c):
+    """Circumcentre from the perpendicular bisectors: |x - a|^2 = |x - b|^2 = |x - c|^2."""
+    A = 2 * np.array([b - a, c - a])
+    rhs = np.array([b @ b - a @ a, c @ c - a @ a])
+    return np.linalg.solve(A, rhs)
+
+
+def test_incenter_and_circumcenter(fan):
+    m = fan
     m.run("[C, r] = incenter(TR, 1); [CC, rr] = circumcenter(TR);")
-    # triangle 1 has sides 3 (opposite vertex 5) and 1.5*sqrt(2) twice
-    s = 1.5 * np.sqrt(2)
-    np.testing.assert_allclose(m.num("C"), [[(3 * 1.0 + s * 2.5 + s * 2.5) / (3 + 2 * s), 6.5]])
-    np.testing.assert_allclose(m.num("r"), [[2 * 2.25 / (3 + 2 * s)]])
-    np.testing.assert_allclose(m.num("CC"), [[2.5, 6.5], [4.5, 6.5], [4.5, 6.5], [6.5, 6.5]])
-    np.testing.assert_allclose(m.num("rr"), [[1.5], [2.5], [2.5], [1.5]])
+    a, b, c = P_FAN[[0, 1, 2]]  # triangle 1: (0,0), (3,0), (2,2)
+    la, lb, lc = np.linalg.norm(b - c), np.linalg.norm(c - a), np.linalg.norm(a - b)  # sqrt(5), 2*sqrt(2), 3
+    np.testing.assert_allclose(m.num("C"), [(la * a + lb * b + lc * c) / (la + lb + lc)])
+    np.testing.assert_allclose(m.num("r"), [[2 * 3.0 / (la + lb + lc)]])  # area 3
+    centres = np.array([_circumcenter(*P_FAN[t - 1]) for t in T_FAN])
+    np.testing.assert_allclose(m.num("CC"), centres)
+    np.testing.assert_allclose(m.num("rr").ravel(), np.linalg.norm(centres - P_FAN[T_FAN[:, 0] - 1], axis=1))
+    # by hand: x = 1.5 (the base's bisector), then |(1.5, y)| = |(0.5, y - 2)| gives y = 0.5
+    np.testing.assert_allclose(centres[0], [1.5, 0.5])
 
 
-def test_barycentric_round_trip_and_point_location(doc):
-    m = doc
+def test_barycentric_round_trip_and_point_location(fan):
+    m = fan
     X = m.num("barycentricToCartesian(TR, [1; 2], [1/3 1/3 1/3; 1 0 0])")
-    np.testing.assert_allclose(X, [[2.0, 6.5], [2.5, 5.0]])
-    B = m.num("cartesianToBarycentric(TR, [1; 2], [2 6.5; 2.5 5])")
+    np.testing.assert_allclose(X, [[5 / 3, 2 / 3], [0.0, 0.0]])
+    B = m.num("cartesianToBarycentric(TR, [1; 2], [5/3 2/3; 0 0])")
     np.testing.assert_allclose(B, [[1 / 3, 1 / 3, 1 / 3], [1, 0, 0]], atol=1e-12)
-    m.run("[ti, Bq] = pointLocation(TR, [3 7; 0 0; 7 6.5]);")
-    np.testing.assert_array_equal(m.num("ti"), [[2], [np.nan], [4]])
+    m.run("[ti, Bq] = pointLocation(TR, [2 1; 5 5; -1 1]);")
+    np.testing.assert_array_equal(m.num("ti"), [[1], [np.nan], [3]])
     np.testing.assert_allclose(m.num("sum(Bq(1, :))"), 1.0)
-    np.testing.assert_allclose(m.num("Bq(1, :) * P(T(2, :), :)"), [[3, 7]])
+    np.testing.assert_allclose(m.num("Bq(1, :) * P(T(1, :), :)"), [[2, 1]])
+    np.testing.assert_allclose(m.num("Bq(3, :) * P(T(3, :), :)"), [[-1, 1]])
     assert np.isnan(m.num("Bq(2, :)")).all()
-    np.testing.assert_array_equal(m.num("pointLocation(TR, 3, 7)"), [[2]])
+    np.testing.assert_array_equal(m.num("pointLocation(TR, 2, 1)"), [[1]])
 
 
-def test_nearest_neighbor(doc):
-    m = doc
-    m.run("[id, d] = nearestNeighbor(TR, [2 7.9; 8 6]);")
-    np.testing.assert_array_equal(m.num("id"), [[1], [6]])
-    np.testing.assert_allclose(m.num("d"), [[np.hypot(0.5, 0.1)], [0.5]])
+def test_nearest_neighbor(fan):
+    m = fan
+    m.run("[id, d] = nearestNeighbor(TR, [2.9 0.2; -2 -1.4]);")
+    np.testing.assert_array_equal(m.num("id"), [[2], [5]])
+    np.testing.assert_allclose(m.num("d"), [[np.hypot(0.1, 0.2)], [0.4]])
 
 
-def test_feature_edges_2d_are_the_boundary(doc):
-    m = doc
-    np.testing.assert_array_equal(m.num("featureEdges(TR, pi/4)"),
-                                  [[1, 2], [1, 5], [2, 6], [3, 4], [3, 5], [4, 6]])
+def test_feature_edges_2d_are_the_boundary(fan):
+    m = fan
+    np.testing.assert_array_equal(m.num("featureEdges(TR, pi/4)"), sorted(map(list, BOUNDARY)))
 
 
-def test_read_only_properties(doc):
-    m = doc
+def test_read_only_properties(fan):
+    m = fan
     with pytest.raises(MatlabError, match="read-only"):
         m.run("TR.Points = [0 0; 1 0; 0 1];")
     with pytest.raises(MatlabError, match="read-only"):
