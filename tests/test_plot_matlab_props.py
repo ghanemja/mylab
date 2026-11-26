@@ -137,7 +137,8 @@ def test_yyaxis_has_two_rulers(m):
 
 @pytest.mark.parametrize("expr,cls", [("image(uint8(magic(4)))", "uint8"), ("imagesc(int16(magic(3)))", "int16"),
                                       ("image(true(3))", "logical"), ("imshow(uint8(magic(4)))", "uint8"),
-                                      ("image(magic(3) / 9)", "double"), ("image(uint8(255 * ones(2, 2, 3)))", "uint8")])
+                                      ("image(magic(3) / 9)", "double"),
+                                      ("image(uint8(255 * ones(2, 2, 3)))", "uint8")])
 def test_image_cdata_keeps_its_class(m, expr, cls):
     m.execute(f"figure('Visible', 'off'); im = {expr}; c = class(im.CData); v = im.CData;")
     assert s(m, "c") == cls
