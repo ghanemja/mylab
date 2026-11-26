@@ -586,7 +586,12 @@ def _evalc(interp, args, nargout):
 @builtin("input")
 def _input(interp, args, nargout):
     prompt = text(args[0]) if args else ""
-    reply = interp.input_func(prompt)
+    try:
+        reply = interp.input_func(prompt)
+    except EOFError:
+        # nothing left to read (input redirected from an empty or finished file, or no keyboard)
+        raise MatlabError("input: no more input is available (end of input reached).",
+                          "MATLAB:input:EndOfInput") from None
     if len(args) > 1 and text(args[1]) == "s":
         return char(reply)
     if not reply.strip():
