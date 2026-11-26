@@ -2142,14 +2142,21 @@ class NativeArray(ObjectArray):
     def empty_like(self) -> "NativeArray":
         return type(self)(np.empty((0, 0), dtype=object), self.kind)
 
+    prototypes: dict[str, Any] = {}  # kind -> an object that answers for an empty array of that kind
+
+    def _proto(self) -> Any:
+        return self.data.flat[0] if self.data.size else self.prototypes.get(self.kind)
+
     def has_method(self, name: str) -> bool:
-        if self.data.size:
-            return bool(getattr(self.data.flat[0], "array_method", lambda n: False)(name))
+        proto = self._proto()
+        if proto is not None and getattr(proto, "array_method", lambda n: False)(name):
+            return True
         return name in _ARRAY_METHODS
 
     def call_method(self, interp, name: str, args: list, nargout: int) -> list:
-        if self.data.size and self.data.flat[0].array_method(name):
-            return self.data.flat[0].call_array_method(interp, name, args, nargout)
+        proto = self._proto()
+        if proto is not None and proto.array_method(name):
+            return proto.call_array_method(interp, name, args, nargout)
         if name in _ARRAY_METHODS:
             return [_ARRAY_METHODS[name](interp, args)]
         raise MatlabError(f"Unrecognized method '{name}' for class '{self.kind}'.")
@@ -2240,12 +2247,12 @@ class NativeArray(ObjectArray):
     def display_lines(self) -> list[str]:
         short = self.kind.rsplit(".", 1)[-1]
         kind = "empty " if self.data.size == 0 else ""
-        names = self.data.flat[0].array_props() if self.data.size and hasattr(self.data.flat[0], "array_props") \
-            else []
+        proto = self._proto()
+        names = proto.array_props() if proto is not None and hasattr(proto, "array_props") else []
         if not names:
             return [f"  {self._size_text()} {kind}{short} array"]
         lines = [f"  {self._size_text()} {kind}{short} array with properties:", ""] + [f"    {p}" for p in names]
-        extra = getattr(self.data.flat[0], "array_footer", None)
+        extra = getattr(proto, "array_footer", None)
         if extra is not None:
             lines += extra(self)
         return lines

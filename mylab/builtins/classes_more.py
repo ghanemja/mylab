@@ -19,8 +19,7 @@ import numpy as np
 
 from ..classdef import (
     BUILTIN_BASES, INDEXING_CONTEXT, NUMERIC_BASES, ClassInfo, NativeArray, NativeItem, ObjectArray,
-    UserObject, access_names, base_method, builtin_subsasgn, builtin_subsref, class_list, subs_levels,
-    subs_struct,
+    UserObject, access_names, base_method, class_list,
 )
 from ..errors import MatlabError
 from ..objects import MObject
@@ -521,11 +520,6 @@ def _superclasses(interp, args, nargout):
     else:
         interp.out(f"\nSuperclasses for class {label}:\n\n" + "".join(f"    {n}\n" for n in names) + "\n")
     return None
-
-
-@builtin("findprop")
-def _findprop_builtin(interp, args, nargout):
-    return _findprop(interp, args, nargout)
 
 
 def _findprop(interp, args, nargout):
@@ -1311,44 +1305,6 @@ def _enum_group(kind: str, names: tuple, key: str = "") -> None:
 
 _enum_group("matlab.mixin.util.IndexingContext", ("Statement", "Expression", "Assignment", "Unknown"))
 _enum_group("matlab.indexing.IndexingOperationType", ("Paren", "Dot", "Brace"), "Type:")
-
-
-# -- subsref / subsasgn / substruct as functions ---------------------------------------------------------
-
-@builtin("substruct")
-def _substruct(interp, args, nargout):
-    if not args or len(args) % 2:
-        raise MatlabError("substruct needs type/subscript pairs, e.g. substruct('()', {1, 2}, '.', 'name').",
-                          "MATLAB:substruct:nargin")
-    levels = []
-    for k in range(0, len(args), 2):
-        kind = text(args[k], "subscript type")
-        subs = args[k + 1]
-        if kind == ".":
-            if not is_text(subs):
-                raise MatlabError("For '.' the subscript must be a field name.", "MATLAB:substruct:subsType")
-            levels.append((kind, text(subs)))
-        elif kind in ("()", "{}"):
-            if not isinstance(subs, Cell):
-                raise MatlabError("For '()' and '{}' the subscript must be a cell array of indices.",
-                                  "MATLAB:substruct:subsType")
-            levels.append((kind, subs.values_f()))
-        else:
-            raise MatlabError("The subscript type must be '()', '{}' or '.'.", "MATLAB:substruct:type")
-    return subs_struct(levels)
-
-
-@builtin("subsref")
-def _subsref(interp, args, nargout):
-    nargs(args, 2, 2, "subsref")
-    res = builtin_subsref(interp, args[0], subs_levels(args[1]), nargout)
-    return tuple(res) if len(res) != 1 else res[0]
-
-
-@builtin("subsasgn")
-def _subsasgn(interp, args, nargout):
-    nargs(args, 3, 3, "subsasgn")
-    return builtin_subsasgn(interp, args[0], subs_levels(args[1]), args[2])
 
 
 @builtin("numArgumentsFromSubscript")

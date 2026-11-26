@@ -1128,6 +1128,27 @@ class Interpreter:
 
     def call_dotted(self, dotted: str, get_args, nargout: int, frame: Frame) -> list[Any] | None:
         """Resolve pkg.func(...) or Class.staticMethod(...); None if the name is unknown."""
+        imports = frame.imports
+        if not imports:
+            return self._call_dotted(dotted, get_args, nargout)
+        # import pkg.Class makes Class.method(...) mean pkg.Class.method(...); import pkg.* comes last
+        head, _, rest = dotted.partition(".")
+        for imported in imports:
+            if not imported.endswith(".*") and imported.rsplit(".", 1)[-1] == head:
+                res = self._call_dotted(f"{imported}.{rest}", get_args, nargout)
+                if res is not None:
+                    return res
+        res = self._call_dotted(dotted, get_args, nargout)
+        if res is not None:
+            return res
+        for imported in imports:
+            if imported.endswith(".*"):
+                res = self._call_dotted(imported[:-1] + dotted, get_args, nargout)
+                if res is not None:
+                    return res
+        return None
+
+    def _call_dotted(self, dotted: str, get_args, nargout: int) -> list[Any] | None:
         builtin = self.builtins.get(dotted)
         if builtin is not None:
             return self.call_builtin(dotted, builtin, get_args(), nargout)
