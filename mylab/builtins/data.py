@@ -86,7 +86,22 @@ def _content_class(x) -> str:
 
 @builtin("num2cell")
 def _num2cell(interp, args, nargout):
+    nargs(args, 1, 2, "num2cell")
     v = args[0]
+    if isinstance(v, (MString, StringArray)) and len(args) == 1:
+        # each string becomes a 1-by-1 string in its own cell; <missing> stays missing
+        from ..values import string_data
+        sdata = string_data(v)
+        data = np.empty(sdata.shape, dtype=object)
+        for idx in np.ndindex(sdata.shape):
+            x = sdata[idx]
+            if x is None:
+                d = np.empty((1, 1), dtype=object)
+                d[0, 0] = None
+                data[idx] = StringArray(d)
+            else:
+                data[idx] = MString(x)
+        return Cell(data)
     if isinstance(v, Cell):
         data = np.empty(v.shape, dtype=object)
         for idx in np.ndindex(v.shape):
@@ -196,18 +211,6 @@ def _rmfield(interp, args, nargout):
         for d in s.data.flat:
             d.pop(n, None)
     return s
-
-
-@builtin("setfield")
-def _setfield(interp, args, nargout):
-    s = args[0].copy() if isinstance(args[0], Struct) else Struct()
-    s.set_field(0, text(args[1]), args[2])
-    return s
-
-
-@builtin("getfield")
-def _getfield(interp, args, nargout):
-    return args[0].get_field(0, text(args[1]))
 
 
 def _need_struct(v, name: str) -> Struct:

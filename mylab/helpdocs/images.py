@@ -170,8 +170,9 @@ HELP = {
                  "A, so integer images are rounded and clipped; convert with im2double to keep fractions "
                  "and negative values. A 2-D kernel is applied to each colour channel."),
     "filter2": (["Y = filter2(h, X)", "Y = filter2(h, X, shape)"],
-                "Two-dimensional correlation of X with the kernel h in double precision. shape is 'same' "
-                "(default), 'full' or 'valid'."),
+                "Two-dimensional correlation of the matrix X with the kernel h (convolution with h turned "
+                "by 180 degrees); both may be complex, and the result is single when either is single. "
+                "shape is 'same' (default), 'full' or 'valid'."),
     "fspecial": (["h = fspecial('average', hsize)", "h = fspecial('gaussian', hsize, sigma)",
                   "h = fspecial('disk', radius)", "h = fspecial('laplacian', alpha)",
                   "h = fspecial('log', hsize, sigma)", "h = fspecial('motion', len, theta)",

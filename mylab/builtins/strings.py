@@ -820,34 +820,6 @@ def _strrep(interp, args, nargout):
     return _map_text(lambda s: _replace_all(s, old, new), args[0])
 
 
-@builtin("strfind")
-def _strfind(interp, args, nargout):
-    nargs(args, 2, 4, "strfind")
-    pat = text(args[1])
-    overlaps = True
-    if len(args) == 4 and text(args[2]).lower() == "overlaps":
-        overlaps = bool(num(args[3]).flat[0])
-
-    def find(s):
-        hits = _find_all(s, pat)
-        if not overlaps:
-            kept, last = [], -1
-            for h in hits:
-                if h >= last:
-                    kept.append(h)
-                    last = h + len(pat)
-            hits = kept
-        return np.array(hits, dtype=float).reshape(1, -1) + 1.0 if hits else np.zeros((0, 0))
-
-    v = args[0]
-    if isinstance(v, Cell):
-        data = np.empty(v.shape, dtype=object)
-        for idx in np.ndindex(v.shape):
-            data[idx] = find(to_str(v.data[idx]))
-        return Cell(data)
-    return find(text(v))
-
-
 def _text_pred(fn):
     def f(interp, args, nargout):
         rest = list(args)

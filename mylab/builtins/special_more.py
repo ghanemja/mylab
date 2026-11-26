@@ -314,59 +314,6 @@ def _realpow(interp, args, nargout):
     return r
 
 
-# -- rational approximation as text -----------------------------------------------------------------
-
-def _rat_fraction(x: float, tol: float) -> tuple[float, float]:
-    """Continued-fraction approximation n/d of a finite x with |x - n/d| <= tol."""
-    y = x
-    n_prev, n_cur = 0.0, 1.0
-    d_prev, d_cur = 1.0, 0.0
-    for _ in range(64):
-        t = float(np.round(y))
-        n_prev, n_cur = n_cur, n_cur * t + n_prev
-        d_prev, d_cur = d_cur, d_cur * t + d_prev
-        if y == t or abs(x - n_cur / d_cur) <= tol:
-            break
-        y = 1.0 / (y - t)
-    if d_cur < 0:
-        n_cur, d_cur = -n_cur, -d_cur
-    return n_cur, d_cur
-
-
-@builtin("rats")
-def _rats(interp, args, nargout):
-    nargs(args, 1, 2, "rats")
-    x = fnum(args[0])
-    if x.dtype.kind == "c":
-        raise MatlabError("rats: the input must be real.")
-    x = x.astype(float)
-    strlen = to_int(args[1], "strlen") if len(args) > 1 else 13
-    if strlen < 1:
-        raise MatlabError("rats: the string length must be positive.")
-    if x.ndim > 2:
-        raise MatlabError("rats: the input must be a 2-D array.")
-    finite = np.abs(x[np.isfinite(x)])
-    tol = 10.0 ** (-(strlen - 1) / 2.0) * (float(np.sum(finite)) if finite.size else 0.0)
-
-    def one(v: float) -> str:
-        if math.isnan(v):
-            return "NaN"
-        if math.isinf(v):
-            return "Inf" if v > 0 else "-Inf"
-        n, d = _rat_fraction(v, tol)
-        s = f"{n:.0f}" if d == 1 else f"{n:.0f}/{d:.0f}"
-        if len(s) > strlen:
-            # does not fit in the field: a tiny value prints as 0, anything else as an asterisk
-            return "0" if abs(v) < 1 else "*"
-        return s
-
-    # every element is centred in a field of strlen + 1 characters
-    rows = ["".join(one(float(v)).center(strlen + 1) for v in x[i, :]) for i in range(x.shape[0])]
-    if not rows or not rows[0]:
-        return char("")
-    return np.array([list(r) for r in rows], dtype="<U1").reshape(len(rows), len(rows[0]))
-
-
 # -- reductions and array helpers ---------------------------------------------------------------------
 
 def _empty(v: Any) -> bool:
@@ -557,8 +504,8 @@ def _nice_edges(lo: float, hi: float, nb: int) -> np.ndarray:
     return np.linspace(lo, hi, nb + 1)
 
 
-@builtin("discretize")
-def _discretize(interp, args, nargout):
+def discretize_numeric(interp, args, nargout):
+    """discretize for plain numeric X and edges; the discretize built-in (tables_more) calls this."""
     if len(args) < 2:
         raise MatlabError("Not enough input arguments for discretize.")
     x_src = args[0]
@@ -766,114 +713,6 @@ def _histcounts2(interp, args, nargout):
     by_out = np.where(inside, by, 0).astype(float).reshape(x.shape, order="F")
     outs = (out, xe.reshape(1, -1), ye.reshape(1, -1), bx_out, by_out)
     return outs[:max(nargout, 1)] if nargout > 1 else out
-
-
-def _group_keys(v: Any, name: str) -> tuple[list, Any]:
-    """Row keys of one grouping variable and a function that rebuilds the unique values."""
-    if isinstance(v, Cell):
-        keys = [to_str(x) for x in v.values_f()]
-        return keys, lambda ks: Cell.from_list([char(k) for k in ks], column=True)
-    if isinstance(v, StringArray):
-        keys = [x for x in v.values_f()]
-
-        def build(ks):
-            d = np.empty((len(ks), 1), dtype=object)
-            for i, k in enumerate(ks):
-                d[i, 0] = k
-            return StringArray(d)
-        return keys, build
-    if isinstance(v, np.ndarray):
-        if v.ndim != 2 or (v.size and 1 not in v.shape):
-            raise MatlabError(f"{name}: each grouping variable must be a vector.")
-        flat = v.reshape(-1, order="F")
-        if is_char(v):
-            return list(flat), lambda ks: np.array(ks, dtype="<U1").reshape(-1, 1)
-        keys = [x.item() for x in flat]
-        dtype = v.dtype
-        return keys, lambda ks: np.array(ks, dtype=dtype).reshape(-1, 1)
-    raise MatlabError(f"{name}: unsupported grouping variable.")
-
-
-def _missing_key(k: Any) -> bool:
-    return k is None or (isinstance(k, float) and k != k) or k == ""
-
-
-@builtin("groupcounts")
-def _groupcounts(interp, args, nargout):
-    if not args:
-        raise MatlabError("Not enough input arguments for groupcounts.")
-    src = args[0]
-    rest = list(args[1:])
-    include_missing = True
-    include_empty = False
-    while len(rest) >= 2 and is_text(rest[-2]) and text(rest[-2]).lower() in ("includemissinggroups",
-                                                                              "includeemptygroups"):
-        flag = bool(np.all(np.asarray(fnum(rest[-1])) != 0))
-        if text(rest[-2]).lower() == "includemissinggroups":
-            include_missing = flag
-        else:
-            include_empty = flag
-        rest = rest[:-2]
-    if include_empty:
-        raise MatlabError("groupcounts: IncludeEmptyGroups is only meaningful for categorical grouping "
-                          "variables and is not supported.")
-    if hasattr(src, "names") and hasattr(src, "columns"):
-        if not rest:
-            raise MatlabError("groupcounts: name the grouping variables of the table.")
-        if len(rest) > 1:
-            raise MatlabError("groupcounts: binning the grouping variables of a table is not supported.")
-        t = interp.call_named("groupsummary", [src, rest[0]], 1, interp.frame)[0]
-        if not include_missing:
-            raise MatlabError("groupcounts: IncludeMissingGroups=false is not supported for tables; remove "
-                              "the rows with missing group values first (rmmissing).")
-        cnt = np.asarray(t.columns[t.names.index("GroupCount")], dtype=float).reshape(-1, 1)
-        pct = 100.0 * cnt / cnt.sum() if cnt.sum() else cnt
-        return t.set_field(interp, "Percent", pct)
-    if rest:
-        raise MatlabError("groupcounts: binning (groupbins) is not supported for array input.")
-    if isinstance(src, Cell) and src.data.size and not all(is_text(x) for x in src.values_f()):
-        variables = src.values_f()  # a cell array of grouping vectors
-    elif isinstance(src, np.ndarray) and not is_char(src) and src.ndim == 2 and min(src.shape) > 1:
-        variables = [src[:, j:j + 1] for j in range(src.shape[1])]  # each column is a grouping variable
-    else:
-        variables = [src]
-    parts = [_group_keys(v, "groupcounts") for v in variables]
-    n = len(parts[0][0])
-    if any(len(p[0]) != n for p in parts):
-        raise MatlabError("groupcounts: all grouping variables must have the same number of elements.")
-    rows = list(zip(*[p[0] for p in parts]))
-    counts: dict = {}
-    for r in rows:
-        if any(_missing_key(k) for k in r):
-            if not include_missing:
-                continue
-            r = tuple("￿<missing>" if _missing_key(k) else k for k in r)
-        counts[r] = counts.get(r, 0) + 1
-
-    def order_key(r):
-        return tuple((1, 0) if k == "￿<missing>" else (0, k) for k in r)
-
-    groups = sorted(counts, key=order_key)
-    b = np.array([float(counts[g]) for g in groups]).reshape(-1, 1)
-    if nargout <= 1:
-        return b
-    cols = []
-    for j, (keys, build) in enumerate(parts):
-        vals = [g[j] for g in groups]
-        sample = next((k for k in keys if not _missing_key(k)), None)
-        fixed = []
-        for v in vals:
-            if v == "￿<missing>":
-                fixed.append(None if isinstance(sample, str) or sample is None else float("nan"))
-            else:
-                fixed.append(v)
-        if isinstance(variables[j], Cell):
-            fixed = ["" if v is None else v for v in fixed]
-        cols.append(build(fixed))
-    bg = cols[0] if len(cols) == 1 else Cell.from_list(cols)
-    total = b.sum()
-    bp = 100.0 * b / total if total else b
-    return (b, bg, bp)[:nargout]
 
 
 def _moving_wrapper(name: str, reducer):

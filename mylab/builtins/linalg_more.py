@@ -2384,7 +2384,10 @@ def _filter2(interp, args, nargout):
         if shape not in ("same", "full", "valid"):
             raise MatlabError("filter2: the shape must be 'same', 'full' or 'valid'.")
     # correlation: convolution with the filter rotated by 180 degrees
-    return BUILTINS["conv2"](interp, [x, np.ascontiguousarray(h[::-1, ::-1]), char(shape)], 1)
+    out = BUILTINS["conv2"](interp, [x, np.ascontiguousarray(h[::-1, ::-1]), char(shape)], 1)
+    if any(isinstance(a, np.ndarray) and a.dtype == np.float32 for a in args[:2]):
+        out = np.asarray(out).astype(np.complex64 if np.iscomplexobj(out) else np.float32)  # single in, single out
+    return out
 
 
 # -- more iterative solvers ---------------------------------------------------------------------------

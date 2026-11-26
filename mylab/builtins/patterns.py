@@ -1120,11 +1120,27 @@ def _strip(interp, args, nargout):
 
 # -- strfind with patterns, append -----------------------------------------------------------------------------------
 
-_classic_strfind = BUILTINS.get("strfind")
+def _strfind_text(s: str, args: list):
+    """Start indices of the text pattern args[1] in s; strfind(s, pat, 'ForceCellOutput'|'Overlaps', tf)."""
+    from .strings import _find_all
+    pat = to_str(args[1])
+    overlaps = True
+    if len(args) == 4 and to_str(args[2]).lower() == "overlaps":
+        overlaps = bool(to_numeric(args[3]).flat[0])
+    hits = _find_all(s, pat)
+    if not overlaps:
+        kept, last = [], -1
+        for h in hits:
+            if h >= last:
+                kept.append(h)
+                last = h + len(pat)
+        hits = kept
+    return np.array(hits, dtype=float).reshape(1, -1) + 1.0 if hits else np.zeros((0, 0))
 
 
 @builtin("strfind")
 def _strfind(interp, args, nargout):
+    nargs(args, 2, 4, "strfind")
     if len(args) >= 2 and isinstance(args[1], Pattern):
         t = TextArg(args[0], "strfind")
         rx = args[1].compiled(False)
@@ -1138,14 +1154,14 @@ def _strfind(interp, args, nargout):
         for k, s in enumerate(t.items):
             data[k] = starts(s)
         return Cell(data.reshape(t.shape, order="F"))
-    v = args[0] if args else None
-    if isinstance(v, (Cell, StringArray)) and len(args) >= 2:
+    v = args[0]
+    if isinstance(v, (Cell, StringArray)):
         t = TextArg(v, "strfind")
         data = np.empty(len(t.items), dtype=object)
         for k, s in enumerate(t.items):
-            data[k] = _classic_strfind(interp, [char(s or ""), *args[1:]], 1)
+            data[k] = _strfind_text(s or "", args)
         return Cell(data.reshape(t.shape, order="F"))
-    return _classic_strfind(interp, list(args), nargout)
+    return _strfind_text(to_str(v), args)
 
 
 @builtin("append")

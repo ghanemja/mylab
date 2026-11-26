@@ -15,8 +15,12 @@ HELP = {
     "dummyvar": ("D = dummyvar(group)",
                  "Indicator (0/1) columns for a grouping variable of positive integers or a categorical array; "
                  "several grouping columns give several blocks of indicator columns."),
-    "gscatter": (["gscatter(x, y, g)", "gscatter(x, y, g, clr, sym, siz, doleg, xnam, ynam)", "h = gscatter(...)"],
-                 "Scatter plot of y against x with one colour (and marker) per group of g, and a legend."),
+    "gscatter": (["gscatter(x, y, g)", "gscatter(x, y, g, clr, sym, siz, doleg, xnam, ynam)", "gscatter(ax, ...)",
+                  "h = gscatter(...)"],
+                 "Scatter plot of y against x with one colour (and marker) per group of g, and a legend. g "
+                 "can be a cell array of grouping variables (one group per combination). clr is colour "
+                 "letters or an RGB matrix, sym marker letters, siz marker sizes, doleg 'on' or 'off'; "
+                 "xnam and ynam label the axes. h holds one line per group."),
     "tiedrank": (["r = tiedrank(x)", "[r, tieadj] = tiedrank(x)"],
                  "Ranks of the values, with tied values given their average rank (each column of a matrix is "
                  "ranked separately). tieadj is the tie adjustment used by rank tests."),

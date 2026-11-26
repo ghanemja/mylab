@@ -300,11 +300,6 @@ def _terminal_size(interp, args, nargout):
     return np.array([[24.0, float(FORMAT.width)]])
 
 
-@builtin("namelengthmax")
-def _namelengthmax(interp, args, nargout):
-    return 63.0
-
-
 # -- MException.last ----------------------------------------------------------------------------------
 
 @builtin("MException.last")
@@ -340,6 +335,9 @@ def _numel(v: Any) -> int:
 def _must_be_float(interp, args, nargout):
     nargs(args, 1, 1, "mustBeFloat")
     v = args[0]
+    from ..classdef import UserObject
+    if isinstance(v, UserObject) and v._data is not None:
+        v = v._data  # a class derived from double or single is floating point too
     if not (isinstance(v, np.ndarray) and v.dtype.kind in "fc"):
         _fail("mustBeFloat", "Value must be a floating-point array.")
     return None
@@ -669,27 +667,6 @@ def _string_shim(name: str) -> None:
 for _name in ("repmat", "fliplr", "flipud", "flip", "rot90", "circshift", "permute", "squeeze", "repelem",
               "reshape", "transpose", "ctranspose"):
     _string_shim(_name)
-
-
-_classic_num2cell = BUILTINS.get("num2cell")
-
-
-@builtin("num2cell")
-def _num2cell(interp, args, nargout):
-    if args and isinstance(args[0], (MString, StringArray)) and len(args) == 1:
-        from ..values import string_data
-        data = string_data(args[0])
-        out = np.empty(data.shape, dtype=object)
-        for idx in np.ndindex(data.shape):
-            x = data[idx]
-            if x is None:
-                d = np.empty((1, 1), dtype=object)
-                d[0, 0] = None
-                out[idx] = StringArray(d)
-            else:
-                out[idx] = MString(x)
-        return Cell(out)
-    return _classic_num2cell(interp, args, nargout)
 
 
 def _string_extreme(name: str, pick_last: bool) -> None:

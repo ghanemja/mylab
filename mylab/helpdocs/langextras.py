@@ -154,7 +154,9 @@ HELP = {
     "isenum": ("tf = isenum(x)", "True when x is a member (or an array of members) of an enumeration class."),
 
     # -- environment ------------------------------------------------------------------------------------
-    "uistack": ("uistack(h, 'top')", _NOOP),
+    "uistack": (["uistack(h)", "uistack(h, position)", "uistack(h, 'up', n)"],
+                "Moves the graphics objects h in the drawing order of their axes: position is 'up' "
+                "(default) or 'down' by n steps (1 by default), or 'top' or 'bottom'."),
     "movegui": ("movegui(fig, 'center')", _NOOP),
     "workspace": ("workspace", _NOOP),
     "figurepalette": ("figurepalette", _NOOP),
@@ -163,7 +165,10 @@ HELP = {
     "plottools": ("plottools", _NOOP),
     "brush": ("brush on", _NOOP),
     "linkdata": ("linkdata on", _NOOP),
-    "linkprop": ("linkprop(handles, 'XLim')", _NOOP + " Properties are not kept in sync."),
+    "linkprop": (["link = linkprop(handles, name)", "link = linkprop(handles, {name1, name2})"],
+                 "Keeps the named properties of the graphics objects equal: all start from the values of "
+                 "the first object, and setting the property on one sets it on the others. addtarget and "
+                 "removetarget change the linked objects; set Enabled to 'off' to pause the link."),
     "web": (["web(url)", "status = web(url)"],
             "Does not open a browser. Prints a short note with the address, or returns status 0 when an "
             "output is requested."),

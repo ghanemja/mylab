@@ -41,7 +41,9 @@ HELP = {
                      "[B, BG, P] = groupcounts(A)"],
                     "Counts the rows of each group. For a table the result has the grouping variables, "
                     "GroupCount and Percent. For an array the counts, the groups and the percentages are "
-                    "returned separately." + _GROUP + " 'IncludeMissingGroups', false leaves out the groups "
+                    "returned separately; the columns of a matrix, or the vectors in a cell array, are "
+                    "separate grouping variables, and then BG is a cell array with one column per variable."
+                    + _GROUP + " 'IncludeMissingGroups', false leaves out the groups "
                     "of missing values."),
     "groupfilter": (["G = groupfilter(T, groupvars, method)", "G = groupfilter(T, groupvars, method, datavars)"],
                     "Keeps the rows of a table that pass a test made group by group. method is a function "

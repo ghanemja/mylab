@@ -78,7 +78,6 @@ HELP = {
                   "With true as third argument empty pieces are left out." + _OCT),
     "terminal_size": ("rc = terminal_size()", "The [rows columns] of the command window that the display "
                       "of wide matrices is laid out for." + _OCT),
-    "namelengthmax": ("n = namelengthmax", "The longest length a variable or function name can have, 63."),
     "isglobal": ("tf = isglobal(name)", "True when the variable called name (a char vector or string) is "
                  "declared global in the current workspace."),
     "isindex": (["tf = isindex(v)", "tf = isindex(v, n)"], "True when v can be used as an index: a logical "
@@ -106,5 +105,5 @@ HELP = {
     "mustBeSparse": _v("mustBeSparse", "mustBeSparse(x)", "Checks that x is a sparse matrix."),
     "mustBeBetween": _v("mustBeBetween", ["mustBeBetween(x, lo, hi)", "mustBeBetween(x, lo, hi, intervalType)"],
                         "Checks that every element of x lies between lo and hi. intervalType is 'closed' "
-                        "(default), 'open', 'openleft' or 'openright'."),
+                        "(default), 'open', 'openleft', 'openright', 'closedleft' or 'closedright'."),
 }

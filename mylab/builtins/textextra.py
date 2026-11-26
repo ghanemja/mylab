@@ -237,7 +237,9 @@ def _isoutlier(interp, args, nargout):
     if nargout > 4:
         raise MatlabError("isoutlier: too many output arguments.")
     a = _numeric(args[0], "isoutlier")
-    x = np.real(a).astype(float)
+    if a.dtype.kind == "c":
+        raise MatlabError("isoutlier: the input must be real.")
+    x = a.astype(float)
     method, factor, dim = "median", None, None
     pct = None
     window = None

@@ -393,7 +393,7 @@ def _alpha(interp, args, nargout):
 
 # -- box plots -------------------------------------------------------------------------------------
 
-@builtin("boxplot", "boxchart")
+@builtin("boxplot")
 @_with_axes_arg
 def _boxplot(interp, args, nargout):
     args, opts = _split_name_values(args, {"labels", "notch", "orientation", "whisker", "widths", "colors",

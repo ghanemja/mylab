@@ -21,18 +21,4 @@ HELP = {
             "text, for example rat(pi) is '3 + 1/(7 + 1/16)'."),
     "anynan": ("tf = anynan(A)", "True if at least one element of A is NaN."),
     "allfinite": ("tf = allfinite(A)", "True if no element of A is NaN or Inf."),
-    "standardizeMissing": ("B = standardizeMissing(A, indicator)",
-                           "Replaces the values listed in indicator with the standard missing value: "
-                           "NaN in a numeric array, '' in a cell array of text. For example "
-                           "standardizeMissing([1 -99 3], -99) is [1 NaN 3]."),
-    "isoutlier": (["tf = isoutlier(A)", "tf = isoutlier(A, method)", "tf = isoutlier(A, method, dim)",
-                   "tf = isoutlier(..., 'ThresholdFactor', f)"],
-                  "Marks the outliers in A with true. The default method 'median' flags values more "
-                  "than 3 scaled median absolute deviations from the median. 'mean' flags values more "
-                  "than 3 standard deviations from the mean, and 'quartiles' flags values more than "
-                  "1.5 interquartile ranges outside the quartiles. A matrix is checked column by column."),
-    "uniquetol": (["C = uniquetol(A)", "C = uniquetol(A, tol)", "[C, ia, ic] = uniquetol(...)"],
-                  "Unique values of A, where values closer than tol*max(abs(A(:))) count as equal. "
-                  "The default tol is 1e-12 (1e-6 for single). The result is sorted; ia and ic are "
-                  "index vectors with C = A(ia) and A approximately equal to C(ic)."),
 }
