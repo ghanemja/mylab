@@ -621,20 +621,38 @@ def _wide(a):
     return a
 
 
+def _nan_flags(flags):
+    """Treat the newer 'omitmissing' / 'includemissing' spellings as 'omitnan' / 'includenan'."""
+    if "omitmissing" in flags:
+        flags.add("omitnan")
+    if "includemissing" in flags:
+        flags.add("includenan")
+    if "omitnan" in flags and "includenan" in flags:
+        raise MatlabError("Specify only one of 'omitnan' and 'includenan'.")
+    return flags
+
+
 def _sum_like(name, np_fn, identity):
     def f(interp, args, nargout):
         nargs(args, 1, 5, name)
-        rest, flags = flag_present(args, "omitnan", "includenan", "all", "double", "native", "default")
+        rest, flags = flag_present(args, "omitnan", "includenan", "omitmissing", "includemissing", "all",
+                                   "double", "native", "default")
+        flags = _nan_flags(flags)
         if len(rest) > 2:
             raise MatlabError(f"Too many input arguments for {name}.")
+        if len(flags & {"double", "native", "default"}) > 1:
+            raise MatlabError(f"{name}: specify only one of 'default', 'double' and 'native'.")
         src = rest[0]
         a = num(src)
         if "native" in flags:
+            if is_char(src):
+                raise MatlabError(f"{name}: the 'native' option is not supported for char input.")
             out = bool if (isinstance(src, np.ndarray) and src.dtype == bool) else a.dtype
-        elif "double" in flags:
-            out = np.dtype(complex if a.dtype.kind == "c" else float)
+        elif "double" not in flags and a.dtype in (np.float32, np.complex64):
+            out = a.dtype  # single stays single
         else:
-            out = a.dtype
+            # integers, logicals and chars are added up in double precision unless 'native' is given
+            out = np.dtype(complex if a.dtype.kind == "c" else float)
         out = np.dtype(out)
         dims = _red_dims(rest, 1, a, flags)
         work = _wide(a)

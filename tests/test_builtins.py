@@ -309,9 +309,11 @@ def test_reported_edge_cases(m):
     m.run("c = regexpi('ABC', 'b', 'match');")
     assert m.str("c{1}") == "B"
     np.testing.assert_array_equal(m.num("sort(uint8([0 1 2]), 'descend')"), [[2, 1, 0]])
-    assert m.str("class(sum(int8([100 100])))") == "int8"
-    assert m.num("sum(int8([100 100]))").item() == 127
-    assert m.num("prod(uint8([20 20]))").item() == 255
+    assert m.str("class(sum(int8([100 100])))") == "double"  # integers are summed in double by default
+    assert m.num("sum(int8([100 100]))").item() == 200
+    assert m.num("sum(int8([100 100]), 'native')").item() == 127
+    assert m.num("prod(uint8([20 20]))").item() == 400
+    assert m.num("prod(uint8([20 20]), 'native')").item() == 255
     assert m.num("cumsum(int8([100 100]))").tolist() == [[100, 127]]
     assert m.num("abs(int8(-128))").item() == 127
     np.testing.assert_array_equal(m.num("max(int8([1 2]), 1.7)"), [[2, 2]])
