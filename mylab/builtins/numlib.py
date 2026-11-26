@@ -1,4 +1,4 @@
-"""Smaller numeric functions: special matrices, rational approximation, outliers, tolerant unique."""
+"""Smaller numeric functions: special matrices, rational approximation, NaN tests."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ import math
 import numpy as np
 
 from ..errors import MatlabError
-from ..values import Cell, as_2d, char, is_char, to_int, to_str
+from ..values import char, to_int
 from ._registry import builtin
-from ._util import bool_scalar, default_dim, flag_present, fnum, is_text, nargs, num, text
+from ._util import bool_scalar, default_dim, fnum, nargs, num
 
 
 # -- special matrices -------------------------------------------------------------------
@@ -164,153 +164,3 @@ def _nan_test(name, np_fn, combine):
 
 builtin("anynan")(_nan_test("anynan", np.isnan, np.any))
 builtin("allfinite")(_nan_test("allfinite", np.isfinite, np.all))
-
-
-@builtin("standardizeMissing")
-def _standardize_missing(interp, args, nargout):
-    nargs(args, 2, 2, "standardizeMissing")
-    v, ind = args
-    if isinstance(v, Cell):
-        marks = [to_str(x) for x in ind.values_f()] if isinstance(ind, Cell) else \
-            ([to_str(ind)] if is_text(ind) else [])
-        data = np.empty(v.data.shape, dtype=object)
-        for idx in np.ndindex(v.data.shape):
-            item = v.data[idx]
-            data[idx] = char("") if is_text(item) and to_str(item) in marks else item
-        return Cell(data)
-    if not isinstance(v, np.ndarray) or is_char(v):
-        return v
-    values = []
-    for item in (ind.values_f() if isinstance(ind, Cell) else [ind]):
-        if isinstance(item, np.ndarray) and item.dtype.kind in "biuf":
-            values.extend(float(x) for x in item.flatten())
-    if v.dtype.kind not in "fc" or not values:
-        return v  # only floating-point arrays have a standard missing value (NaN)
-    out = v.copy()
-    out[np.isin(np.real(v), values) & (np.imag(v) == 0)] = np.nan
-    return out
-
-
-@builtin("isoutlier")
-def _isoutlier(interp, args, nargout):
-    nargs(args, 1, 6, "isoutlier")
-    a = fnum(args[0])
-    if a.dtype.kind == "c":
-        raise MatlabError("isoutlier: the input must be real.")
-    a = a.astype(float)
-    method, factor, dim = "median", None, None
-    rest = list(args[1:])
-    k = 0
-    while k < len(rest):
-        r = rest[k]
-        if is_text(r):
-            name = text(r).lower()
-            if name in ("median", "mean", "quartiles"):
-                method = name
-            elif name == "thresholdfactor" and k + 1 < len(rest):
-                factor = float(np.real(fnum(rest[k + 1]).flat[0]))
-                k += 1
-            else:
-                raise MatlabError(f"isoutlier: the method '{text(r)}' is not supported. Use 'median', "
-                                  "'mean' or 'quartiles'.")
-        else:
-            dim = to_int(r, "dimension")
-        k += 1
-    if a.size == 0:
-        return np.zeros(a.shape, dtype=bool)
-    axis = dim - 1 if dim is not None else default_dim(a)
-    if axis < 0:
-        raise MatlabError("Dimension argument must be a positive integer.")
-    if axis >= a.ndim:
-        return np.zeros(a.shape, dtype=bool)
-    import warnings
-    with warnings.catch_warnings(), np.errstate(invalid="ignore"):
-        warnings.simplefilter("ignore", RuntimeWarning)
-        if method == "median":
-            centre = np.nanmedian(a, axis=axis, keepdims=True)
-            from scipy.special import erfcinv
-            scale = -1 / (math.sqrt(2) * erfcinv(1.5)) * np.nanmedian(np.abs(a - centre), axis=axis, keepdims=True)
-            lo, hi = centre - (factor or 3.0) * scale, centre + (factor or 3.0) * scale
-        elif method == "mean":
-            centre = np.nanmean(a, axis=axis, keepdims=True)
-            n = np.sum(~np.isnan(a), axis=axis, keepdims=True)
-            sd = np.nanstd(a, axis=axis, keepdims=True, ddof=0)
-            scale = np.where(n > 1, sd * np.sqrt(n / np.maximum(n - 1, 1)), 0)
-            lo, hi = centre - (factor or 3.0) * scale, centre + (factor or 3.0) * scale
-        else:
-            q1 = _quartile(a, axis, 0.25)
-            q3 = _quartile(a, axis, 0.75)
-            lo, hi = q1 - (factor or 1.5) * (q3 - q1), q3 + (factor or 1.5) * (q3 - q1)
-        return (a < lo) | (a > hi)
-
-
-def _quartile(a: np.ndarray, axis: int, p: float) -> np.ndarray:
-    """Quantile with the (k - 0.5)/n plotting positions that MATLAB uses."""
-    m = np.sort(np.moveaxis(a, axis, -1), axis=-1)
-    out = np.full(m.shape[:-1] + (1,), np.nan)
-    for idx in np.ndindex(m.shape[:-1]):
-        v = m[idx]
-        v = v[~np.isnan(v)]
-        if v.size:
-            pos = np.clip(p * v.size - 0.5, 0, v.size - 1)
-            k = int(np.floor(pos))
-            j = min(k + 1, v.size - 1)
-            out[idx] = v[k] + (pos - k) * (v[j] - v[k])
-    return np.moveaxis(out, -1, axis)
-
-
-@builtin("uniquetol")
-def _uniquetol(interp, args, nargout):
-    rest, flags = flag_present(args, "stable")
-    nargs(rest, 1, None, "uniquetol")
-    a = fnum(rest[0])
-    if a.dtype.kind == "c":
-        raise MatlabError("uniquetol: the input must be real.")
-    single = a.dtype == np.float32
-    tol = 1e-6 if single else 1e-12
-    scale = None
-    opts = rest[1:]
-    if opts and not is_text(opts[0]):
-        tol = float(np.real(fnum(opts[0]).flat[0]))
-        opts = opts[1:]
-    if len(opts) % 2:
-        raise MatlabError("uniquetol: options must be name-value pairs.")
-    for k in range(0, len(opts), 2):
-        name = text(opts[k]).lower()
-        if name == "datascale":
-            scale = float(np.real(fnum(opts[k + 1]).flat[0]))
-        else:
-            raise MatlabError(f"uniquetol: the option '{text(opts[k])}' is not supported.")
-    flat = a.flatten(order="F").astype(float)
-    if scale is None:
-        finite = np.abs(flat[np.isfinite(flat)])
-        scale = float(finite.max()) if finite.size else 1.0
-    order = np.argsort(flat, kind="stable")  # NaNs last; each NaN is its own group
-    limit = tol * scale
-    reps: list[int] = []
-    group = np.zeros(flat.size, dtype=int)
-    start = None
-    for pos in order:
-        v = flat[pos]
-        if start is None or np.isnan(v) or not (v - start <= limit):
-            reps.append(int(pos))
-            start = v
-        group[pos] = len(reps) - 1
-    ia = np.array(reps, dtype=int)
-    if "stable" in flags:
-        first = np.array([np.nonzero(group == g)[0][0] for g in range(len(reps))], dtype=int)
-        pos = np.argsort(first, kind="stable")
-        remap = np.empty(len(reps), dtype=int)
-        remap[pos] = np.arange(len(reps))
-        ia, group = first[pos], remap[group]
-    vals = a.flatten(order="F")[ia]
-    if a.shape == (0, 0):
-        out = a
-    elif a.ndim == 2 and a.shape[0] == 1 and a.size:
-        out = vals.reshape(1, -1)
-    else:
-        out = vals.reshape(-1, 1)
-    out = as_2d(out)
-    if nargout > 1:
-        return out, ia.reshape(-1, 1) + 1.0, group.reshape(-1, 1) + 1.0
-    return out
