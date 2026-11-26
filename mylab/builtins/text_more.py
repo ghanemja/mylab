@@ -300,11 +300,6 @@ def _terminal_size(interp, args, nargout):
     return np.array([[24.0, float(FORMAT.width)]])
 
 
-@builtin("namelengthmax")
-def _namelengthmax(interp, args, nargout):
-    return 63.0
-
-
 # -- MException.last ----------------------------------------------------------------------------------
 
 @builtin("MException.last")

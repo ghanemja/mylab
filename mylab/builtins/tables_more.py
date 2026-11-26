@@ -178,8 +178,8 @@ def _discretize(interp, args, nargout):
     """discretize(X, edges | N[, values | 'categorical'[, names]], 'IncludedEdge', side)."""
     nargs(args, 2, None, "discretize")
     if isinstance(args[0], np.ndarray) and args[0].dtype.kind in "biuf" and isinstance(args[1], np.ndarray):
-        from .special_more import _discretize as numeric_discretize  # plain numbers: the numeric version
-        return numeric_discretize(interp, args, nargout)
+        from .special_more import discretize_numeric  # plain numbers
+        return discretize_numeric(interp, args, nargout)
     rest, opts = _options(list(args), ("IncludedEdge",), "discretize", 2)
     right = "IncludedEdge" in opts and text(opts["IncludedEdge"]).lower() == "right"
     if "IncludedEdge" in opts and text(opts["IncludedEdge"]).lower() not in ("left", "right"):
@@ -716,8 +716,13 @@ def _groupcounts(interp, args, nargout):
     include_missing = _flag(opts["IncludeMissingGroups"]) if "IncludeMissingGroups" in opts else True
     if not isinstance(rest[0], TableObject):
         vals = rest[0]
-        cols = [_as_column(x) for x in vals.values_f()] if isinstance(vals, Cell) and not all(
-            is_char(x) for x in vals.data.flat) else [_as_column(vals)]
+        if isinstance(vals, Cell) and not all(is_char(x) for x in vals.data.flat):
+            cols = [_as_column(x) for x in vals.values_f()]
+        elif isinstance(vals, np.ndarray) and vals.dtype.kind in "biuf" and vals.ndim == 2 \
+                and vals.shape[0] > 1 and vals.shape[1] > 1:
+            cols = [vals[:, [j]] for j in range(vals.shape[1])]  # each column is a grouping variable
+        else:
+            cols = [_as_column(vals)]
         if len(rest) > 1:
             specs = _bin_specs(rest[1], len(cols), "groupcounts")
             cols = [_binned_column(interp, c, s) for c, s in zip(cols, specs)]

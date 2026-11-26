@@ -43,22 +43,12 @@ HELP = {
     "issortedrows": (["tf = issortedrows(A)", "tf = issortedrows(A, col)", "tf = issortedrows(A, col, direction)"],
                      "True if the rows of A are in sorted order, as sortrows would leave them. direction "
                      "may also be 'monotonic', 'strictascend', 'strictdescend' or 'strictmonotonic'."),
-    "discretize": (["Y = discretize(X, edges)", "Y = discretize(X, N)", "Y = discretize(X, edges, values)",
-                    "Y = discretize(X, edges, 'categorical')", "Y = discretize(..., 'IncludedEdge', 'left' | 'right')",
-                    "[Y, E] = discretize(...)"],
-                   "Bin number of each element of X: bin k is edges(k) <= x < edges(k+1), and the last bin "
-                   "also contains its right edge. Values outside the edges give NaN. A third argument "
-                   "returns that value (or a category) per bin instead of the bin number."),
     "histcounts2": (["N = histcounts2(X, Y)", "N = histcounts2(X, Y, nbins)", "N = histcounts2(X, Y, Xedges, Yedges)",
                      "[N, Xedges, Yedges, binX, binY] = histcounts2(...)",
                      "N = histcounts2(..., 'Normalization', type)"],
                     "Two-dimensional histogram counts: N(i, j) is the number of points with X in bin i "
                     "and Y in bin j. Options: XBinEdges, YBinEdges, NumBins, BinWidth, XBinLimits, "
                     "YBinLimits, BinMethod, Normalization."),
-    "groupcounts": (["B = groupcounts(A)", "[B, BG, BP] = groupcounts(A)", "G = groupcounts(T, groupvars)"],
-                    "Number of elements in each group. A is a grouping vector, a matrix whose columns are "
-                    "grouping variables, or a cell array of grouping vectors. BG holds the groups and BP "
-                    "the percentages. For a table the result is a table with GroupCount and Percent."),
     "movprod": (["M = movprod(A, k)", "M = movprod(A, [kb kf])", "M = movprod(..., dim)",
                  "M = movprod(..., 'omitnan')"],
                 "Moving product over a sliding window of k elements (or kb before and kf after)."),
