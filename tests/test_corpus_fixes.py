@@ -333,3 +333,26 @@ def test_dot_access_on_several_graphics_objects_is_a_list():
               "g = get(hp, 'Color');")
     assert num(m, "size(mk)").tolist() == [[1, 3]] and to_str(m.eval_expression("class(mk{1})")) == "char"
     assert num(m, "size(c)").tolist() == [[3, 3]] and to_str(m.eval_expression("class(g)")) == "cell"
+
+
+# -- nested functions in methods share the method's access; 2-D axes have a z range ------------------------------
+
+def test_nested_function_in_a_method_sets_a_private_property(tmp_path):
+    (tmp_path / "Cnt.m").write_text(
+        "classdef Cnt < handle\n    properties (SetAccess = private)\n        vals = []\n    end\n"
+        "    methods\n        function fill(obj, n)\n"
+        "            function add(k)\n                obj.vals(end + 1) = k;\n            end\n"
+        "            for k = 1:n\n                add(k);\n            end\n        end\n    end\nend\n")
+    m = Interpreter(out=lambda s: None, path=[str(tmp_path)])
+    m.execute("c = Cnt(); c.fill(3); v = c.vals;")
+    assert num(m, "v").tolist() == [[1, 2, 3]]
+    with pytest.raises(MatlabError, match="read-only"):
+        m.execute("c.vals = 1;")
+
+
+def test_2d_axes_have_a_z_range():
+    m = Interpreter(out=lambda s: None)
+    m.execute("figure; ax = gca; z0 = ax.ZLim; axis(10 * [-1 1 -1 1 -1 1]); b = [ax.XLim ax.YLim ax.ZLim];"
+              "ax.ZLim = [0 5]; z1 = ax.ZLim; view(3); z2 = zlim;")
+    assert num(m, "z0").tolist() == [[-1, 1]] and num(m, "b").tolist() == [[-10, 10, -10, 10, -10, 10]]
+    assert num(m, "z1").tolist() == [[0, 5]] and num(m, "z2").tolist() == [[0, 5]]

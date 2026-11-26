@@ -4,7 +4,7 @@ The repositories are not part of mylab. Fetch them once (about 1.7 GB):
 
     python datasets/matlab-corpus/tools/run_corpus.py fetch
 
-It takes a while (about half an hour), so it runs only when asked for:
+It takes about ten minutes, so it runs only when asked for:
 
     MYLAB_CORPUS_REGRESSION=1 python -m pytest tests/test_corpus_regression.py
 
@@ -32,7 +32,7 @@ def _fetched() -> bool:
 
 
 @pytest.mark.skipif(os.environ.get("MYLAB_CORPUS_REGRESSION") != "1",
-                    reason="set MYLAB_CORPUS_REGRESSION=1 to run the corpus repositories (about half an hour)")
+                    reason="set MYLAB_CORPUS_REGRESSION=1 to run the corpus repositories (about ten minutes)")
 @pytest.mark.skipif(not CACHE.exists() or not _fetched(), reason="corpus repositories not fetched "
                     "(python datasets/matlab-corpus/tools/run_corpus.py fetch)")
 def test_corpus_repositories_still_run():

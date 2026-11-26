@@ -1,0 +1,718 @@
+{
+ "note": "Tests and examples of corpus repositories that mylab runs unchanged; see tools/run_corpus.py.",
+ "repositories": [
+  {
+   "repo": "Agarciafernandez/MTT",
+   "runs": [
+    {
+     "file": "GOSPA code/exampleScript.m"
+    },
+    {
+     "file": "Trajectory metric/examplesForTWTrajectoryMetric.m"
+    },
+    {
+     "file": "Trajectory metric/examplesForTrajectoryMetric.m"
+    },
+    {
+     "file": "Trajectory metric/examplesForTrajectoryQMetric.m"
+    }
+   ]
+  },
+  {
+   "repo": "FeeLab/seqNMF",
+   "runs": [
+    {
+     "file": "misc_elm/demoboxyviolin.m"
+    }
+   ]
+  },
+  {
+   "repo": "HuangCongQing/Algorithms_MathModels",
+   "runs": [
+    {
+     "file": "MATLAB\u667a\u80fd\u7b97\u6cd530\u4e2a\u6848\u4f8b\u5206\u6790/chapter18 \u57fa\u4e8e\u9c7c\u7fa4\u7b97\u6cd5\u7684\u51fd\u6570\u5bfb\u4f18\u7b97\u6cd5/example1/example1.m"
+    },
+    {
+     "file": "MATLAB\u667a\u80fd\u7b97\u6cd530\u4e2a\u6848\u4f8b\u5206\u6790/chapter18 \u57fa\u4e8e\u9c7c\u7fa4\u7b97\u6cd5\u7684\u51fd\u6570\u5bfb\u4f18\u7b97\u6cd5/example2/example2.m",
+     "timeout": 196
+    },
+    {
+     "file": "\u300aMATLAB \u795e\u7ecf\u7f51\u7edc30\u4e2a\u6848\u4f8b\u5206\u6790\u300b\u6e90\u7a0b\u5e8f \u6570\u636e/chapter27/gaot/binaryExample.m"
+    },
+    {
+     "file": "\u300aMATLAB \u795e\u7ecf\u7f51\u7edc30\u4e2a\u6848\u4f8b\u5206\u6790\u300b\u6e90\u7a0b\u5e8f \u6570\u636e/chapter27/gaot/floatExample.m"
+    },
+    {
+     "file": "\u300aMATLAB \u795e\u7ecf\u7f51\u7edc30\u4e2a\u6848\u4f8b\u5206\u6790\u300b\u6e90\u7a0b\u5e8f \u6570\u636e/chapter27/gaot/gademo2.m"
+    },
+    {
+     "file": "\u300aMATLAB\u795e\u7ecf\u7f51\u7edc\u539f\u7406\u4e0e\u5b9e\u4f8b\u7cbe\u89e3\u300b\u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/\u7b2c10\u7ae0 \u968f\u673a\u795e\u7ecf\u7f51\u7edc/example10_1.m"
+    },
+    {
+     "file": "\u300aMATLAB\u795e\u7ecf\u7f51\u7edc\u539f\u7406\u4e0e\u5b9e\u4f8b\u7cbe\u89e3\u300b\u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/\u7b2c2\u7ae0 MATLAB\u5feb\u901f\u5165\u95e8/code/chapter2_3_4/for_test.m"
+    },
+    {
+     "file": "\u300aMATLAB\u795e\u7ecf\u7f51\u7edc\u539f\u7406\u4e0e\u5b9e\u4f8b\u7cbe\u89e3\u300b\u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/\u7b2c2\u7ae0 MATLAB\u5feb\u901f\u5165\u95e8/code/chapter2_3_4/if_test.m"
+    },
+    {
+     "file": "\u300aMATLAB\u795e\u7ecf\u7f51\u7edc\u539f\u7406\u4e0e\u5b9e\u4f8b\u7cbe\u89e3\u300b\u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/\u7b2c2\u7ae0 MATLAB\u5feb\u901f\u5165\u95e8/code/chapter2_3_4/while_test.m"
+    },
+    {
+     "file": "\u300aMATLAB\u795e\u7ecf\u7f51\u7edc\u539f\u7406\u4e0e\u5b9e\u4f8b\u7cbe\u89e3\u300b\u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/\u7b2c2\u7ae0 MATLAB\u5feb\u901f\u5165\u95e8/code/chapter_2_3_5/comment_example.m"
+    },
+    {
+     "file": "\u300aMATLAB\u795e\u7ecf\u7f51\u7edc\u539f\u7406\u4e0e\u5b9e\u4f8b\u7cbe\u89e3\u300b\u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/\u7b2c7\u7ae0 \u5f84\u5411\u57fa\u51fd\u6570\u7f51\u7edc/grnn_test.m"
+    },
+    {
+     "file": "\u300aMATLAB\u795e\u7ecf\u7f51\u7edc\u539f\u7406\u4e0e\u5b9e\u4f8b\u7cbe\u89e3\u300b\u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/\u7b2c9\u7ae0 \u53cd\u9988\u795e\u7ecf\u7f51\u7edc/bsb_test.m"
+    },
+    {
+     "file": "\u300a\u57fa\u4e8eMATLAB\u7684\u9ad8\u7b49\u6570\u5b66\u95ee\u9898\u6c42\u89e3\u300b \u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/CH02/example02_03.m"
+    },
+    {
+     "file": "\u300a\u57fa\u4e8eMATLAB\u7684\u9ad8\u7b49\u6570\u5b66\u95ee\u9898\u6c42\u89e3\u300b \u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/CH02/example02_05.m"
+    },
+    {
+     "file": "\u300a\u57fa\u4e8eMATLAB\u7684\u9ad8\u7b49\u6570\u5b66\u95ee\u9898\u6c42\u89e3\u300b \u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/CH02/example02_08.m"
+    },
+    {
+     "file": "\u300a\u57fa\u4e8eMATLAB\u7684\u9ad8\u7b49\u6570\u5b66\u95ee\u9898\u6c42\u89e3\u300b \u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/CH02/example02_09.m"
+    },
+    {
+     "file": "\u300a\u57fa\u4e8eMATLAB\u7684\u9ad8\u7b49\u6570\u5b66\u95ee\u9898\u6c42\u89e3\u300b \u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/CH02/example02_10.m"
+    },
+    {
+     "file": "\u300a\u57fa\u4e8eMATLAB\u7684\u9ad8\u7b49\u6570\u5b66\u95ee\u9898\u6c42\u89e3\u300b \u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/CH02/example02_trycatch.m"
+    },
+    {
+     "file": "\u300a\u57fa\u4e8eMATLAB\u7684\u9ad8\u7b49\u6570\u5b66\u95ee\u9898\u6c42\u89e3\u300b \u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/CH07/bisect_demo.m"
+    },
+    {
+     "file": "\u300a\u57fa\u4e8eMATLAB\u7684\u9ad8\u7b49\u6570\u5b66\u95ee\u9898\u6c42\u89e3\u300b \u968f\u4e66\u9644\u5e26\u6e90\u7a0b\u5e8f/CH08/Gauss_demo.m"
+    }
+   ]
+  },
+  {
+   "repo": "MatthewPeterKelly/OptimTraj",
+   "runs": [
+    {
+     "file": "demo/cartPole/TEST_openLoopDynamics.m"
+    },
+    {
+     "file": "demo/fiveLinkBiped/TEST_drawRobot.m"
+    },
+    {
+     "file": "demo/fiveLinkBiped/costOfTransport/TEST_drawRobot.m"
+    },
+    {
+     "file": "demo/quadRotor2d/MAIN_simulate.m"
+    },
+    {
+     "file": "demo/quadRotor3d/TESTRUNNER.m"
+    },
+    {
+     "file": "demo/quadRotor3d/test/TEST_Euler2RotMat.m"
+    },
+    {
+     "file": "demo/quadRotor3d/test/TEST_computePropOpPoint.m"
+    },
+    {
+     "file": "demo/quadRotor3d/test/TEST_definePropulsionModel.m"
+    },
+    {
+     "file": "demo/quadRotor3d/test/TEST_dynBodyFrame.m"
+    },
+    {
+     "file": "demo/quadRotor3d/test/TEST_dynQuadRotor3d.m"
+    },
+    {
+     "file": "demo/quadRotor3d/test/TEST_plotPropLoc.m"
+    },
+    {
+     "file": "demo/simpleWalker/chebyshevPoints.m"
+    },
+    {
+     "file": "demo/toyCar/MAIN.m"
+    }
+   ]
+  },
+  {
+   "repo": "PRML/PRMLT",
+   "runs": [
+    {
+     "file": "demo/ch01/info_demo.m"
+    },
+    {
+     "file": "demo/ch03/linRegEm_demo.m"
+    },
+    {
+     "file": "demo/ch03/linRegFp_demo.m"
+    },
+    {
+     "file": "demo/ch03/linReg_demo.m"
+    },
+    {
+     "file": "demo/ch04/logitBin_demo.m"
+    },
+    {
+     "file": "demo/ch04/logitMn_demo.m"
+    },
+    {
+     "file": "demo/ch05/mlp_demo.m"
+    },
+    {
+     "file": "demo/ch06/knCenter_demo.m"
+    },
+    {
+     "file": "demo/ch06/knKmeans_demo.m"
+    },
+    {
+     "file": "demo/ch06/knLin_demo.m"
+    },
+    {
+     "file": "demo/ch06/knReg_demo.m"
+    },
+    {
+     "file": "demo/ch07/rvmBinEm_demo.m"
+    },
+    {
+     "file": "demo/ch07/rvmBinFp_demo.m"
+    },
+    {
+     "file": "demo/ch07/rvmRegEm_demo.m"
+    },
+    {
+     "file": "demo/ch07/rvmRegEm_spSignal_demo.m",
+     "timeout": 343
+    },
+    {
+     "file": "demo/ch07/rvmRegFp_demo.m"
+    },
+    {
+     "file": "demo/ch07/rvmRegFp_spSignal_demo.m"
+    },
+    {
+     "file": "demo/ch07/rvmRegSeq_demo.m"
+    },
+    {
+     "file": "demo/ch07/rvmRegSeq_spSignal_demo.m"
+    },
+    {
+     "file": "demo/ch08/nbBern_demo.m"
+    },
+    {
+     "file": "demo/ch08/nbGauss_demo.m"
+    },
+    {
+     "file": "demo/ch09/kmeans_demo.m"
+    },
+    {
+     "file": "demo/ch09/kmeans_mixGaussEm_demo.m"
+    },
+    {
+     "file": "demo/ch09/kmedoids_demo.m"
+    },
+    {
+     "file": "demo/ch09/linRegEm_demo.m"
+    },
+    {
+     "file": "demo/ch09/mixBernEm_demo.m"
+    },
+    {
+     "file": "demo/ch09/mixGaussEm_demo.m"
+    },
+    {
+     "file": "demo/ch10/mixGaussVb_demo.m"
+    },
+    {
+     "file": "demo/ch10/rvmRegVb_demo.m"
+    },
+    {
+     "file": "demo/ch10/rvmRegVb_spSignal_demo.m",
+     "timeout": 172
+    },
+    {
+     "file": "demo/ch11/gauss_demo.m"
+    },
+    {
+     "file": "demo/ch12/fa_demo.m"
+    },
+    {
+     "file": "demo/ch12/pca_demo.m"
+    },
+    {
+     "file": "demo/ch12/ppcaEm_demo.m"
+    },
+    {
+     "file": "demo/ch12/ppcaVb_demo.m"
+    },
+    {
+     "file": "demo/ch13/hmm_demo.m"
+    },
+    {
+     "file": "demo/ch13/lds_demo.m"
+    },
+    {
+     "file": "demo/ch14/adaboostBin_demo.m"
+    },
+    {
+     "file": "demo/ch14/mixLinReg_demo.m"
+    },
+    {
+     "file": "demo/ch14/mixLogitBin_demo.m"
+    }
+   ]
+  },
+  {
+   "repo": "Pengskr/MPC",
+   "runs": [
+    {
+     "file": "MPC_Test.m"
+    }
+   ]
+  },
+  {
+   "repo": "ZitengWang/MASP",
+   "runs": [
+    {
+     "file": "Simulation/INF-Generator/test_cylinder.m"
+    },
+    {
+     "file": "Simulation/INF-Generator/test_sphere.m"
+    }
+   ]
+  },
+  {
+   "repo": "alecjacobson/gptoolbox",
+   "runs": [
+    {
+     "file": "external/toolbox_fast_marching/tests/test_influence.m"
+    }
+   ]
+  },
+  {
+   "repo": "baddoo/piDMD",
+   "runs": [
+    {
+     "file": "examples/orthogonalExample.m"
+    },
+    {
+     "file": "examples/pendulumExample.m"
+    },
+    {
+     "file": "tests/testCirculant.m"
+    },
+    {
+     "file": "tests/testOrthogonal.m"
+    }
+   ]
+  },
+  {
+   "repo": "dlaptev/RobustPCA",
+   "runs": [
+    {
+     "file": "examples/toy_data.m"
+    }
+   ]
+  },
+  {
+   "repo": "hiroyuki-kasai/NMFLibrary",
+   "runs": [
+    {
+     "file": "applications/audio_denoise/demo.m"
+    },
+    {
+     "file": "applications/graph_clustering/demo_graph_clustering.m"
+    },
+    {
+     "file": "applications/media_analysis/demo_music_analysis.m"
+    },
+    {
+     "file": "solver/orthogonal/test/test_alt_onmf.m"
+    },
+    {
+     "file": "solver/sparse/test/test_proj_sparse_nmf_change_sparse_ratio.m"
+    }
+   ]
+  },
+  {
+   "repo": "hiroyuki-kasai/SGDLibrary",
+   "runs": [
+    {
+     "file": "run_me_first.m"
+    }
+   ]
+  },
+  {
+   "repo": "ivaquero/book-control",
+   "runs": [
+    {
+     "file": "book2/DP_Numerical_Test.m"
+    },
+    {
+     "file": "book2/LQR_Test_1D.m"
+    }
+   ]
+  },
+  {
+   "repo": "lis-epfl/swarmlab",
+   "runs": [
+    {
+     "file": "tests/test_battery_discharge.m"
+    }
+   ]
+  },
+  {
+   "repo": "masumhabib/PlotPub",
+   "runs": [
+    {
+     "file": "examples/plotAxislim.m"
+    },
+    {
+     "file": "examples/plotDirectSimple.m"
+    },
+    {
+     "file": "examples/plotLineStyle.m"
+    },
+    {
+     "file": "examples/plotMarker.m"
+    },
+    {
+     "file": "examples/plotMultiple.m"
+    },
+    {
+     "file": "examples/plotMultiple2.m"
+    },
+    {
+     "file": "examples/plotSimple.m"
+    },
+    {
+     "file": "examples/plotSimpleLog.m"
+    },
+    {
+     "file": "examples/plotSimpleLog2.m"
+    },
+    {
+     "file": "examples/plotSimpleLogLog.m"
+    },
+    {
+     "file": "examples/plotSize.m"
+    },
+    {
+     "file": "examples/plotSomeOther.m"
+    }
+   ]
+  },
+  {
+   "repo": "mattools/matGeom",
+   "runs": [
+    {
+     "file": "demos/geom2d/demo_ellipse_creation.m"
+    },
+    {
+     "file": "demos/geom2d/projPointOnEllipse_demo.m"
+    },
+    {
+     "file": "demos/geom2d/triangle/compTriangle.m"
+    },
+    {
+     "file": "demos/geom3d/demo_registerPoints3d_icp_bunny.m"
+    },
+    {
+     "file": "demos/graphs/drawSampleGraphs.m"
+    },
+    {
+     "file": "demos/meshes3d/createTrefoilKnot.m"
+    },
+    {
+     "file": "demos/meshes3d/demoClipMeshVertices.m"
+    },
+    {
+     "file": "demos/meshes3d/demoConcatenateMeshes.m"
+    },
+    {
+     "file": "demos/meshes3d/demoCutMeshByPlane.m"
+    },
+    {
+     "file": "demos/meshes3d/demoIntersectLineMesh3d.m"
+    },
+    {
+     "file": "demos/meshes3d/demoRemoveMeshFaces.m"
+    },
+    {
+     "file": "demos/meshes3d/demoRemoveMeshVertices.m"
+    },
+    {
+     "file": "demos/meshes3d/demoSplitMesh.m"
+    },
+    {
+     "file": "demos/meshes3d/demoTriangulatePolygonPair3d_SquareStar.m"
+    },
+    {
+     "file": "demos/meshes3d/demo_intersectPlaneMesh_bunny.m"
+    },
+    {
+     "file": "demos/polygons2d/demoExpandPolygon.m"
+    },
+    {
+     "file": "demos/polygons2d/demo_polygons_leaf.m"
+    },
+    {
+     "file": "demos/tessel2d/demoMedialAxis.m"
+    },
+    {
+     "file": "demos/tessel2d/drawCrackPattern2.m"
+    },
+    {
+     "file": "demos/tessel2d/drawPoissonLines.m"
+    },
+    {
+     "file": "demos/tessel2d/drawVoronoi.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/geom2d/circle2d_demo.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/geom2d/points2d_demo.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/geom3d/boxes3d_demo.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/geom3d/demoShapes3d.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/geom3d/surfaces/demoDrawCylinder.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/geom3d/surfaces/demoDrawEllipsoid.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/graphs/images/demoImageGraphs.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/graphs/voronoi/demoVoronoi2d.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/meshes3d/demoCutMeshByPlane.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/meshes3d/distancePointMesh/demo_distancePointMesh_dodecahedron.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/meshes3d/steinerPolytope_demo.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/polygons2d/demoExpandPolygon.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/polygons2d/demoPolygonBounds.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/polygons2d/demo_polygonSkeleton_leaf.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/polygons2d/demo_simplifyPolygon.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/polygons2d/demo_smoothPolygon.m"
+    },
+    {
+     "file": "docs/matGeom-manual/images/polygons2d/polygonSignature/demo_polygonSignature_rectangle.m"
+    },
+    {
+     "name": "unit tests geom2d",
+     "cwd": ".",
+     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/geom2d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 252);"
+    },
+    {
+     "name": "unit tests geom3d",
+     "cwd": ".",
+     "timeout": 300,
+     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/geom3d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 246);"
+    },
+    {
+     "name": "unit tests graphs",
+     "cwd": ".",
+     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/graphs'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 18);"
+    },
+    {
+     "name": "unit tests meshes3d",
+     "cwd": ".",
+     "timeout": 300,
+     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/meshes3d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 105);"
+    },
+    {
+     "name": "unit tests polygons2d",
+     "cwd": ".",
+     "timeout": 600,
+     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/polygons2d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 86);"
+    }
+   ],
+   "note": "The library's own matlab.unittest suites (known results), each must keep at least as many passes; plus its demos."
+  },
+  {
+   "repo": "mnakanishi/TRCA-SSVEP",
+   "runs": [
+    {
+     "file": "tutorial/tutorial_fbcca.m"
+    },
+    {
+     "file": "tutorial/tutorial_tempmatch.m"
+    }
+   ]
+  },
+  {
+   "repo": "morriswmz/doa-tools",
+   "runs": [
+    {
+     "file": "examples/ex1_design_and_visualize.m"
+    },
+    {
+     "file": "examples/ex2_music.m"
+    },
+    {
+     "file": "examples/ex4_ula_performance.m"
+    },
+    {
+     "file": "examples/ex5_resolution.m",
+     "timeout": 190
+    },
+    {
+     "file": "examples/ex6_model_errors.m"
+    },
+    {
+     "file": "examples/ex7_coarray_music_perf.m",
+     "timeout": 330
+    },
+    {
+     "file": "examples/experiments/coarrays_music_crb/sim_efficiency.m"
+    },
+    {
+     "file": "examples/experiments/coarrays_music_crb/sim_mse_same_coarray.m",
+     "timeout": 226
+    }
+   ]
+  },
+  {
+   "repo": "olzhas/rrt_toolbox",
+   "runs": [
+    {
+     "file": "doc/examples.m"
+    },
+    {
+     "file": "doc/redundant_rrt_example.m"
+    },
+    {
+     "file": "doc/redundant_rrt_star_example.m"
+    },
+    {
+     "file": "doc/redundant_rrt_star_fn_example.m"
+    },
+    {
+     "file": "doc/threedof_rrt_example.m"
+    },
+    {
+     "file": "doc/threedof_rrt_star_example.m"
+    },
+    {
+     "file": "doc/threedof_rrt_star_fn_example.m"
+    },
+    {
+     "file": "doc/twodim_rrt_example.m"
+    },
+    {
+     "file": "doc/twodim_rrt_star_example.m"
+    },
+    {
+     "file": "doc/twodim_rrt_star_fn_example.m"
+    },
+    {
+     "file": "examples/main_2d_mobile_rrt.m",
+     "timeout": 334
+    },
+    {
+     "name": "examples/main_2d_mobile_rrt.m from the root",
+     "cwd": ".",
+     "timeout": 600,
+     "code": "run('examples/main_2d_mobile_rrt.m');"
+    }
+   ],
+   "note": "The examples build paths from pwd, so they run from the repository root as its README says."
+  },
+  {
+   "repo": "petercorke/RVC3-MATLAB",
+   "runs": [
+    {
+     "name": "unit tests test/toolbox",
+     "cwd": ".",
+     "timeout": 300,
+     "code": "addpath(genpath(fullfile(pwd, 'toolbox'))); r = runtests('test/toolbox'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 66);"
+    },
+    {
+     "name": "unit tests test/book",
+     "cwd": ".",
+     "timeout": 300,
+     "code": "addpath(genpath(fullfile(pwd, 'toolbox'))); r = runtests('test/book', 'IncludeSubfolders', true); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 3);"
+    }
+   ],
+   "note": "The toolbox's matlab.unittest suites (known results), each must keep at least as many passes; plus its examples."
+  },
+  {
+   "repo": "rasmusbergpalm/DeepLearnToolbox",
+   "runs": [
+    {
+     "file": "CAE/caeexamples.m",
+     "timeout": 201
+    },
+    {
+     "file": "tests/runalltests.m"
+    }
+   ]
+  },
+  {
+   "repo": "ravenxrz/Mathematical-Modeling",
+   "runs": [
+    {
+     "file": "\u6a21\u578b\u4e0e\u7b97\u6cd5\u96c6\u5408/queuing_theory/test.m"
+    }
+   ]
+  },
+  {
+   "repo": "s-kajita/IntroductionToHumanoidRobotics",
+   "runs": [
+    {
+     "file": "ulink_example.m"
+    }
+   ]
+  },
+  {
+   "repo": "swedishembedded/control",
+   "runs": [
+    {
+     "file": "tests/dynamics/kalman.m"
+    },
+    {
+     "file": "tests/sysid/okid_era.m"
+    }
+   ]
+  },
+  {
+   "repo": "trekhleb/machine-learning-octave",
+   "runs": [
+    {
+     "file": "anomaly-detection/demo.m"
+    },
+    {
+     "file": "k-means/demo.m"
+    },
+    {
+     "file": "linear-regression/demo.m"
+    },
+    {
+     "file": "logistic-regression/demo.m"
+    }
+   ]
+  }
+ ]
+}

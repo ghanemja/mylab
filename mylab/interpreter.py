@@ -1717,7 +1717,8 @@ class Interpreter:
             frame.vars["varargin"] = Cell.from_list(args[len(fixed):])
         if preset:
             frame.vars.update(preset)
-        frame.owner_class = owner
+        # a nested function shares the access rights of the method it is nested in
+        frame.owner_class = owner if owner is not None or parent is None else getattr(parent, "owner_class", None)
         outermost = self.depth == 0
         self._enter()
         self.frames.append(frame)

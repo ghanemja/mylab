@@ -2254,6 +2254,9 @@ def _clear_rulers(ax) -> None:
 def _lim_get(which):
     def g(h):
         f = getattr(h.obj, f"get_{which}lim", None)
+        if f is None and which == "z" and getattr(h.obj, "name", "") == "rectilinear":
+            # 2-D axes still have a z range: [-1 1], or what axis([... zmin zmax]) / zlim set
+            return _row(list(getattr(h.obj, "_mylab_zlim", None) or (-1.0, 1.0)))
         if f is None:
             return np.zeros((1, 0))
         lo, hi = f()
@@ -2266,6 +2269,9 @@ def _lim_set(which):
         lim = np.real(axis_numbers(h.obj, which, v)).flatten()
         if lim.size != 2:
             raise MatlabError("Limits must be a 2-element vector of increasing values.")
+        if which == "z" and not hasattr(h.obj, "set_zlim") and getattr(h.obj, "name", "") == "rectilinear":
+            h.obj._mylab_zlim = (float(lim[0]), float(lim[1]))  # kept for when the axes turn 3-D
+            return
         _set_lim(h.obj, which, lim[0], lim[1])
     return s
 
