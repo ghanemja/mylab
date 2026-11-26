@@ -86,12 +86,14 @@ create it yourself with **New environment** and the name `pypi`.)
 
 1. Repository → **Settings** → **Pages**.
 2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
-3. Create the repository **variable** `DEPLOY_PAGES` with the value `true`.
-4. Go to the **Actions** tab, choose **Deploy web app to GitHub Pages** in the
+3. Go to the **Actions** tab, choose **Deploy web app to GitHub Pages** in the
    list on the left, and select **Run workflow** → **Run workflow**.
 
-After about 2 minutes the app is at `https://ghanemja.github.io/mylab/`. From
-now on it is updated on every push to `main`.
+After about 2 minutes the app is at `https://ghanemja.github.io/mylab/`. It is
+then updated on every push to `main`. (Until step 2 is done, that workflow
+fails at "Get Pages site failed"; nothing else is affected.) Publishing Pages
+from a private repository needs a paid GitHub plan; a public repository
+publishes for free.
 
 ### 4. VS Code Marketplace (20 minutes, optional)
 
@@ -295,10 +297,11 @@ Below, replace `X.Y.Z` with your new version number.
    git push origin main
    ```
 
-5. **Run the checks on your own machine:** `scripts/check.sh --web`. Fix
-   anything that fails first. (The test workflows on GitHub no longer run on
-   every push. You can still start them by hand from the **Actions** tab to
-   test on Windows and macOS.)
+5. **Wait for the checks on GitHub.** The push starts the **CI** workflow
+   (tests on Linux, Windows and macOS, the MATLAB-behaviour checks, the speed
+   check and the browser app). Open the **Actions** tab and wait until the
+   run for your commit is green. Fix anything that fails first. To check on
+   your own machine instead, run `scripts/check.sh --full`.
 6. **Tag and push the tag:**
 
    ```bash

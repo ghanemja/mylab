@@ -28,8 +28,8 @@ students, researchers and engineers who can't afford a MATLAB license.
   browser or on Gradescope.
 - **Covers a lot of the language:** matrices, N-D arrays, cells, structs,
   strings, tables, sparse matrices, dates, `containers.Map`, `classdef`
-  classes and about 1,420 functions, from linear algebra to `fft`, `ode45`,
-  `fminsearch`, `imread` and plotting.
+  classes and more than 2,600 functions, from linear algebra to `fft`,
+  `ode45`, `fminsearch`, `fit`, `imread` and plotting.
 
 ![mylab running in the browser](docs/images/demo.gif)
 
@@ -50,10 +50,11 @@ implementation. See [Legal](#license-and-trademarks).
 
 ### 1. In the browser (no install)
 
-Open the web app, which is hosted with GitHub Pages from this repository. Your
-files stay in your browser and the code runs on your own machine. The first
-visit downloads about 30–60 MB, which is cached afterwards.
-See [docs/WEB.md](docs/WEB.md).
+The web app is published from this repository to GitHub Pages:
+**https://ghanemja.github.io/mylab/**. Your files stay in your browser and the
+code runs on your own machine. The first visit downloads about 30–60 MB,
+which is cached afterwards. To run your own copy from a checkout, use
+`python scripts/build_web.py --serve`. See [docs/WEB.md](docs/WEB.md).
 
 ### 2. On your computer
 
@@ -142,7 +143,7 @@ mylab also publishes two datasets for the community (see [datasets/](datasets/))
 | Functions | Script-local functions, `.m` files on the path, multiple outputs, `nargin`/`nargout`, `varargin`/`varargout`, anonymous functions with captured variables, `global`, `eval`/`feval` |
 | Data types | double, single, logical, char, int8–uint64 (saturating), complex numbers, N-D arrays, cell arrays, structs and struct arrays, string arrays, function handles, `containers.Map`, `table`, sparse matrices, `datetime`/`duration` |
 | Classes | `classdef` value and handle classes, properties with defaults, `Constant`/`Dependent` properties, `get.`/`set.` methods, constructors, `Static` methods, inheritance with `obj@Parent`, operator overloading, custom `disp`, object arrays, enumerations, events and listeners, `@Class` and `+package` folders |
-| Library | About 1,420 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations, categorical arrays, JSON, WAV audio and Excel files, symbolic math (`syms`, `diff`, `int`, `solve`, `dsolve`; needs SymPy) |
+| Library | More than 2,600 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations, categorical arrays, JSON, WAV audio and Excel files, curve fitting (`fit`, `fittype`, `cfit`), HDF5 and version 7.3 MAT-files, symbolic math (`syms`, `diff`, `int`, `solve`, `dsolve`; needs SymPy) |
 
 The full list is in [docs/FUNCTIONS.md](docs/FUNCTIONS.md). Type `help name` in
 mylab for any function. Known differences and gaps are in
@@ -151,11 +152,14 @@ mylab for any function. Known differences and gaps are in
 ## Speed
 
 - **Vectorized code** runs at NumPy speed (compiled BLAS/LAPACK underneath).
-- **Large array expressions can go faster than NumPy.** Install the optional
-  accelerator with `pip install "mylab-lang[fast]"`. An expression such as
-  `sin(x).^2 + 3*x - x./z` on arrays of 100,000 elements or more is then
-  evaluated in one pass on all CPU cores, with no temporary arrays: about
-  2–5× faster on a 4-core machine. Not available in the browser app.
+- **Large array expressions can use numexpr.** With the optional
+  [numexpr](https://github.com/pydata/numexpr) package
+  (`pip install "mylab-lang[fast]"`), an expression such as
+  `sin(x).^2 + 3*x - x./z` on arrays of 100,000 elements or more is handed to
+  numexpr, which evaluates it in one pass on all CPU cores without temporary
+  arrays: about 2–5× faster than doing it one operation at a time with NumPy
+  on a 4-core machine. The gain is numexpr's; without it mylab uses NumPy.
+  Not available in the browser app.
 - **Simple numeric loops are compiled.** Loops that do scalar arithmetic and
   read or write array elements are translated to fast code automatically,
   about 20–50× faster than interpreting them: 200,000 iterations of
@@ -170,7 +174,10 @@ mylab for any function. Known differences and gaps are in
   cells, structs or strings, or print): about 2–10 µs per statement. That's
   fine for coursework, but slower than MATLAB.
 
-`benchmarks/bench.py` measures common patterns.
+`benchmarks/bench.py` measures common patterns. `benchmarks/octave_compare`
+times 30 cases against GNU Octave 10.3: on the machine used for 1.1.0, mylab
+took no longer than Octave on any of them (FFT and `eig` are level with it).
+It has not been timed against MATLAB.
 
 ## Project layout
 
@@ -188,21 +195,61 @@ editors/vscode/   VS Code extension
 datasets/         MATLAB Tasks benchmark and MATLAB Corpus index
 examples/         runnable example scripts and a sample assignment
 tests/            pytest suite, including 5,377 conformance checks against GNU Octave
+  probes/         MATLAB-behaviour checks (705 original, 469 held out)
+validation/       kit for running the same checks on MATLAB itself
+benchmarks/       speed checks, including the comparison with GNU Octave
 docs/             guides, function list, compatibility notes
 ```
 
 ## How it is tested
 
-- **2,600+ unit tests** on Linux, Windows and macOS.
+Every push runs these on GitHub Actions:
+
+- **About 6,700 tests** on Linux, Windows and macOS with Python 3.10 and 3.14,
+  and with the oldest and newest supported NumPy, SciPy and Matplotlib.
 - **Conformance suite:** 257 scripts with 5,377 checks. Each result is
   compared with GNU Octave, an independent implementation of the same
   language, with corrections where MATLAB is documented to differ. All
   checks pass. See [tests/conformance](tests/conformance/README.md).
+- **MATLAB-behaviour checks:** 705 small scripts asserting documented MATLAB
+  behaviour, and 469 more written afterwards and kept out of sight while
+  gaps were closed. 695 and 469 pass, and a check that passes may never fail
+  again. Corrections to checks are listed in
+  [tests/probes/heldout/CORRECTIONS.md](tests/probes/heldout/CORRECTIONS.md).
 - **MATLAB Tasks:** 157 programming tasks with checked answers; all pass.
-- **MATLAB Corpus:** mylab parses 99.1% of 29,114 real-world files.
+- **Speed:** a job fails if a benchmark case gets more than 25% slower.
 
-mylab has not been run side by side with MATLAB itself. If you find a
-difference, please [open an issue](../../issues).
+Run on request:
+
+- **Real code:** 25 repositories from the MATLAB Corpus (185 scripts and test
+  suites, such as matGeom's 721 unit tests) run unchanged; all pass. See
+  [datasets/matlab-corpus](datasets/matlab-corpus/README.md#running-real-code-the-regression-suite).
+- **MATLAB Corpus:** mylab parsed 99.1% of 29,114 real-world files when this
+  was last measured (1.0.0).
+
+mylab has not been run side by side with MATLAB itself. If you have MATLAB,
+[validation/](validation/) runs the same checks there and tells you what
+differs. If you find a difference, please
+[report it](../../issues/new?template=report-a-difference.yml).
+
+## Running code you did not write
+
+mylab runs MATLAB code with the permissions of the account that starts it.
+Like MATLAB, that code can read and write files, start programs (`system`,
+`!command`) and use the network (`webread`). If you host mylab for other
+people, for example as a shared server, an autograder or a tool for an AI
+assistant:
+
+- Set the environment variable `MYLAB_PYTHON=0`. It turns off calls from
+  MATLAB code into Python (`py.*`, `pyrun`, `pyrunfile`), which would
+  otherwise give that code everything Python can do.
+- `MYLAB_PYTHON=0` is not a sandbox: shell commands, file access and the
+  network still work. Run each person's code in an isolated environment, such
+  as a container or a separate unprivileged account without network access,
+  with limits on time and memory.
+
+The browser app is different: code runs inside the browser tab, which cannot
+reach your files or start programs.
 
 ## Contributing
 

@@ -1,6 +1,60 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 (not yet released)
+
+1.1.0 brings mylab's behaviour much closer to MATLAB's, adds the Curve
+Fitting core, HDF5 and version 7.3 MAT-files in the default install, and
+continuous testing on Linux, Windows and macOS. Read *Breaking changes*
+first if you used 1.0.0: several of the fixes change results that scripts
+may have relied on.
+
+### Breaking changes
+- **Dependencies:** NumPy 1.26, SciPy 1.13, Matplotlib 3.8 and Pillow 10
+  are now the minimum versions (were 1.24, 1.10, 3.7 and 9): they are the
+  oldest set the full test suite passes on. **h5py 3.15.1 or newer is now
+  required** (it was optional). On Linux its wheels need glibc 2.28 or newer.
+- **Unknown name-value options are an error.** 1.0.0 silently ignored an
+  option it did not know (a misspelt `'LineWidht'`, an option from a newer
+  MATLAB release). Built-ins now raise MATLAB's error, for graphics
+  "Unrecognized property 'X' for class 'Y'."
+- **Figures are 560 x 420 pixels**, MATLAB's default (were 640 x 480).
+  `getframe`, `VideoWriter` frames, animations and images saved at the
+  screen resolution change size accordingly.
+- **Colours are MATLAB's.** The letters `'g'`, `'c'`, `'m'` and `'y'` in a
+  line specification, `'Color'` option or colour name are now [0 1 0],
+  [0 1 1], [1 0 1] and [1 1 0] (were Matplotlib's darker colours), and the
+  default colour order is MATLAB's (`[0 0.4470 0.7410]`, ...). Plots look
+  different, and code that read `h.Color` gets the new values.
+- **Graphics objects as MATLAB returns them:** `pie` returns a patch and a
+  text for each slice (was one handle); `xline`/`yline` return
+  `ConstantLine` objects (were lines); `h.Marker` reads `'square'`,
+  `'diamond'`, `'pentagram'` and `'hexagram'` (was `'s'`, `'d'`, ...);
+  `h.Prop` on several objects is a comma-separated list, so `{h.Color}` is a
+  cell array (use `get(h, 'Color')` for the old form); image `CData` keeps
+  its class (uint8, logical, ...) instead of becoming double.
+- **Function lookup:** a function file in the current folder now takes
+  precedence over one of the same name on the path, as in MATLAB.
+- **`|` and `&` short-circuit inside `if` and `while` conditions**, as in
+  MATLAB, so the right-hand side is not evaluated when the left decides.
+- **Numeric results that change:**
+  - `floor`, `ceil`, `fix`, `real`, `imag` and `conj` keep the class of
+    integer inputs (returned double);
+  - `sum` and `prod` of integer, logical and char arrays return double
+    unless `'native'` is given;
+  - a rectangular `A\b` returns a basic solution (pivoted QR), as MATLAB
+    does, instead of the minimum-norm one;
+  - `linspace` follows MATLAB's algorithm, with the end points exactly
+    `a` and `b` (`linspace(0, Inf, n)` started with NaN);
+  - `rand`, `randi`, `randn` and `randperm` return MATLAB's numbers after
+    `rng(seed)`, so seeded random sequences differ from 1.0.0's.
+- **Text:** `split` merges consecutive delimiters by default
+  (`CollapseDelimiters` is true, as in MATLAB); `sscanf`/`fscanf` with a
+  size limit stop where MATLAB does.
+- **Display:** the command window prints values as MATLAB does (spacing,
+  `format` modes, column blocks, class headers), so captured output
+  (`evalc`, `disp` in tests) can differ from 1.0.0's.
+- **Files:** `matfile` on a new file creates a version 7.3 MAT-file, as
+  MATLAB does (was version 7).
 
 ### Language
 - Object arrays of classdef objects: `objs(3) = Point(1, 2)`, `[a, b]`,
@@ -13,6 +67,13 @@
   in `+package` folders (`pkg.func(...)`, `pkg.Class(...)`, `@pkg.func`).
 - `onCleanup`, `inputParser`, `RandStream`, `timer`, `message`, System-object
   `step`, `s = rng` / `rng(s)`, `rand('seed', n)`.
+- `|` and `&` short-circuit in `if`/`while` conditions; command syntax in
+  class methods; nested functions in a method keep the method's access;
+  growing `[]` through colons; optional `inputParser` inputs given by name.
+- Octave syntax (`+=`, `x++`, `#{ }#`, `do`/`until`, `unwind_protect`,
+  `printf`, ...), `arguments` block options, MATLAB's error identifiers and
+  messages for the common runtime errors, `MException` details.
+- Source files that are not UTF-8 (Windows-1252, Shift-JIS) are read.
 
 ### Library
 - Geometry: `pdist2`, `knnsearch`, `dsearchn`, `inpolygon`, `polyarea`,
@@ -27,15 +88,61 @@
   `writetable`, `readmatrix`, `writematrix`, `readcell`, `writecell`.
 - Plots: `quiver3`, `surface`, `pcolor`, `surfl`, `trisurf`, `trimesh`,
   `triplot`, `stem3`, `xline`, `yline`, `alpha`, `boxplot`, `gobjects`.
-- HDF5 files and version 7.3 MAT-files work in the default install: h5py
-  (3.15.1 or newer) is now a dependency. The browser app loads it the first
-  time a program uses HDF5. `matfile` creates version 7.3 files, as MATLAB
-  does. `MATLAB_class` attributes are null-terminated strings and `struct()`
-  is an empty group, as in MATLAB's own files.
-- `.slx` import, measured again on the 82 public files: 31 of the 68 models
-  run (was 30). The quadrotor model, whose dynamics are an S-function file,
-  now finishes within the 400 s limit (about 330 s) with the faster
-  interpreter; nothing else changed.
+- **Curve fitting:** `fit`, `fittype`, `fitoptions`, `cfit` and `sfit` with
+  the library models (polynomials, exponentials, power, Gaussian, sine and
+  Fourier series, rationals, Weibull, interpolants, smoothing splines,
+  polynomial surfaces), custom equations, weights, exclusions, robust fits,
+  `confint`, `predint`, `differentiate`, `integrate` and `plot(f, x, y)`.
+  Lowess surface fits are not supported yet. See docs/COMPATIBILITY.md.
+- `griddedInterpolant` (all methods, extrapolation, grid and scattered
+  queries), `triangulation` and `delaunayTriangulation` objects, `voronoin`.
+- **HDF5 and version 7.3 MAT-files in the default install:** `h5create`,
+  `h5write`, `h5read`, `h5info`, `h5disp`, attributes, `save -v7.3`, `load`
+  and `matfile`. Files follow MATLAB's layout (checked against hdf5storage
+  and mat73). The browser app loads HDF5 support the first time a program
+  uses it.
+- Toolbox-level coverage added since 1.0.0: control systems (`tf`, `ss`,
+  `zpk`, `frd`, `pid`, analysis and design), statistics and machine learning
+  (distributions, tests, regression, clustering, learners), signal
+  processing (filter design, spectra, wavelets), image processing (colour
+  spaces, morphology, regions, `strel`), ODE suite with mass matrices,
+  events, BVP/DDE/PDE solvers, adaptive quadrature, a unit-testing framework,
+  MAT-file reader and writer for every standard type, chart types (heatmap,
+  histogram2, bar3, swarm and bubble charts, geo axes, ...), figure files
+  (`savefig`/`openfig`), datetime/duration/categorical axes.
+- Graphics properties that now match MATLAB: `ax.YAxis` after `yyaxis`
+  (two rulers), polar lines' `ThetaData`/`RData`, `ConstantLine` `Value`
+  and labels, `pie` outputs, Z properties on 2-D axes, numeric graphics
+  handles (`h = zeros(1, n); h(k) = plot(...)`).
+- `echo`, `pkg load` (for the Octave packages mylab has built in), `bucky`,
+  `randg`, `handle`, `fields`, `dlmread` ranges, `exist` for data files on
+  the path.
+
+### Speed
+- Every case of the speed comparison with GNU Octave 10.3
+  (benchmarks/octave_compare) now takes no longer than Octave on the same
+  machine: FFT and `eig` are level with it, most interpreter-heavy cases run
+  3-50x faster (cell/string building and object methods about 1.1x).
+- Anonymous functions defined inside function files are compiled (they never
+  were): `arrayfun`/`cellfun`, `fminsearch` and `ode45` with such handles run
+  3-8x faster.
+- Sparse banded systems use LAPACK's banded solver; one long FFT uses several
+  cores; `regexp` on cell arrays builds only the outputs asked for.
+- Start-up imports SciPy, numexpr and the app server on first use.
+
+### Fixed
+- **Python 3.14:** `b = a; b(2) = 5` also changed `a` (Python 3.14 lends
+  references without counting them, and an in-place fast path relied on the
+  count). The thresholds are now measured at import, and the fast paths turn
+  themselves off where they cannot be trusted (free-threaded builds).
+- **Windows, Python 3.10:** deeply recursive programs crashed the process
+  (Windows' 1 MB thread stack); deep calls now continue on a larger stack.
+- A file written within the same clock tick as the last directory listing
+  was not found (Windows CI); persistent variables could pass to a re-parsed
+  function; argument names leaked from one call to the next; NaN handling in
+  the fast numeric paths matches the general one.
+- Block diagrams: a non-numeric block parameter is reported by its MATLAB
+  class instead of a Python error.
 
 ### Web app
 - Editor conveniences: a command palette (Ctrl+Shift+P) and file switcher
@@ -57,6 +164,23 @@
   `.m` examples), the welcome window has a *Block diagrams* card, and New file
   offers *Block diagram* next to *Script or function* (a small model to start
   from). Model files have their own icon in the Files panel.
+
+### Block diagrams
+- `.slx` import, measured again on the 82 public files: 31 of the 68 models
+  run (was 30). The quadrotor model, whose dynamics are an S-function file,
+  now finishes within the 400 s limit (about 330 s), helped by the faster
+  interpreter.
+
+### Testing and continuous checking
+- CI on every push: lint; the full test suite on Linux, Windows and macOS
+  with Python 3.10 and 3.14; the oldest and newest NumPy/SciPy/Matplotlib;
+  the browser app; 705 + 469 MATLAB-behaviour checks with a ratchet (a check
+  that passes may never fail again); a speed job that fails on a slowdown of
+  more than 25%.
+- A MATLAB validation kit (validation/) to run the same checks on MATLAB.
+- A regression suite of 25 real repositories from the MATLAB corpus (185
+  scripts and test suites, all passing), fetched on demand:
+  `python datasets/matlab-corpus/tools/run_corpus.py run`.
 
 ## 1.0.0
 

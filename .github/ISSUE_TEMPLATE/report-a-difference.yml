@@ -1,0 +1,74 @@
+name: Report a difference from MATLAB
+description: mylab gives a different result, error or output than MATLAB for the same code.
+title: "[Difference] "
+labels: ["difference"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report this. A short example that shows the
+        difference is the most useful thing you can give us.
+
+        Please write the example yourself. Code copied from MathWorks documentation can't
+        be used in mylab's tests (see CLEANROOM.md), so we would have to rewrite it first.
+  - type: textarea
+    id: code
+    attributes:
+      label: Code
+      description: The smallest piece of MATLAB-language code that shows the difference.
+      render: matlab
+      placeholder: |
+        x = int8(100) + int8(100)
+    validations:
+      required: true
+  - type: textarea
+    id: mylab-output
+    attributes:
+      label: What mylab printed
+      description: Copy the output or the error message exactly.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: matlab-output
+    attributes:
+      label: What MATLAB printed
+      description: >-
+        Copy MATLAB's output exactly, with the MATLAB release (for example R2024b). If you
+        don't have MATLAB, describe what you expected and link the MathWorks reference
+        page that documents it.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did you run mylab?
+      options:
+        - mylab command (terminal)
+        - Web app in the browser
+        - Jupyter kernel
+        - Python API (mylab.api.Session)
+        - MCP server (AI assistant)
+        - VS Code extension
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mylab version
+      description: The output of `mylab --version`, or the version shown in the web app's About box.
+      placeholder: mylab 1.1.0
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and Python version
+      placeholder: Windows 11, Python 3.12
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Does it matter which inputs you use? Does GNU Octave agree with MATLAB or with mylab?

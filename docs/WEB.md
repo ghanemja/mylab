@@ -725,8 +725,6 @@ and publishes `web/` to GitHub Pages. To turn it on:
 1. Open the repository's **Settings → Pages** and set **Source** to
    **GitHub Actions**. Publishing Pages from a private repository needs a paid
    GitHub plan; public repositories can publish for free.
-2. Under **Settings → Secrets and variables → Actions → Variables**, add the
-   variable `DEPLOY_PAGES` with the value `true`.
 
 After that, every push to `main` redeploys the app. You can also run the
 workflow by hand from the **Actions** tab. The site address is
