@@ -472,6 +472,21 @@ def _minmax(is_max: bool):
             if r == 0.0:
                 return None  # +0 or -0: let NumPy pick, as before
             return scalar(r)
+        if n == 3:  # max(a, [], 1) and max(a, [], 2) of a plain double matrix without NaN: the general reduction
+            a, e, d = args
+            if nargout <= 1 and type(a) is _ND and a.dtype is _F64 and a.ndim == 2 and type(e) is _ND \
+                    and e.size == 0 and type(d) is _ND and d.shape == _S11 and d.dtype is _F64:
+                k = d.item()
+                if k == 1.0:
+                    b, shape = a.T, (1, a.shape[1])
+                elif k == 2.0:
+                    b, shape = a, (a.shape[0], 1)
+                else:
+                    return None
+                if b.shape[-1] == 0 or np.isnan(b).any():
+                    return None
+                return (np.max if is_max else np.min)(b, axis=-1).reshape(shape)
+            return None
         if n == 2:
             a, b = args
             if type(a) is _ND and type(b) is _ND and a.dtype is _F64 and b.dtype is _F64 \
