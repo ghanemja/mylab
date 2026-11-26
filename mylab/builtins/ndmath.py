@@ -368,66 +368,6 @@ _reduce("harmmean", lambda a, ax: a.shape[ax] / np.sum(1.0 / a, axis=ax))
 
 # -- pca, grp2idx, ksdensity --------------------------------------------------------------------------
 
-@builtin("pca")
-def _pca(interp, args, nargout):
-    rest, opts = _options(args, {"numcomponents", "centered", "algorithm", "economy", "rows"}, "pca")
-    nargs(rest, 1, 1, "pca")
-    X = fnum(rest[0]).astype(float)
-    if X.ndim != 2:
-        raise MatlabError("pca: the data must be a matrix with one observation per row.")
-    rows = text(opts["rows"]).lower() if "rows" in opts else "complete"
-    keep = ~np.isnan(X).any(axis=1)
-    if rows == "complete":
-        Xc = X[keep]
-    elif np.isnan(X).any():
-        raise MatlabError("pca: the data contains NaN. Use 'Rows', 'complete' (the default) to skip those rows.")
-    else:
-        Xc = X
-    n, p = Xc.shape
-    centered = True
-    if "centered" in opts:
-        c = opts["centered"]
-        centered = text(c).lower() not in ("off", "false") if is_text(c) else bool(np.asarray(c).flat[0])
-    mu = Xc.mean(axis=0, keepdims=True) if (centered and n) else np.zeros((1, p))
-    Z = Xc - mu
-    dof = max(n - (1 if centered else 0), 1)
-    if n == 0:
-        return (np.zeros((p, 0)), np.zeros((0, 0)), np.zeros((0, 1)), np.zeros((0, 1)), np.zeros((0, 1)), mu)
-    U, s, Vt = np.linalg.svd(Z, full_matrices=False)
-    coeff = Vt.T
-    ncomp = min(dof if centered else n, p)
-    if "numcomponents" in opts:
-        ncomp = min(ncomp, to_int(opts["numcomponents"], "NumComponents"))
-    # Sign convention: the largest element of each coefficient column is positive.
-    big = np.argmax(np.abs(coeff), axis=0)
-    signs = np.sign(coeff[big, np.arange(coeff.shape[1])])
-    signs[signs == 0] = 1
-    coeff = coeff * signs
-    latent_all = (s ** 2) / dof
-    nvalid = min(dof if centered else n, p)
-    latent_all = latent_all[:nvalid]
-    coeff = coeff[:, :ncomp]
-    score_c = Z @ coeff
-    score = np.full((X.shape[0], ncomp), np.nan)
-    if rows == "complete":
-        score[keep] = score_c
-    else:
-        score = score_c
-    latent = latent_all.reshape(-1, 1)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        std_scores = (Z @ (Vt.T * signs)[:, :nvalid]) / np.sqrt(latent_all)
-    std_scores[:, latent_all <= 1e-14 * max(latent_all.max(initial=0.0), 1e-300)] = 0
-    t2 = np.full((X.shape[0], 1), np.nan)
-    t2_vals = np.sum(std_scores ** 2, axis=1, keepdims=True)
-    if rows == "complete":
-        t2[keep] = t2_vals
-    else:
-        t2 = t2_vals
-    total = latent_all.sum()
-    explained = (100 * latent_all / total if total > 0 else np.zeros_like(latent_all)).reshape(-1, 1)
-    return coeff, score, latent, t2, explained, mu
-
-
 def group_index(g: Any) -> tuple[np.ndarray, list[str], Any]:
     """Group numbers (NaN for missing), group names and group values for a grouping variable."""
     if hasattr(g, "categories") and hasattr(g, "codes"):  # categorical
@@ -486,79 +426,6 @@ def _grp2idx(interp, args, nargout):
     return idx.reshape(-1, 1), Cell.from_list([char(n) for n in names], column=True), levels
 
 
-@builtin("ksdensity")
-def _ksdensity(interp, args, nargout):
-    from scipy.special import ndtr
-    rest, opts = _options(args, {"bandwidth", "kernel", "function", "numpoints", "support", "weights",
-                                 "width", "npoints"}, "ksdensity")
-    nargs(rest, 1, 2, "ksdensity")
-    x = fnum(rest[0]).astype(float).flatten()
-    x = x[~np.isnan(x)]
-    if x.size == 0:
-        raise MatlabError("ksdensity: the sample is empty.")
-    n = x.size
-    w = np.full(n, 1.0 / n)
-    if "weights" in opts:
-        w = fnum(opts["weights"]).astype(float).flatten()
-        if w.size != n:
-            raise MatlabError("ksdensity: Weights must have one entry per sample value.")
-        w = w / w.sum()
-    kernel = text(opts["kernel"]).lower() if "kernel" in opts else "normal"
-    func = text(opts["function"]).lower() if "function" in opts else "pdf"
-    if func not in ("pdf", "cdf", "survivor"):
-        raise MatlabError("ksdensity: Function must be 'pdf', 'cdf' or 'survivor'.")
-    bw_arg = opts.get("bandwidth", opts.get("width"))
-    if bw_arg is not None and not is_text(bw_arg) and np.asarray(bw_arg).size:
-        bw = float(fnum(bw_arg).flat[0])
-    else:
-        sig = np.median(np.abs(x - np.median(x))) / 0.6745  # robust estimate of the spread
-        if sig <= 0:
-            sig = float(np.max(x) - np.min(x)) or 1.0
-        bw = sig * (4.0 / (3.0 * n)) ** 0.2
-    if bw <= 0:
-        raise MatlabError("ksdensity: the bandwidth must be positive.")
-    positive = "support" in opts and is_text(opts["support"]) and text(opts["support"]).lower() == "positive"
-    if positive and np.any(x <= 0):
-        raise MatlabError("ksdensity: with 'Support', 'positive' all sample values must be positive.")
-    if len(rest) > 1 and rest[1].size:
-        xi = fnum(rest[1]).astype(float)
-        shape = xi.shape
-        xi = xi.flatten(order="F")
-    else:
-        m = to_int(opts.get("numpoints", opts.get("npoints", np.array([[100.0]]))), "NumPoints")
-        if positive:
-            lo, hi = np.log(x.min()) - 3 * bw, np.log(x.max()) + 3 * bw
-            xi = np.exp(np.linspace(lo, hi, m))
-        else:
-            xi = np.linspace(x.min() - 3 * bw, x.max() + 3 * bw, m)
-        shape = (1, m)
-    data, pts = (np.log(x), np.log(np.where(xi > 0, xi, np.nan))) if positive else (x, xi)
-    z = (pts[:, None] - data[None, :]) / bw
-    if func == "pdf":
-        if kernel in ("normal", "gaussian"):
-            k = np.exp(-0.5 * z ** 2) / np.sqrt(2 * np.pi)
-        elif kernel == "box":
-            k = (np.abs(z) <= np.sqrt(3)) / (2 * np.sqrt(3))
-        elif kernel == "triangle":
-            k = np.clip(1 - np.abs(z) / np.sqrt(6), 0, None) / np.sqrt(6)
-        elif kernel == "epanechnikov":
-            k = np.clip(1 - z ** 2 / 5, 0, None) * 0.75 / np.sqrt(5)
-        else:
-            raise MatlabError("ksdensity: Kernel must be 'normal', 'box', 'triangle' or 'epanechnikov'.")
-        f = (k @ w) / bw
-        if positive:
-            f = np.where(xi > 0, f / np.where(xi > 0, xi, 1), 0.0)
-    else:
-        if kernel not in ("normal", "gaussian"):
-            raise MatlabError("ksdensity: the cdf is available for the 'normal' kernel only.")
-        f = ndtr(z) @ w
-        if positive:
-            f = np.where(xi > 0, f, 0.0)
-        if func == "survivor":
-            f = 1 - f
-    return f.reshape(shape, order="F"), xi.reshape(shape, order="F"), fscalar(bw)
-
-
 # -- inline, builtin ---------------------------------------------------------------------------------
 
 _NOT_VARIABLES = {"pi", "inf", "nan", "eps", "i", "j", "e", "end", "true", "false"}
@@ -601,31 +468,6 @@ def _builtin(interp, args, nargout):
         raise MatlabError(f"'{name}' is not a built-in function.")
     res = interp.call_builtin(name, fn, list(args[1:]), nargout)
     return tuple(res) if res else None
-
-
-# -- random by distribution name ------------------------------------------------------------------------
-
-_RANDOM = {"normal": ("normrnd", 2), "gaussian": ("normrnd", 2), "uniform": ("unifrnd", 2),
-           "exponential": ("exprnd", 1), "poisson": ("poissrnd", 1), "binomial": ("binornd", 2),
-           "gamma": ("gamrnd", 2), "beta": ("betarnd", 2), "chisquare": ("chi2rnd", 1), "chi2": ("chi2rnd", 1),
-           "t": ("trnd", 1), "f": ("frnd", 2), "lognormal": ("lognrnd", 2), "weibull": ("wblrnd", 2),
-           "rayleigh": ("raylrnd", 1), "geometric": ("geornd", 1), "negativebinomial": ("nbinrnd", 2),
-           "discreteuniform": ("unidrnd", 1)}
-_RANDOM.update({v[0][:-3]: v for v in list(_RANDOM.values())})  # short names: 'norm', 'unif', 'exp', ...
-
-
-@builtin("random")
-def _random(interp, args, nargout):
-    if not args or not is_text(args[0]):
-        raise MatlabError("random needs a distribution name first, e.g. random('Normal', 0, 1, 3, 2).")
-    key = text(args[0]).lower().replace(" ", "")
-    if key not in _RANDOM:
-        raise MatlabError(f"random: unknown distribution '{text(args[0])}'. Known names: "
-                          + ", ".join(sorted(k for k in _RANDOM if len(k) > 4)) + ".")
-    name, count = _RANDOM[key]
-    if len(args) - 1 < count:
-        raise MatlabError(f"random: the {text(args[0])} distribution needs {count} parameter(s).")
-    return interp.call_builtin(name, interp.builtins[name], list(args[1:]), 1)[0]
 
 
 # -- spectrogram ---------------------------------------------------------------------------------------
