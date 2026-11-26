@@ -128,7 +128,39 @@ def _pow(a, b):
 def _round(x):
     if x != x or x in (math.inf, -math.inf):
         return x
-    return float(math.floor(abs(x) + 0.5)) * (1.0 if x >= 0 else -1.0)
+    m = abs(x)
+    low = float(math.floor(m))  # (not floor(|x| + 0.5): that rounds 0.49999999999999994 up)
+    return math.copysign(low + 1.0 if m - low >= 0.5 else low, x)  # the sign of zero is kept
+
+
+# Element functions of a real scalar.  They call the same NumPy routines as the interpreter (on a
+# Python float NumPy runs the very loop it uses for arrays), not the math module: the C library's
+# exp, log, tan, sinh ... can differ from NumPy's in the last bit, and a loop must give exactly
+# the interpreter's answer.  sqrt is correctly rounded everywhere.
+def _np1(ufunc, nonneg=False):
+    if nonneg:
+        def f(x):
+            if x < 0.0:
+                raise Bail  # a complex result
+            return float(ufunc(x))
+    else:
+        def f(x):
+            return float(ufunc(x))
+    return f
+
+
+def _np2(ufunc):
+    def f(x, y):
+        return float(ufunc(x, y))
+    return f
+
+
+_ELEMENT_FUNCS = {
+    "_sin": _np1(np.sin), "_cos": _np1(np.cos), "_tan": _np1(np.tan), "_atan": _np1(np.arctan),
+    "_sinh": _np1(np.sinh), "_cosh": _np1(np.cosh), "_tanh": _np1(np.tanh), "_exp": _np1(np.exp),
+    "_log": _np1(np.log, True), "_log2": _np1(np.log2, True), "_log10": _np1(np.log10, True),
+    "_atan2": _np2(np.arctan2), "_hypot": _np2(np.hypot),
+}
 
 
 def _sign(x):
@@ -181,21 +213,34 @@ _MOD_SCALAR, _REM_SCALAR = _late_mod, _late_rem
 
 
 def _floor(x):
-    return float(math.floor(x))
+    if x != x or x in (math.inf, -math.inf):
+        return x
+    return math.copysign(math.floor(x), x)  # floor(-0) and floor of -0.5 .. -0 keep their sign
 
 
 def _ceil(x):
-    return float(math.ceil(x))
+    if x != x or x in (math.inf, -math.inf):
+        return x
+    return math.copysign(math.ceil(x), x)  # ceil(-0.5) is -0
 
 
 def _fix(x):
-    return float(math.trunc(x))
+    if x != x or x in (math.inf, -math.inf):
+        return x
+    return math.copysign(math.trunc(x), x)
 
 
 def _d(v):
     """A boxed value that must be a real scalar, as a float (logical scalars count as 0 or 1)."""
     if type(v) is _ND and v.shape == _S11 and (v.dtype is _F64 or v.dtype is _BOOL):
         return float(v.item())
+    raise Bail
+
+
+def _df(v):
+    """A built-in's result that must be a real double scalar (a logical one would change class)."""
+    if type(v) is _ND and v.shape == _S11 and v.dtype is _F64:
+        return v.item()
     raise Bail
 
 
@@ -448,7 +493,7 @@ _NS: dict[str, Any] = {
     "_ix": _ix, "_lin": _lin, "_tr": _tr, "_pow": _pow, "_round": _round, "_sign": _sign,
     "_min2": _min2, "_max2": _max2, "_mod": _mod, "_rem": _rem, "_floor": _floor, "_ceil": _ceil,
     "_fix": _fix, "_math": math, "_UNSET": _UNSET, "_Bail": Bail, "_inf": math.inf, "_nan": math.nan,
-    "_d": _d, "_bd": _bd, "_bb": _bb, "_truth": _truth, "_sc": _sc, "_binop": _binop, "_unary": _unary,
+    "_d": _d, "_df": _df, "_bd": _bd, "_bb": _bb, "_truth": _truth, "_sc": _sc, "_binop": _binop, "_unary": _unary,
     "_transpose": _transpose, "_arr": _arr, "_build": _build, "_get1": _get1, "_get2": _get2,
     "_set1": _set1, "_set2": _set2, "_copy": _copy, "_cellget": _cellget, "_lset": _lset, "_field": _field,
     "_numelf": _numelf, "_endf": _endf, "_index": _index, "_range": _range, "_count": _count,
@@ -456,6 +501,7 @@ _NS: dict[str, Any] = {
     "_minf": _extreme("min", min), "_normf": _normf, "_COLON": ix.COLON, "_lim": [500],
     "_EMPTY": np.zeros((0, 0)),
 }
+_NS.update(_ELEMENT_FUNCS)
 _NS["_EMPTY"].setflags(write=False)
 _CONSTS: dict = {}
 _counter = [0]
@@ -468,14 +514,14 @@ def _unique(prefix: str) -> str:
 
 # MATLAB function -> (number of arguments, Python expression template)
 _FUNCS = {
-    "sin": (1, "_math.sin({0})"), "cos": (1, "_math.cos({0})"), "tan": (1, "_math.tan({0})"),
-    "atan": (1, "_math.atan({0})"), "sinh": (1, "_math.sinh({0})"), "cosh": (1, "_math.cosh({0})"),
-    "tanh": (1, "_math.tanh({0})"), "exp": (1, "_math.exp({0})"), "sqrt": (1, "_math.sqrt({0})"),
-    "log": (1, "_math.log({0})"), "log2": (1, "_math.log2({0})"), "log10": (1, "_math.log10({0})"),
+    "sin": (1, "_sin({0})"), "cos": (1, "_cos({0})"), "tan": (1, "_tan({0})"),
+    "atan": (1, "_atan({0})"), "sinh": (1, "_sinh({0})"), "cosh": (1, "_cosh({0})"),
+    "tanh": (1, "_tanh({0})"), "exp": (1, "_exp({0})"), "sqrt": (1, "_math.sqrt({0})"),
+    "log": (1, "_log({0})"), "log2": (1, "_log2({0})"), "log10": (1, "_log10({0})"),
     "abs": (1, "abs({0})"), "floor": (1, "_floor({0})"), "ceil": (1, "_ceil({0})"), "fix": (1, "_fix({0})"),
     "round": (1, "_round({0})"), "sign": (1, "_sign({0})"), "mod": (2, "_mod({0}, {1})"),
     "rem": (2, "_rem({0}, {1})"), "min": (2, "_min2({0}, {1})"), "max": (2, "_max2({0}, {1})"),
-    "atan2": (2, "_math.atan2({0}, {1})"), "hypot": (2, "_math.hypot({0}, {1})"),
+    "atan2": (2, "_atan2({0}, {1})"), "hypot": (2, "_hypot({0}, {1})"),
 }
 _CONSTANTS = {"pi": ("_math.pi", "d"), "Inf": ("_inf", "d"), "inf": ("_inf", "d"), "NaN": ("_nan", "d"),
               "nan": ("_nan", "d"), "eps": (repr(sys.float_info.epsilon), "d"), "true": ("True", "b"),
@@ -902,8 +948,9 @@ class _Gen:
         if op in _COMPARE:
             return f"({a} {_COMPARE[op]} {b})", "b"
         if op in ("&", "|"):
-            joiner = "and" if op == "&" else "or"
-            return f"({self.as_truth(a, ta)} {joiner} {self.as_truth(b, tb)})", "b"
+            # element-wise: both sides are evaluated (an error on the right must not be skipped);
+            # Python's & and | on two bools do that and give a bool
+            return f"(({self.as_truth(a, ta)}) {op} ({self.as_truth(b, tb)}))", "b"
         raise Reject  # left division of scalars: rare enough to leave to the interpreter
 
     def matrix(self, node, ctx) -> tuple[str, str]:
@@ -1005,7 +1052,11 @@ class _Gen:
         finally:
             self.whole_ok = saved
         spec = _FUNCS.get(name)
-        if spec is not None and spec[0] == len(parts) and all(typ != "O" for _, typ in parts):
+        if spec is not None and spec[0] == len(parts) and all(typ != "O" for _, typ in parts) \
+                and not (name in ("min", "max") and any(typ == "o" for _, typ in parts)):
+            if name in ("min", "max") and all(typ == "b" for _, typ in parts):
+                # of two logical values, logical
+                return f"bool({spec[1].format(*(self.as_float(c, typ) for c, typ in parts))})", "b"
             return spec[1].format(*(self.as_float(c, typ) for c, typ in parts)), "d"
         if name not in _PURE:
             raise Reject
@@ -1019,7 +1070,7 @@ class _Gen:
         if name in ("numel", "length", "ndims") or (name == "size" and len(parts) == 2):
             return f"_d(_callb({fn}, [{boxed}]))", "d"
         if name in _LIKELY_SCALAR and all(typ != "O" for _, typ in parts):
-            return f"_d(_callb({fn}, [{boxed}]))", "d"
+            return f"_df(_callb({fn}, [{boxed}]))", "d"
         return f"_callb({fn}, [{boxed}])", ("o" if name in _LIKELY_SCALAR else "O")
 
     def user_call(self, fn, functions, args: list, ctx) -> tuple[str, str]:

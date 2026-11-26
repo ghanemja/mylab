@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy as np
@@ -235,19 +236,21 @@ def left_divide(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     if a.ndim == 2 and b.ndim == 2 and a.shape[0] == a.shape[1]:
         if a.shape[0] == 0:
             return np.zeros((0, b.shape[1]))
-        if fastnum.ENABLED:
-            # one factorisation gives the solution and the condition estimate behind the warnings
-            x = fastnum.solve(af, bf, _warn)
-            if x is not None:
-                return simplify(x)
-    if a.shape[0] == a.shape[1]:
+        # MATLAB's algorithm, not only a faster one: substitution for a triangular matrix, Cholesky
+        # for a symmetric positive definite one, LU with partial pivoting otherwise - even when the
+        # matrix is close to singular (a least-squares answer there would be a different result).
+        # One factorisation also gives the condition estimate behind the warnings.
+        x = fastnum.solve(af, bf, _warn)
+        if x is not None:
+            return simplify(x)
+    if a.shape[0] == a.shape[1]:  # no LAPACK back end: LU through NumPy
         try:
             cond = np.linalg.cond(af)
             if not np.isfinite(cond) or cond > 1 / np.finfo(float).eps:
-                _warn("Matrix is singular to working precision.", "MATLAB:singularMatrix")
-                with np.errstate(all="ignore"):
-                    return simplify(np.linalg.lstsq(af, bf, rcond=None)[0])
-            return simplify(np.linalg.solve(af, bf) + 0.0)  # + 0.0: no negative zeros from the solver
+                _warn("Matrix is close to singular or badly scaled. Results may be inaccurate.",
+                      "MATLAB:nearlySingularMatrix")
+            with np.errstate(all="ignore"):
+                return simplify(np.linalg.solve(af, bf) + 0.0)  # + 0.0: no negative zeros from the solver
         except np.linalg.LinAlgError:
             _warn("Matrix is singular to working precision.", "MATLAB:singularMatrix")
             return np.full((a.shape[1], b.shape[1]), np.inf)
@@ -366,8 +369,8 @@ def _scalar_fast(op: str, x: float, y: float):
     if op in ("\\", ".\\"):
         return y / x if x != 0 else None
     if op in ("^", ".^"):
-        if x < 0 and y != int(y):
-            return None
+        if x < 0 and y == y and y not in (math.inf, -math.inf) and y != int(y):
+            return None  # a complex result (an infinite or NaN exponent cannot go through int())
         try:
             r = x ** y
         except (OverflowError, ZeroDivisionError):

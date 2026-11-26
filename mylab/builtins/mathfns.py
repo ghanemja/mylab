@@ -185,16 +185,19 @@ def _tand(a):
     return t
 
 
+# Shortcuts for a real double scalar.  They call NumPy on the Python float rather than the math
+# module: the C library's exp, log, tan ... can differ from NumPy's in the last bit, and exp(x(k))
+# must equal the k-th element of exp(x).  (sqrt is correctly rounded in both.)
 _SCALAR = {
     "sqrt": lambda x: math.sqrt(x) if x >= 0 else None,
-    "exp": lambda x: math.exp(x) if x < 700 else None,
-    "log": lambda x: math.log(x) if x > 0 else None,
-    "log2": lambda x: math.log2(x) if x > 0 else None,
-    "log10": lambda x: math.log10(x) if x > 0 else None,
-    "sin": lambda x: math.sin(x) if math.isfinite(x) else None,
-    "cos": lambda x: math.cos(x) if math.isfinite(x) else None,
-    "tan": lambda x: math.tan(x) if math.isfinite(x) else None,
-    "atan": math.atan,
+    "exp": lambda x: float(np.exp(x)) if x < 700 else None,
+    "log": lambda x: float(np.log(x)) if x > 0 else None,
+    "log2": lambda x: float(np.log2(x)) if x > 0 else None,
+    "log10": lambda x: float(np.log10(x)) if x > 0 else None,
+    "sin": lambda x: float(np.sin(x)) if math.isfinite(x) else None,
+    "cos": lambda x: float(np.cos(x)) if math.isfinite(x) else None,
+    "tan": lambda x: float(np.tan(x)) if math.isfinite(x) else None,
+    "atan": lambda x: float(np.arctan(x)),
     "floor": lambda x: math.copysign(math.floor(x), x) if math.isfinite(x) else None,
     "ceil": lambda x: math.copysign(math.ceil(x), x) if math.isfinite(x) else None,
     "fix": lambda x: math.copysign(math.trunc(x), x) if math.isfinite(x) else None,
@@ -365,9 +368,9 @@ def _rem(a, b):
     return np.where(b == 0, np.where(np.isinf(a), np.nan, np.nan), r)
 
 
-builtin("atan2")(_binary_math(np.arctan2, math.atan2))
+builtin("atan2")(_binary_math(np.arctan2, lambda x, y: float(np.arctan2(x, y))))  # (see _SCALAR)
 builtin("atan2d")(_binary_math(lambda a, b: np.degrees(np.arctan2(a, b))))
-builtin("hypot")(_binary_math(np.hypot, math.hypot))
+builtin("hypot")(_binary_math(np.hypot, lambda x, y: float(np.hypot(x, y))))
 
 
 def _mod_scalar(a, b):
