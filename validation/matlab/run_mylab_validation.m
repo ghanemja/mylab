@@ -1,6 +1,10 @@
 function run_mylab_validation(varargin)
 %RUN_MYLAB_VALIDATION  Run mylab's MATLAB-behaviour checks in MATLAB and save the results.
 %
+%   ON HOLD: do not run. MathWorks' licence terms forbid using MATLAB to test
+%   software like mylab. See validation/README.md and
+%   docs/MATLAB-TERMS-REVIEW.md in the mylab repository.
+%
 %   run_mylab_validation
 %   run_mylab_validation('Output', 'my_results.json')
 %   run_mylab_validation('MaxMinutes', 12)
@@ -10,10 +14,9 @@ function run_mylab_validation(varargin)
 %   evaluates every expression in exprs.json, then writes one JSON file
 %   (mylab_validation_results.json in the current folder by default).
 %
-%   Progress is saved as it goes. If the run stops (for example at the
-%   15-minute compute limit of MATLAB Online basic), run the same command
+%   Progress is saved as it goes. If the run stops, run the same command
 %   again: checks that already have a result are skipped. 'MaxMinutes' ends
-%   a run cleanly after that many minutes so that it never hits the limit.
+%   a run cleanly after that many minutes.
 %
 %   Each check runs in its own temporary folder, which is deleted afterwards.
 %   The kit reads only its own files and writes only the results file.

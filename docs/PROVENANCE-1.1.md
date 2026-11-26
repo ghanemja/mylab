@@ -242,7 +242,7 @@ They do not use tables copied from MATLAB or Octave.
 | Copyright | 4 lines in 2 files | `editors/vscode/LICENSE` is the project's own MIT licence. In `plot_objects.py`, `copyright` is a TeX symbol name. Fine. |
 | GPL | 1 | `datasets/matlab-corpus/README.md`: "repositories whose license is unknown or GPL-family are excluded". Fine. |
 | MathWorks | 21 lines in 12 files | Trademark notices and "not affiliated" disclaimers; VS Code text about working alongside the MathWorks extension; the conformance README stating that nothing was copied; two corpus manifest entries naming MathWorks-owned GitHub repositories. Their code is not stored in this repository; see Data. Fine. |
-| mathworks.com URL | 1 | `validation/README.md` links to MATLAB Online for the user's own validation run. Fine. |
+| mathworks.com URL | 1 | `validation/README.md` links to MATLAB Online for the user's own validation run. Fine as a provenance matter. (Later note: the licence review in [MATLAB-TERMS-REVIEW.md](MATLAB-TERMS-REVIEW.md) found that MathWorks' terms forbid this use; the link and instructions were removed and the kit was never run.) |
 | `$Revision` / `$Id` | 0 | |
 | `%#ok` and other lint pragmas | 46 lines in 27 files | All in mylab's own `.m` task solutions and `validation/matlab/run_mylab_validation.m`. They are normal MATLAB comments; none is inside a Python string. Fine. |
 | derivation phrases | 48 lines in 24 files | All are "class derived from …", "format taken from the extension", "port of …" in the sense of block ports, and similar wording. One is the `_ode_steppers.py` note "coefficients … taken from SciPy's solver classes": published Butcher tableaux, from BSD-licensed SciPy. Fine. |

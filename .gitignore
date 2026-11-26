@@ -16,3 +16,7 @@ dist/
 # Built by scripts/build_web.py (CI builds it for GitHub Pages)
 web/wheels/
 tests/probes/work/
+
+# Comparison reports from the MATLAB validation kit (on hold; never publish one)
+validation/report.md
+validation/report.json

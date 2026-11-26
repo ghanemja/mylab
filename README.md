@@ -196,7 +196,7 @@ datasets/         MATLAB Tasks benchmark and MATLAB Corpus index
 examples/         runnable example scripts and a sample assignment
 tests/            pytest suite, including 5,377 conformance checks against GNU Octave
   probes/         MATLAB-behaviour checks (705 original, 469 held out)
-validation/       kit for running the same checks on MATLAB itself
+validation/       MATLAB-side check runner, on hold (see validation/README.md)
 benchmarks/       speed checks, including the comparison with GNU Octave
 docs/             guides, function list, compatibility notes
 ```
@@ -227,10 +227,11 @@ Run on request:
 - **MATLAB Corpus:** mylab parsed 99.1% of 29,114 real-world files when this
   was last measured (1.0.0).
 
-mylab has not been run side by side with MATLAB itself. If you have MATLAB,
-[validation/](validation/) runs the same checks there and tells you what
-differs. If you find a difference, please
-[report it](../../issues/new?template=report-a-difference.yml).
+mylab has never been run side by side with MATLAB, and the project does not
+use MATLAB. MathWorks' terms forbid using MATLAB to test software like mylab
+(see [docs/MATLAB-TERMS-REVIEW.md](docs/MATLAB-TERMS-REVIEW.md)). Expected
+behaviour comes from MATLAB's public documentation. If you find a
+difference, please [report it](../../issues/new?template=report-a-difference.yml).
 
 ## Running code you did not write
 

@@ -17,7 +17,7 @@ every contribution must follow these rules.
   conditions.
 - Learn *what* a function is supposed to do from any public source. That
   includes reference pages, textbooks, course notes, Stack Overflow answers,
-  and observing the behaviour of MATLAB or GNU Octave as a black box.
+  and observing the behaviour of GNU Octave as a black box.
 - Use published math (papers, textbooks, Wikipedia) and permissively licensed
   libraries (NumPy, SciPy, …) to implement the behaviour.
 - Write the function signature and a short description of the behaviour
@@ -38,6 +38,11 @@ every contribution must follow these rules.
   is MIT-licensed. You may use Octave as a black box to compare results.
 - **Decompile or reverse engineer** MathWorks binaries, or break the terms of
   any license you have agreed to.
+- **Run MATLAB to see how it behaves or to test mylab.** This includes
+  MATLAB Online's free tier and MathWorks' free licence for CI. MathWorks'
+  terms forbid using MATLAB to test or benchmark it in order to make software
+  with the same or similar functions. See
+  [docs/MATLAB-TERMS-REVIEW.md](docs/MATLAB-TERMS-REVIEW.md).
 - **Use MathWorks trademarks** as a name or logo. Writing "compatible with
   MATLAB® code" to describe the project is fine.
 - **Generate code with an AI tool from pasted MathWorks documentation.** If
