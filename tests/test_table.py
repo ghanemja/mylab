@@ -84,4 +84,10 @@ def test_csv_round_trip(t, tmp_path):
 
 def test_display(t):
     out = t.run("T")
-    assert "3×3 table" in out and "Name" in out and "88.5000" in out and "92.0000" in out
+    # numbers in a table are written with up to five significant digits, right-aligned per variable
+    assert out == ("\nT =\n\n  3×3 table\n\n"
+                   "      Name      Age    Score\n"
+                   "    ________    ___    _____\n\n"
+                   "    {'Ann' }    31     88.5 \n"
+                   "    {'Bob' }    45       92 \n"
+                   "    {'Cara'}    27       79 \n\n")

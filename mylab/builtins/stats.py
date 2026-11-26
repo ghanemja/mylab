@@ -6,7 +6,7 @@ import numpy as np
 import scipy.stats as st
 
 from ..errors import MatlabError
-from ..values import to_int
+from ..values import char, to_int
 from ._registry import builtin
 from ._util import default_dim, dims_from_args, fnum, get_dim, is_text, keep2d, nargs, text
 

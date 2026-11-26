@@ -138,19 +138,124 @@ def local_offset(posix: float | None = None) -> float:
 
 def now_seconds(zone: str = "") -> float:
     t = time.time()
-    return t if zone == "UTC" else t + local_offset(t)
+    if zone in ("", "local"):
+        return t + local_offset(t)
+    return t + zone_offset_utc(zone, t)
+
+
+_FIXED_ZONE = re.compile(r"^(?:UTC|GMT)?\s*([+-])(\d{1,2})(?::?(\d{2}))?$", re.IGNORECASE)
+
+
+@lru_cache(maxsize=64)
+def _zoneinfo(name: str):
+    """The IANA time zone called ``name`` (through Python's zoneinfo)."""
+    try:
+        import zoneinfo
+    except ImportError:  # pragma: no cover - Python without zoneinfo
+        raise MatlabError("Time zones other than 'UTC' and 'local' need Python's zoneinfo module.",
+                          "MATLAB:datetime:UnsupportedTimeZone") from None
+    try:
+        return zoneinfo.ZoneInfo(name)
+    except Exception:  # noqa: BLE001 - unknown name, or no time zone database on this system
+        try:
+            wanted = name.lower()
+            for known in zoneinfo.available_timezones():
+                if known.lower() == wanted:
+                    return zoneinfo.ZoneInfo(known)
+        except Exception:  # noqa: BLE001
+            pass
+        raise MatlabError(f"'{name}' is not a recognized time zone. Use an IANA name such as "
+                          "'America/New_York' or 'Europe/London', 'UTC', 'local', or an offset such as "
+                          "'+05:30'. (Named zones need the time zone database: the tzdata package where "
+                          "the system has none.)", "MATLAB:datetime:UnrecognizedTimeZone") from None
 
 
 def _zone(name: str) -> str:
+    """The canonical name of a time zone: '', 'UTC', 'local', '+HH:MM' or an IANA name."""
     key = name.strip()
     if key == "":
         return ""
-    if key.upper() in ("UTC", "Z", "GMT", "ETC/UTC", "UTC+0", "+00:00"):
+    if key.upper() in ("UTC", "Z", "GMT", "ETC/UTC", "UTC+0", "+00:00", "UTCLEAPSECONDS"):
         return "UTC"
     if key.lower() == "local":
         return "local"
-    raise MatlabError(f"Time zone '{name}' is not supported: only 'UTC' and 'local' are available "
-                      "(or '' for no time zone).", "MATLAB:datetime:UnsupportedTimeZone")
+    m = _FIXED_ZONE.match(key)
+    if m:
+        hh, mm = int(m.group(2)), int(m.group(3) or 0)
+        if hh > 18 or mm > 59:
+            raise MatlabError(f"'{name}' is not a valid time zone offset.", "MATLAB:datetime:UnrecognizedTimeZone")
+        return f"{m.group(1)}{hh:02d}:{mm:02d}"
+    return _zoneinfo(key).key
+
+
+def _py_datetime(secs: float):
+    """A naive Python datetime for seconds since 1970 (None outside the years 1..9999)."""
+    import datetime as _dt
+    try:
+        return _dt.datetime(1970, 1, 1) + _dt.timedelta(seconds=float(secs))
+    except (OverflowError, ValueError):
+        return None
+
+
+def zone_offset_wall(zone: str, wall: float) -> float:
+    """Seconds a zone's wall clock is ahead of UTC when that wall clock shows ``wall``."""
+    if zone in ("", "UTC") or wall != wall or math.isinf(wall):
+        return 0.0
+    if zone == "local":
+        return local_offset(wall - local_offset())
+    if zone[0] in "+-":
+        sign = -1.0 if zone[0] == "-" else 1.0
+        return sign * (int(zone[1:3]) * 3600.0 + int(zone[4:6]) * 60.0)
+    d = _py_datetime(wall)
+    if d is None:
+        return 0.0
+    off = d.replace(tzinfo=_zoneinfo(zone)).utcoffset()
+    return off.total_seconds() if off is not None else 0.0
+
+
+def zone_offset_utc(zone: str, utc: float) -> float:
+    """Seconds a zone's wall clock is ahead of UTC at the instant ``utc`` (POSIX seconds)."""
+    if zone in ("", "UTC") or utc != utc or math.isinf(utc):
+        return 0.0
+    if zone == "local":
+        return local_offset(utc)
+    if zone[0] in "+-":
+        return zone_offset_wall(zone, utc)
+    import datetime as _dt
+    d = _py_datetime(utc)
+    if d is None:
+        return 0.0
+    off = d.replace(tzinfo=_dt.timezone.utc).astimezone(_zoneinfo(zone)).utcoffset()
+    return off.total_seconds() if off is not None else 0.0
+
+
+def to_utc(data: np.ndarray, zone: str) -> np.ndarray:
+    """POSIX seconds for wall-clock seconds in a zone (unzoned values are taken as UTC)."""
+    if zone in ("", "UTC"):
+        return data
+    data = np.asarray(data, dtype=float)
+    return data - np.vectorize(lambda w: zone_offset_wall(zone, w), otypes=[float])(data) if data.size else data
+
+
+def from_utc(utc: np.ndarray, zone: str) -> np.ndarray:
+    """Wall-clock seconds in a zone for POSIX seconds."""
+    if zone in ("", "UTC"):
+        return utc
+    utc = np.asarray(utc, dtype=float)
+    return utc + np.vectorize(lambda u: zone_offset_utc(zone, u), otypes=[float])(utc) if utc.size else utc
+
+
+def _zone_abbreviation(zone: str, wall: float) -> str:
+    if zone == "UTC":
+        return "UTC"
+    if zone == "local":
+        return time.tzname[0]
+    if zone and zone[0] in "+-":
+        return "UTC" + zone
+    d = _py_datetime(wall)
+    if not zone or d is None:
+        return ""
+    return d.replace(tzinfo=_zoneinfo(zone)).tzname() or zone
 
 
 # -- format strings ------------------------------------------------------------------------------------
@@ -197,7 +302,7 @@ def _has_time(fmt: str) -> bool:
 
 
 def _offset_text(zone: str, s: float, colon: bool) -> str:
-    off = 0.0 if zone != "local" else local_offset(s - local_offset())
+    off = zone_offset_wall(zone, s)
     sign = "-" if off < 0 else "+"
     off = abs(off)
     hh, mm = int(off // 3600), int(off % 3600 // 60)
@@ -246,7 +351,7 @@ def format_datetime(s: float, fmt: str, zone: str = "") -> str:
             out.append(f"{int(math.floor(sec + 1e-9)):0{n}d}")
         elif kind == "S":
             frac = sec - math.floor(sec + 1e-9)
-            out.append(f"{int(math.floor(max(frac, 0.0) * 10 ** n + 1e-6)):0{n}d}"[:n])
+            out.append(f"{int(math.floor(max(frac, 0.0) * 10 ** n + 1e-3)):0{n}d}"[:n])
         elif kind == "a":
             out.append("AM" if h < 12 else "PM")
         elif kind == "Q":
@@ -259,7 +364,8 @@ def format_datetime(s: float, fmt: str, zone: str = "") -> str:
         elif kind in "xX":
             out.append("Z" if (kind == "X" and zone == "UTC") else (_offset_text(zone, s, n >= 3) if zone else ""))
         elif kind == "z":
-            out.append("UTC" if zone == "UTC" else (time.tzname[0] if zone == "local" else ""))
+            out.append(_zone_abbreviation(zone, s) if n < 4 else (zone if zone not in ("local",) else
+                                                                    time.tzname[0]))
         else:
             out.append(kind * n)
     return "".join(out)
@@ -617,6 +723,11 @@ class DatetimeArray(_TimeArray):
     def __init__(self, data: Any, fmt: str | None = None, zone: str = ""):
         super().__init__(data, fmt)
         self.zone = zone
+        if zone not in ("", "UTC", "local") and zone[0] not in "+-" and self.data.size and self.data.size <= 4096:
+            # a wall-clock time that the zone skips (the daylight saving gap) moves forward
+            fixed = from_utc(to_utc(self.data, zone), zone)
+            if not np.array_equal(fixed, self.data, equal_nan=True):
+                self.data = fixed
 
     def like(self, data: Any) -> "DatetimeArray":
         return DatetimeArray(data, self.fmt, self.zone)
@@ -658,7 +769,7 @@ class DatetimeArray(_TimeArray):
         if name == "TimeZone":
             return char(self.zone)
         if name == "SystemTimeZone":
-            return char(time.tzname[0])
+            return char(_system_zone())
         raise MatlabError(f"Unrecognized property '{name}' for class 'datetime'.", "MATLAB:noSuchMethodOrField")
 
     def set_field(self, interp, name: str, value: Any) -> "DatetimeArray":
@@ -699,10 +810,25 @@ class DatetimeArray(_TimeArray):
 
 
 def _rezone(data: np.ndarray, old: str, new: str) -> np.ndarray:
+    """Wall-clock seconds in the zone ``new`` for the instants that ``data`` shows in the zone ``old``."""
     if old == new or old == "" or new == "":
         return data
-    off = local_offset()
-    return data - off if (old, new) == ("local", "UTC") else data + off
+    return from_utc(to_utc(data, old), new)
+
+
+def _system_zone() -> str:
+    """The IANA name of the system time zone when it can be found, else its abbreviation."""
+    import os
+    name = os.environ.get("TZ", "")
+    if name and "/" in name:
+        return name.lstrip(":")
+    try:
+        target = os.path.realpath("/etc/localtime")
+        if "zoneinfo/" in target:
+            return target.split("zoneinfo/", 1)[1]
+    except OSError:
+        pass
+    return "UTC" if local_offset() == 0 else time.tzname[0]
 
 
 def _check_datetime_format(f: str) -> None:
@@ -994,7 +1120,7 @@ def _other_datetime(v: Any, like: DatetimeArray) -> np.ndarray:
         if (v.zone == "") != (like.zone == ""):
             raise MatlabError("Cannot combine or compare a datetime array with a time zone with one without "
                               "a time zone.", "MATLAB:datetime:IncompatibleTZ")
-        return _rezone(v.data, v.zone, like.zone)
+        return to_utc(v.data, v.zone) if like.zone else v.data
     items = _text_items(v)
     if items is not None:
         vals, _ = parse_texts(items[0], None)
@@ -1016,19 +1142,19 @@ def _datetime_binop(op: str, left: Any, right: Any) -> Any:
     ld, rd = isinstance(left, DatetimeArray), isinstance(right, DatetimeArray)
     if op in _CMP:
         ref = left if ld else right
-        a = left.data if ld else _other_datetime(left, ref)
-        b = _other_datetime(right, ref) if ld else right.data
+        a = to_utc(left.data, left.zone) if ld else _other_datetime(left, ref)
+        b = _other_datetime(right, ref) if ld else to_utc(right.data, right.zone)
         return _compare(op, a, b)
     if op == "+" or op == "-":
         if ld and rd:
             if op == "+":
                 raise MatlabError("Addition is not defined between datetime arrays.",
                                   "MATLAB:datetime:DatetimeAdditionNotDefined")
-            a, b = _bc(left.data, _other_datetime(right, left), op)
+            a, b = _bc(to_utc(left.data, left.zone), _other_datetime(right, left), op)
             return DurationArray(as_2d(np.asarray(a - b)), "hh:mm:ss")
         if rd and op == "-":
             if _text_items(left) is not None:
-                a, b = _bc(_other_datetime(left, right), right.data, op)
+                a, b = _bc(_other_datetime(left, right), to_utc(right.data, right.zone), op)
                 return DurationArray(as_2d(np.asarray(a - b)), "hh:mm:ss")
             raise MatlabError("Subtracting a datetime from a duration or number is not defined.")
         dt, other = (left, right) if ld else (right, left)
@@ -1040,13 +1166,23 @@ def _datetime_binop(op: str, left: Any, right: Any) -> Any:
         elif isinstance(other, np.ndarray) and other.dtype.kind in "biuf":
             delta = other.astype(float) * DAY  # numbers count as days
         elif op == "-" and _text_items(other) is not None:
-            a, b = _bc(dt.data, _other_datetime(other, dt), op)
+            a, b = _bc(to_utc(dt.data, dt.zone), _other_datetime(other, dt), op)
             return DurationArray(as_2d(np.asarray(a - b)), "hh:mm:ss")
         else:
             raise MatlabError(f"Operator '{op}' is not defined between a datetime array and a "
                               f"{getattr(other, 'class_name', lambda: type(other).__name__)()} value.")
-        a, b = _bc(dt.data, delta, op)
-        return dt.like(as_2d(np.asarray(a + sign * b)))
+        if dt.zone not in ("", "UTC"):
+            # a length of time is added to the instant, so the wall clock follows daylight saving changes
+            a, b = _bc(to_utc(dt.data, dt.zone), delta, op)
+            data = as_2d(np.asarray(from_utc(a + sign * b, dt.zone)))
+        else:
+            a, b = _bc(dt.data, delta, op)
+            data = as_2d(np.asarray(a + sign * b))
+        if dt.fmt == DEFAULT_DATE:
+            finite = data[np.isfinite(data)]
+            if finite.size and bool(np.any(np.mod(finite, DAY) != 0)):
+                return DatetimeArray(data, DEFAULT_FULL, dt.zone)  # a date-only display gains the time of day
+        return dt.like(data)
     return NotImplemented
 
 
@@ -1153,7 +1289,7 @@ def _datetime(interp, args, nargout):
             secs, shown = (v - EPOCH_DATENUM) * DAY, DEFAULT_FULL
             secs = np.round(secs * 1e6) / 1e6
         elif kind == "posixtime":
-            secs, shown = v + (local_offset() if zone == "local" else 0.0), DEFAULT_FULL
+            secs, shown = np.asarray(from_utc(v, zone), dtype=float), DEFAULT_FULL
         elif kind == "excel":
             secs, shown = (v - 25569.0) * DAY, DEFAULT_FULL
             secs = np.round(secs * 1e6) / 1e6
@@ -1289,11 +1425,18 @@ _unit_function("milliseconds", 1e-3, "s")
 
 def _calendar_function(name: str, months: float, days: float):
     def f(interp, args, nargout):
+        if args and isinstance(args[0], CalendarDuration):
+            c = args[0]
+            if months:
+                return np.trunc(c.months / months)
+            return np.trunc(c.days / days)
         v = _numeric_arg(args[0], f"The input to {name}") if args else np.array([[1.0]])
         if np.any(v != np.round(v)):
             raise MatlabError(f"{name}: the input must contain whole numbers.")
         return CalendarDuration(v * months, v * days, 0.0)
     builtin(name)(f)
+
+    _NATIVE[name] = f
 
 
 _calendar_function("calyears", 12, 0)
@@ -1568,6 +1711,22 @@ for _i, _n in ((3, "hour"), (4, "minute"), (5, "second")):
     _NATIVE[_n] = _component(_i)
 
 
+def _second(interp, args, nargout):
+    """second(t) or second(t, 'secondofminute' | 'secondofday')."""
+    secs, _ = _as_seconds(args[0])
+    kind = text(args[1]).lower() if len(args) > 1 else "secondofminute"
+    if kind == "secondofday":
+        return np.mod(secs, DAY)
+    if kind != "secondofminute":
+        raise MatlabError("second: the type must be 'secondofminute' or 'secondofday'.",
+                          "MATLAB:datetime:InvalidSecondType")
+    return fields_from_seconds(secs)[5]
+
+
+builtin("second")(_second)
+_NATIVE["second"] = _second
+
+
 def _names_cell(idx: np.ndarray, names: list, short: bool) -> Any:
     out = np.empty(idx.shape, dtype=object)
     for k in np.ndindex(idx.shape):
@@ -1725,7 +1884,7 @@ def _posixtime(interp, args, nargout):
     v = args[0]
     if not isinstance(v, DatetimeArray):
         raise MatlabError("posixtime: the input must be a datetime array.")
-    return v.data - (local_offset() if v.zone == "local" else 0.0)
+    return np.asarray(to_utc(v.data, v.zone), dtype=float)
 
 
 builtin("posixtime")(_posixtime)
@@ -1863,7 +2022,30 @@ def _dateshift(interp, args, nargout):
         if is_text(target):
             key = text(target).lower()
             if key == "weekday" or key == "weekend":
-                raise MatlabError("dateshift: 'weekday' and 'weekend' targets are not supported; name a day.")
+                day0 = np.floor(t.data / DAY)
+                tod = t.data - day0 * DAY
+                wanted = (0, 6) if key == "weekend" else (1, 2, 3, 4, 5)  # Sunday is 0
+                step = rule if isinstance(rule, str) else "next"
+                if step not in ("next", "current", "previous", "nearest"):
+                    raise MatlabError(f"dateshift: unknown rule '{rule}'.")
+
+                def reach(direction: int):
+                    out = np.full(day0.shape, np.nan)
+                    for k in range(8):
+                        cand = day0 + direction * k
+                        hit = np.isin(np.mod(cand + 4, 7), wanted) & np.isnan(out)
+                        out = np.where(hit, cand, out)
+                    return out
+                fwd, back = reach(1), reach(-1)
+                if step in ("next", "current"):
+                    best = fwd
+                elif step == "previous":
+                    best = back
+                else:
+                    best = np.where(fwd - day0 <= day0 - back, fwd, back)
+                if not isinstance(rule, str):
+                    best = best + 7 * (rule - 1)
+                return t.like(best * DAY + tod)
             matches = [k for k, w in enumerate(WEEKDAYS) if w.lower() == key or w[:3].lower() == key]
             if not matches:
                 raise MatlabError(f"dateshift: unknown day name '{text(target)}'.")
@@ -1921,13 +2103,53 @@ def _dateshift(interp, args, nargout):
 builtin("dateshift")(_dateshift)
 
 
-@native("between", "caldiff")
+_CAL_UNITS = ("years", "quarters", "months", "weeks", "days", "time")
+
+
+def _calendar_units(v: Any, name: str) -> list[str]:
+    words = [to_str(x) for x in v.values_f()] if isinstance(v, Cell) else \
+        ([x for x in v.values_f()] if isinstance(v, StringArray) else [text(v)])
+    out = []
+    for w in words:
+        key = w.lower()
+        key = key if key.endswith("s") or key == "time" else key + "s"
+        if key not in _CAL_UNITS:
+            raise MatlabError(f"{name}: unknown component '{w}'. Use 'years', 'quarters', 'months', 'weeks', "
+                              "'days' or 'time'.", "MATLAB:datetime:InvalidComponent")
+        out.append(key)
+    return out
+
+
+@native("between")
 def _between(interp, args, nargout):
-    if len(args) == 1:  # caldiff(t)
-        t = args[0]
-        a, b = t.data.flatten(order="F")[:-1], t.data.flatten(order="F")[1:]
+    """between(t1, t2[, components]) and caldiff(t[, components[, dim]])."""
+    units = None
+    if len(args) >= 3:
+        units = _calendar_units(args[2], "between")
+    if len(args) < 2:
+        raise MatlabError("Not enough input arguments.", "MATLAB:minrhs")
+    a, b = _bc(_as_seconds(args[0])[0], _as_seconds(args[1])[0], "-")
+    return _calendar_difference(a, b, units)
+
+
+@native("caldiff")
+def _caldiff(interp, args, nargout):
+    t = args[0]
+    if not isinstance(t, DatetimeArray):
+        raise MatlabError("caldiff: the input must be a datetime array.", "MATLAB:datetime:InvalidInput")
+    units = _calendar_units(args[1], "caldiff") if len(args) > 1 else None
+    data = t.data
+    if len(args) > 2:
+        axis = int(to_numeric(args[2]).flat[0]) - 1
     else:
-        a, b = _bc(_as_seconds(args[0])[0], _as_seconds(args[1])[0], "-")
+        axis = next((k for k, n in enumerate(data.shape) if n != 1), 0)
+    lead = [slice(None)] * data.ndim
+    trail = [slice(None)] * data.ndim
+    lead[axis], trail[axis] = slice(0, -1), slice(1, None)
+    return _calendar_difference(data[tuple(lead)], data[tuple(trail)], units)
+
+
+def _calendar_difference(a: Any, b: Any, units: list[str] | None):
     a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
     months = np.zeros(a.shape)
     for idx in np.ndindex(a.shape):
@@ -1941,14 +2163,180 @@ def _between(interp, args, nargout):
         while sign * (float(add_months(x, k)) - y) > 0:
             k -= sign
         months[idx] = k
+    use_months = units is None or any(u in units for u in ("years", "quarters", "months"))
+    if not use_months:
+        months = np.where(np.isnan(months), np.nan, 0.0)
+    elif units is not None and "months" not in units:
+        # only whole years or quarters are counted
+        step = 3.0 if "quarters" in units else 12.0
+        months = np.trunc(months / step) * step
     mid = add_months(a, months)
     with np.errstate(invalid="ignore"):
         days = np.trunc((b - mid) / DAY)
-    return CalendarDuration(as_2d(months), as_2d(days), as_2d(b - mid - days * DAY))
+    use_days = units is None or "days" in units or "weeks" in units
+    if not use_days:
+        days = np.where(np.isnan(days), np.nan, 0.0)
+    elif units is not None and "days" not in units:
+        days = np.trunc(days / 7.0) * 7.0
+    secs = b - mid - days * DAY
+    if units is not None and "time" not in units:
+        secs = np.where(np.isnan(secs), np.nan, 0.0)
+    return CalendarDuration(as_2d(months), as_2d(days), as_2d(secs))
 
 
 builtin("between")(_between)
-builtin("caldiff")(_between)
+builtin("caldiff")(_caldiff)
+
+
+@native("split")
+def _split_calendar(interp, args, nargout):
+    """[a, b, ...] = split(calendarDuration, components): the amount of each component."""
+    c = args[0]
+    if not isinstance(c, CalendarDuration) or len(args) < 2:
+        raise MatlabError("split(c, components) needs a calendarDuration and the components to split into.",
+                          "MATLAB:calendarDuration:InvalidSplit")
+    units = _calendar_units(args[1], "split")
+    order = [u for u in _CAL_UNITS if u in units]
+    if order != units:
+        raise MatlabError("split: the components must be in the order years, quarters, months, weeks, days, "
+                          "time.", "MATLAB:calendarDuration:InvalidSplitOrder")
+    months, days = c.months.copy(), c.days.copy()
+    out = []
+    for u in units:
+        if u == "years":
+            v = np.trunc(months / 12)
+            months = months - v * 12
+        elif u == "quarters":
+            v = np.trunc(months / 3)
+            months = months - v * 3
+        elif u == "months":
+            v, months = months, np.zeros(months.shape)
+        elif u == "weeks":
+            v = np.trunc(days / 7)
+            days = days - v * 7
+        elif u == "days":
+            v, days = days, np.zeros(days.shape)
+        else:
+            v = DurationArray(c.secs.copy(), "hh:mm:ss")
+        out.append(v)
+    out = out[:max(nargout, 1)]
+    return tuple(out) if len(out) > 1 else out[0]
+
+
+@native("time")
+def _time_part(interp, args, nargout):
+    """time(c): the time component of a calendarDuration, as a duration."""
+    c = args[0]
+    if isinstance(c, CalendarDuration):
+        return DurationArray(c.secs.copy(), "hh:mm:ss")
+    if isinstance(c, DurationArray):
+        return c
+    raise MatlabError("time: the input must be a calendarDuration array.", "MATLAB:calendarDuration:InvalidInput")
+
+
+builtin("time")(_time_part)
+
+
+@native("isweekend")
+def _isweekend(interp, args, nargout):
+    t = args[0]
+    if not isinstance(t, DatetimeArray):
+        raise MatlabError("isweekend: the input must be a datetime array.", "MATLAB:datetime:InvalidInput")
+    with np.errstate(invalid="ignore"):
+        dow = np.mod(np.floor(t.data / DAY) + 4, 7)  # 0 is Sunday
+        return (dow == 0) | (dow == 6)
+
+
+builtin("isweekend")(_isweekend)
+
+
+@native("tzoffset")
+def _tzoffset(interp, args, nargout):
+    """[dt, dst] = tzoffset(t): the offset from UTC as a duration, and the daylight saving part of it."""
+    t = args[0]
+    if not isinstance(t, DatetimeArray):
+        raise MatlabError("tzoffset: the input must be a datetime array.", "MATLAB:datetime:InvalidInput")
+    if t.zone == "":
+        off = np.full(t.data.shape, np.nan)
+        dst = np.full(t.data.shape, np.nan)
+    else:
+        off = np.vectorize(lambda w: zone_offset_wall(t.zone, w) if w == w else np.nan, otypes=[float])(t.data)
+        dst = np.vectorize(lambda w: _dst_seconds(t.zone, w) if w == w else np.nan, otypes=[float])(t.data)
+    out = DurationArray(off, "hh:mm")
+    return (out, DurationArray(dst, "hh:mm")) if nargout > 1 else out
+
+
+builtin("tzoffset")(_tzoffset)
+
+
+def _dst_seconds(zone: str, wall: float) -> float:
+    """The daylight saving shift in effect in a zone when its wall clock shows ``wall``."""
+    if zone in ("", "UTC") or zone[0] in "+-":
+        return 0.0
+    if zone == "local":
+        try:
+            return 3600.0 if time.localtime(wall - local_offset()).tm_isdst > 0 else 0.0
+        except (OverflowError, OSError, ValueError):
+            return 0.0
+    d = _py_datetime(wall)
+    if d is None:
+        return 0.0
+    shift = d.replace(tzinfo=_zoneinfo(zone)).dst()
+    return shift.total_seconds() if shift is not None else 0.0
+
+
+@native("isdst")
+def _isdst(interp, args, nargout):
+    t = args[0]
+    if not isinstance(t, DatetimeArray):
+        raise MatlabError("isdst: the input must be a datetime array.", "MATLAB:datetime:InvalidInput")
+    if t.zone == "":
+        return np.zeros(t.data.shape, dtype=bool)
+    return np.vectorize(lambda w: w == w and _dst_seconds(t.zone, w) != 0, otypes=[bool])(t.data)
+
+
+builtin("isdst")(_isdst)
+
+
+@builtin("timezones")
+def _timezones(interp, args, nargout):
+    """timezones or timezones(area): a table of the time zone names with their UTC and DST offsets."""
+    try:
+        import zoneinfo
+        names = sorted(zoneinfo.available_timezones())
+    except Exception:  # noqa: BLE001 - no zoneinfo or no time zone database
+        names = []
+    if not names:
+        raise MatlabError("The list of time zones needs the time zone database (the tzdata package where the "
+                          "system has none).", "MATLAB:datetime:NoTimeZoneDatabase")
+    area = text(args[0]) if args else "all"
+    areas = {"africa": "Africa/", "america": "America/", "antarctica": "Antarctica/", "arctic": "Arctic/",
+             "asia": "Asia/", "atlantic": "Atlantic/", "australia": "Australia/", "etc": "Etc/",
+             "europe": "Europe/", "indian": "Indian/", "pacific": "Pacific/"}
+    if area.lower() != "all":
+        if area.lower() not in areas:
+            raise MatlabError(f"timezones: unknown area '{area}'. Use 'Africa', 'America', 'Antarctica', 'Arctic', "
+                              "'Asia', 'Atlantic', 'Australia', 'Etc', 'Europe', 'Indian', 'Pacific' or 'All'.",
+                              "MATLAB:datetime:UnknownTimeZoneArea")
+        names = [n for n in names if n.startswith(areas[area.lower()])]
+    else:
+        names = [n for n in names if "/" in n and not n.startswith(("posix/", "right/", "SystemV/"))]
+    import datetime as _dt
+    year = _dt.date.today().year
+    winter, summer = _dt.datetime(year, 1, 15, 12), _dt.datetime(year, 7, 15, 12)
+    utc_off, dst_off = [], []
+    for n in names:
+        zi = zoneinfo.ZoneInfo(n)
+        offs = [(d.replace(tzinfo=zi).utcoffset() or _dt.timedelta(0)).total_seconds() for d in (winter, summer)]
+        shifts = [(d.replace(tzinfo=zi).dst() or _dt.timedelta(0)).total_seconds() for d in (winter, summer)]
+        dst = max(shifts)
+        utc_off.append((offs[0] - shifts[0]) / 3600.0)
+        dst_off.append(dst / 3600.0)
+    from .table import TableObject
+    return TableObject(["Name", "Area", "UTCOffset", "DSTOffset"], [
+        Cell.from_list([char(n) for n in names], column=True),
+        Cell.from_list([char(n.split("/", 1)[0]) for n in names], column=True),
+        np.array(utc_off, dtype=float).reshape(-1, 1), np.array(dst_off, dtype=float).reshape(-1, 1)])
 
 
 def _numeric_call(name: str):

@@ -602,7 +602,7 @@ def test_diary(f):
     out = f.run("diary(log); disp('one'); x = 5\ndiary off; disp('hidden'); diary on; fprintf('two\\n'); diary off;")
     assert "one" in out and "hidden" in out and "two" in out          # the screen still shows everything
     text = (f.dir / "session.log").read_text()
-    assert "one\n" in text and "x = 5" in text and "two\n" in text and "hidden" not in text
+    assert "one\n" in text and "x =\n\n     5\n" in text and "two\n" in text and "hidden" not in text
     f.run("diary; disp('toggled on'); diary; disp('toggled off');")
     text = (f.dir / "session.log").read_text()
     assert "toggled on" in text and "toggled off" not in text

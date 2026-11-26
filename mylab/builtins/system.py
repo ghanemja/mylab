@@ -10,8 +10,9 @@ import time
 import numpy as np
 
 from .. import __version__
-from ..display import FORMAT, display_lines, format_display, function_handle_text
+from ..display import FORMAT, disp_text, format_display, function_handle_text
 from ..errors import MatlabError
+from ..objects import MObject
 from ..values import (
     Cell, FunctionHandle, MString, Struct, char, is_char, to_int, to_str,
 )
@@ -23,9 +24,9 @@ from .strings import matlab_sprintf
 @builtin("disp")
 def _disp(interp, args, nargout):
     nargs(args, 1, 1, "disp")
-    lines = display_lines(args[0])
-    if lines:
-        interp.out("\n".join(lines) + "\n")
+    out = disp_text(args[0])
+    if out:
+        interp.out(out)
     elif isinstance(args[0], (np.ndarray,)) and args[0].size == 0 and is_char(args[0]):
         interp.out("\n")
     return None
@@ -33,7 +34,10 @@ def _disp(interp, args, nargout):
 
 @builtin("display")
 def _display(interp, args, nargout):
-    interp.out(format_display("ans", args[0]))
+    """display(x) prints x the way an unsuppressed statement does, under the name of the argument."""
+    names = interp.state.get("call_arg_names") or []
+    name = text(args[1]) if len(args) > 1 else (names[0] if names and names[0] else "ans")
+    interp.out(format_display(name, args[0]))
     return None
 
 
@@ -45,7 +49,7 @@ def _error_from_args(args) -> MatlabError:
         return MatlabError(args[0].text(), args[0].identifier)
     if len(args) == 1 and isinstance(args[0], Struct):
         s = args[0].data.flat[0]
-        return MatlabError(to_str(s.get("message", char(""))), to_str(s.get("identifier", char(""))))
+        return MatlabError(to_str(s.get("message", char(""))), to_str(s.get("identifier", char(""))) or "")
     first = text(args[0], "error message")
     ident = ""
     rest = list(args[1:])
@@ -336,6 +340,7 @@ def _clear(interp, args, nargout):
     if not names or names in (["all"], ["variables"], ["-all"]):
         frame.vars.clear()
         if names and names[0] in ("all", "-all"):
+            interp.persistent_vars.clear()
             interp.global_vars.clear()
             _clear_functions(interp, frame, None)
             if frame is interp.base:
@@ -607,18 +612,71 @@ def _keyboard(interp, args, nargout):
     return None
 
 
+class FormatOptions(MObject):
+    """The value returned by ``fmt = format``: the numeric format and the line spacing."""
+
+    def __init__(self, numeric: str, spacing: str):
+        self.numeric = numeric
+        self.spacing = spacing
+
+    def class_name(self) -> str:
+        return "matlab.internal.display.format.DisplayFormatOptions"
+
+    def isa_class(self, name: str) -> bool:
+        return name in (self.class_name(), "DisplayFormatOptions")
+
+    def get_field(self, interp, name: str):
+        if name == "NumericFormat":
+            return MString(self.numeric)
+        if name == "LineSpacing":
+            return MString(self.spacing)
+        raise MatlabError(f"Unrecognized property '{name}' for class 'DisplayFormatOptions'.")
+
+    def set_field(self, interp, name: str, value):
+        if name == "NumericFormat":
+            probe = type(FORMAT)()
+            if not probe.set_mode(text(value)):
+                raise MatlabError(f"Unknown numeric format '{text(value)}'.")
+            return FormatOptions(probe.numeric_name, self.spacing)
+        if name == "LineSpacing":
+            if text(value).lower() not in ("loose", "compact"):
+                raise MatlabError("LineSpacing must be 'loose' or 'compact'.")
+            return FormatOptions(self.numeric, text(value).lower())
+        raise MatlabError(f"Unrecognized property '{name}' for class 'DisplayFormatOptions'.")
+
+    def display_lines(self) -> list[str]:
+        return ["  DisplayFormatOptions with properties:", "",
+                f'    NumericFormat: "{self.numeric}"',
+                f'      LineSpacing: "{self.spacing}"']
+
+    def format_display(self, name: str) -> str:
+        return f"{name} = \n\n" + "\n".join(self.display_lines()) + "\n\n"
+
+
 @builtin("format")
 def _format(interp, args, nargout):
-    mode = "".join(text(a).lower() for a in args) if args else "short"
-    mode = mode.replace(" ", "")
-    if mode in ("short", "long", "shortg", "longg", "shorte", "longe"):
-        FORMAT.mode = mode
-    elif mode in ("compact", "loose", "default"):
-        if mode == "default":
-            FORMAT.mode = "short"
-    else:
-        raise MatlabError(f"Unsupported format '{mode}'. Use short, long, short g, long g, short e or long e.")
-    return None
+    """format, format short|long|shortG|..., format compact|loose, fmt = format, format(fmt)."""
+    current = FormatOptions(FORMAT.numeric_name, FORMAT.spacing)
+    if len(args) == 1 and isinstance(args[0], FormatOptions):
+        FORMAT.set_mode(args[0].numeric)
+        FORMAT.spacing = args[0].spacing
+        return current if nargout else None
+    if not args:
+        if nargout:
+            return current
+        FORMAT.reset()
+        return None
+    words = [text(a) for a in args]
+    joined = "".join(words).lower().replace(" ", "")
+    if joined == "default":
+        FORMAT.reset()
+    elif joined in ("compact", "loose"):
+        FORMAT.spacing = joined
+    elif not FORMAT.set_mode(joined):
+        raise MatlabError(f"Unknown command option '{' '.join(words)}'. Use short, long, shortE, longE, shortG, "
+                          "longG, shortEng, longEng, bank, hex, rat, +, compact or loose.",
+                          "MATLAB:format:UnknownOption")
+    return current if nargout else None
 
 
 @builtin("more", "beep", "commandwindow", "pack", "dbstop")

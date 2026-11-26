@@ -19,21 +19,28 @@ from .errors import MatlabError
 KEYWORDS = {
     "if", "elseif", "else", "end", "for", "while", "switch", "case", "otherwise",
     "try", "catch", "break", "continue", "return", "function", "global",
-    "persistent", "parfor", "classdef",
+    "persistent", "parfor", "classdef", "spmd",
+    # Octave extensions (never valid MATLAB identifiers in practice)
+    "unwind_protect", "unwind_protect_cleanup",
 }
 
 # Longest first so that greedy matching works.
 OPERATORS = [
     "...",
-    ".^", ".*", "./", ".\\", ".'",
+    ".**", ".^", ".*", "./", ".\\", ".'",
     "==", "~=", "!=", "<=", ">=", "&&", "||",
+    # Octave extensions: compound assignment and ** for power
+    "+=", "-=", "*=", "/=", "^=", "|=", "&=", "**",
     "+", "-", "*", "/", "\\", "^", "<", ">", "&", "|", "~", "!",
     "=", "(", ")", "[", "]", "{", "}", ",", ";", ":", ".", "@", "?",
 ]
 
+COMPOUND_ASSIGN = {"+=": "+", "-=": "-", "*=": "*", "/=": "/", "^=": "^", "|=": "|", "&=": "&"}
+
 # Octave block terminators, accepted as 'end' so Octave-flavoured files also run.
 OCTAVE_ENDS = {"endfunction", "endif", "endfor", "endwhile", "endswitch", "end_try_catch", "endparfor",
-               "endclassdef", "endmethods", "endproperties", "endevents", "endenumeration"}
+               "endclassdef", "endmethods", "endproperties", "endevents", "endenumeration",
+               "end_unwind_protect", "endspmd", "endarguments"}
 
 # Commands that are commonly typed with command syntax (``hold on``).
 COMMAND_WORDS = {
@@ -82,6 +89,9 @@ class Lexer:
         import re
         self.in_classdef = bool(re.search(r"^\s*classdef\b", self.text, re.MULTILINE))
         self.in_arguments = False
+        # 'do ... until cond' (Octave): 'do' is only a keyword in a text that also has an 'until' line
+        self.has_until = bool(re.search(r"(^|[\n;,])[ \t]*until\b", self.text))
+        self.do_depth = 0
 
     # -- helpers ---------------------------------------------------------------
     def peek(self, offset: int = 0) -> str:
@@ -120,14 +130,29 @@ class Lexer:
         while self.pos < len(self.text):
             ch = self.peek()
 
-            # Block comments: '%{' alone on a line.
-            if ch == "%" and self.peek(1) == "{" and self._line_is_only("%{"):
+            # Block comments: '%{' (or Octave's '#{') alone on a line.
+            if ch in "%#" and self.peek(1) == "{" and self._line_is_only("%{", "#{"):
                 self._skip_block_comment()
                 continue
 
-            if ch in "%" or (ch == "#" and not self.in_matrix()):
+            if ch in "%#":
                 while self.pos < len(self.text) and self.peek() != "\n":
                     self.advance()
+                continue
+
+            # '!command' at the start of a line passes the rest of the line to the operating system.
+            if ch == "!" and self.peek(1) != "=" and not self.brackets and \
+                    (not self.tokens or self.tokens[-1].kind == "NL"):
+                line, col = self.line, self.col
+                self.advance()
+                start = self.pos
+                while self.pos < len(self.text) and self.peek() != "\n":
+                    self.advance()
+                self.add("ID", "system", line, col, space)
+                self.add("OP", "(", line, col, False)
+                self.add("STR", self.text[start:self.pos].strip(), line, col, False)
+                self.add("OP", ")", line, col, False)
+                space = False
                 continue
 
             if ch in " \t":
@@ -190,12 +215,12 @@ class Lexer:
         return self.tokens
 
     # -- pieces ---------------------------------------------------------------
-    def _line_is_only(self, marker: str) -> bool:
+    def _line_is_only(self, *markers: str) -> bool:
         start = self.text.rfind("\n", 0, self.pos) + 1
         end = self.text.find("\n", self.pos)
         if end == -1:
             end = len(self.text)
-        return self.text[start:end].strip() == marker
+        return self.text[start:end].strip() in markers
 
     def _skip_block_comment(self) -> None:
         depth = 0
@@ -205,9 +230,9 @@ class Lexer:
             if end == -1:
                 end = len(self.text)
             content = self.text[start:end].strip()
-            if content == "%{":
+            if content in ("%{", "#{"):
                 depth += 1
-            elif content == "%}":
+            elif content in ("%}", "#}", "}#", "}%"):
                 depth -= 1
             self.advance(end - start)
             if depth == 0:
@@ -318,6 +343,19 @@ class Lexer:
             self.in_arguments = False
         if word in OCTAVE_ENDS and not after_dot:
             word = "end"  # Octave's endfunction / endif / ... close blocks like 'end'
+        if word in ("do", "until") and at_start and not self.brackets and not after_dot and self.has_until:
+            rest = self.text[self.pos:self.pos + 200].lstrip(" \t")
+            if word == "do" and (rest[:1] in ("", "\n", ",", ";", "%", "#") or rest.startswith("...")):
+                self.do_depth += 1
+                self.add("KW", "do", line, col, space)
+                return
+            if word == "until" and self.do_depth > 0:
+                self.do_depth -= 1
+                self.add("KW", "until", line, col, space)
+                return
+        if word == "spmd" and not (at_start and not self.brackets):
+            self.add("ID", word, line, col, space)
+            return
         if word in KEYWORDS and not after_dot:
             self.add("KW", word, line, col, space)
             if word == "end" and self.brackets:
@@ -348,6 +386,8 @@ class Lexer:
             return False
         if word in COMMAND_WORDS and (first.isdigit() or first == "_"):
             return True  # e.g. figure 2, pause 1
+        if word in COMMAND_WORDS and first in "*?" and len(rest) > 1 and rest[1] not in " \t=":
+            return True  # e.g. dir *.m, ls ?.txt
         if (self.in_classdef or self.in_arguments) and word not in COMMAND_WORDS:
             return False  # 'name string' in properties/arguments blocks is a declaration
         # Any other name: ``shading interp``, ``colormap jet``, ``clearvars -except y``,
@@ -463,6 +503,10 @@ class Lexer:
                     op = "~="
                 elif op == "!":
                     op = "~"
+                elif op == "**":
+                    op = "^"
+                elif op == ".**":
+                    op = ".^"
                 self.add("OP", op, line, col, space)
                 if closes_lambda:
                     self.last.lambda_params_end = True  # type: ignore[attr-defined]

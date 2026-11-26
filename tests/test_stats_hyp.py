@@ -1,3 +1,4 @@
+# ruff: noqa: E501  (long MATLAB code strings)
 """Hypothesis tests. Expected values: scipy.stats where the test is the same, closed forms, and GNU
 Octave's statistics package run as a black box (noted where used)."""
 

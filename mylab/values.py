@@ -85,6 +85,10 @@ def string_data(v) -> np.ndarray:
         for idx in np.ndindex(v.data.shape):
             d[idx] = to_str(v.data[idx], "cell element")
         return d
+    if getattr(v, "is_missing_value", False):
+        d = np.empty(v.matlab_shape(), dtype=object)
+        d[...] = None
+        return d
     if isinstance(v, np.ndarray):
         from .display import format_scalar_plain
         d = np.empty(v.shape, dtype=object)

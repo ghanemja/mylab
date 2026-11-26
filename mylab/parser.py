@@ -19,13 +19,14 @@ from __future__ import annotations
 
 from . import ast as A
 from .errors import MatlabError
-from .lexer import Token, tokenize
+from .lexer import COMPOUND_ASSIGN, Token, tokenize
 
 COMPARISON = ("<", "<=", ">", ">=", "==", "~=")
 ADDITIVE = ("+", "-")
 MULTIPLICATIVE = ("*", "/", "\\", ".*", "./", ".\\")
 POWER = ("^", ".^")
-BLOCK_END = ("end", "else", "elseif", "case", "otherwise", "catch", "function")
+BLOCK_END = ("end", "else", "elseif", "case", "otherwise", "catch", "function", "until",
+             "unwind_protect_cleanup")
 
 
 class Parser:
@@ -85,7 +86,7 @@ class Parser:
     # -- program -----------------------------------------------------------------
     def _functions_use_end(self) -> bool:
         """Whether this file closes functions with 'end' (only then can functions be nested)."""
-        openers = ("if", "for", "parfor", "while", "switch", "try", "function")
+        openers = ("if", "for", "parfor", "while", "switch", "try", "function", "spmd", "unwind_protect")
         n_open = n_end = n_fn = 0
         for t in self.tokens:
             if t.kind != "KW":
@@ -271,6 +272,16 @@ class Parser:
             self.next()
             name += "." + self.next().value
         attrs = dict(block_attrs)
+        if self.is_op(".") and self.peek().kind == "OP" and self.peek().value == "?":
+            # opts.?ClassName: the public properties of a class as name-value arguments
+            self.next()
+            self.next()
+            cls = self._ident_name()
+            while self.is_op(".") and self.peek().kind == "ID":
+                self.next()
+                cls += "." + self.next().value
+            attrs["_from_class"] = cls
+            name += ".?" + cls
         # Validation syntax: name (1,1) double {mustBePositive} = default
         if self.is_op("("):
             self.next()
@@ -278,7 +289,8 @@ class Parser:
             while not self.is_op(")"):
                 t = self.next()
                 if t.kind == "NUM":
-                    dims.append(int(t.value.real if isinstance(t.value, complex) else t.value))
+                    v = t.value[0] if isinstance(t.value, tuple) else t.value
+                    dims.append(int(v.real if isinstance(v, complex) else v))
                 elif t.kind == "OP" and t.value == ":":
                     dims.append(None)
             self.next()
@@ -386,24 +398,30 @@ class Parser:
             self.skip_newlines()
         if self.is_kw("end"):
             self.next()
-        fn = A.Function(name, params, outputs, stmts, nested, arguments)
+        fn = A.Function(name, params, outputs, stmts, nested,
+                        [e for e in arguments if not e.attrs.get("_output")])
+        fn.out_arguments = [e for e in arguments if e.attrs.get("_output")]
         fn.line = start.line
         return fn
 
     def parse_arguments_block(self) -> list[A.PropertyDef]:
-        """``arguments ... end`` input validation. Output and Repeating blocks are parsed and ignored."""
+        """``arguments ... end``: an (Input) block by default; (Output) and (Repeating) are marked
+        on each entry as ``_output`` / ``_repeating``."""
         self.next()
         attrs = self.parse_attributes()
         self.skip_newlines()
         entries: list[A.PropertyDef] = []
+        marks = {}
+        if attrs.get("Output"):
+            marks["_output"] = True
+        if attrs.get("Repeating"):
+            marks["_repeating"] = True
         while not self.is_kw("end"):
             if self.tok.kind == "EOF":
                 raise self.error("missing 'end' for arguments block")
-            entries.append(self.parse_property({}))
+            entries.append(self.parse_property(marks))
             self.skip_newlines()
         self.next()
-        if attrs.get("Output") or attrs.get("Repeating"):
-            return []
         return entries
 
     def _function_name(self) -> str:
@@ -456,6 +474,12 @@ class Parser:
                 node = self.parse_switch()
             elif kw == "try":
                 node = self.parse_try()
+            elif kw == "do":
+                node = self.parse_do_until()
+            elif kw == "unwind_protect":
+                node = self.parse_unwind_protect()
+            elif kw == "spmd":
+                node = self.parse_spmd()
             elif kw == "break":
                 self.next()
                 node = A.Break()
@@ -486,19 +510,110 @@ class Parser:
             node.line = line
             return node
 
+        if t.kind == "ID" and self._ends_with_increment():
+            # Octave's  x++ ,  x-- ,  x(2)++  and  s.f--  as statements
+            target = self.parse_postfix(transpose=False)
+            op = self.next().value
+            self.next()
+            if not self._is_lvalue(target):
+                raise self.error("invalid assignment target", t)
+            self.end_statement()
+            node = A.Assign([target], A.BinOp(op, target, A.Number(1.0)), False)
+            node.line = line
+            return node
+
         expr = self.parse_expr()
         if self.is_op("="):
             self.next()
             if not self._is_lvalue(expr):
                 raise self.error("invalid assignment target", t)
             value = self.parse_expr()
+            chain = [expr]
+            while self.is_op("=") and self._is_lvalue(value):
+                # Octave's chained assignment  a = b = 3
+                self.next()
+                chain.append(value)
+                value = self.parse_expr()
             show = self.end_statement()
+            if len(chain) > 1:
+                stmts: list[A.Node] = []
+                source = value
+                for target in reversed(chain):
+                    step = A.Assign([target], source, show and target is chain[0])
+                    step.line = line
+                    stmts.append(step)
+                    source = target
+                node = A.If([(A.Number(1.0), stmts)], None)
+                node.line = line
+                return node
             node = A.Assign([expr], value, show)
+        elif self.tok.kind == "OP" and self.tok.value in COMPOUND_ASSIGN:
+            # Octave's  x += e  (also -=, *=, /=, ^=, |=, &=)
+            op = COMPOUND_ASSIGN[self.next().value]
+            if not self._is_lvalue(expr):
+                raise self.error("invalid assignment target", t)
+            value = self.parse_expr()
+            show = self.end_statement()
+            node = A.Assign([expr], A.BinOp(op, expr, value), show)
         else:
             show = self.end_statement()
             node = A.ExprStmt(expr, show)
         node.line = line
         return node
+
+    def _ends_with_increment(self) -> bool:
+        """The statement is ``lvalue++`` or ``lvalue--``: two adjacent signs right before its end."""
+        depth = 0
+        i = self.pos
+        prev = prev2 = None
+        while i < len(self.tokens):
+            c = self.tokens[i]
+            if c.kind == "OP" and c.value in ("(", "[", "{"):
+                depth += 1
+            elif c.kind == "OP" and c.value in (")", "]", "}"):
+                depth -= 1
+            at_end = c.kind in ("NL", "EOF") or (depth == 0 and (
+                (c.kind == "OP" and c.value in (";", ",")) or (c.kind == "KW" and c.value in BLOCK_END)))
+            if at_end:
+                break
+            if depth == 0 and c.kind == "OP" and c.value == "=":
+                return False
+            prev2, prev = prev, c
+            i += 1
+        if prev is None or prev2 is None:
+            return False
+        return prev.kind == "OP" and prev2.kind == "OP" and prev.value == prev2.value \
+            and prev.value in ("+", "-") and not prev.space_before and i - self.pos >= 3
+
+    def parse_do_until(self) -> A.Node:
+        self.expect_kw("do")
+        body = self.parse_block("until")
+        self.expect_kw("until")
+        cond = self.parse_expr()
+        self.end_statement()
+        return A.DoUntil(body, cond)
+
+    def parse_unwind_protect(self) -> A.Node:
+        self.expect_kw("unwind_protect")
+        body = self.parse_block("unwind_protect_cleanup", "end")
+        cleanup: list[A.Node] = []
+        if self.is_kw("unwind_protect_cleanup"):
+            self.next()
+            cleanup = self.parse_block("end")
+        self.expect_kw("end")
+        self.end_statement()
+        return A.UnwindProtect(body, cleanup)
+
+    def parse_spmd(self) -> A.Node:
+        """``spmd ... end`` runs its body once (there is a single worker)."""
+        self.expect_kw("spmd")
+        if self.is_op("("):
+            self.next()
+            self.parse_args(")")
+        body = self.parse_block("end")
+        self.expect_kw("end")
+        self.end_statement()
+        return A.If([(A.Number(1.0), body)], None)
 
     def _is_lvalue(self, node: A.Node) -> bool:
         if isinstance(node, A.Ident):
@@ -578,6 +693,9 @@ class Parser:
         self.expect_op("=")
         iterable = self.parse_expr()
         if paren:
+            if self.is_op(","):  # parfor (i = range, maxWorkers): the worker count is not needed
+                self.next()
+                self.parse_expr()
             self.expect_op(")")
         body = self.parse_block("end")
         self.expect_kw("end")

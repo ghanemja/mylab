@@ -28,8 +28,8 @@ def _as_cell_if_strings(v):
 
 # -- sprintf ----------------------------------------------------------------------------
 
-_SPEC = re.compile(r"%(?P<flags>[-+ 0#]*)(?P<width>\*|\d+)?(?:\.(?P<prec>\*|\d+))?(?:hh|h|ll|l|L|j|z|t)?"
-                   r"(?P<conv>[diouxXfeEgGcs%])")
+_SPEC = re.compile(r"%(?P<flags>[-+ 0#]*)(?P<width>\*|\d+)?(?:\.(?P<prec>\*|\d+))?"
+                   r"(?P<sub>hh|h|ll|l|L|j|z|t|b)?(?P<conv>[diouxXfeEgGcs%])")
 
 _ESCAPES = {"n": "\n", "t": "\t", "\\": "\\", "r": "\r", "a": "\a", "b": "\b", "f": "\f", "v": "\v"}
 
@@ -134,6 +134,13 @@ def _format_one(spec: re.Match, value, width, prec) -> str:
             # non-integer with %d: MATLAB switches to %e
             return f"%{flags}{w}{p or ''}e" % value
         return f"%{flags}{w}{p}d" % int(value)
+    if conv in "oxXu" and spec.group("sub") in ("b", "t") and not isinstance(value, int):
+        # %bx / %tx: the bit pattern of the value as a double / single
+        import struct
+        bits = int.from_bytes(struct.pack(">d" if spec.group("sub") == "b" else ">f", float(value)), "big")
+        return f"%{flags}{w}{'d' if conv == 'u' else conv}" % bits
+    if conv in "oxXu" and value < 0:
+        return f"%{flags}{w}{p or ''}e" % value  # a negative number has no unsigned form
     if conv in "oxX":
         if float(value) != int(value):
             return f"%{flags}{w}{p or ''}e" % value
@@ -154,9 +161,22 @@ def _shortg(x: float) -> str:
     return f"{x:e}"
 
 
+_POSITIONAL = re.compile(r"%(\d+)\$")
+
+
 def matlab_sprintf(fmt: str, args) -> str:
     fmt = process_escapes(fmt)
     items = _flatten_args(args)
+    if _POSITIONAL.search(fmt):
+        # %1$s, %2$d ...: every conversion names the argument it prints
+        order = [int(m.group(1)) for m in _POSITIONAL.finditer(fmt)]
+        if len(order) != len([m for m in _SPEC.finditer(_POSITIONAL.sub("%", fmt)) if m.group("conv") != "%"]):
+            raise MatlabError("Invalid format: every conversion must have an argument position (n$) or none.",
+                              "MATLAB:badformat_mx")
+        if max(order) > len(args):
+            raise MatlabError("Invalid format: the argument position exceeds the number of arguments.",
+                              "MATLAB:badformat_mx")
+        return matlab_sprintf(_POSITIONAL.sub("%", fmt).replace("\\", "\\\\"), [args[k - 1] for k in order])
     specs = [m for m in _SPEC.finditer(fmt)]
     data_specs = [m for m in specs if m.group("conv") != "%"]
     out: list[str] = []
@@ -212,7 +232,8 @@ def matlab_sprintf(fmt: str, args) -> str:
 def _sprintf(interp, args, nargout):
     nargs(args, 1, None, "sprintf")
     s = matlab_sprintf(text(args[0], "format"), args[1:])
-    return MString(s) if isinstance(args[0], MString) else char(s)
+    out = MString(s) if isinstance(args[0], MString) else char(s)
+    return (out, char("")) if nargout > 1 else out
 
 
 @builtin("fprintf")
@@ -254,7 +275,7 @@ def _num2str_scalar(x, fmt=None, digits=None) -> str:
     if x == int(x) and abs(x) < 1e15:
         return str(int(x))
     sig = max(int(math.floor(math.log10(abs(x)))) + 5, 5) if x != 0 else 5
-    return f"{x:.{sig}g}"
+    return f"{x:.{min(sig, 16)}g}"
 
 
 _BLANKS = " \t\n\r\f\v\0"
@@ -432,6 +453,10 @@ def _parse_double(v) -> float:
     except MatlabError:
         return float("nan")
     s = s.replace("i", "j") if s.endswith(("i", "j")) else s
+    if re.fullmatch(r"[-+]?(\d+\.?\d*|\.\d+)[dD][-+]?\d+", s):
+        s = s.replace("d", "e").replace("D", "e")
+    if "_" in s or s.lower() in ("nan", "+nan", "-nan"):
+        return float("nan")
     try:
         x = complex(s) if s.endswith("j") else float(s)
     except ValueError:
@@ -468,6 +493,27 @@ def _string(interp, args, nargout):
         return v
     if is_char(v) and v.ndim == 2 and v.shape[0] <= 1:
         return MString(to_str(v))
+    if isinstance(v, Cell):
+        data = np.empty(v.data.shape, dtype=object)
+        for idx in np.ndindex(v.data.shape):
+            x = v.data[idx]
+            if is_char(x) and (x.size == 0 or (x.ndim == 2 and x.shape[0] == 1)):
+                data[idx] = to_str(x)
+            else:
+                piece = _string(interp, [x], 1)
+                if not isinstance(piece, MString) and not (isinstance(piece, StringArray) and piece.data.size == 1):
+                    raise MatlabError("Conversion from cell failed. Element " + str(int(np.ravel_multi_index(
+                        idx, v.data.shape, order="F")) + 1) + " must be convertible to a string scalar.",
+                        "MATLAB:string:CannotConvertCellElement")
+                data[idx] = None if isinstance(piece, StringArray) else str(piece)
+        return string_result(data) if data.size != 0 else StringArray(data)
+    if isinstance(v, np.ndarray) and v.dtype.kind == "c":
+        data = np.empty(v.shape, dtype=object)
+        for idx in np.ndindex(v.shape):
+            data[idx] = _num2str_scalar(complex(v[idx]))
+        return string_result(data)
+    if hasattr(v, "has_method") and v.has_method("string"):
+        return v.call_method(interp, "string", list(args), 1)[0]
     return string_result(string_data(v))
 
 
@@ -490,9 +536,48 @@ def _strlength(interp, args, nargout):
     return float(len(text(v)))
 
 
+def _missing_indicators(indicator) -> list:
+    """The values that count as missing, as a list of float / str / None."""
+    if isinstance(indicator, Cell):
+        out = []
+        for x in indicator.values_f():
+            out += _missing_indicators(x)
+        return out
+    if isinstance(indicator, MString):
+        return [str(indicator)]
+    if isinstance(indicator, StringArray):
+        return list(indicator.values_f())
+    if is_char(indicator):
+        return [to_str(indicator)]
+    if isinstance(indicator, np.ndarray):
+        return [float(np.real(x)) for x in indicator.flatten(order="F")]
+    raise MatlabError("ismissing: the indicators must be numbers, text or a cell array of them.")
+
+
 @builtin("ismissing")
 def _ismissing(interp, args, nargout):
     v = args[0]
+    if hasattr(v, "has_method") and v.has_method("ismissing"):
+        return v.call_method(interp, "ismissing", list(args), 1)[0]
+    if len(args) > 1:
+        marks = _missing_indicators(args[1])
+        texts = {m for m in marks if isinstance(m, str)}
+        nums = [m for m in marks if isinstance(m, float)]
+        with_none = any(m is None for m in marks)
+        if isinstance(v, (MString, StringArray)):
+            d = string_data(v)
+            return np.vectorize(lambda x: (x is None and with_none) or x in texts, otypes=[bool])(d)
+        if isinstance(v, Cell):
+            return np.vectorize(lambda x: is_char(x) and to_str(x) in texts, otypes=[bool])(v.data) \
+                if v.data.size else np.zeros(v.shape, dtype=bool)
+        if is_char(v):
+            return np.vectorize(lambda c: c in texts, otypes=[bool])(v) if v.size else np.zeros(v.shape, bool)
+        if isinstance(v, np.ndarray):
+            out = np.zeros(v.shape, dtype=bool)
+            a = v.astype(float) if v.dtype.kind in "biu" else np.real(v)
+            for m in nums:
+                out |= np.isnan(a) if m != m else (a == m)
+            return out
     if isinstance(v, StringArray):
         return np.vectorize(lambda x: x is None, otypes=[bool])(v.data)
     if isinstance(v, MString):
@@ -819,25 +904,6 @@ def _strtok(interp, args, nargout):
     return (char(t), char(r)) if nargout > 1 else char(t)
 
 
-@builtin("splitlines")
-def _splitlines(interp, args, nargout):
-    nargs(args, 1, 1, "splitlines")
-    parts = re.split(r"\r\n|\n|\r", text(args[0]))
-    if isinstance(args[0], MString):
-        data = np.empty((len(parts), 1), dtype=object)
-        for k, x in enumerate(parts):
-            data[k, 0] = x
-        return string_result(data)
-    return Cell.from_list([char(p) for p in parts], column=True)
-
-
-@builtin("missing")
-def _missing(interp, args, nargout):
-    data = np.empty((1, 1), dtype=object)
-    data[0, 0] = None
-    return StringArray(data)
-
-
 @builtin("strjoin")
 def _strjoin(interp, args, nargout):
     src = _as_cell_if_strings(args[0])
@@ -858,6 +924,21 @@ def _strjoin(interp, args, nargout):
 
 @builtin("strcat")
 def _strcat(interp, args, nargout):
+    if any(isinstance(a, (MString, StringArray)) for a in args):
+        # with a string input the result is a string array; whitespace is kept
+        datas = [string_data(a) if isinstance(a, (MString, StringArray, Cell)) or is_char(a)
+                 else string_data(a) for a in args]
+        shape = (1, 1)
+        for d in datas:
+            if d.size != 1:
+                if shape != (1, 1) and d.shape != shape:
+                    raise MatlabError("strcat: the inputs must have the same size or be scalar.")
+                shape = d.shape
+        out = np.empty(shape, dtype=object)
+        for idx in np.ndindex(shape):
+            pieces = [d.flat[0] if d.size == 1 else d[idx] for d in datas]
+            out[idx] = None if any(p is None for p in pieces) else "".join(pieces)
+        return string_result(out)
     if any(isinstance(a, Cell) for a in args):
         n = max(a.data.size for a in args if isinstance(a, Cell))
         shape = next(a.shape for a in args if isinstance(a, Cell) and a.data.size == n)
@@ -898,6 +979,8 @@ def _strvcat(interp, args, nargout):
 @builtin("isspace")
 def _isspace(interp, args, nargout):
     v = args[0]
+    if isinstance(v, MString):
+        v = char(str(v)) if len(v) else np.zeros((1, 0), dtype="<U1")
     if not is_char(v):
         return np.zeros(np.shape(v) if isinstance(v, np.ndarray) else (1, 1), dtype=bool)
     return np.vectorize(lambda c: c.isspace(), otypes=[bool])(v) if v.size else np.zeros(v.shape, bool)
@@ -906,6 +989,8 @@ def _isspace(interp, args, nargout):
 @builtin("isletter")
 def _isletter(interp, args, nargout):
     v = args[0]
+    if isinstance(v, MString):
+        v = char(str(v)) if len(v) else np.zeros((1, 0), dtype="<U1")
     if not is_char(v) or v.size == 0:
         return np.zeros(np.shape(v), dtype=bool)
     return np.vectorize(lambda c: c.isalpha(), otypes=[bool])(v)
@@ -1047,7 +1132,7 @@ def _compile_regex(pattern: str, switches: set[str], name: str):
     if pattern == "":
         return None
     flags = 0
-    if "ignorecase" in switches and "matchcase" not in switches:
+    if ("ignorecase" in switches or "preservecase" in switches) and "matchcase" not in switches:
         flags |= re.IGNORECASE
     if "dotexceptnewline" not in switches:
         flags |= re.DOTALL
@@ -1059,9 +1144,119 @@ def _compile_regex(pattern: str, switches: set[str], name: str):
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
+            if "(?@" in pattern or "(??" in pattern:
+                return _DynamicRegex(pattern, flags, "lineanchors" in switches)
             return re.compile(_translate_regex(pattern, "lineanchors" in switches), flags)
     except (re.error, RecursionError, OverflowError) as e:
         raise MatlabError(f"{name}: invalid regular expression '{pattern}' ({e}).") from None
+
+
+def _balanced_end(p: str, start: int) -> int:
+    """Index just after the parenthesis group that opens at ``start``."""
+    depth = 0
+    k = start
+    while k < len(p):
+        c = p[k]
+        if c == "\\":
+            k += 2
+            continue
+        if c == "'":  # text inside a command
+            j = p.find("'", k + 1)
+            k = len(p) if j < 0 else j + 1
+            continue
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return k + 1
+        k += 1
+    raise re.error("missing )")
+
+
+class _DynamicRegex:
+    """A regular expression with dynamic parts: (?@cmd) runs a command when the expression matches,
+    (??expr) and (??@cmd) insert an expression that is built from the tokens matched so far."""
+
+    def __init__(self, pattern: str, flags: int, multiline: bool):
+        self.flags = flags
+        self.multiline = multiline
+        self.commands: list[str] = []
+        # (?@cmd): taken out of the expression, run after each match
+        out, k = [], 0
+        while True:
+            j = pattern.find("(?@", k)
+            if j < 0:
+                out.append(pattern[k:])
+                break
+            end = _balanced_end(pattern, j)
+            out.append(pattern[k:j])
+            self.commands.append(pattern[j + 3:end - 1])
+            k = end
+        pattern = "".join(out)
+        j = pattern.find("(??")
+        if j < 0:
+            self.prefix, self.dynamic, self.suffix = pattern, None, ""
+        else:
+            end = _balanced_end(pattern, j)
+            self.prefix, self.dynamic, self.suffix = pattern[:j], pattern[j + 3:end - 1], pattern[end:]
+            if "(??" in self.suffix:
+                raise re.error("only one dynamic expression (??...) per regular expression is supported")
+        self._prefix_rx = re.compile(_translate_regex(self.prefix, multiline), flags)
+        probe = re.compile(_translate_regex(self.prefix + self.suffix, multiline), flags)
+        self.groups = probe.groups
+        self.groupindex = probe.groupindex
+
+    def _tokens_in(self, code: str, m) -> str:
+        def quote(t: str) -> str:
+            return "'" + t.replace("'", "''") + "'"
+        code = re.sub(r"\$<([A-Za-z]\w*)>", lambda g: quote(m.groupdict().get(g.group(1)) or ""), code)
+        return re.sub(r"\$(\d+)", lambda g: quote(_group_text(m, g.group(1))[0]) + _group_text(m, g.group(1))[1],
+                      code)
+
+    def _run(self, code: str, m):
+        from ..interpreter import current_interpreter
+        interp = current_interpreter()
+        if interp is None:
+            raise MatlabError("regexp: a dynamic expression needs a running session.")
+        return interp, self._tokens_in(code, m)
+
+    def _dynamic_text(self, m) -> str:
+        if self.dynamic.startswith("@"):
+            interp, code = self._run(self.dynamic[1:], m)
+            return text(interp.eval_expression(code), "the result of (??@cmd)")
+        # (??expr): the tokens are put into the expression as they are
+        code = re.sub(r"\$<([A-Za-z]\w*)>", lambda g: m.groupdict().get(g.group(1)) or "", self.dynamic)
+        return re.sub(r"\$(\d+)", lambda g: "".join(_group_text(m, g.group(1))), code)
+
+    def _finish(self, m):
+        for cmd in self.commands:
+            interp, code = self._run(cmd, m)
+            from ..parser import parse
+            interp.run_program(parse(code + ";"), interp.frame)
+        return m
+
+    def search(self, s: str, pos: int = 0):
+        if self.dynamic is None:
+            m = self._prefix_rx.search(s, pos)
+            return None if m is None else self._finish(m)
+        for start in range(pos, len(s) + 1):
+            # every way the first part can match from here, longest first
+            for end in range(len(s), start - 1, -1):
+                m1 = self._prefix_rx.fullmatch(s, start, end)
+                if m1 is None:
+                    continue
+                dyn = self._dynamic_text(m1)
+                try:
+                    full = re.compile(_translate_regex(self.prefix, self.multiline) + "(?:"
+                                      + _translate_regex(dyn, self.multiline) + ")"
+                                      + _translate_regex(self.suffix, self.multiline), self.flags)
+                except re.error:
+                    continue
+                m = full.match(s, start)
+                if m is not None:
+                    return self._finish(m)
+        return None
 
 
 def _regex_matches(rx, s: str, switches: set[str]) -> list:
@@ -1184,7 +1379,49 @@ def _regexp(interp, args, nargout):
             for col, key in zip(cols, order):
                 col[k] = res[key]
         out = [Cell(col.reshape(shape, order="F")) for col in cols]
+    if isinstance(args[0], (MString, StringArray)):
+        nested = not (s_shape is None or (isinstance(args[0], MString) and p_shape is None)) \
+            or "forcecelloutput" in switches or isinstance(args[0], StringArray)
+        out = [_regexp_as_strings(key, value, nested) for key, value in zip(order, out)]
     return tuple(out) if n > 1 else out[0]
+
+
+def _cellstr_to_strings(c):
+    data = np.empty(c.data.shape, dtype=object)
+    for idx in np.ndindex(c.data.shape):
+        data[idx] = to_str(c.data[idx])
+    return StringArray(data) if data.size != 1 else MString(data.flat[0])
+
+
+def _regexp_as_strings(key: str, value, nested: bool):
+    """Text outputs of regexp for string input: string arrays instead of cell arrays of char."""
+    from ..values import Struct
+    if nested and isinstance(value, Cell):
+        data = np.empty(value.data.shape, dtype=object)
+        for idx in np.ndindex(value.data.shape):
+            data[idx] = _regexp_as_strings(key, value.data[idx], False)
+        return Cell(data)
+    if key in ("match", "split"):
+        if isinstance(value, Cell):
+            return _cellstr_to_strings(value) if value.data.size else StringArray(np.empty((1, 0), dtype=object))
+        if is_char(value):
+            return MString(to_str(value)) if value.size else StringArray(np.empty((0, 0), dtype=object))
+    if key == "tokens" and isinstance(value, Cell):
+        if value.data.size and all(isinstance(x, Cell) for x in value.data.flat):
+            data = np.empty(value.data.shape, dtype=object)
+            for idx in np.ndindex(value.data.shape):
+                data[idx] = _cellstr_to_strings(value.data[idx])
+            return Cell(data)
+        if value.data.size:
+            return _cellstr_to_strings(value)
+    if key == "names" and isinstance(value, Struct):
+        out = value.copy()
+        for d in out.data.flat:
+            for k2 in list(d):
+                if is_char(d[k2]):
+                    d[k2] = MString(to_str(d[k2]))
+        return out
+    return value
 
 
 @builtin("regexpi")

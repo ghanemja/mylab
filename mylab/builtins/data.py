@@ -181,10 +181,17 @@ def _isfield(interp, args, nargout):
 @builtin("rmfield")
 def _rmfield(interp, args, nargout):
     s = args[0].copy()
-    names = [to_str(x) for x in args[1].values_f()] if isinstance(args[1], Cell) else [text(args[1])]
+    if isinstance(args[1], Cell):
+        names = [to_str(x) for x in args[1].values_f()]
+    elif isinstance(args[1], StringArray):
+        names = [x for x in args[1].values_f() if x is not None]
+    elif isinstance(args[1], np.ndarray) and args[1].dtype.kind == "U" and args[1].ndim == 2 and args[1].shape[0] > 1:
+        names = ["".join(r).rstrip() for r in args[1]]
+    else:
+        names = [text(args[1])]
     for n in names:
         if n not in s.fields:
-            raise MatlabError(f"A field named '{n}' doesn't exist.")
+            raise MatlabError(f"A field named '{n}' doesn't exist.", "MATLAB:rmfield:InvalidFieldname")
         s.fields.remove(n)
         for d in s.data.flat:
             d.pop(n, None)
@@ -325,8 +332,9 @@ def _deal(interp, args, nargout):
 def _split_options(args, names):
     opts = {}
     rest = list(args)
-    while len(rest) >= 2 and is_text(rest[-2]) and text(rest[-2]) in names:
-        opts[text(rest[-2])] = rest[-1]
+    lower = {n.lower(): n for n in names}
+    while len(rest) >= 3 and is_text(rest[-2]) and text(rest[-2]).lower() in lower:
+        opts[lower[text(rest[-2]).lower()]] = rest[-1]  # option names are not case sensitive
         rest = rest[:-2]
     return rest, opts
 
@@ -470,6 +478,16 @@ def _elements(v):
         return out, v.shape
     if isinstance(v, (MString, FunctionHandle)):
         return [v], (1, 1)
+    if isinstance(v, StringArray):
+        out = []
+        for x in v.data.flatten(order="F"):
+            if x is None:
+                d = np.empty((1, 1), dtype=object)
+                d[0, 0] = None
+                out.append(StringArray(d))
+            else:
+                out.append(MString(x))
+        return out, v.data.shape
     if hasattr(v, "field_list"):  # an array of classdef objects
         return v.elements(), v.data.shape
     if hasattr(v, "isa_class") and not hasattr(v, "flatten"):
@@ -499,7 +517,7 @@ def _structfun(interp, args, nargout):
     fn, s = rest[0], rest[1]
     vals = [s.data.flat[0][f] for f in s.fields]
     uniform = bool(num(opts["UniformOutput"]).flat[0]) if "UniformOutput" in opts else True
-    res = _apply_elementwise(interp, fn, [vals], nargout, uniform, None, (len(vals), 1))
+    res = _apply_elementwise(interp, fn, [vals], nargout, uniform, opts.get("ErrorHandler"), (len(vals), 1))
     if not uniform and isinstance(res, Cell):
         return Struct.scalar(dict(zip(s.fields, res.values_f())))
     return res

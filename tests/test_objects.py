@@ -75,7 +75,7 @@ def test_handle_class_and_custom_disp(cm):
     assert m.num("k.count").item() == 7
     assert m.num("k == k2").item()
     assert m.num("isa(k, 'handle')").item()
-    assert m.run("k") == "k = \n\n  Counter at 7\n\n"
+    assert m.run("k") == "\nk = \n\n  Counter at 7\n\n"
     assert m.run("disp(k)") == "  Counter at 7\n"
 
 

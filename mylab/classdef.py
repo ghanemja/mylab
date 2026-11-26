@@ -2038,9 +2038,10 @@ def show_object(interp, name: str, value: Any) -> bool:
         cls.call(interp, "display", [value, char(name)] if len(fn.params) > 1 else [value], 0)
         return True
     if "disp" in cls.methods:
-        interp.out(f"{name} = \n\n")
+        from .display import finish_layout, object_header
+        interp.out(object_header(name))
         cls.call(interp, "disp", [value], 0)
-        interp.out("\n")
+        interp.out(finish_layout("\n"))
         return True
     fn = cls.base_methods.get("display")
     if fn is not None:

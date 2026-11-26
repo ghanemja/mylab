@@ -248,20 +248,20 @@ end
 
 
 def test_display_format(m):
-    assert m.run("x = 5") == "x = 5\n"
-    assert m.run("y = 3.14159") == "y = 3.1416\n"
-    assert m.run("z = [1 2 3]") == "z =\n\n     1     2     3\n\n"
-    assert m.run("s = 'hi'") == "s = 'hi'\n"
+    assert m.run("x = 5") == "\nx =\n\n     5\n\n"
+    assert m.run("y = 3.14159") == "\ny =\n\n    3.1416\n\n"
+    assert m.run("z = [1 2 3]") == "\nz =\n\n     1     2     3\n\n"
+    assert m.run("s = 'hi'") == "\ns =\n\n    'hi'\n\n"
     assert m.run("x;") == ""
-    assert m.run("3 + 4") == "ans = 7\n"
-    assert m.run("b = true") == "b =\n\n  logical\n\n   1\n\n"
+    assert m.run("3 + 4") == "\nans =\n\n     7\n\n"
+    assert m.run("b = true") == "\nb =\n\n  logical\n\n   1\n\n"
 
 
 def test_command_syntax(m):
     m.run("format long")
     assert "3.141592653589793" in m.run("pi")
     m.run("format short")
-    assert m.run("pi") == "ans = 3.1416\n"
+    assert m.run("pi") == "\nans =\n\n    3.1416\n\n"
     m.run("x = 1; clear x")
     assert not m.interp.base.has("x")
 

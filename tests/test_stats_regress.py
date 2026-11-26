@@ -1,3 +1,4 @@
+# ruff: noqa: E501  (long MATLAB code strings)
 """Regression: linear models, generalized linear models, nonlinear, penalised and robust fits.
 
 Expected values come from direct least-squares computations, from the estimating equations the

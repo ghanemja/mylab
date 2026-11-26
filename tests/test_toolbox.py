@@ -804,7 +804,9 @@ class TestValidation:
 
     def test_validatestring(self, m):
         assert m.str("validatestring('app', {'apple', 'banana'})") == "apple"
-        assert isinstance(m.interp.eval_expression('validatestring("BAN", {\'apple\', \'banana\'})'), MString)
+        # the result has the type of the list of valid texts
+        assert isinstance(m.interp.eval_expression('validatestring("BAN", ["apple" "banana"])'), MString)
+        assert m.str('validatestring("BAN", {\'apple\', \'banana\'})') == "banana"
         assert m.str("validatestring('app', {'apple', 'applesauce'})") == "apple"
         with pytest.raises(MatlabError):
             m.run("validatestring('a', {'apple', 'apricot'})")
@@ -838,7 +840,8 @@ class TestText:
         c = m.interp.eval_expression("extractBetween('a[1]b[22]', '[', ']')")
         assert isinstance(c, Cell) and c.shape == (2, 1)
         assert to_s(c.data[1, 0]) == "22"
-        assert m.str("extractBetween('abcdef', 2, 4)") == "bcd"
+        c = m.interp.eval_expression("extractBetween('abcdef', 2, 4)")  # char input gives a cell array
+        assert isinstance(c, Cell) and c.shape == (1, 1) and to_s(c.data[0, 0]) == "bcd"
         assert m.str('extractBetween("x<y>z", "<", ">")') == "y"
         c = m.interp.eval_expression("extractBetween('x<y>z', '<', '>', 'Boundaries', 'inclusive')")
         assert to_s(c.data[0, 0]) == "<y>"
@@ -859,8 +862,8 @@ class TestText:
         assert m.str("erase('abcabc', {'a', 'c'})") == "bb"
 
     def test_split_join(self, m):
-        c = m.interp.eval_expression("split('a b  c')")
-        assert c.shape == (3, 1) and [to_s(x) for x in c.data.ravel()] == ["a", "b", "c"]
+        c = m.interp.eval_expression("split('a b  c')")  # every blank separates: two blanks give an empty piece
+        assert c.shape == (4, 1) and [to_s(x) for x in c.data.ravel()] == ["a", "b", "", "c"]
         c = m.interp.eval_expression("split('a,b;c', {',', ';'})")
         assert [to_s(x) for x in c.data.ravel()] == ["a", "b", "c"]
         c = m.interp.eval_expression("split({'a b'; 'c d'})")
@@ -880,8 +883,8 @@ class TestText:
         c = m.interp.eval_expression("compose('%d-%d', [1 2; 3 4])")
         assert c.shape == (2, 1) and to_s(c.data[1, 0]) == "3-4"
         assert m.str('compose("%.2f", pi)') == "3.14"
-        c = m.interp.eval_expression("compose('%s=%d', {'a', 'b'}, [1 2])")
-        assert [to_s(x) for x in c.data.ravel()] == ["a=1", "b=2"]
+        c = m.interp.eval_expression("compose('%s=%d', {'a'; 'b'}, [1; 2])")  # one text per row of the data
+        assert c.shape == (2, 1) and [to_s(x) for x in c.data.ravel()] == ["a=1", "b=2"]
 
 
 def to_s(v):
@@ -905,11 +908,11 @@ class TestCells:
 
     def test_celldisp(self, m):
         out = m.run("celldisp({1, 'two', [3 4]})")
-        assert "C{1} = 1" in out and "C{2} = 'two'" in out and "C{3} =" in out
+        assert "C{1} =\n\n     1\n" in out and "C{2} =\n\n    'two'\n" in out and "C{3} =\n\n     3     4\n" in out
         out = m.run("q = {5; 6}; q{1} = {7, 8}; celldisp(q, 'Q')")
-        assert "Q{1}{1} = 7" in out and "Q{2} = 6" in out
+        assert "Q{1}{1} =\n\n     7\n" in out and "Q{2} =\n\n     6\n" in out
         out = m.run("celldisp({1 2; 3 4})")
-        assert "C{2,1} = 3" in out
+        assert "C{2,1} =\n\n     3\n" in out
 
 
 class TestMatrixTests:

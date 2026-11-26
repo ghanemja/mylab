@@ -1,3 +1,4 @@
+# ruff: noqa: E501  (long MATLAB code strings)
 """Descriptive statistics, correlation, grouped summaries, resampling and partitions."""
 
 import math

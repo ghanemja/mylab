@@ -28,7 +28,7 @@ def test_tools_end_to_end(tmp_path):
                     "search_functions", "reset_session"} <= tools
 
             r = await client.call_tool("run_code", {"code": "x = magic(3);\ns = sum(x(:))"})
-            assert "s = 45" in _texts(r)[0]
+            assert "s =\n\n    45" in _texts(r)[0]
 
             r = await client.call_tool("run_code", {"code": "plot(1:5); title('t')"})
             assert any(getattr(c, "type", "") == "image" for c in r.content)
@@ -38,7 +38,7 @@ def test_tools_end_to_end(tmp_path):
 
             r = await client.call_tool("run_file", {"path": str(script)})
             r = await client.call_tool("get_variable", {"name": "y"})
-            assert _texts(r)[0] == "y = 42"
+            assert _texts(r)[0] == "\ny =\n\n    42"
 
             r = await client.call_tool("list_variables", {})
             assert "x | 3×3 | double" in _texts(r)[0]

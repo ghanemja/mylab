@@ -1,3 +1,4 @@
+# ruff: noqa: E501  (long MATLAB code strings)
 """Probability distributions: function forms, fits, distribution objects, multivariate and plots.
 
 Expected values come from closed forms, from scipy.stats where the parameterisation is known to

@@ -42,7 +42,7 @@ def test_interactive_debugger_commands():
     dbg.attach(stop_at_start=True)
     interp.execute(code)
     text = "".join(out)
-    assert "base:1  x = 1;" in text and "base:4  w = x + y;" in text and "x = 1\n" in text
+    assert "base:1  x = 1;" in text and "base:4  w = x + y;" in text and "\nx =\n\n     1\n\n" in text
     assert interp.get_var("w").item() == 102 and interp.get_var("q").item() == 204
 
 

@@ -78,10 +78,8 @@ def _to_positions(idx: Any, extent: int, *, for_set: bool) -> tuple[np.ndarray, 
         flat = idx.flatten(order="F")
         pos = np.nonzero(flat)[0]
         if pos.size and pos[-1] >= extent and not for_set:
-            raise MatlabError(
-                f"The logical indices contain a true value outside of the array bounds "
-                f"(index {pos[-1] + 1} exceeds {extent})."
-            )
+            raise MatlabError("The logical indices contain a true value outside of the array bounds.",
+                              "MATLAB:badsubscript")
         shape = (1, pos.size) if idx.ndim == 2 and idx.shape[0] == 1 else (pos.size, 1)
         return pos, shape
     vals = np.real(idx).flatten(order="F") if idx.dtype.kind == "c" else idx.flatten(order="F")
@@ -89,10 +87,8 @@ def _to_positions(idx: Any, extent: int, *, for_set: bool) -> tuple[np.ndarray, 
     if vals.size:
         bad_mask = (~np.isfinite(vals)) | (vals != np.floor(vals)) | (vals < 1)
         if bad_mask.any():
-            raise MatlabError(
-                f"Array indices must be positive integers or logical values. (got {_fmt_index(vals[bad_mask][0])})",
-                "MATLAB:badsubscript",
-            )
+            raise MatlabError("Array indices must be positive integers or logical values.",
+                              "MATLAB:badsubscript")
     pos = vals.astype(np.int64) - 1
     if not for_set and pos.size and pos.max() >= extent:
         raise MatlabError(f"Index exceeds the number of array elements. Index must not exceed {extent}.",
@@ -241,11 +237,10 @@ def set_(arr: np.ndarray, args: list[Any], rhs: np.ndarray, fill: Callable[[], A
         # Shapes must agree once singleton dimensions are ignored (a column fits a row slice).
         vals = rhs if rhs.shape == target else rhs.reshape(-1, order="F").reshape(target, order="F")
     else:
-        tshape = "x".join(str(t) for t in target)
-        rshape = "x".join(str(t) for t in rhs.shape)
-        raise MatlabError("Unable to perform assignment because the indices on the left side are not "
-                          f"compatible with the size of the right side ({rshape} into {tshape}).",
-                          "MATLAB:subsassigndimmismatch")
+        tshape = "-by-".join(str(t) for t in target)
+        rshape = "-by-".join(str(t) for t in rhs.shape)
+        raise MatlabError(f"Unable to perform assignment because the size of the left side is {tshape} "
+                          f"and the size of the right side is {rshape}.", "MATLAB:subsassigndimmismatch")
     need = tuple(int(p.max()) + 1 for p in pos_list)
     if folded and need[-1] > eshape[-1]:
         raise MatlabError("Attempt to grow array along ambiguous dimension.")
@@ -273,11 +268,8 @@ def _set_linear(arr: np.ndarray, idx: Any, rhs: np.ndarray, fill: Callable[[], A
     if pos.size == 0:
         return arr
     if rhs.size != 1 and rhs.size != pos.size:
-        raise MatlabError(
-            "Unable to perform assignment because the left and right sides have a different "
-            f"number of elements ({pos.size} on the left, {rhs.size} on the right).",
-            "MATLAB:subsassignnumelmismatch",
-        )
+        raise MatlabError("Unable to perform assignment because the left and right sides have a different "
+                          "number of elements.", "MATLAB:subsassignnumelmismatch")
     need = int(pos.max()) + 1
     shape = arr.shape
     if need > n:
