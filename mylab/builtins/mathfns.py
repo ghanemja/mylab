@@ -2234,30 +2234,6 @@ builtin("maxk")(_topk(True))
 builtin("mink")(_topk(False))
 
 
-@builtin("dec2bin")
-def _dec2bin(interp, args, nargout):
-    n = int(fnum(args[0]).flat[0])
-    width = to_int(args[1], "digits") if len(args) > 1 else 0
-    return char(format(n, "b").zfill(width))
-
-
-@builtin("bin2dec")
-def _bin2dec(interp, args, nargout):
-    return float(int(text(args[0]).replace(" ", ""), 2))
-
-
-@builtin("dec2hex")
-def _dec2hex(interp, args, nargout):
-    n = int(fnum(args[0]).flat[0])
-    width = to_int(args[1], "digits") if len(args) > 1 else 0
-    return char(format(n, "X").zfill(width))
-
-
-@builtin("hex2dec")
-def _hex2dec(interp, args, nargout):
-    return float(int(text(args[0]), 16))
-
-
 def _bit_class(a, b, name):
     """Result dtype of a bit function: the integer class of the inputs, or None for double."""
     ia, ib = a.dtype.kind in "iu", b.dtype.kind in "iu"

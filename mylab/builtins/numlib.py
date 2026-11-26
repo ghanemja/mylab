@@ -9,7 +9,7 @@ import numpy as np
 from ..errors import MatlabError
 from ..values import char, to_int
 from ._registry import builtin
-from ._util import bool_scalar, default_dim, fnum, nargs, num
+from ._util import default_dim, fnum, nargs
 
 
 # -- special matrices -------------------------------------------------------------------
@@ -152,15 +152,3 @@ def _rat(interp, args, nargout):
 
 # -- missing values and outliers ------------------------------------------------------------
 
-def _nan_test(name, np_fn, combine):
-    def f(interp, args, nargout):
-        nargs(args, 1, 1, name)
-        a = num(args[0])
-        if a.dtype.kind not in "fc":
-            return bool_scalar(name == "allfinite")
-        return bool_scalar(bool(combine(np_fn(a))))
-    return f
-
-
-builtin("anynan")(_nan_test("anynan", np.isnan, np.any))
-builtin("allfinite")(_nan_test("allfinite", np.isfinite, np.all))

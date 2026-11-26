@@ -1,9 +1,5 @@
 """Help text for geometry, scattered interpolation, N-D transforms and extra statistics."""
 
-_RND = ("Random numbers from the {dist} distribution. Parameters may be scalars or arrays of the result's "
-        "size; trailing arguments give the size, e.g. {name}({args}, 3, 2) or {name}({args}, [3 2]). "
-        "Invalid parameters give NaN.")
-
 HELP = {
     # -- distances ------------------------------------------------------------------------------------
     "pdist2": (["D = pdist2(X, Y)", "D = pdist2(X, Y, distance)", "[D, I] = pdist2(X, Y, distance, 'Smallest', k)"],
@@ -113,27 +109,16 @@ HELP = {
     "mvnpdf": (["p = mvnpdf(X)", "p = mvnpdf(X, mu)", "p = mvnpdf(X, mu, Sigma)"],
                "Density of the multivariate normal distribution at each row of X. mu defaults to zero and "
                "Sigma to the identity matrix."),
-    "gamrnd": ("r = gamrnd(a, b, ...)", _RND.format(dist="gamma (shape a, scale b)", name="gamrnd", args="a, b")),
-    "betarnd": ("r = betarnd(a, b, ...)", _RND.format(dist="beta", name="betarnd", args="a, b")),
-    "chi2rnd": ("r = chi2rnd(v, ...)", _RND.format(dist="chi-square (v degrees of freedom)", name="chi2rnd",
-                                                  args="v")),
-    "trnd": ("r = trnd(v, ...)", _RND.format(dist="Student t (v degrees of freedom)", name="trnd", args="v")),
-    "frnd": ("r = frnd(v1, v2, ...)", _RND.format(dist="F", name="frnd", args="v1, v2")),
-    "lognrnd": ("r = lognrnd(mu, sigma, ...)", _RND.format(dist="lognormal", name="lognrnd", args="mu, sigma")),
-    "wblrnd": ("r = wblrnd(a, b, ...)", _RND.format(dist="Weibull (scale a, shape b)", name="wblrnd",
-                                                   args="a, b")),
-    "raylrnd": ("r = raylrnd(b, ...)", _RND.format(dist="Rayleigh", name="raylrnd", args="b")),
-    "geornd": ("r = geornd(p, ...)", _RND.format(dist="geometric (failures before the first success)",
-                                                name="geornd", args="p")),
-    "nbinrnd": ("r = nbinrnd(r, p, ...)", _RND.format(dist="negative binomial", name="nbinrnd", args="r, p")),
-    "unidrnd": ("r = unidrnd(n, ...)", _RND.format(dist="discrete uniform (integers 1 to n)", name="unidrnd",
-                                                  args="n")),
     "nanmedian": (["m = nanmedian(x)", "m = nanmedian(x, dim)"], "Median that ignores NaN values."),
     "nanvar": (["v = nanvar(x)", "v = nanvar(x, dim)"], "Variance that ignores NaN values."),
-    "geomean": (["m = geomean(x)", "m = geomean(x, dim)"],
-                "Geometric mean: the n-th root of the product of n values. Negative values give NaN."),
-    "harmmean": (["m = harmmean(x)", "m = harmmean(x, dim)"],
-                 "Harmonic mean: n divided by the sum of the reciprocals."),
+    "geomean": (["m = geomean(x)", "m = geomean(x, dim)", "m = geomean(x, vecdim)", "m = geomean(x, 'all')",
+                 "m = geomean(..., nanflag)"],
+                "Geometric mean: the n-th root of the product of n values. Negative values give NaN. nanflag "
+                "'omitnan' leaves NaN values out ('includenan', the default, keeps them)."),
+    "harmmean": (["m = harmmean(x)", "m = harmmean(x, dim)", "m = harmmean(x, vecdim)", "m = harmmean(x, 'all')",
+                  "m = harmmean(..., nanflag)"],
+                 "Harmonic mean: n divided by the sum of the reciprocals. nanflag 'omitnan' leaves NaN values "
+                 "out ('includenan', the default, keeps them)."),
     "pca": (["coeff = pca(X)", "[coeff, score, latent, tsquared, explained, mu] = pca(X)",
              "coeff = pca(X, 'NumComponents', k)"],
             "Principal component analysis of the data in X (one observation per row, one variable per "

@@ -19,6 +19,4 @@ HELP = {
             "Rational approximation by continued fractions: n./d is close to x, within tol "
             "(default 1e-6*norm(x(:), 1)). With one output it returns the continued fraction as "
             "text, for example rat(pi) is '3 + 1/(7 + 1/16)'."),
-    "anynan": ("tf = anynan(A)", "True if at least one element of A is NaN."),
-    "allfinite": ("tf = allfinite(A)", "True if no element of A is NaN or Inf."),
 }

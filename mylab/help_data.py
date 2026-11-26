@@ -95,7 +95,6 @@ HELP: dict = {
              "Example: diag([1 2]) is [1 0; 0 2]."),
     # -- constants --------------------------------------------------------------------------
     "pi": ("p = pi", "The ratio of a circle's circumference to its diameter, 3.14159..., in double precision."),
-    "e": ("x = e", "Euler's number 2.71828..., the base of the natural logarithm. Same as exp(1)."),
     "i": ("z = i", "The imaginary unit, sqrt(-1). Can be overwritten by a variable named i; writing 1i is safer."),
     "realmax": (["x = realmax", "x = realmax('single')"],
                 "Largest finite double-precision number, about 1.7977e308. realmax('single') is the "
@@ -319,14 +318,6 @@ HELP: dict = {
                "repeats. Example: factor(12) is [2 2 3]."),
     "gcd": ("g = gcd(a, b)", "Greatest common divisor of corresponding integer elements of a and b."),
     "lcm": ("m = lcm(a, b)", "Least common multiple of corresponding integer elements of a and b."),
-    "dec2bin": (["s = dec2bin(d)", "s = dec2bin(d, n)"],
-                "Binary representation of the non-negative integer d as a char vector, zero-padded to at "
-                "least n digits. Only scalar input is supported. Example: dec2bin(5) is '101'."),
-    "bin2dec": ("d = bin2dec(s)", "Value of a binary digit string; spaces are ignored. Example: bin2dec('101') is 5."),
-    "dec2hex": (["s = dec2hex(d)", "s = dec2hex(d, n)"],
-                "Hexadecimal representation (upper-case digits) of the non-negative integer d, zero-padded "
-                "to at least n digits. Only scalar input is supported. Example: dec2hex(255) is 'FF'."),
-    "hex2dec": ("d = hex2dec(s)", "Value of a hexadecimal digit string. Example: hex2dec('ff') is 255."),
     "bitand": ("c = bitand(a, b)", "Bitwise AND of non-negative integer values; the result is double."),
     "bitor": ("c = bitor(a, b)", "Bitwise OR of non-negative integer values; the result is double."),
     "bitxor": ("c = bitxor(a, b)", "Bitwise exclusive OR of non-negative integer values; the result is double."),

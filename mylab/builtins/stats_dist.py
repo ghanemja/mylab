@@ -41,7 +41,7 @@ class Fam:
                  safe: tuple, kinds: tuple, *, defaults: tuple | None = None, discrete: bool = False,
                  aliases: tuple = (), est: tuple | None = None, start: Callable | None = None,
                  closed: Callable | None = None, logci: tuple | None = None, sampler: Callable | None = None,
-                 desc: tuple | None = None, display: str | None = None):
+                 desc: tuple | None = None, display: str | None = None, rnd_valid: Callable | None = None):
         self.name = name                    # e.g. 'Normal', 'GeneralizedExtremeValue'
         self.prefix = prefix                # e.g. 'norm' (None: no <prefix>pdf functions)
         self.pnames = pnames
@@ -60,6 +60,7 @@ class Fam:
         self.sampler = sampler
         self.desc = desc or pnames
         self.display = display or name
+        self.rnd_valid = rnd_valid or valid  # parameters random numbers accept (sigma = 0 is a point mass)
 
     # -- evaluation ------------------------------------------------------------------------------
     def ev(self, method: str, x: Any, p: list) -> np.ndarray:
@@ -100,7 +101,7 @@ class Fam:
 
     def rnd(self, rng: np.random.Generator, shape: tuple, p: list) -> np.ndarray:
         p = [np.broadcast_to(np.asarray(q, dtype=float), shape) for q in p]
-        ok = np.asarray(self.valid(*p), dtype=bool)
+        ok = np.asarray(self.rnd_valid(*p), dtype=bool)
         if self.sampler is not None:
             ps = [np.where(ok, q, s) for q, s in zip(p, self.safe)]
             r = np.asarray(self.sampler(rng, shape, *ps), dtype=float)
@@ -485,7 +486,8 @@ def _families() -> list[Fam]:
           desc=("location", "scale")),
         F("Lognormal", "logn", ("mu", "sigma"), "lognorm", lambda m, s: ((s,), 0, np.exp(m)), lambda m, s: s > 0,
           (0, 1), ("real", "pos"), defaults=(0, 1), closed=_closed_lognormal,
-          sampler=lambda g, sh, m, s: np.exp(m + s * g.standard_normal(sh)), desc=("log location", "log scale")),
+          sampler=lambda g, sh, m, s: np.exp(m + s * g.standard_normal(sh)), desc=("log location", "log scale"),
+          rnd_valid=lambda m, s: s >= 0),
         F("Exponential", "exp", ("mu",), "expon", lambda m: ((), 0, m), lambda m: m > 0, (1,), ("pos",),
           defaults=(1,), closed=_closed_exp, sampler=lambda g, sh, m: m * g.standard_exponential(sh),
           desc=("mean",)),
