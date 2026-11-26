@@ -563,7 +563,7 @@ def _compose(interp, args, nargout):
     """compose(format, A1, ..., An): one text per row of the data (or per format), as sprintf writes it."""
     nargs(args, 1, None, "compose")
     from ..values import string_data, string_result
-    from .strings import matlab_sprintf
+    from .strings import char_row, matlab_sprintf
     fmt_v = args[0]
     if isinstance(fmt_v, (MString, StringArray)):
         kind = "string"
@@ -578,7 +578,7 @@ def _compose(interp, args, nargout):
     def out_text(items: list, shape: tuple):
         arr = np.empty(len(items), dtype=object)
         for k, x in enumerate(items):
-            arr[k] = x if kind == "string" else char(x)
+            arr[k] = x if kind == "string" else char_row(x)
         arr = arr.reshape(shape, order="F")
         return string_result(arr) if kind == "string" else Cell(arr)
 

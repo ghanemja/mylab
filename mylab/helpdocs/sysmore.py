@@ -12,6 +12,12 @@ _NOJAVA = ("mylab runs on Python and has no Java virtual machine, so this functi
            "Python library through py.name(...) instead.")
 _STREAM = (" After rng(seed) the numbers are the ones MATLAB's default generator (the Mersenne Twister) "
            "returns for that seed, and arrays are filled column by column from the same stream.")
+_LEGACY = (" The old generator syntaxes are accepted too: s = rand('state') and s = rand('twister') return the "
+           "whole generator state (625 values; double for 'state', uint32 for 'twister'), s = rand('seed') "
+           "returns a scalar seed (the stream restarts from it), and rand(word, s) with any of the three "
+           "words puts that state or seed back, so the same numbers follow. A scalar s seeds the generator as "
+           "rng(s) does. rand and randn share the one generator rng controls, and the numbers are not those "
+           "of MATLAB's retired 'state' and 'seed' generators.")
 _IMPORT = ("Options (name-value pairs): 'Delimiter' (a character, a name such as 'tab' or 'comma', or a cell "
            "array), 'NumHeaderLines', 'Range' (a corner 'B2', a block 'A2:C5', rows '2:5' or [row1 col1 row2 "
            "col2]), 'DecimalSeparator', 'ThousandsSeparator', 'TreatAsMissing', 'TrimNonNumeric', "
@@ -222,9 +228,10 @@ HELP = {
         "written like 'R2021b'. stage is 'release' (the default) or 'prerelease', and update an update "
         "number; mylab counts as the general release without updates."),
     "rand": (["r = rand", "R = rand(n)", "R = rand(m, n)", "R = rand([m n])", "R = rand(..., 'single')",
-              "R = rand(..., 'like', p)"],
+              "R = rand(..., 'like', p)", "s = rand('state')", "s = rand('seed')", "s = rand('twister')",
+              "rand('state', s)", "rand('seed', n)", "rand('twister', n)"],
              "Uniformly distributed random numbers between 0 and 1. The class is double, or single when "
-             "asked for by name or through a 'like' prototype." + _STREAM),
+             "asked for by name or through a 'like' prototype." + _STREAM + _LEGACY),
     "echo": (["echo on", "echo off", "echo", "echo on all", "echo off all", "echo fname on", "echo fname off",
               "echo fname"],
              "Show the lines of scripts as they run. echo on and echo off turn it on and off for scripts, and "
@@ -259,8 +266,10 @@ HELP = {
               "for scale b. The numbers come from the same generator as rand and randn (see rng), so they "
               "are reproducible after rng(seed), but they are not the same numbers MATLAB draws."),
     "randn": (["r = randn", "R = randn(n)", "R = randn(m, n)", "R = randn([m n])", "R = randn(..., 'single')",
-               "R = randn(..., 'like', p)"],
-              "Normally distributed random numbers with mean 0 and standard deviation 1." + _STREAM),
+               "R = randn(..., 'like', p)", "s = randn('state')", "s = randn('seed')", "randn('state', s)",
+               "randn('seed', n)", "randn('twister', n)"],
+              "Normally distributed random numbers with mean 0 and standard deviation 1." + _STREAM
+              + _LEGACY.replace("rand(", "randn(")),
     "randi": (["r = randi(imax)", "R = randi(imax, n)", "R = randi(imax, m, n)", "R = randi([imin imax], m, n)",
                "R = randi(..., classname)"],
               "Uniformly distributed random integers from 1 to imax, or from imin to imax. The result is "

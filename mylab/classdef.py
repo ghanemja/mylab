@@ -1151,9 +1151,14 @@ def _array_reshape(interp, args: list) -> Any:
 
 
 def _array_num2cell(interp, args: list) -> Any:
+    from .builtins.data import num2cell_dims, split_to_cells
     from .values import Cell
     arr = _as_array(args[0])
-    return Cell(arr.data.copy())
+    if len(args) > 2:
+        raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
+    if len(args) == 1:
+        return Cell(arr.data.copy())
+    return split_to_cells(arr.data, num2cell_dims(args[1]), lambda d: ObjectArray._unwrap(d, arr.cls))
 
 
 def _shape_test(test):
