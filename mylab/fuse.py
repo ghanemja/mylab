@@ -26,9 +26,12 @@ import numpy as np
 
 from . import ast as A
 
-try:  # optional accelerator
-    import numexpr as _ne
-except Exception:  # pragma: no cover - numexpr missing or broken
+from ._lazy import lazy_module
+
+try:  # optional accelerator; found now, imported the first time a large expression is evaluated
+    import importlib.util
+    _ne = lazy_module("numexpr", globals(), "_ne") if importlib.util.find_spec("numexpr") is not None else None
+except Exception:  # pragma: no cover - a broken installation
     _ne = None
 
 AVAILABLE = _ne is not None
@@ -145,8 +148,13 @@ def run(interp, p: Plan, frame) -> Any:
                 break
     if ok and shape is not None and int(np.prod(shape)) >= MIN_SIZE:
         local = {f"v{i}": (v if v.size != 1 else float(v.flat[0])) for i, v in enumerate(vals)}
+        try:
+            evaluate = _ne.evaluate
+        except ImportError:  # pragma: no cover - numexpr is installed but cannot be imported
+            p.skip = 1 << 30
+            return _apply(interp, p.root, vals, frame)
         with np.errstate(all="ignore"):
-            out = _ne.evaluate(p.expr, local_dict=local, global_dict={})
+            out = evaluate(p.expr, local_dict=local, global_dict={})
         p.misses = 0
         return out
     p.misses += 1

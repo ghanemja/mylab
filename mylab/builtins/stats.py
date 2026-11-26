@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import numpy as np
-import scipy.stats as st
 
+from .._lazy import lazy_module
 from ..errors import MatlabError
 from ..values import Cell, MString, Struct, char, is_char, to_int, to_str
 from ._registry import builtin
 from ._util import default_dim, dims_from_args, fnum, get_dim, is_text, keep2d, nargs, text
+
+st = lazy_module("scipy.stats", globals(), "st")  # imported on first use: keeps start-up fast
 
 
 # -- helpers -------------------------------------------------------------------------

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import numpy as np
-import scipy.linalg as sla
 
+from .._lazy import lazy_module
 from ..errors import MatlabError
 from ..ops import left_divide
 from ..values import simplify, to_int
 from ._registry import builtin
 from ._util import fnum, is_text, text
+
+sla = lazy_module("scipy.linalg", globals(), "sla")  # imported on first use: keeps start-up fast
 
 
 def _square(a: np.ndarray, name: str) -> None:

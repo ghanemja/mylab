@@ -14,7 +14,6 @@ import re
 import zipfile
 from typing import Any
 from xml.etree import ElementTree as ET
-from xml.sax.saxutils import escape
 
 import numpy as np
 
@@ -23,6 +22,12 @@ from ..values import Cell, MString, StringArray, char, is_char, to_str
 from . import BUILTINS
 from ._registry import builtin
 from ._util import is_text, text
+
+
+def escape(text, entities=None):
+    """XML-escape text (xml.sax.saxutils pulls in the network stack, so it is imported on use)."""
+    from xml.sax.saxutils import escape as _escape
+    return _escape(text, entities or {})
 
 EXTENSIONS = (".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".xlsb", ".ods")
 _NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",

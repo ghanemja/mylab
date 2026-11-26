@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import numpy as np
-import scipy.signal as ss
 
+from .._lazy import lazy_module
 from ..errors import MatlabError
 from ..values import simplify, to_int
 from ._registry import builtin
 from ._util import default_dim, fnum, is_text, nargs, text
+
+ss = lazy_module("scipy.signal", globals(), "ss")  # imported on first use: keeps start-up fast
 
 
 # -- helpers --------------------------------------------------------------------------
