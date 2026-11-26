@@ -315,13 +315,15 @@ async function main() {
 
     // First-run welcome
     await page.waitForSelector("#dlg-welcome[open]");
-    for (const id of ["welcome-examples", "welcome-github", "welcome-assignment", "welcome-step", "welcome-blocks"]) {
+    for (const id of ["welcome-examples", "welcome-github", "welcome-assignment", "welcome-step", "welcome-blocks", "welcome-whatsnew"]) {
       check(await page.locator("#" + id).isVisible(), `welcome card ${id} missing`);
     }
     await page.click("#welcome-close");
     await page.waitForSelector("#dlg-welcome", { state: "hidden" });
     await page.waitForFunction(() => localStorage.getItem("mylab.welcomed") === "2");
-    ok("first-run welcome points to examples, GitHub, the example assignment, step-through and block diagrams");
+    check((await page.evaluate(() => localStorage.getItem("mylab.whatsNew"))) === '"1.1"', "a first visit should not show What's new later");
+    check(await page.locator(".file-item[data-name='whats_new/fit_curve.m']").count(), "the 1.1 examples should be in the Files panel");
+    ok("first-run welcome points to examples, GitHub, the example assignment, step-through, block diagrams and what's new");
 
     await page.waitForSelector("#loader .steps li.active, body[data-engine='ready']", { timeout: 60000 });
     ok("loading screen shows progress steps");
@@ -365,6 +367,10 @@ async function main() {
     await waitIdle();
     const nat = await page.evaluate(() => document.querySelector(".plot-card img").naturalWidth);
     if (!(nat > 100)) throw new Error("plot image did not render");
+    // On this 2x screen a figure is drawn at twice its size and shown at its own size (about 560 px wide), never stretched.
+    const figSize = await page.evaluate(() => { const i = document.querySelector(".plot-card img"); return { attr: Number(i.getAttribute("width")), shown: i.getBoundingClientRect().width, card: i.parentElement.clientWidth }; });
+    check(Math.abs(figSize.attr * 2 - nat) <= 1 && figSize.attr > 400 && figSize.attr < 600, `figure size: ${nat} px drawn, ${JSON.stringify(figSize)}`);
+    check(figSize.shown <= figSize.attr + 0.5 && figSize.shown <= figSize.card + 0.5, "a figure should never be stretched or cropped: " + JSON.stringify(figSize));
     if (!/eigenvalues of A/.test(await consoleText())) throw new Error("welcome.m output missing");
     ok("running welcome.m prints output and shows a plot");
 
@@ -1541,6 +1547,7 @@ async function main() {
     // Reloading the assignment link keeps the student's work and the last results.
     await page.reload();
     await page.waitForSelector("#asg-panel:not([hidden])");
+    await page.waitForSelector(READY, { timeout: 240000 }); // the loading screen takes clicks until then (slow on a busy machine)
     check((await page.evaluate(() => window.mylab.app.liveContent("p1_rect_area/rect_area.m"))).includes("a = w .* h;"), "reloading the assignment overwrote student work");
     check((await page.locator("#asg-score").getAttribute("data-earned")) === "7", "results were not kept across a reload");
     check((await page.locator("[data-problem='p2_mean_score'] .asg-test.timeout").count()) === 1, "per-test results were not kept");
@@ -1660,8 +1667,30 @@ async function main() {
       await op.reload();
       await op.waitForSelector(".file-item[data-name='models/bouncing_ball.mlb.json']");
       check(!(await op.evaluate(() => window.mylab.state.files.has("models/van_der_pol.mlb.json"))), "the example models are added only once");
+      // ... and the 1.1 examples once, with "What's new" shown once to someone who used an earlier version
+      await op.evaluate(async () => {
+        const app = window.mylab.app;
+        const mine = app.sortedPaths().filter((p) => p.startsWith("whats_new/"));
+        for (const p of mine) app.closeTab(p);
+        await app.removePaths(mine.filter((p) => p !== "whats_new/fit_curve.m"));
+        localStorage.removeItem("mylab.seededExamples11");
+        localStorage.removeItem("mylab.whatsNew");
+        localStorage.setItem("mylab.welcomed", "2");
+      });
+      await op.evaluate(() => window.mylab.app.writeFiles([{ path: "whats_new/fit_curve.m", content: "% mine\n" }]));
+      await op.reload();
+      await op.waitForSelector(".file-item[data-name='whats_new/interpolation.m']");
+      await op.waitForSelector("#dlg-whatsnew[open]");
+      check(!(await op.locator("#dlg-welcome[open]").count()), "someone who has seen the welcome should get What's new, not the welcome");
+      check((await op.evaluate(() => window.mylab.state.files.get("whats_new/fit_curve.m").content)) === "% mine\n", "adding the 1.1 examples must not overwrite a file");
+      await op.click("#whatsnew-close");
+      await op.waitForFunction(() => localStorage.getItem("mylab.whatsNew") === '"1.1"');
+      await op.reload();
+      await op.waitForSelector(".file-item[data-name='whats_new/interpolation.m']");
+      await op.waitForTimeout(300);
+      check(!(await op.locator("#dlg-whatsnew[open]").count()), "What's new should be shown only once");
       await older.close();
-      ok("people who already had the .m examples get the example models once, without losing their own files");
+      ok("people who already had the .m examples get the example models and the 1.1 examples once, without losing their own files, and see What's new once");
 
       // A. An example model: open, run with the app's Run button, read the scope
       await page.evaluate(() => window.mylab.app.blocks.openExample("mass_spring_damper"));
@@ -2115,6 +2144,175 @@ async function main() {
     check(h5pyRequests.length > 0, "h5py was not downloaded from the Pyodide CDN");
     ok("HDF5 loads h5py on first use ('Loading HDF5 support…'): h5create/h5write/h5read and save -v7.3/load work");
 
+    /* ---------------- what is new in 1.1, in the app ---------------- */
+    // The editor's list of functions comes from the engine itself, so it has every built-in.
+    const engineNames = JSON.parse(spawnSync(PY, ["-c", "import json; from mylab.interpreter import Interpreter; print(json.dumps(sorted(Interpreter().builtins)))"], { cwd: ROOT, encoding: "utf8" }).stdout);
+    const helpNames = await page.evaluate(() => Object.keys(window.mylab.app.helpIndex() || {}));
+    const missing = engineNames.filter((n) => !helpNames.includes(n));
+    check(engineNames.length > 2600 && !missing.length, `the editor misses ${missing.length} of ${engineNames.length} built-ins: ${missing.slice(0, 10).join(", ")}`);
+    for (const n of ["fit", "fittype", "griddedInterpolant", "h5read", "triangulation", "xline", "RandStream.create"]) check(helpNames.includes(n), `${n} is not in the editor's list of functions`);
+    await h.newFile("new11.m", "x = (1:6)';\ny = 3*x + 1;\nf = fit(x, y, 'poly1');\ns = RandStream.create('mt19937ar');\n\n");
+    const newAt = async (line, ch) => {
+      const c = await page.evaluate(([l, k]) => window.mylab.editor.charCoords({ line: l, ch: k }, "window"), [line, ch]);
+      await page.mouse.move(5, 5);
+      await page.waitForTimeout(50);
+      await page.mouse.move(c.left + 2, (c.top + c.bottom) / 2);
+    };
+    await newAt(2, 5);
+    await page.waitForFunction(() => document.querySelector("#code-tip").dataset.name === "fit" && !document.querySelector("#code-tip").hidden);
+    const fitTip = await page.locator("#code-tip").innerText();
+    check(/fit\(/.test(fitTip) && fitTip.split("\n").some((l) => l.length > 20 && !/fit\(/.test(l) && !/F1/.test(l)), "hover help for fit should show its usage and a description: " + fitTip);
+    await newAt(3, 16);
+    await page.waitForFunction(() => document.querySelector("#code-tip").dataset.name === "RandStream.create" && !document.querySelector("#code-tip").hidden);
+    check(/RandStream\.create\(/.test(await page.locator("#code-tip").innerText()), "hover on a dotted name: " + (await page.locator("#code-tip").innerText()));
+    await page.mouse.move(5, 5);
+    const typeAt = async (line, text) => {
+      await page.evaluate((l) => { const cm = window.mylab.editor; cm.focus(); cm.setCursor({ line: l, ch: 0 }); }, line);
+      await page.keyboard.type(text, { delay: 30 });
+      await page.waitForSelector(".CodeMirror-hints");
+      await page.waitForTimeout(150);
+      return (await page.locator(".CodeMirror-hints li").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+    };
+    let hints11 = await typeAt(5, "gridd");
+    check(hints11.some((t) => /^ƒ griddedInterpolant \S/.test(t)), "autocomplete should offer griddedInterpolant with a description: " + JSON.stringify(hints11.slice(0, 5)));
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => window.mylab.editor.replaceRange("", { line: 5, ch: 0 }, { line: 5, ch: 100 }));
+    hints11 = await typeAt(5, "fi");
+    check(hints11.some((t) => /^ƒ fit \S/.test(t)), "autocomplete should offer fit: " + JSON.stringify(hints11.slice(0, 12)));
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => window.mylab.editor.replaceRange("", { line: 5, ch: 0 }, { line: 5, ch: 100 }));
+    hints11 = await typeAt(5, "RandStream.c");
+    check(hints11.some((t) => /^ƒ create\b/.test(t)), "after RandStream. the suggestions should be its functions: " + JSON.stringify(hints11));
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => window.mylab.editor.replaceRange("", { line: 5, ch: 0 }, { line: 5, ch: 100 }));
+    await h.run();
+    check((await page.locator("#var-table tr[data-name='f'] td:nth-child(3)").innerText()) === "cfit", "f should be a cfit in the workspace");
+    check(/^f\(x\) = p1\*x \+ p2/.test(await h.varValue("f")), "the workspace should show the model of a fit: " + (await h.varValue("f")));
+    hints11 = await typeAt(5, "f.con");
+    check(hints11.some((t) => /^ƒ confint\b/.test(t)), "after f. the suggestions should be the methods of a cfit: " + JSON.stringify(hints11));
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => window.mylab.editor.replaceRange("", { line: 5, ch: 0 }, { line: 5, ch: 100 }));
+    await page.evaluate(() => { const cm = window.mylab.editor; cm.focus(); cm.setCursor({ line: 2, ch: 5 }); });
+    await page.keyboard.press("F1");
+    await page.waitForSelector("#dlg-help[open]");
+    await page.waitForFunction(() => /fit\(/.test(document.querySelector("#help-body").textContent) && document.querySelector("#help-name").value === "fit");
+    for (const n of ["griddedInterpolant", "xline", "h5read", "RandStream.create"]) {
+      await page.fill("#help-name", n);
+      await page.click("#help-go");
+      await page.waitForFunction((name) => document.querySelector("#help-where").textContent === "Built into mylab" && document.querySelector("#help-body").textContent.includes(name + "("), n);
+      check(!/No help text written yet/.test(await page.locator("#help-body").innerText()), `F1 help for ${n} has no text`);
+    }
+    await page.click("#help-close");
+    ok("1.1: the editor knows every built-in (fit, griddedInterpolant, dotted names): suggestions, hover, methods after f., F1 help");
+
+    // The variable viewer shows a fit property by property, and its printed form.
+    await page.click("#var-table tr[data-name='f']");
+    await page.waitForFunction(() => document.querySelector("#dlg-var").dataset.kind === "object");
+    check((await page.locator("#var-meta").innerText()) === "1×1 cfit", "variable viewer meta: " + (await page.locator("#var-meta").innerText()));
+    check(/^p1 3(\.0+)? p2 1(\.0+)?$/.test((await page.locator("#var-grid tbody").innerText()).replace(/\s+/g, " ").trim()), "cfit grid: " + (await page.locator("#var-grid tbody").innerText()));
+    await page.click("#var-view-text");
+    check(/Linear model Poly1/.test(await page.locator("#var-body").innerText()), "the text view should print the fit");
+    await page.click("#dlg-var button[value='close']");
+    await input.fill("G = griddedInterpolant(1:4, [1 4 9 16]); TT = timetable(datetime(2024,1,1:3)', [5;6;7]); M = containers.Map({'a','b'}, {1, 2}); xl = xline(2); cg = categorical({'lo','hi','lo'});");
+    await input.press("Enter");
+    await page.waitForSelector("#var-table tr[data-name='cg']");
+    await waitIdle();
+    const kinds = {};
+    for (const n of ["G", "TT", "M", "xl", "cg"]) {
+      await page.click(`#var-table tr[data-name='${n}']`);
+      await page.waitForFunction((name) => document.querySelector("#dlg-var[open]") && document.querySelector("#var-title").textContent === name && document.querySelector("#dlg-var").dataset.kind, n);
+      const shown = await page.evaluate(() => ({ kind: document.querySelector("#dlg-var").dataset.kind, meta: document.querySelector("#var-meta").textContent, text: document.querySelector("#dlg-var").innerText }));
+      check(!/\[object|undefined|Internal error|Traceback/.test(shown.text), `the viewer shows ${n} badly: ${shown.text.slice(0, 200)}`);
+      kinds[n] = shown.kind + " " + shown.meta;
+      await page.click("#dlg-var button[value='close']");
+    }
+    check(kinds.G === "object 1×1 griddedInterpolant" && kinds.TT === "table 3×1 timetable" && kinds.M === "object 2×1 containers.Map" &&
+      /^text 1×1 matlab\.graphics\.chart\.decoration\.ConstantLine$/.test(kinds.xl) && kinds.cg === "values 1×3 categorical", "viewer kinds: " + JSON.stringify(kinds));
+    ok("1.1: the variable viewer shows a cfit, interpolants, timetables, maps, categorical arrays and graphics handles readably");
+
+    // Data files: icons, double-click to load a MAT-file, the viewer's button for a version 7.3 MAT-file, dropping files.
+    // (new11.m ran in the project folder, so the command window works there too)
+    await input.fill("sample = magic(4); save('sample_data.mat', 'sample'); v73s = {1, 'two'}; save('sample_v73.mat', 'v73s', '-v7.3'); h5create('sample.h5', '/d', [1 2]); clear sample v73s");
+    await input.press("Enter");
+    await page.waitForSelector(".file-item[data-name='sample.h5']");
+    await waitIdle();
+    const icons = await page.evaluate(() => Object.fromEntries(["sample_data.mat", "sample_v73.mat", "sample.h5", "new11.m"].map((p) => [p, document.querySelector(`.file-item[data-name='${p}'] > svg use`).getAttribute("href")])));
+    check(icons["sample_data.mat"] === "#i-data" && icons["sample_v73.mat"] === "#i-data" && icons["sample.h5"] === "#i-data" && icons["new11.m"] === "#i-file", "file icons: " + JSON.stringify(icons));
+    check(await page.locator(".file-item[data-name='sample.h5'] button[title='Show its contents and read its layout']").count(), "an HDF5 file should have an import button");
+    check(!(await page.locator("#var-table tr[data-name='sample']").count()), "sample should not be in the workspace yet");
+    await page.dblclick(".file-item[data-name='sample_data.mat']");
+    await page.waitForSelector("#var-table tr[data-name='sample']");
+    await waitIdle();
+    check(/>> load\('sample_data\.mat'\)/.test(await consoleText()), "double-clicking a .mat file should run load in the command window");
+    check((await page.locator("#var-table tr[data-name='sample'] td:nth-child(2)").innerText()) === "4×4", "sample should be a 4×4 matrix");
+    if (await page.locator("#dlg-viewer[open]").count()) await page.click("#dlg-viewer button[value='close']");
+    await h.openFile("sample_v73.mat");
+    await page.waitForSelector("#dlg-viewer[open] #viewer-import:not([hidden])");
+    check(/load\('sample_v73\.mat'\)/.test(await page.locator("#viewer-body").innerText()), "the viewer should show the command it runs");
+    await page.click("#viewer-import");
+    await page.waitForSelector("#var-table tr[data-name='v73s']");
+    await waitIdle();
+    check((await page.locator("#var-table tr[data-name='v73s'] td:nth-child(3)").innerText()) === "cell", "the version 7.3 MAT-file should load its cell array");
+    check(!(await page.locator("#dlg-viewer[open]").count()), "the viewer should close after loading");
+    const dropped = await page.evaluate(async () => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array([0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])], "dropped.h5"));
+      dt.items.add(new File(["a,b\n1,2\n"], "dropped.csv", { type: "text/csv" }));
+      dt.items.add(new File([new Uint8Array([0x50, 0x4b, 3, 4, 0, 0])], "dropped.xlsx"));
+      window.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      const t0 = Date.now();
+      while (!["dropped.h5", "dropped.csv", "dropped.xlsx"].every((p) => window.mylab.state.files.has(p)) && Date.now() - t0 < 10000) await new Promise((r) => setTimeout(r, 50));
+      const f = (p) => window.mylab.state.files.get(p);
+      return { h5: f("dropped.h5") && f("dropped.h5").content instanceof Uint8Array, csv: f("dropped.csv") && typeof f("dropped.csv").content === "string", xlsx: f("dropped.xlsx") && f("dropped.xlsx").content instanceof Uint8Array };
+    });
+    check(dropped.h5 && dropped.csv && dropped.xlsx, "dropping .h5, .csv and .xlsx files should import them: " + JSON.stringify(dropped));
+    check((await page.locator(".file-item[data-name='dropped.xlsx'] > svg use").getAttribute("href")) === "#i-table" && (await page.locator(".file-item[data-name='dropped.csv'] > svg use").getAttribute("href")) === "#i-table", "spreadsheets should have the table icon");
+    await page.locator(".file-item[data-name='dropped.csv']").hover();
+    await page.click(".file-item[data-name='dropped.csv'] button[title='Preview']");
+    await page.waitForSelector("#dlg-viewer[open] .data-table");
+    check((await page.locator("#viewer-import").innerText()).trim() === "Import as a table", "the CSV preview should offer to import it as a table");
+    await page.click("#viewer-import");
+    await page.waitForSelector("#var-table tr[data-name='dropped']");
+    await waitIdle();
+    check((await page.locator("#var-table tr[data-name='dropped'] td:nth-child(3)").innerText()) === "table", "Import as a table should make a table");
+    await page.evaluate(async () => {
+      const gone = ["dropped.h5", "dropped.csv", "dropped.xlsx", "sample_data.mat", "sample_v73.mat", "sample.h5", "new11.m"];
+      for (const p of gone) window.mylab.app.closeTab(p);
+      await window.mylab.app.removePaths(gone);
+    });
+    ok("1.1: data files (.mat, .h5, .csv, .xlsx) have icons, load into the workspace by double-click or the viewer's button, and can be dropped in");
+
+    // What's new: from the welcome dialog; each card opens an example, and each example runs.
+    await page.click("#foot-welcome");
+    await page.waitForSelector("#dlg-welcome[open]");
+    await page.click("#welcome-whatsnew");
+    await page.waitForSelector("#dlg-whatsnew[open]");
+    check(!(await page.locator("#dlg-welcome[open]").count()), "the welcome dialog should close when What's new opens");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#dlg-whatsnew", { state: "hidden" });
+    const examples11 = [
+      ["whatsnew-fit", "whats_new/fit_curve.m", /Half of the excess heat is gone after [\d.]+ minutes/, 1],
+      ["whatsnew-hdf5", "whats_new/hdf5_files.m", /Rooftop: 24 readings/, 0],
+      ["whatsnew-interp", "whats_new/interpolation.m", /G\(0\.5, 1\.5\) = -2\.000/, 1],
+      ["whatsnew-graphics", "whats_new/graphics_properties.m", null, 3],
+    ];
+    for (const [card, file, out, figs] of examples11) {
+      await page.click("#btn-clear-plots");
+      await page.click("#foot-whatsnew");
+      await page.waitForSelector("#dlg-whatsnew[open]");
+      await page.focus("#" + card);
+      await page.keyboard.press("Enter");
+      await page.waitForSelector(`.tab.active[data-name='${file}']`);
+      await h.run();
+      const text = await consoleText();
+      const failed = await page.evaluate(() => window.mylab.state.lastError && window.mylab.state.lastError.message);
+      check(!failed, `${file} failed: ${failed}`);
+      if (out) check(out.test(text), `${file} output: ${text.slice(-400)}`);
+      check((await page.locator(".plot-card").count()) === figs, `${file} should draw ${figs} figure(s), drew ${await page.locator(".plot-card").count()}`);
+    }
+    await page.waitForSelector(".file-item[data-name='whats_new/weather.h5']");
+    ok("1.1: What's new opens from the welcome dialog and the footer; its cards open the examples, which all run");
+
     // 10. Stop restarts the engine
     await input.fill("k = 0; while true, k = k + 1; end");
     await input.press("Enter");
@@ -2143,6 +2341,7 @@ async function main() {
     await page.reload();
     await page.waitForSelector(".file-item[data-name='add_squares.m']");
     await page.waitForSelector(".tab.active[data-name='welcome.m']");
+    await page.waitForSelector(READY, { timeout: 240000 });
     check(await page.locator(".tab[data-name='step_demo.m']").count(), "open tabs should be remembered");
     await page.click(".tab[data-name='step_demo.m']");
     await page.waitForSelector(".bp-dot");

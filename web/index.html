@@ -73,6 +73,7 @@
       <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="1.7" fill="none"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="M4.5 17l4.5-4 3.5 3 3-2.5 4 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></symbol>
       <symbol id="i-table" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M3.5 10h17M3.5 14.5h17M9.5 5v14" stroke="currentColor" stroke-width="1.5"/></symbol>
       <symbol id="i-text" viewBox="0 0 24 24"><path d="M6 3h8l5 5v12a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><path d="M8.5 12h7M8.5 15.5h7M8.5 8.5h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <symbol id="i-import" viewBox="0 0 24 24"><path d="M14 4h5a1 1 0 011 1v14a1 1 0 01-1 1h-5M3 12h11m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-data" viewBox="0 0 24 24"><ellipse cx="12" cy="6.5" rx="7" ry="3" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M5 6.5v11c0 1.7 3.1 3 7 3s7-1.3 7-3v-11M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" stroke="currentColor" stroke-width="1.7" fill="none"/></symbol>
       <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.8" fill="none"/></symbol>
       <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></symbol>
@@ -178,7 +179,7 @@
         <p id="storage-note" class="muted small">Files are saved in this browser.</p>
         <p class="muted small">Drop files, a folder or a <code>.zip</code> anywhere to import.</p>
       </div>
-      <input id="file-input" type="file" accept=".m,.txt,.csv,.tsv,.dat,.json,.md,.xml,.png,.jpg,.jpeg,.gif,.bmp,.mat" multiple hidden>
+      <input id="file-input" type="file" accept=".m,.txt,.csv,.tsv,.dat,.json,.md,.xml,.png,.jpg,.jpeg,.gif,.bmp,.tif,.tiff,.mat,.h5,.hdf5,.he5,.nc,.nc4,.xlsx,.xlsm,.xls,.ods" multiple hidden>
       <input id="folder-input" type="file" webkitdirectory multiple hidden>
       <input id="zip-input" type="file" accept=".zip,application/zip" hidden>
       <input id="asg-file-input" type="file" accept=".json,application/json" hidden>
@@ -365,6 +366,7 @@
     <span class="muted">mylab runs in your browser. Your code stays on this computer.</span>
     <span class="spacer"></span>
     <button id="foot-welcome" class="linklike" type="button">Getting started</button>
+    <button id="foot-whatsnew" class="linklike" type="button">What's new</button>
     <button id="foot-about" class="linklike" type="button">About</button>
     <a href="https://github.com/ghanemja/mylab/issues" target="_blank" rel="noopener">Report a problem</a>
   </footer>
@@ -400,9 +402,51 @@
           <strong>Block diagrams</strong>
           <span>Build a model from blocks and lines, run it and watch the scopes. Opens an example model; more are in the <code>models</code> folder.</span>
         </button>
+        <button id="welcome-whatsnew" type="button" class="welcome-card">
+          <svg class="ic"><use href="#i-spark"/></svg>
+          <strong>What's new in 1.1</strong>
+          <span>Curve fitting, HDF5 and version 7.3 MAT-files, <code>griddedInterpolant</code>, graphics properties, with examples to run.</span>
+        </button>
       </div>
       <p class="muted small">You can also drop your own files or a folder onto the page. Find this again under “Getting started” at the bottom of the page.</p>
       <menu><button value="close" class="btn primary" id="welcome-close">Start coding</button></menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-whatsnew" class="dialog wide welcome" aria-labelledby="whatsnew-title">
+    <form method="dialog">
+      <h2 id="whatsnew-title"><svg class="ic accent"><use href="#i-spark"/></svg> What's new in mylab 1.1</h2>
+      <p class="muted">Each card opens a short example from the <code>whats_new</code> folder in the Files panel. Press Run to try it.</p>
+      <div class="welcome-grid">
+        <button id="whatsnew-fit" type="button" class="welcome-card" data-example="whats_new/fit_curve.m">
+          <svg class="ic"><use href="#i-report"/></svg>
+          <strong>Curve fitting</strong>
+          <span><code>fit</code>, <code>fittype</code> and <code>confint</code>. <code>plot(f, x, y)</code> draws the data with the fitted curve.</span>
+        </button>
+        <button id="whatsnew-hdf5" type="button" class="welcome-card" data-example="whats_new/hdf5_files.m">
+          <svg class="ic"><use href="#i-data"/></svg>
+          <strong>HDF5 and MAT-files 7.3</strong>
+          <span><code>h5create</code>, <code>h5write</code>, <code>h5read</code>, <code>h5disp</code>, and <code>save -v7.3</code> with <code>load</code>.</span>
+        </button>
+        <button id="whatsnew-interp" type="button" class="welcome-card" data-example="whats_new/interpolation.m">
+          <svg class="ic"><use href="#i-table"/></svg>
+          <strong>Interpolation and meshes</strong>
+          <span><code>griddedInterpolant</code> objects you call like functions, and <code>triangulation</code>.</span>
+        </button>
+        <button id="whatsnew-graphics" type="button" class="welcome-card" data-example="whats_new/graphics_properties.m">
+          <svg class="ic"><use href="#i-image"/></svg>
+          <strong>Graphics properties</strong>
+          <span><code>xline</code> and <code>yline</code>, <code>yyaxis</code> rulers, <code>pie</code>. Figures are 560×420 with MATLAB's colours.</span>
+        </button>
+      </div>
+      <h3 class="whatsnew-sub">In the app</h3>
+      <ul class="whatsnew-list">
+        <li>Data files in the Files panel: double-click a <code>.mat</code>, <code>.h5</code>, <code>.nc</code>, <code>.csv</code>, <code>.xlsx</code> or image file to load it into the workspace.</li>
+        <li>The variable viewer shows fits, interpolants, timetables, dates and other objects property by property.</li>
+        <li>Suggestions, hover help and F1 know every built-in function, dotted names such as <code>RandStream.create</code>, and the methods of an object after <code>f.</code></li>
+        <li>Sharp figures on high-resolution screens, shown at their own size.</li>
+      </ul>
+      <menu><button value="close" class="btn primary" id="whatsnew-close">Got it</button></menu>
     </form>
   </dialog>
 
@@ -494,6 +538,7 @@
       <h2><span id="viewer-title"></span> <span id="viewer-meta" class="muted small"></span></h2>
       <div id="viewer-body" class="viewer-body"></div>
       <menu>
+        <button id="viewer-import" type="button" class="btn ghost" hidden><svg class="ic"><use href="#i-import"/></svg><span>Load into the workspace</span></button>
         <button id="viewer-edit" type="button" class="btn ghost"><svg class="ic"><use href="#i-pencil"/></svg>Open in the editor</button>
         <button id="viewer-download" type="button" class="btn ghost"><svg class="ic"><use href="#i-download"/></svg>Download</button>
         <button value="close" class="btn primary">Close</button>

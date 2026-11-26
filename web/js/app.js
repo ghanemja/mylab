@@ -1,12 +1,12 @@
 // mylab web app: wires the editor, files, command window, workspace, plots and assistant together.
 // Feature modules (projects, sharing, reports, step-through, assignments) plug into the `app` object.
 
-import { Engine } from "./engine.js";
+import { Engine, FIGURE_SCALE } from "./engine.js";
 import { ProjectStore, DEFAULT_PROJECT, newId, prefs } from "./storage.js";
-import { EXAMPLES } from "./examples.js";
+import { EXAMPLES, NEW_EXAMPLES_FOLDER } from "./examples.js";
 import { Assistant } from "./ai.js";
 import { $, el, icon, toast, downloadBlob, promptDialog, confirmDialog } from "./ui.js";
-import { parseHash, toStored, isImageName, mimeOf, formatSize } from "./codec.js";
+import { parseHash, toStored, isImageName, mimeOf, formatSize, imageSize, dataTypeOf, varNameFor } from "./codec.js";
 import { splitSections, sectionAt, sectionCode, tailCode } from "./sections.js";
 import { initProjects } from "./projects.js";
 import { initShare } from "./share.js";
@@ -139,6 +139,7 @@ async function loadProjects() {
       await store.putFiles(p.id, [...EXAMPLES.map((e) => ({ path: e.name, content: e.content })), ...exampleModelFiles()]);
       prefs.set("seeded", true);
       prefs.set("seededModels", true);
+      prefs.set("seededExamples11", true);
     }
     state.projects = await store.listProjects();
   }
@@ -151,6 +152,15 @@ async function loadProjects() {
       if (add.length) await store.putFiles(DEFAULT_PROJECT, add);
     }
     prefs.set("seededModels", true);
+  }
+  // The same for the examples of what is new in 1.1 (the whats_new folder).
+  if (seeded && !prefs.get("seededExamples11", false)) {
+    if (state.projects.some((p) => p.id === DEFAULT_PROJECT)) {
+      const have = new Set((await store.listFiles(DEFAULT_PROJECT)).map((f) => f.path));
+      const add = EXAMPLES.filter((e) => e.name.startsWith(NEW_EXAMPLES_FOLDER + "/") && !have.has(e.name) && !have.has(NEW_EXAMPLES_FOLDER));
+      if (add.length) await store.putFiles(DEFAULT_PROJECT, add.map((e) => ({ path: e.name, content: e.content })));
+    }
+    prefs.set("seededExamples11", true);
   }
   sortProjects();
   $("storage-note").textContent = store.persistent
@@ -307,10 +317,36 @@ function saveLabel() {
 }
 
 function fileIcon(path, f) {
-  if (typeof f.content !== "string") return isImageName(path) ? "image" : "data";
-  if (path.endsWith(".m")) return isFunctionFile(f.content) ? "fn" : "file";
+  if (path.endsWith(".m") && typeof f.content === "string") return isFunctionFile(f.content) ? "fn" : "file";
   if (/\.mlb\.json$/i.test(path)) return "blocks";
+  const t = dataTypeOf(path);
+  if (t) return t.icon;
+  if (typeof f.content !== "string") return isImageName(path) ? "image" : "data";
   return /\.(csv|tsv|dat|json)$/i.test(path) ? "table" : "text";
+}
+
+/** The command that brings a data file into the workspace (load, readtable, imread, ...), or null. */
+function importCommand(path) {
+  const t = /\.mlb\.json$/i.test(path) ? null : dataTypeOf(path);
+  return t ? { ...t, code: t.code(baseName(path), varNameFor(path)) } : null;
+}
+
+/** Run that command in the Command Window, in the file's folder (as a double-click does in MATLAB). */
+async function importData(path) {
+  const cmd = importCommand(path);
+  if (!cmd) return false;
+  if ($("dlg-viewer").open) $("dlg-viewer").close();
+  if (!engine || !engine.ready) {
+    toast("The engine is still loading. Try again in a moment.");
+    return false;
+  }
+  if (engine.busy) {
+    toast("Wait for the running code to finish.");
+    return false;
+  }
+  await flushAll();
+  const res = await runCode(cmd.code, { kind: "command", cwd: dirName(path) });
+  return !!res && !res.error;
 }
 
 function buildTree() {
@@ -326,6 +362,8 @@ function buildTree() {
   }
   return root;
 }
+
+let fileClickTimer = null;
 
 function renderFileList() {
   const ul = $("file-list");
@@ -380,6 +418,7 @@ function renderFileList() {
     for (const path of node.files) {
       const f = state.files.get(path);
       const name = baseName(path);
+      const data = importCommand(path);
       ul.appendChild(
         el(
           "li",
@@ -388,11 +427,20 @@ function renderFileList() {
             role: "treeitem",
             "aria-selected": path === state.active ? "true" : "false",
             tabindex: "0",
-            title: path + (typeof f.content === "string" ? "" : ` (${formatSize(f.content.length)})`),
+            title: path + (typeof f.content === "string" ? "" : ` (${formatSize(f.content.length)})`) + (data ? `\nDouble-click or Shift+Enter: ${data.code.replace(/\n/g, "; ")}` : ""),
             "data-name": path,
             style: indent(depth),
-            onclick: () => openFile(path),
+            onclick: (ev) => {
+              clearTimeout(fileClickTimer);
+              // A binary data file opens a preview window, which would catch the second click of a
+              // double-click (load into the workspace): wait a moment to see whether one follows.
+              if (!(data && typeof f.content !== "string")) return openFile(path);
+              if (ev.detail < 2) fileClickTimer = setTimeout(() => openFile(path), 300);
+              return undefined;
+            },
+            ondblclick: data ? (ev) => (ev.preventDefault(), clearTimeout(fileClickTimer), importData(path)) : null,
             onkeydown: (ev) => {
+              if (ev.key === "Enter" && ev.shiftKey && data) return void (ev.preventDefault(), importData(path));
               if (ev.key === "Enter") openFile(path);
               if (ev.key === "Delete") deleteFile(path);
               if (ev.key === "F2") renameFile(path);
@@ -403,7 +451,9 @@ function renderFileList() {
           el(
             "span",
             { class: "actions" },
-            path.endsWith(".m") ? null : act("Preview", "eye", () => viewFile(path), path),
+            // A click on a binary file already previews it, so its row offers the import instead.
+            data && typeof f.content !== "string" ? act(data.action, "import", () => importData(path), path) : null,
+            path.endsWith(".m") || (data && typeof f.content !== "string") ? null : act("Preview", "eye", () => viewFile(path), path),
             act("Rename", "pencil", () => renameFile(path), path),
             act("Download", "download", () => exportFile(path), path),
             act("Delete", "trash", () => deleteFile(path), path)
@@ -877,15 +927,24 @@ function viewFile(path) {
   } else if (typeof content === "string") {
     body.append(el("pre", { class: "var-body" }, content.length > 200000 ? content.slice(0, 200000) + "\n…" : content));
   } else {
+    const t = importCommand(path);
     body.append(
       el(
         "p",
         { class: "muted" },
-        /\.mat$/i.test(path)
-          ? "This is a MAT data file. Read it in your code with load('" + baseName(path) + "')."
+        t
+          ? `This is ${/^(HDF|image)/.test(t.label) ? "an" : "a"} ${t.label}. Your code can read it; the button below runs:`
           : "This is a binary file, so it can't be shown as text. Your code can read it, and you can download it."
-      )
+      ),
+      t ? el("pre", { class: "var-body viewer-code" }, t.code) : null
     );
+  }
+  const imp = importCommand(path);
+  $("viewer-import").hidden = !imp;
+  if (imp) {
+    $("viewer-import").lastChild.textContent = imp.action;
+    $("viewer-import").title = imp.code.replace(/\n/g, "; ");
+    $("viewer-import").onclick = () => importData(path);
   }
   $("viewer-edit").hidden = typeof content !== "string";
   $("viewer-edit").onclick = () => {
@@ -1097,7 +1156,8 @@ function locateError(res, ctx) {
 
 /**
  * Run code in the engine.
- * ctx: { kind: "file"|"section"|"selection"|"command", file, lineOffset, label, tail, tailStart }
+ * ctx: { kind: "file"|"section"|"selection"|"command", file, lineOffset, label, tail, tailStart, cwd }
+ * (cwd: the project folder to run in; commands otherwise stay in the folder of the last run)
  */
 async function runCode(code, ctx) {
   if (!canRun()) return null;
@@ -1112,7 +1172,7 @@ async function runCode(code, ctx) {
   const runCtx = { ...ctx, codeLines: ctx.tail ? code.split("\n").length : 0 };
   app.emit("runStarting", ctx);
   try {
-    res = await engine.run(sent, { fs: fsSpec(), cwd: ctx.kind === "command" ? undefined : dirName(ctx.file || "") });
+    res = await engine.run(sent, { fs: fsSpec(), cwd: ctx.cwd !== undefined ? ctx.cwd : ctx.kind === "command" ? undefined : dirName(ctx.file || "") });
   } catch (e) {
     setRunning(false);
     if (String(e.message) !== "Stopped.") printError({ message: e.message });
@@ -1458,7 +1518,12 @@ function addFigures(figs, ctx, type = "png") {
     const n = state.figureCount;
     const url = `data:image/${type};base64,` + b64;
     const filename = `${(source || "figure").replace(/\.m$/, "").replace(/\W+/g, "_")}_${n}.${type}`;
-    const img = el("img", { src: url, alt: `${word} ${n} from ${source}`, loading: "lazy", onclick: () => enlargeFigure(url, filename) });
+    // Shown at the figure's own size (560×420 by default), smaller when the panel is narrower; never
+    // stretched. Figures are drawn at FIGURE_SCALE times that size so they are sharp on fine screens.
+    const size = imageSize(b64);
+    const scale = type === "gif" ? 1 : FIGURE_SCALE;
+    const dims = size ? { width: Math.round(size.width / scale), height: Math.round(size.height / scale) } : {};
+    const img = el("img", { src: url, alt: `${word} ${n} from ${source}`, loading: "lazy", ...dims, onclick: () => enlargeFigure(url, filename) });
     const card = el(
       "figure",
       { class: "plot-card new" + (type === "gif" ? " animation" : ""), style: "margin:0", "data-type": type },
@@ -1728,13 +1793,37 @@ function showWelcome() {
   $("dlg-welcome").showModal();
 }
 
+// What's new: shown once to people who used an earlier version, and from the welcome dialog,
+// the footer and the command palette. Its cards open the examples in the whats_new folder.
+const WHATS_NEW = "1.1";
+
+function showWhatsNew() {
+  for (const d of document.querySelectorAll("dialog[open]")) if (d.id !== "dlg-whatsnew") d.close();
+  if (!$("dlg-whatsnew").open) $("dlg-whatsnew").showModal();
+}
+
+function setupWhatsNew() {
+  const dlg = $("dlg-whatsnew");
+  dlg.addEventListener("close", () => prefs.set("whatsNew", WHATS_NEW));
+  for (const card of dlg.querySelectorAll("[data-example]")) {
+    card.addEventListener("click", async () => {
+      dlg.close();
+      await openExample(card.dataset.example);
+    });
+  }
+}
+
 function setupWelcome() {
   const dlg = $("dlg-welcome");
-  dlg.addEventListener("close", () => prefs.set("welcomed", 2));
+  dlg.addEventListener("close", () => {
+    prefs.set("welcomed", 2);
+    if (!$("dlg-whatsnew").open) prefs.set("whatsNew", WHATS_NEW); // a first visit needs no "what's new" later
+  });
   const go = (fn) => () => {
     dlg.close();
     fn();
   };
+  $("welcome-whatsnew").addEventListener("click", showWhatsNew);
   $("welcome-examples").addEventListener("click", go(() => openExample("welcome.m")));
   $("welcome-github").addEventListener("click", go(() => app.openGithubDialog()));
   $("welcome-assignment").addEventListener("click", go(() => app.openExampleAssignment()));
@@ -1867,6 +1956,7 @@ function setupButtons() {
   $("btn-about").addEventListener("click", () => $("dlg-about").showModal());
   $("foot-about").addEventListener("click", () => $("dlg-about").showModal());
   $("foot-welcome").addEventListener("click", showWelcome);
+  $("foot-whatsnew").addEventListener("click", showWhatsNew);
   $("btn-ai").addEventListener("click", () => showAssistant());
   $("btn-ai-close").addEventListener("click", () => showAssistant(false));
   $("loader-hide").addEventListener("click", () => ($("loader").hidden = true));
@@ -1950,6 +2040,7 @@ function registerCommands() {
     { id: "project.import", group: "Project", title: "Add files from your computer", run: () => $("btn-import").click() },
     { id: "project.menu", group: "Project", title: "Switch or create a project…", run: () => $("project-btn").click() },
     { id: "help.welcome", group: "Help", title: "Getting started", run: showWelcome },
+    { id: "help.whatsnew", group: "Help", title: `What's new in ${WHATS_NEW}`, run: showWhatsNew },
     { id: "help.about", group: "Help", title: "About mylab", run: () => $("dlg-about").showModal() },
   ]);
 }
@@ -2108,6 +2199,8 @@ Object.assign(app, {
   getDoc,
   openFile,
   viewFile,
+  importData,
+  importCommand,
   createFile,
   writeFiles,
   removePaths,
@@ -2166,6 +2259,7 @@ async function main() {
   setupButtons();
   setupGutters();
   setupWelcome();
+  setupWhatsNew();
   setupTabs();
   setupBottomTabs();
 
@@ -2216,6 +2310,7 @@ async function main() {
   const fromLink = await handleHash();
   window.addEventListener("hashchange", () => handleHash());
   if (!fromLink && prefs.get("welcomed", 0) < 2) showWelcome();
+  else if (!fromLink && prefs.get("whatsNew", "") !== WHATS_NEW) showWhatsNew();
 }
 
 main().catch((e) => {

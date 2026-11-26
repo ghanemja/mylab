@@ -1,7 +1,10 @@
 // Client for the engine Web Worker. Requests carry ids so replies can be matched.
 
+/** Figures are drawn at twice their size on high-resolution screens so they stay sharp (see worker.js). */
+export const FIGURE_SCALE = (globalThis.devicePixelRatio || 1) >= 1.5 ? 2 : 1;
+
 export class Engine extends EventTarget {
-  constructor(url = new URL("../worker.js", import.meta.url)) {
+  constructor(url = new URL("../worker.js?scale=" + FIGURE_SCALE, import.meta.url)) {
     super();
     this.url = url;
     this.worker = null;
@@ -85,6 +88,7 @@ export class Engine extends EventTarget {
   help(name) { return this.background("help", { name }); }
   lint(code, known) { return this.background("lint", { code, known }); }
   helpIndex() { return this.background("helpIndex"); }
+  members(name) { return this.background("members", { name }); }
   inspect(name, opts = {}) { return this.background("inspect", { name, ...opts }); }
   csv(name, opts = {}) { return this.background("csv", { name, ...opts }); }
   reset() { return this.request("reset"); }

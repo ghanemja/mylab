@@ -1,6 +1,9 @@
-// Variable viewer: a grid for matrices, tables, cell arrays and structs (one page at a time
-// for large values), with "copy as CSV" and quick plots. The pages come from the engine
-// worker ("inspect" and "csv" requests); nothing is copied out of the browser.
+// Variable viewer: a grid for matrices, tables and timetables, cell arrays, structs, arrays of
+// dates, durations and categories, and the properties of objects (fits, interpolants,
+// triangulations, maps, class instances), one page at a time for large values, with "copy as CSV"
+// and quick plots. Values without a grid (a fit type, a graphics handle) show as the command
+// window prints them. The pages come from the engine worker ("inspect" and "csv" requests);
+// nothing is copied out of the browser.
 
 import { $, el, toast, copyText } from "./ui.js";
 
@@ -23,7 +26,7 @@ export function initVarView(app) {
   }
 
   function stepLabel(kind, data, r, c) {
-    if (kind === "struct") return "." + data.rownames[r - data.r0];
+    if (kind === "struct" || kind === "object") return "." + data.rownames[r - data.r0];
     if (kind === "structarray") return `(${r + 1}).${data.colnames[c - data.c0]}`;
     if (kind === "cell") return `{${r + 1},${c + 1}}`;
     return "";
@@ -31,6 +34,7 @@ export function initVarView(app) {
 
   function stepPath(kind, data, r, c) {
     if (kind === "struct") return ["f", data.rownames[r - data.r0], 0];
+    if (kind === "object") return ["p", data.rownames[r - data.r0]];
     if (kind === "structarray") return ["f", data.colnames[c - data.c0], r];
     return ["c", r, c];
   }
