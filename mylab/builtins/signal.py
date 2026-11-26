@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import fastnum
 from .._lazy import lazy_module
 from ..errors import MatlabError
 from ..values import simplify, to_int
@@ -90,9 +91,9 @@ def _fft_common(args, nargout, inverse: bool, name: str):
         return x.astype(complex) if not inverse else x
     n = to_int(rest[1], "transform length") if _given(rest, 1) else None
     if inverse:
-        r = np.fft.ifft(x, n=n, axis=axis)
+        r = fastnum.fft(x, n, axis, inverse=True)
         return r.real.copy() if symmetric else _real_if_tiny(r)
-    return np.fft.fft(x, n=n, axis=axis).astype(complex)
+    return fastnum.fft(x, n, axis)
 
 
 @builtin("fft")

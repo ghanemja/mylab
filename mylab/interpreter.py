@@ -10,6 +10,7 @@ import numpy as np
 
 from . import ast as A
 from . import indexing as ix
+from . import fastnum
 from . import fuse
 from . import jit
 from . import ops
@@ -192,6 +193,7 @@ class Interpreter:
 
     def run_program(self, program: A.Program, frame: Frame, file: str | None = None) -> None:
         _CURRENT.append(self)
+        fastnum.quiet_enter()  # NumPy's floating-point warnings are silenced once per run, not per operation
         old_functions, old_file = frame.functions, frame.file
         try:
             if program.functions:
@@ -206,6 +208,7 @@ class Interpreter:
         except ReturnSignal:
             pass
         finally:
+            fastnum.quiet_leave()
             _CURRENT.pop()
             frame.functions, frame.file = old_functions, old_file
             if program.functions and frame is self.base and file is None:
@@ -218,9 +221,11 @@ class Interpreter:
         if len(program.body) != 1 or not isinstance(program.body[0], A.ExprStmt):
             raise MatlabError("Expected a single expression.")
         _CURRENT.append(self)
+        fastnum.quiet_enter()
         try:
             return self.eval(program.body[0].expr, self.base)
         finally:
+            fastnum.quiet_leave()
             _CURRENT.pop()
 
     def get_var(self, name: str) -> Any:
@@ -1395,14 +1400,19 @@ class Interpreter:
         if preset:
             frame.vars.update(preset)
         frame.owner_class = owner
+        outermost = self.depth == 0
         self._enter()
         self.frames.append(frame)
         _CURRENT.append(self)
+        if outermost:
+            fastnum.quiet_enter()
         try:
             self.exec_block(fn.body, frame)
         except ReturnSignal:
             pass
         finally:
+            if outermost:
+                fastnum.quiet_leave()
             _CURRENT.pop()
             self.frames.pop()
             self._leave()

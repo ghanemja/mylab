@@ -75,3 +75,7 @@ _make_string_aware([
     "split", "join", "compose", "replace", "extractBefore", "extractAfter", "extractBetween",
     "insertAfter", "insertBefore", "erase", "pad", "strip", "strjust", "regexprep", "strtrim",
 ])
+
+from .. import fastnum as _fastnum  # noqa: E402
+
+_fastnum.install(BUILTINS)  # shortcuts for small and plain-double arguments in front of the hottest built-ins
