@@ -11,9 +11,7 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import re
-import zipfile
 from typing import Any
-from xml.etree import ElementTree as ET
 
 import numpy as np
 
@@ -22,6 +20,10 @@ from ..values import Cell, MString, StringArray, char, is_char, to_str
 from . import BUILTINS
 from ._registry import builtin
 from ._util import cast_class, is_text, parse_options, text
+from .._lazy import lazy_module
+
+zipfile = lazy_module("zipfile", globals(), "zipfile")  # imported when a workbook is first used
+ET = lazy_module("xml.etree.ElementTree", globals(), "ET")
 
 
 def escape(text, entities=None):

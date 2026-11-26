@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from typing import Any
@@ -13,6 +12,9 @@ from ..errors import MatlabError
 from ..values import Cell, MString, StringArray, Struct, char, is_char, to_str
 from ._registry import builtin
 from ._util import is_text, nargs, text
+from .._lazy import lazy_module
+
+json = lazy_module("json", globals(), "json")  # imported on first use, not at start-up
 
 
 # -- decoding --------------------------------------------------------------------------------------

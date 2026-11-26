@@ -7,7 +7,6 @@ arguments and play nothing.
 from __future__ import annotations
 
 import os
-import wave
 from typing import Any
 
 import numpy as np
@@ -17,6 +16,9 @@ from ..objects import MObject
 from ..values import Struct, char
 from ._registry import builtin
 from ._util import bool_scalar, fnum, fscalar, is_text, nargs, text, to_int
+from .._lazy import lazy_module
+
+wave = lazy_module("wave", globals(), "wave")  # imported on first use, not at start-up
 
 # other formats: FLAC is coded here; the rest (and faster FLAC) come from the optional soundfile package
 _FORMATS = {".flac": "FLAC", ".ogg": "OGG", ".oga": "OGG", ".opus": "OGG", ".mp3": "MP3", ".aiff": "AIFF",

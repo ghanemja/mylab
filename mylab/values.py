@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import math
 import os
 
 import numpy as np
@@ -483,6 +484,21 @@ def saturate_int(a: np.ndarray, dtype) -> np.ndarray:
         return np.clip(a, max(src.min, info.min), min(src.max, info.max)).astype(dtype)
     if kind == "b":
         return a.astype(dtype)
+    if a.size == 1 and a.dtype == np.float64 and info.bits < 64:
+        x = a.item()  # one double: the same rounding and saturation as below, in Python
+        if x != x:
+            v = 0
+        elif x >= info.max:
+            v = info.max
+        elif x <= info.min:
+            v = info.min
+        else:
+            m = abs(x)
+            r = math.floor(m)
+            if m - r >= 0.5:
+                r += 1
+            v = -r if x < 0 else r
+        return np.full(a.shape, v, dtype=dtype)
     if kind == "c":
         a = np.real(a)
     elif kind != "f" or a.dtype.itemsize < 8:

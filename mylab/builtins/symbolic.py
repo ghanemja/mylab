@@ -18,13 +18,13 @@ from __future__ import annotations
 
 import math
 import re
-from fractions import Fraction
 from typing import Any, Callable
 
 import numpy as np
 
 from .. import ast as A
 from .. import indexing as ix
+from .._lazy import lazy_function
 from ..errors import MatlabError
 from ..objects import MObject
 from ..values import (
@@ -32,6 +32,8 @@ from ..values import (
 )
 from ._registry import BUILTINS
 from ._util import bool_scalar, is_text, text
+
+Fraction = lazy_function("fractions", "Fraction")  # imported on first use, not at start-up
 
 TIMES = "×"
 _sympy = None
