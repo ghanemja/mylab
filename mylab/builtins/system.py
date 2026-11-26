@@ -398,6 +398,11 @@ def _whos(interp, args, nargout):
     return None
 
 
+def _is_model_file(name: str) -> bool:
+    """A Simulink model or library file, for which exist answers 4."""
+    return os.path.splitext(name)[1].lower() in (".slx", ".mdl")
+
+
 @builtin("exist")
 def _exist(interp, args, nargout):
     name = text(args[0])
@@ -411,11 +416,11 @@ def _exist(interp, args, nargout):
         if os.path.isdir(name):
             return 7.0
         if kind != "dir" and os.path.isfile(name):
-            return 2.0
+            return 4.0 if _is_model_file(name) else 2.0
     if kind in ("", "file") and name and not os.path.isabs(name):
         for d in interp._search_dirs():  # any file on the search path, data files included (MATLAB's 2)
             if os.path.isfile(os.path.join(d, name)):
-                return 2.0
+                return 4.0 if _is_model_file(name) else 2.0
     if kind in ("", "file", "builtin"):
         if interp.find_file_function(name) is not None:
             return 2.0

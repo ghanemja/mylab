@@ -10,159 +10,28 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
 
 from . import ast as A
 from .errors import MatlabError
 from .values import (
-    INT_TYPES, Cell, FunctionHandle, MString, StringArray, Struct, char, class_name, is_char, saturate_int,
-    shape_of, string_data, string_result, to_numeric, to_str,
+    Cell, FunctionHandle, MString, Struct, is_char, to_str,
 )
 
-TIMES = "×"
 
 
-# -- class conversion -----------------------------------------------------------------------
+# -- class conversion and size -----------------------------------------------------------------
+# Function arguments and classdef properties follow the same rules; the code lives in classdef.py.
 
 def convert_class(interp, value: Any, cls: str) -> Any:
     """Convert ``value`` to the declared class, the way an arguments block does."""
-    numeric = isinstance(value, np.ndarray)
-    if cls in ("double", "single", "logical") or cls in INT_TYPES:
-        if isinstance(value, (MString, StringArray)) and cls != "logical":
-            data = string_data(value)
-            out = np.full(data.shape, np.nan)
-            for idx in np.ndindex(data.shape):
-                try:
-                    out[idx] = float(data[idx])
-                except (TypeError, ValueError):
-                    out[idx] = np.nan
-            value, numeric = out, True
-        if not numeric:
-            if hasattr(value, "to_dense"):
-                value = value.to_dense()
-            else:
-                raise MatlabError(f"Value must be of type {cls} or be convertible to {cls}.",
-                                  "MATLAB:validation:UnableToConvert")
-        a = to_numeric(value)
-        if cls == "double":
-            return a.astype(complex if a.dtype.kind == "c" else float)
-        if cls == "single":
-            return a.astype(np.complex64 if a.dtype.kind == "c" else np.float32)
-        if cls == "logical":
-            if a.dtype.kind == "f" and np.isnan(a).any():
-                raise MatlabError("NaN's cannot be converted to logicals.", "MATLAB:nologicalnan")
-            return a != 0
-        return saturate_int(a, INT_TYPES[cls])
-    if cls == "string":
-        if isinstance(value, (MString, StringArray)):
-            return value
-        if is_char(value) or isinstance(value, Cell) or isinstance(value, np.ndarray):
-            try:
-                return string_result(string_data(value))
-            except MatlabError:
-                pass
-        raise MatlabError("Value must be of type string or be convertible to string.",
-                          "MATLAB:validation:UnableToConvert")
-    if cls == "char":
-        if is_char(value):
-            return value
-        if isinstance(value, MString):
-            return char(str(value))
-        if isinstance(value, np.ndarray) and value.dtype.kind in "iuf":
-            from .values import codes_to_char
-            return codes_to_char(value)
-        raise MatlabError("Value must be of type char or be convertible to char.",
-                          "MATLAB:validation:UnableToConvert")
-    if cls == "cell":
-        if isinstance(value, Cell):
-            return value
-        raise MatlabError("Value must be of type cell or be convertible to cell.",
-                          "MATLAB:validation:UnableToConvert")
-    if cls == "struct":
-        if isinstance(value, Struct):
-            return value
-        raise MatlabError("Value must be of type struct or be convertible to struct.",
-                          "MATLAB:validation:UnableToConvert")
-    if cls == "function_handle":
-        if isinstance(value, FunctionHandle):
-            return value
-        raise MatlabError("Value must be of type function_handle or be convertible to function_handle.",
-                          "MATLAB:validation:UnableToConvert")
-    if hasattr(value, "isa_class"):
-        if value.isa_class(cls):
-            return value
-    elif class_name(value) == cls:
-        return value
-    # A class with a converting constructor (datetime, categorical, a classdef class ...)
-    if cls in ("datetime", "duration", "categorical", "table") and hasattr(interp, "builtins") \
-            and cls in interp.builtins and cls != "table":
-        try:
-            return interp.call_builtin(cls, interp.builtins[cls], [value], 1)[0]
-        except MatlabError:
-            pass
-    else:
-        info = interp.find_class(cls) if hasattr(interp, "find_class") else None
-        if info is not None:
-            if getattr(info, "enums", None) and (is_char(value) or isinstance(value, MString)):
-                try:  # an enumeration member given by name
-                    return info.static_access(interp, to_str(value), [], 1)[0]
-                except MatlabError:
-                    pass
-            if isinstance(value, np.ndarray) and value.size == 0:
-                return value
-            try:
-                return info.construct(interp, [value], 1)[0]
-            except MatlabError:
-                pass
-    raise MatlabError(f"Value must be of type {cls} or be convertible to {cls}.",
-                      "MATLAB:validation:UnableToConvert")
-
-
-# -- size ------------------------------------------------------------------------------------
-
-def _size_text(size: list) -> str:
-    return TIMES.join(":" if d is None else str(d) for d in size)
+    from .classdef import _convert_class
+    return _convert_class(interp, value, cls, "")
 
 
 def check_size(value: Any, size: list) -> Any:
-    """Check a value against a declared size such as (1,1), (1,:) or (:,3).
-
-    A scalar expands to a fully specified size, and a vector is turned to match (1,:) or (:,1).
-    """
-    shape = list(shape_of(value))
-    while len(shape) < len(size):
-        shape.append(1)
-    if len(shape) == len(size) and all(d is None or d == s for d, s in zip(size, shape)):
-        return value
-    fixed = all(d is not None for d in size)
-    count = int(np.prod(shape)) if shape else 1
-    if isinstance(value, np.ndarray):
-        if count == 1 and fixed and size and all(d > 0 for d in size) and int(np.prod(size)) > 1:
-            return np.tile(value, size)  # scalar expansion
-        if len(size) == 2 and value.ndim == 2 and 1 in value.shape:
-            # a vector may be given in the other orientation
-            if size[0] == 1 and (size[1] is None or size[1] == count):
-                return value.reshape(1, -1, order="F")
-            if size[1] == 1 and (size[0] is None or size[0] == count):
-                return value.reshape(-1, 1, order="F")
-    elif isinstance(value, (Cell, Struct, StringArray)) and len(size) == 2 and value.data.ndim == 2 \
-            and 1 in value.data.shape:
-        target = None
-        if size[0] == 1 and (size[1] is None or size[1] == count):
-            target = (1, count)
-        elif size[1] == 1 and (size[0] is None or size[0] == count):
-            target = (count, 1)
-        if target is not None:
-            data = value.data.reshape(target, order="F")
-            if isinstance(value, Cell):
-                return Cell(data)
-            if isinstance(value, Struct):
-                return Struct(data, value.fields)
-            return string_result(data)
-    if all(d == 1 for d in size):
-        raise MatlabError("Value must be a scalar.", "MATLAB:validation:IncompatibleSize")
-    raise MatlabError(f"Size of value must match specified dimensions {_size_text(size)}"
-                      + (" or be scalar." if fixed else "."), "MATLAB:validation:IncompatibleSize")
+    """Check a value against a declared size such as (1,1), (1,:) or (:,3), converting it where MATLAB does."""
+    from .classdef import fit_size
+    return fit_size(value, size)
 
 
 # -- one declared argument ----------------------------------------------------------------------
