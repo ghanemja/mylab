@@ -97,6 +97,9 @@ class MemoizedFunction(MObject):
     def class_name(self) -> str:
         return "matlab.lang.MemoizedFunction"
 
+    def property_names(self) -> list[str]:
+        return ["Function", "Enabled", "CacheSize"]
+
     def isa_class(self, name: str) -> bool:
         return name in ("matlab.lang.MemoizedFunction", "handle")
 

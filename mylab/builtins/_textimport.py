@@ -302,6 +302,13 @@ class ImportOptions(MObject):
     def class_name(self) -> str:
         return "matlab.io.text.DelimitedTextImportOptions"
 
+    def property_names(self) -> list[str]:
+        return ["VariableNames", "VariableTypes", "SelectedVariableNames", "VariableOptions", "VariableNamingRule",
+                "DataLines", "VariableNamesLine", "RowNamesColumn", "VariableUnitsLine", "VariableDescriptionsLine",
+                "MissingRule", "ImportErrorRule", "ExtraColumnsRule", "EmptyLineRule", "Delimiter", "Whitespace",
+                "LineEnding", "CommentStyle", "ConsecutiveDelimitersRule", "LeadingDelimitersRule",
+                "TrailingDelimitersRule", "Encoding"]
+
     def isa_class(self, name: str) -> bool:
         return name in (self.class_name(), "matlab.io.ImportOptions")
 

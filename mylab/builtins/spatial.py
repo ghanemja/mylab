@@ -354,6 +354,11 @@ class ScatteredInterpolant(MObject):
     def class_name(self) -> str:
         return self.kind
 
+    def property_names(self) -> list[str]:
+        if self.kind == "TriScatteredInterp":
+            return ["X", "V", "Method"]
+        return ["Points", "Values", "Method", "ExtrapolationMethod"]
+
     def copy(self) -> "ScatteredInterpolant":
         return ScatteredInterpolant(self.P, self.v, self.method, self.extrap, self.kind)
 

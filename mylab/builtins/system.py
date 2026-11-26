@@ -609,6 +609,9 @@ class FormatOptions(MObject):
     def class_name(self) -> str:
         return "matlab.internal.display.format.DisplayFormatOptions"
 
+    def property_names(self) -> list[str]:
+        return ["NumericFormat", "LineSpacing"]
+
     def isa_class(self, name: str) -> bool:
         return name in (self.class_name(), "DisplayFormatOptions")
 

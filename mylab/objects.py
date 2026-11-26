@@ -111,6 +111,9 @@ class MapObject(MObject):
     def class_name(self) -> str:
         return "containers.Map"
 
+    def property_names(self) -> list[str]:
+        return ["Count", "KeyType", "ValueType"]
+
     def isa_class(self, name: str) -> bool:
         return name in ("containers.Map", "handle")
 
@@ -354,6 +357,9 @@ class MExceptionObject(MObject):
 
     def class_name(self) -> str:
         return "MException"
+
+    def property_names(self) -> list[str]:
+        return ["identifier", "message", "cause", "stack", "Correction"]
 
     def isa_class(self, name: str) -> bool:
         return name == "MException"

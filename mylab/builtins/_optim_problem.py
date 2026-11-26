@@ -574,6 +574,11 @@ class OptimExpr(MObject):
         return "optim.problemdef.OptimizationVariable" if self.is_var else \
             "optim.problemdef.OptimizationExpression"
 
+    def property_names(self) -> list[str]:
+        if self.is_var:
+            return ["Name", "Type", "IndexNames", "LowerBound", "UpperBound"]
+        return ["IndexNames", "Variables"]
+
     def isa_class(self, name: str) -> bool:
         return name in (self.class_name(), "optim.problemdef.OptimizationExpression")
 
@@ -1142,6 +1147,11 @@ class OptimProblem(MObject):
 
     def class_name(self):
         return "optim.problemdef.EquationProblem" if self.equation else "optim.problemdef.OptimizationProblem"
+
+    def property_names(self) -> list[str]:
+        if self.equation:
+            return ["Description", "Variables", "Equations"]
+        return ["Description", "ObjectiveSense", "Variables", "Objective", "Constraints"]
 
     def _copy(self):
         new = OptimProblem(self.equation)

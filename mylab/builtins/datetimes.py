@@ -827,6 +827,9 @@ class DatetimeArray(_TimeArray):
     # properties
     _FIELDS = {"Year": 0, "Month": 1, "Day": 2, "Hour": 3, "Minute": 4, "Second": 5}
 
+    def property_names(self) -> list[str]:
+        return ["Format", "TimeZone", "Year", "Month", "Day", "Hour", "Minute", "Second", "SystemTimeZone"]
+
     def get_field(self, interp, name: str) -> Any:
         if name in self._FIELDS:
             return fields_from_seconds(self.data)[self._FIELDS[name]]
@@ -995,6 +998,9 @@ class DurationArray(_TimeArray):
             return np.array([_parse_duration_text(s) for s in items[0]]).reshape(items[1], order="F")
         raise MatlabError("Only duration values or numbers (taken as days) can be combined with a duration array.")
 
+    def property_names(self) -> list[str]:
+        return ["Format"]
+
     def get_field(self, interp, name: str) -> Any:
         if name == "Format":
             return char(self.format)
@@ -1040,12 +1046,36 @@ def _parse_duration_text(s: str) -> float:
 class CalendarDuration(MObject):
     """Calendar lengths of time: whole months and days plus a time part (array-valued)."""
 
-    def __init__(self, months: Any, days: Any, secs: Any):
+    def __init__(self, months: Any, days: Any, secs: Any, fmt: str = "ymdt"):
         m, d, s = np.broadcast_arrays(*(np.atleast_2d(np.asarray(x, dtype=float)) for x in (months, days, secs)))
         self.months, self.days, self.secs = m.copy(), d.copy(), s.copy()
+        self.fmt = fmt
 
     def class_name(self) -> str:
         return "calendarDuration"
+
+    def property_names(self) -> list[str]:
+        return ["Format"]
+
+    def get_field(self, interp, name: str) -> Any:
+        if name == "Format":
+            return char(self.fmt)
+        if self.has_method(name):
+            return super().get_field(interp, name)
+        raise MatlabError(f"Unrecognized property '{name}' for class 'calendarDuration'.",
+                          "MATLAB:noSuchMethodOrField")
+
+    def set_field(self, interp, name: str, value: Any) -> "CalendarDuration":
+        if name != "Format":
+            raise MatlabError(f"Unrecognized property '{name}' for class 'calendarDuration'.",
+                              "MATLAB:noSuchMethodOrField")
+        f = text(value)
+        # the letters y q m w d t, each at most once, always with months, days and time
+        if not f or any(c not in "yqmwdt" for c in f) or len(set(f)) != len(f) or not set("mdt") <= set(f):
+            raise MatlabError(f"Unsupported calendarDuration format '{f}'. Use the letters y, q, m, w, d and t "
+                              "(each once, always including m, d and t), for example 'ymdt'.",
+                              "MATLAB:calendarDuration:InvalidFormat")
+        return CalendarDuration(self.months, self.days, self.secs, f)
 
     def isa_class(self, name: str) -> bool:
         return name == "calendarDuration"

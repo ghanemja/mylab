@@ -162,6 +162,9 @@ class GraphObject(MObject):
     def class_name(self) -> str:
         return "digraph" if self.directed else "graph"
 
+    def property_names(self) -> list[str]:
+        return ["Edges", "Nodes"]
+
     def isa_class(self, name: str) -> bool:
         return name == self.class_name()
 

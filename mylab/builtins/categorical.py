@@ -112,6 +112,9 @@ class CategoricalArray(MObject):
     def class_name(self) -> str:
         return "categorical"
 
+    def property_names(self) -> list[str]:
+        return []
+
     def isa_class(self, name: str) -> bool:
         return name == "categorical"
 
