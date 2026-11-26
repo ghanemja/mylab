@@ -78,3 +78,24 @@ def test_bin2dec_hex2dec_arrays_literals_and_bad_text(m):
     assert m.num("hex2dec('FFs8')") == -1 and m.num("hex2dec('FFu8')") == 255
     assert m.num("bin2dec('11111011s8')") == -5
     assert np.isnan(m.num("hex2dec('1FFs8')"))
+
+
+@pytest.mark.parametrize("call", ["contains(['ab';'cd'], 'a')", "extractAfter(['ab';'cd'], 1)"])
+def test_text_functions_reject_char_matrices(m, call):
+    # a char matrix is not text for these functions (one copy treated it row by row, or as one string)
+    with pytest.raises(MatlabError, match="character matrix"):
+        m.run(call)
+
+
+def test_extract_from_string_without_match_is_missing(m):
+    # string input without a match gives <missing>; char and cell input give ''
+    assert m.num('ismissing(extractAfter("abc", "x"))') and m.num('ismissing(extractBefore("abc", "x"))')
+    assert m.str("extractAfter('abc', 'x')") == ""
+
+
+@pytest.mark.parametrize("name", ["contains", "startsWith", "endsWith"])
+def test_text_predicates_options_are_strict(m, name):
+    assert m.num(f"{name}('ABC', 'b', 'IgnoreCase', true)") == (name == "contains")
+    assert m.num(f"{name}('ABC', {{'x', 'a', 'c'}}, 'ignorecase', 1)")
+    with pytest.raises(MatlabError, match="Bogus"):
+        m.run(f"{name}('abc', 'b', 'Bogus', 1)")

@@ -19,7 +19,7 @@ from ..errors import MatlabError
 from ..objects import MObject
 from ..values import Cell, MString, StringArray, char, class_name, is_char, string_result, to_numeric, to_str
 from ._registry import BUILTINS, builtin
-from ._util import nargs
+from ._util import nargs, parse_options
 
 _LETTER = r"[^\W\d_]"
 _ALNUM = r"[^\W_]"
@@ -574,18 +574,24 @@ def _spans(rx, s: str) -> list[tuple[int, int]]:
 
 # -- yes/no functions ----------------------------------------------------------------------------------
 
-def _predicate(name: str, test):
+def _predicate(name: str, test, strict: bool = False):
     def f(interp, args, nargout):
-        args, opts = _options(list(args), {"ignorecase": 2}, name)
-        nargs(args, 2, 2, name)
+        if strict:  # everything after the pattern is a Name,Value pair; an unknown name is an error
+            nargs(args, 2, None, name)
+            opts = {k.lower(): v for k, v in parse_options(list(args[2:]), ["IgnoreCase"], name,
+                                                            first_arg=3).items()}
+            args = list(args[:2])
+        else:
+            args, opts = _options(list(args), {"ignorecase": 2}, name)
+            nargs(args, 2, 2, name)
         t = TextArg(args[0], name)
         rx = _search(args[1], _truth(opts.get("ignorecase", False)))
         return t.logical([s is not None and test(rx, s) for s in t.items])
     builtin(name)(f)
 
 
-_predicate("contains", lambda rx, s: rx.search(s) is not None)
-_predicate("startsWith", lambda rx, s: rx.match(s) is not None)
+_predicate("contains", lambda rx, s: rx.search(s) is not None, strict=True)
+_predicate("startsWith", lambda rx, s: rx.match(s) is not None, strict=True)
 _predicate("matches", lambda rx, s: rx.fullmatch(s) is not None)
 
 
@@ -597,7 +603,7 @@ def _ends(rx, s: str) -> bool:
     return False
 
 
-_predicate("endsWith", _ends)
+_predicate("endsWith", _ends, strict=True)
 
 
 @builtin("count")

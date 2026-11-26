@@ -600,39 +600,6 @@ def _tmap(v, fn):
     raise MatlabError("Expected text input (character vector, string or cell array of text).")
 
 
-def _tcount(v, fn) -> np.ndarray:
-    if isinstance(v, Cell):
-        out = np.zeros(v.shape)
-        for idx in np.ndindex(v.shape):
-            out[idx] = fn(to_str(v.data[idx]))
-        return out
-    return np.array([[float(fn(text(v)))]])
-
-
-def _patterns(p) -> list[str]:
-    if isinstance(p, Cell):
-        return [to_str(x) for x in p.values_f()]
-    return [text(p, "pattern")]
-
-
-def _ignore_case(args, start) -> bool:
-    k = start
-    while k < len(args) - 1:
-        if is_text(args[k]) and text(args[k]).lower() == "ignorecase":
-            return bool(fnum(args[k + 1]).flat[0])
-        k += 2
-    return False
-
-
-def _find_first(s: str, pats: list[str]) -> tuple[int, int] | None:
-    best = None
-    for p in pats:
-        i = s.find(p)
-        if i >= 0 and (best is None or i < best[0]):
-            best = (i, len(p))
-    return best
-
-
 @builtin("strjust")
 def _strjust(interp, args, nargout):
     nargs(args, 1, 2, "strjust")
@@ -692,72 +659,6 @@ def _pad(interp, args, nargout):
         left = extra // 2
         return fill * left + s + fill * (extra - left)
     return _tmap(v, fn)
-
-
-def _pos(v) -> int | None:
-    if isinstance(v, np.ndarray) and not is_char(v):
-        return to_int(v, "position")
-    return None
-
-
-@builtin("extractBefore")
-def _extract_before(interp, args, nargout):
-    nargs(args, 2, 2, "extractBefore")
-    p = _pos(args[1])
-    if p is not None:
-        def fn(s):
-            if p < 1 or p > len(s) + 1:
-                raise MatlabError("extractBefore: position is out of range.")
-            return s[:p - 1]
-    else:
-        pats = _patterns(args[1])
-
-        def fn(s):
-            hit = _find_first(s, pats)
-            return s[:hit[0]] if hit else ""
-    return _tmap(args[0], fn)
-
-
-@builtin("extractAfter")
-def _extract_after(interp, args, nargout):
-    nargs(args, 2, 2, "extractAfter")
-    p = _pos(args[1])
-    if p is not None:
-        def fn(s):
-            if p < 0 or p > len(s):
-                raise MatlabError("extractAfter: position is out of range.")
-            return s[p:]
-    else:
-        pats = _patterns(args[1])
-
-        def fn(s):
-            hit = _find_first(s, pats)
-            return s[hit[0] + hit[1]:] if hit else ""
-    return _tmap(args[0], fn)
-
-
-def _insert(after: bool, name: str):
-    def f(interp, args, nargout):
-        nargs(args, 3, 3, name)
-        new = text(args[2], "new text")
-        p = _pos(args[1])
-        if p is not None:
-            def fn(s):
-                cut = p if after else p - 1
-                if cut < 0 or cut > len(s):
-                    raise MatlabError(f"{name}: position is out of range.")
-                return s[:cut] + new + s[cut:]
-            return _tmap(args[0], fn)
-        pats = [x for x in _patterns(args[1]) if x]
-        if not pats:
-            return args[0]
-        rx = re.compile("|".join(re.escape(x) for x in sorted(pats, key=len, reverse=True)))
-        return _tmap(args[0], lambda s: rx.sub(lambda m: m.group(0) + new if after else new + m.group(0), s))
-    return f
-
-
-builtin("insertAfter")(_insert(True, "insertAfter"))
-builtin("insertBefore")(_insert(False, "insertBefore"))
 
 
 def _split_one(s: str, delims: list[str] | None, collapse: bool) -> list[str]:

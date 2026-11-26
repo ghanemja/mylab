@@ -820,34 +820,6 @@ def _strrep(interp, args, nargout):
     return _map_text(lambda s: _replace_all(s, old, new), args[0])
 
 
-def _text_pred(fn):
-    def f(interp, args, nargout):
-        rest = list(args)
-        ignore_case = False
-        if len(rest) >= 4 and is_text(rest[-2]) and text(rest[-2]).lower() == "ignorecase":
-            ignore_case = bool(num(rest[-1]).flat[0])
-            rest = rest[:-2]
-        pat_val = _as_cell_if_strings(rest[1])
-        pats = [to_str(x) for x in pat_val.values_f()] if isinstance(pat_val, Cell) else [text(pat_val)]
-
-        def test(s):
-            if ignore_case:
-                return any(fn(s.lower(), p.lower()) for p in pats)
-            return any(fn(s, p) for p in pats)
-
-        v = _as_cell_if_strings(rest[0])
-        if isinstance(v, Cell):
-            return np.vectorize(lambda x: test(to_str(x)), otypes=[bool])(v.data) if v.data.size else \
-                np.zeros(v.shape, bool)
-        return bool_scalar(test(text(v)))
-    return f
-
-
-builtin("contains")(_text_pred(lambda s, p: p in s))
-builtin("startsWith")(_text_pred(lambda s, p: s.startswith(p)))
-builtin("endsWith")(_text_pred(lambda s, p: s.endswith(p)))
-
-
 @builtin("strsplit")
 def _strsplit(interp, args, nargout):
     nargs(args, 1, None, "strsplit")
