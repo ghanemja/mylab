@@ -74,25 +74,20 @@ def _fastnum_program(rng: random.Random) -> str:
             stmts.append(rng.choice(_REDUCE).format(a))
         elif kind < 0.92:
             stmts.append(rng.choice(_BINARY_FN).format(a, b))
-        else:
-            stmts.append(None)
-            multi = rng.choice(_MULTI).format(a, b)
-            stmts[-1] = multi
+        else:  # several outputs: "[m, i] = max(...)"
+            lhs, rhs = rng.choice(_MULTI).split(" = ", 1)
+            stmts.append((lhs.strip("[]").split(", "), rhs.format(a, b)))
     lines = []
     for k, s in enumerate(stmts):
-        if s.startswith("["):
-            lhs, rhs = s.split(" = ", 1) if " = " in s and s.index(" = ") < s.index("]") + 2 else (None, s)
-            if lhs is not None:
-                outs = [f"{o.strip()}{k}" for o in lhs.strip("[]").split(",")]
-                lines.append(f"try, [{', '.join(outs)}] = {rhs}; catch err, e{k} = {{err.identifier, err.message}}; end")
-                continue
-        lines.append(wrap([s]).replace("r0 =", f"r{k} =").replace("e0 =", f"e{k} ="))
+        target = f"r{k}" if isinstance(s, str) else "[" + ", ".join(f"{o}{k}" for o in s[0]) + "]"
+        rhs = s if isinstance(s, str) else s[1]
+        lines.append(f"try, {target} = {rhs}; catch err, e{k} = {{err.identifier, err.message}}; end")
     return "\n".join(lines)
 
 
 def test_fastnum_small_values_match():
     rng = random.Random(20261126)
-    check_all(_fastnum_program(rng) for _ in range(count(150)))
+    check_all(_fastnum_program(rng) for _ in range(count(400)))
 
 
 def test_fastnum_double_scalars_match():
@@ -196,7 +191,7 @@ def _fuse_program(rng: random.Random, n_shape=None) -> str:
 def test_fused_expressions_match(monkeypatch):
     monkeypatch.setattr(fuse, "MIN_SIZE", 40)  # small arrays keep the test fast; the code path is the same
     rng = random.Random(4242)
-    check_all(_fuse_program(rng) for _ in range(count(150)))
+    check_all(_fuse_program(rng) for _ in range(count(400)))
 
 
 @pytest.mark.skipif(not fuse.AVAILABLE, reason="numexpr is not installed")
@@ -237,6 +232,9 @@ def fz_path(tmp_path_factory):
     return [str(d)]
 
 
+_VSHAPES = [(1, 6), (6, 1), (1, 8), (2, 4)]
+
+
 class _LoopGen:
     """Random loops made of the statements and expressions the loop compiler handles."""
 
@@ -254,9 +252,9 @@ class _LoopGen:
             return num(rand_double(rng, 0.35))
         if r < 0.85:
             k = rng.choice(loopvars)
-            return rng.choice([f"v({k})", f"v(end)", f"v(end - 1)", f"v(mod({k}, numel(v)) + 1)", f"v({k} + 1)",
-                               f"v({k} / 2)", f"v(1, {k})", f"M({k}, 1)", f"M(end, end)", f"M({k})", "numel(v)",
-                               f"w(end)", "st.p", "st.q(1)", f"c{{1}}"])
+            return rng.choice([f"v({k})", "v(end)", "v(end - 1)", f"v(mod({k}, numel(v)) + 1)", f"v({k} + 1)",
+                               f"v({k} / 2)", f"v(1, {k})", f"M({k}, 1)", "M(end, end)", f"M({k})", "numel(v)",
+                               "w(end)", "st.p", "st.q(1)", "c{1}"])
         return rng.choice(["pi", "eps", "Inf", "NaN", "true", "false", "-0", "int8(100)", "uint8(3)", "single(2.5)",
                            "1i", "realmax", "realmin"])
 
@@ -287,9 +285,9 @@ class _LoopGen:
     def target(self, loopvars):
         rng = self.rng
         k = rng.choice(loopvars)
-        return rng.choice(["s", "t", "a", "b", f"w({k})", f"w({k})", f"w({k} + 2)", f"w(end + 1)", f"v({k})",
-                           f"M({k}, 2)", f"M(2, {k})", f"M({k})", "st.p", f"st.q({k})", f"c{{{k}}}", f"c{{end + 1}}",
-                           f"w({k} / 2)", f"w(0)", f"w(2 * {k})", "u"])
+        return rng.choice(["s", "t", "a", "b", f"w({k})", f"w({k})", f"w({k} + 2)", "w(end + 1)", f"v({k})",
+                           f"M({k}, 2)", f"M(2, {k})", f"M({k})", "st.p", f"st.q({k})", f"c{{{k}}}", "c{end + 1}",
+                           f"w({k} / 2)", "w(0)", f"w(2 * {k})", "u"])
 
     def stmts(self, depth, loopvars, count_):
         rng = self.rng
@@ -326,7 +324,7 @@ class _LoopGen:
         init = [
             f"a = {rng.choice([num(rand_double(rng, 0.3)), value(rng, rng.choice(CLASSES), (1, 1), 0.3)])};",
             f"b = {num(rand_double(rng, 0.4))}; s = 0; t = {num(rand_double(rng, 0.3))};",
-            f"v = {value(rng, rng.choice(['double'] * 5 + CLASSES), rng.choice([(1, 6), (6, 1), (1, 8), (2, 4)]), 0.3)};",
+            f"v = {value(rng, rng.choice(['double'] * 5 + CLASSES), rng.choice(_VSHAPES), 0.3)};",
             f"w = {rng.choice(['zeros(1, 10)', '[]', 'zeros(10, 1)', 'ones(1, 3)', 'v'])};",
             f"M = {value(rng, rng.choice(['double', 'double', 'int16', 'single', 'logical']), (4, 3), 0.2)};",
             "st.p = 1; st.q = zeros(1, 4); c = {};",
@@ -342,12 +340,12 @@ class _LoopGen:
 def test_compiled_loops_match(fz_path):
     rng = random.Random(31337)
     gen = _LoopGen(rng)
-    check_all((gen.program() for _ in range(count(300))), fz_path)
+    check_all((gen.program() for _ in range(count(800))), fz_path)
 
 
 @pytest.mark.parametrize("cls", ["double", "single", "logical", "char", "complex0"] + INT_CLASSES)
 def test_compiled_loops_with_every_class(cls, fz_path):
-    rng = random.Random(hash(cls) & 0xFFFF if False else sum(map(ord, cls)))
+    rng = random.Random(sum(map(ord, cls)))
     progs = []
     for _ in range(count(12)):
         v = value(rng, cls, rng.choice([(1, 5), (5, 1), (2, 3)]), 0.3)
@@ -355,7 +353,8 @@ def test_compiled_loops_with_every_class(cls, fz_path):
         progs.append(rng.choice([
             f"v = {v}; a = {a}; s = a; w = v; for k = 1:numel(v), s = s + v(k); w(k) = v(k) * a; end",
             f"v = {v}; a = {a}; for k = 1:4, v(k + 1) = v(k) - a; end",
-            f"v = {v}; a = {a}; s = 0; for k = 1:numel(v), if v(k) > a, s = s + 1; elseif v(k) == a, s = s - 1; end, end",
+            f"v = {v}; a = {a}; s = 0; for k = 1:numel(v), if v(k) > a, s = s + 1; "
+            f"elseif v(k) == a, s = s - 1; end, end",
             f"v = {v}; a = {a}; w = []; for k = 1:7, w(end + 1) = a / k; end",
             f"v = {v}; a = {a}; k = 1; while k <= numel(v) && v(k) ~= a, k = k + 1; end",
             f"v = {v}; a = {a}; m = v(1); for k = 2:numel(v), m = max(m, v(k)); end",
