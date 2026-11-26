@@ -69,7 +69,7 @@ def parse(path):
     return out
 
 
-def run_one(engine, src, work, chk):
+def run_one(engine, src, work, chk, octave_cmd="octave", pkgs=PKGS):
     d = os.path.join(work, re.sub(r"[^A-Za-z0-9_]+", "_", chk["id"]))
     shutil.rmtree(d, ignore_errors=True)
     os.makedirs(d)
@@ -86,8 +86,8 @@ def run_one(engine, src, work, chk):
         env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
         cmd = [sys.executable, "-m", "mylab", "probe_main.m"]
     else:
-        cmd = ["octave", "--no-gui", "--no-init-file", "--quiet", "--eval",
-               f"warning('off','all'); pkg load {PKGS}; probe_main"]
+        cmd = [octave_cmd, *(["--no-gui"] if os.path.basename(octave_cmd) == "octave" else []),
+               "--no-init-file", "--quiet", "--eval", f"warning('off','all'); pkg load {pkgs}; probe_main"]
     t0 = time.time()
     try:
         r = subprocess.run(cmd, cwd=d, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
@@ -115,9 +115,11 @@ def main():
     ap.add_argument("--out", default=None, help="write full results as JSON")
     ap.add_argument("--jobs", type=int, default=3)
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--octave-cmd", default="octave", help="the Octave program (for --engine octave)")
+    ap.add_argument("--octave-pkgs", default=PKGS, help="Octave packages to load before each check")
     a = ap.parse_args()
     src = os.path.abspath(a.src)
-    tag = a.engine + "-" + hashlib.md5((src + a.probes).encode()).hexdigest()[:8]
+    tag = a.engine + "-" + hashlib.md5((src + a.probes + a.octave_cmd).encode()).hexdigest()[:8]
     work = os.path.join(os.environ.get("PROBE_WORK", os.path.join(HERE, "work")), tag)
     checks = []
     for p in sorted(glob.glob(os.path.join(a.probes, "*.txt"))):
@@ -125,7 +127,7 @@ def main():
     if a.only:
         checks = [c for c in checks if re.search(a.only, c["id"])]
     with cf.ThreadPoolExecutor(a.jobs) as ex:
-        res = list(ex.map(lambda c: run_one(a.engine, src, work, c), checks))
+        res = list(ex.map(lambda c: run_one(a.engine, src, work, c, a.octave_cmd, a.octave_pkgs), checks))
     code = {c["id"]: c["code"] for c in checks}
     if not a.quiet:
         for r in res:

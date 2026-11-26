@@ -1,0 +1,32 @@
+# GNU Octave 10.3.0 (conda-forge build), seconds, best of three, 26 Nov 2026, same machine as BASELINE_TIMES.txt.
+# b12: stopped after 360 s. b32: this build cannot print a hidden figure (FLTK only).
+b01_scalar_loop  0.5680
+b02_array_fill  0.9598
+b03_while_if  2.2203
+b04_nested_matrix  0.2519
+b05_recursion_fib22  0.2015
+b06_call_user_function  1.2672
+b07_call_anonymous  0.6848
+b08_struct_fields  1.5411
+b09_cell_and_string_build  0.2380
+b10_small_array_ops  0.7357
+b11_object_methods  1.1139
+b12_map_inserts  >360
+b13_ode45_vdp  0.9665
+b14_fminsearch_rosen  0.0440
+b15_bubble_sort  4.6086
+b16_text_parsing  2.2649
+b20_vec_elementwise  0.6284
+b21_matmul_1500  0.0686
+b22_solve_1500  0.0884
+b23_eig_500  0.0677
+b24_svd_600  0.0699
+b25_fft_4m  0.1531
+b26_sort_unique_5m  0.4956
+b27_logical_index_1e7  0.3159
+b28_sparse_tridiag_solve  0.0589
+b29_arrayfun_cellfun  0.3468
+b30_accumarray_interp  0.3401
+b31_csv_write_read  0.2207
+b32_plot_to_png  n/a
+b33_regexprep_cellstr  0.9423
