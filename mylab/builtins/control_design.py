@@ -814,7 +814,7 @@ def pid_tune(plant: LTI, kind: str, wc: float | None, pm: float, focus: str, ifo
         stable, apm, awc, _g = tuner.assess(vals)
         return tuner.controller(vals), stable, wc if np.isnan(awc) else awc, apm
     lo, hi = _candidate_range(plant)
-    grid = np.logspace(np.log10(lo), np.log10(hi), 160)
+    grid = np.logspace(np.log10(lo), np.log10(hi), 100)
     if plant.is_dt:
         grid = grid[grid < 0.9 * np.pi / plant.tsv()]
     cands = []

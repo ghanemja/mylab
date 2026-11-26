@@ -497,16 +497,14 @@ def response_data(sys: LTI, kind: str, t=None, tfinal=None, x0=None, name: str =
         if tfinal is None:
             tfinal, dt = auto_time(tr)
             tfinal += float(np.max(total)) if total.size else 0.0
+            n = int(np.floor(tfinal / dt + 1e-9))
         else:
             _tf, dt = auto_time(tr)
-            if not disc:
-                dt = min(dt, tfinal / 100.0) if tfinal / dt < 100 else dt
-                if tfinal / dt > 20000:
-                    dt = tfinal / 20000.0
+            n = int(min(max(np.ceil(tfinal / dt - 1e-9), 100), 20000))     # the last sample is at tFinal
+            dt = tfinal / n
         if disc:
             t = np.arange(int(np.floor(tfinal / ts + 1e-9)) + 1) * ts
         else:
-            n = int(np.floor(tfinal / dt + 1e-9))
             t = np.arange(n + 1) * dt
     t = np.asarray(t, dtype=float)
     nin = tr.n_inputs

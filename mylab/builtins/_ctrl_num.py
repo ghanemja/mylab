@@ -12,6 +12,7 @@ import numpy as np
 from ..errors import MatlabError
 
 EPS = float(np.finfo(float).eps)
+IMPROPER_ID = "Control:ltiobject:improper"
 
 
 # -- polynomials (coefficient vectors, highest power first) -----------------------------------
@@ -245,7 +246,8 @@ def tf2ss_siso(num, den):
     n = den.size - 1
     if num.size - 1 > n:
         raise MatlabError("An improper transfer function (more zeros than poles) has no state-space "
-                          "realization here; multiply it with other blocks first or add a fast pole.")
+                          "realization here; multiply it with other blocks first or add a fast pole.",
+                          IMPROPER_ID)
     dtype = np.result_type(num, den, float)
     num = np.concatenate([np.zeros(n + 1 - num.size, dtype=dtype), num]) / den[0]
     den = den / den[0]

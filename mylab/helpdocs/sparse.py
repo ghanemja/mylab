@@ -51,8 +51,11 @@ HELP = {
                 "numbers."),
     "blkdiag": ("B = blkdiag(A1, A2, ...)", "Block-diagonal matrix with A1, A2, ... along the diagonal and "
                 "zeros elsewhere. The result is sparse when any input is sparse."),
-    "bandwidth": (["[lower, upper] = bandwidth(A)", "b = bandwidth(A, 'lower')", "b = bandwidth(A, 'upper')"],
-                  "Number of nonzero diagonals below (lower) and above (upper) the main diagonal."),
+    "bandwidth": (["[lower, upper] = bandwidth(A)", "b = bandwidth(A, 'lower')", "b = bandwidth(A, 'upper')",
+                   "fb = bandwidth(sys)", "fb = bandwidth(sys, dbdrop)"],
+                  "For a matrix, the number of nonzero diagonals below (lower) and above (upper) the main "
+                  "diagonal. For a SISO control-system model, the first frequency (rad per time unit) where "
+                  "the gain has dropped 3 dB below its DC value, or by dbdrop dB (a negative number)."),
     "isbanded": ("tf = isbanded(A, lower, upper)", "True when A has no nonzeros beyond the given lower and "
                  "upper bandwidths."),
     "normest": ("n = normest(S)", "Estimate of the 2-norm (largest singular value) of a matrix without "

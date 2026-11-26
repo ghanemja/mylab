@@ -469,30 +469,51 @@ class Loop:
         z, p, k = np.asarray(g.z[0][0]), np.asarray(g.p[0][0]), g.k[0, 0]
         roots = np.abs(np.concatenate([z, p]).astype(complex))
         roots = roots[roots > 0]
-        wtop = max(100.0 * (roots.max() if roots.size else 1.0), 60 * np.pi / self.tau)
-        wlow = min(1e-3 * (roots.min() if roots.size else 1.0), 1e-3 / self.tau)
-        grid = np.unique(np.concatenate([np.logspace(np.log10(wlow), np.log10(wtop), 3000),
-                                         np.arange(0.0, wtop, (2 * np.pi / self.tau) / 60)[1:]]))
+        top_root = float(roots.max()) if roots.size else 1.0
+        period = 2 * np.pi / self.tau
+        # beyond the frequency where the gain stays below 1e-3 the crossings no longer matter
+        n, d = cn.ptrim(self.num), cn.ptrim(self.den)
+        hf = 0.0 if n.size < d.size else (abs(n[0] / d[0]) if n.size == d.size else np.inf)
+        small = self.gain_crossings(1e-3)
+        w_end = float(small.max()) * 1.001 if small.size and hf < 1e-3 else (0.0 if hf < 1e-3 else np.inf)
+        wtop = min(w_end, 2 * top_root + 60 * period)
+        freqs, gains = [], []
+        d0 = np.polyval(self.den, 0.0)
+        if d0 != 0 and np.polyval(self.num, 0.0) / d0 < 0:
+            freqs.append(0.0)
+            gains.append(abs(np.polyval(self.num, 0.0) / d0))
+        if wtop <= 0:
+            return freqs, gains
+        step = max(period / 40, wtop / 400000)
+        wlow = min(1e-3 * (float(roots.min()) if roots.size else 1.0), 1e-3 / self.tau, 1e-6 * wtop)
+        grid = np.unique(np.concatenate([np.logspace(np.log10(wlow), np.log10(min(wtop, period)), 400),
+                                         np.arange(step, wtop + step, step)]))
 
         def f(w):
             return analytic_phase(z, p, k, np.atleast_1d(w), 0.0) - np.degrees(np.atleast_1d(w) * self.tau)
 
         ph = f(grid)
-        freqs, gains = [], []
-        kmin, kmax = int(np.floor((ph.min() + 180) / 360)) - 1, int(np.ceil((ph.max() + 180) / 360)) + 1
-        from scipy.optimize import brentq
-        for n in range(kmin, kmax + 1):
-            level = -180.0 + 360.0 * n
-            d = ph - level
-            idx = np.flatnonzero(np.sign(d[:-1]) * np.sign(d[1:]) < 0)
-            for i in idx:
-                if abs(d[i] - d[i + 1]) > 170:      # a jump at an undamped root, not a crossing
-                    continue
-                w = brentq(lambda x: float(f(x)[0]) - level, grid[i], grid[i + 1], xtol=1e-14, rtol=1e-13)
-                freqs.append(float(w))
-                gains.append(abs(self.value(w)))
-                if len(freqs) >= 400:
-                    return freqs, gains
+        # a crossing of -180 (mod 360) lies in every interval whose ends fall in different 360-degree bands
+        band = np.floor((ph + 180.0) / 360.0)
+        idx = np.flatnonzero((band[:-1] != band[1:]) & (np.abs(ph[:-1] - ph[1:]) < 170))
+        if idx.size == 0:
+            return freqs, gains
+        idx = idx[:400]
+        level = -180.0 + 360.0 * np.maximum(band[idx], band[idx + 1])
+        a, b = grid[idx].copy(), grid[idx + 1].copy()
+        fa, fb = ph[idx] - level, ph[idx + 1] - level
+        c = b
+        for _ in range(8):          # bracketed secant steps, all crossings at once
+            with np.errstate(divide="ignore", invalid="ignore"):
+                c = np.where(fb != fa, b - fb * (b - a) / (fb - fa), b)
+            fc = f(c) - level
+            same = np.sign(fc) == np.sign(fa)
+            a, fa = np.where(same, c, a), np.where(same, fc, fa)
+            b, fb = np.where(same, b, c), np.where(same, fb, fc)
+        with np.errstate(all="ignore"):
+            h = cn.poly_freqresp(self.num, self.den, 1j * c)
+        freqs += [float(v) for v in c]
+        gains += [float(v) for v in np.abs(h)]
         return freqs, gains
 
     def closed_loop_stable(self):
@@ -919,7 +940,7 @@ def rlocus_data(num: np.ndarray, den: np.ndarray, gains: np.ndarray | None = Non
         return v[np.isfinite(v) & (v > 0)]
 
     lows = np.concatenate([kval(p + 1e-3 * scale * ang) for p in poles] or [np.zeros(0)])
-    highs = np.concatenate([kval(center + 8 * scale * ang)] + [kval(z + 1e-2 * scale * ang) for z in zeros])
+    highs = np.concatenate([kval(center + 3 * scale * ang)] + [kval(z + 1e-2 * scale * ang) for z in zeros])
     klo = float(lows.min()) if lows.size else 1e-3
     khi = float(highs.max()) if highs.size else 1e3
     if not (khi > klo > 0):
@@ -933,7 +954,7 @@ def rlocus_data(num: np.ndarray, den: np.ndarray, gains: np.ndarray | None = Non
         if np.isfinite(kb) and abs(kb.imag) <= 1e-6 * max(abs(kb), 1e-300) and kb.real > 0:
             ks += [kb.real * f for f in (0.98, 0.995, 1.0, 1.005, 1.02)]
     ks = sorted(set(float(k) for k in ks if k > 0))
-    span = 16 * scale
+    span = 6 * scale
     for _ in range(12):
         r = _match_columns([roots_at(k) for k in ks])
         step = np.where(np.isfinite(r[:, 1:]) & np.isfinite(r[:, :-1]), np.abs(r[:, 1:] - r[:, :-1]), 0.0)
@@ -995,17 +1016,18 @@ def _sgrid(interp, args, nargout):
     if len(args) > 1:
         wns = as_vector(args[1], "natural frequencies").real
     else:
-        step = 10.0 ** np.floor(np.log10(max(rmax, 1e-12) / 4))
-        wns = np.arange(step, rmax + step / 2, step * (2 if rmax / step > 12 else 1))
+        raw = max(rmax, 1e-12) / 6
+        mag = 10.0 ** np.floor(np.log10(raw))
+        step = mag * min((m for m in (1.0, 2.0, 5.0, 10.0) if m * mag >= raw), default=10.0)
+        wns = np.arange(step, rmax + step / 2, step)
     cp.call(interp, "hold", "on")
     for z in zetas:
         th = np.arccos(np.clip(z, 0, 1))
         for sgn in (1.0, -1.0):
-            cp.call(interp, "plot", np.array([[0.0], [-rmax * np.cos(th)]]),
-                    np.array([[0.0], [sgn * rmax * np.sin(th)]]), "k:")
+            cp.grid_line(interp, [0.0, -rmax * np.cos(th)], [0.0, sgn * rmax * np.sin(th)])
     th = np.linspace(np.pi / 2, 3 * np.pi / 2, 91)
     for wn in wns:
-        cp.call(interp, "plot", (wn * np.cos(th)).reshape(-1, 1), (wn * np.sin(th)).reshape(-1, 1), "k:")
+        cp.grid_line(interp, wn * np.cos(th), wn * np.sin(th))
     cp.call(interp, "axis", np.array([[x0, x1, y0, y1]]))
     cp.call(interp, "hold", "off")
     return None
@@ -1018,20 +1040,20 @@ def _zgrid(interp, args, nargout):
     wns = as_vector(args[1], "natural frequencies").real if len(args) > 1 else np.arange(0.1, 1.01, 0.1) * np.pi
     cp.call(interp, "hold", "on")
     th = np.linspace(0, 2 * np.pi, 361)
-    cp.call(interp, "plot", np.cos(th).reshape(-1, 1), np.sin(th).reshape(-1, 1), "k:")
+    cp.grid_line(interp, np.cos(th), np.sin(th))
     for z in zetas:
         w = np.linspace(0, np.pi, 200)
         wn = w / np.sqrt(max(1 - z * z, 1e-12))
         s = -z * wn + 1j * w
         zz = np.exp(s)
         for sgn in (1.0, -1.0):
-            cp.call(interp, "plot", zz.real.reshape(-1, 1), (sgn * zz.imag).reshape(-1, 1), "k:")
+            cp.grid_line(interp, zz.real, sgn * zz.imag)
     for wn in wns:
         z = np.linspace(0, 1, 100)
         s = -z * wn + 1j * wn * np.sqrt(1 - z * z)
         zz = np.exp(s)
         for sgn in (1.0, -1.0):
-            cp.call(interp, "plot", zz.real.reshape(-1, 1), (sgn * zz.imag).reshape(-1, 1), "k:")
+            cp.grid_line(interp, zz.real, sgn * zz.imag)
     cp.call(interp, "axis", "equal")
     cp.call(interp, "hold", "off")
     return None

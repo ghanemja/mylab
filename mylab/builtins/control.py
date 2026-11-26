@@ -1309,6 +1309,11 @@ def tf_to_pid(g: LTI, like: PID | None = None, standard: bool = False) -> PID | 
                 tf_ = 0.0
             if tf_ < 0 or not np.isfinite(tf_):
                 return None
+    if ts == 0:
+        exact = _ct_pid_gains(num, den, has_i, bool(rest.size), tf_)
+        if exact is None:
+            return None
+        return _make_pid(exact, tf_, ts, iform, dform, standard, g)
     # with the pole structure fixed the controller is linear in Kp, Ki and Kd
     basis = [PID(1, 0, 0, 0, ts), PID(0, 1, 0, 0, ts), PID(0, 0, 1, tf_, ts)]
     for bsys in basis:
@@ -1335,6 +1340,11 @@ def tf_to_pid(g: LTI, like: PID | None = None, standard: bool = False) -> PID | 
     kp, ki, kd = (0.0 if abs(v) < 1e-12 * big else v for v in (kp, ki, kd))
     if ki != 0 and not has_i:
         return None
+    return _make_pid((kp, ki, kd), tf_, ts, iform, dform, standard, g)
+
+
+def _make_pid(gains: tuple, tf_: float, ts: float, iform: str, dform: str, standard: bool, g: LTI) -> PID:
+    kp, ki, kd = gains
     if kd == 0:
         tf_ = 0.0
     if standard:
@@ -1346,6 +1356,30 @@ def tf_to_pid(g: LTI, like: PID | None = None, standard: bool = False) -> PID | 
     out.in_delay, out.out_delay = g.in_delay, g.out_delay
     out.name, out.notes, out.userdata = g.name, g.notes, g.userdata
     return out
+
+
+def _ct_pid_gains(num: np.ndarray, den: np.ndarray, has_i: bool, has_filter: bool, tf_: float):
+    """Kp, Ki, Kd of a continuous-time transfer function with PID structure, from its coefficients."""
+    order = int(has_i) + int(has_filter)
+    if den.size - 1 != order or num.size - 1 > order + (0 if has_filter else 1):
+        return None
+    c = den[-2] if has_i else den[-1]          # scale so that the denominator is s*(Tf*s + 1) or Tf*s + 1
+    if c == 0:
+        return None
+    a = np.zeros(3)
+    scaled = num / c
+    a[3 - scaled.size:] = scaled               # a2 s^2 + a1 s + a0
+    if has_i:
+        ki = a[2]
+        kp = a[1] - ki * tf_
+        kd = a[0] - kp * tf_
+    else:
+        ki = 0.0
+        kp = a[2]
+        kd = a[1] - kp * tf_
+        if a[0] != 0:
+            return None
+    return float(kp), float(ki), float(kd)
 
 
 def pid_to_std(kp: float, ki: float, kd: float, tf: float, ts: float) -> "PIDSTD":
@@ -1509,7 +1543,8 @@ def _column_realization(nums: list, dens: list):
             full = cn.pmul(n / d[0], q)
         if full.size - 1 > n_states:
             raise MatlabError("An improper transfer function (more zeros than poles) has no state-space "
-                              "realization here; multiply it with other blocks first or add a fast pole.")
+                              "realization here; multiply it with other blocks first or add a fast pole.",
+                              cn.IMPROPER_ID)
         padded = np.zeros(n_states + 1, dtype=dtype)
         padded[n_states + 1 - full.size:] = full
         dd[i, 0] = padded[0]
@@ -1564,7 +1599,7 @@ def _zpk_sections(z: np.ndarray, p: np.ndarray, k):
 def _siso_zpk_ss(z, p, k):
     if len(z) > len(p):
         raise MatlabError("An improper model (more zeros than poles) has no state-space realization here; "
-                          "multiply it with other blocks first or add a fast pole.")
+                          "multiply it with other blocks first or add a fast pole.", cn.IMPROPER_ID)
     if not (np.iscomplexobj(k) and np.imag(k) != 0):
         secs = _zpk_sections(np.asarray(z), np.asarray(p), float(np.real(k)))
         if secs is not None:
@@ -1926,7 +1961,7 @@ def _same_freq(a: FRD, b: FRD) -> None:
                           "interpolate one of them first with interp(sys, w).")
 
 
-def lti_add(x: Any, y: Any, sign: float = 1.0) -> LTI:
+def _lti_add_raw(x: Any, y: Any, sign: float = 1.0) -> LTI:
     template = _pid_template(x, y)
     a, b = promote_pair(x, y)
     ts = common_ts(a, b)
@@ -2009,7 +2044,7 @@ def _zpk_elem_add(z1, p1, k1, z2, p2, k2):
     return (roots if np.iscomplexobj(num) else cn.pair_conjugates(roots)), p, num[0]
 
 
-def lti_mul(x: Any, y: Any) -> LTI:
+def _lti_mul_raw(x: Any, y: Any) -> LTI:
     """The product x*y: y acts first, then x."""
     template = _pid_template(x, y)
     a, b = promote_pair(x, y)
@@ -2167,10 +2202,57 @@ def lti_inv(x: Any) -> LTI:
     elif isinstance(a, SS):
         out = SS(*cn.ss_inv(a.abcd), a.ts)
     else:
-        out = back_to(SS(*cn.ss_inv(to_ss(a).abcd), a.ts), a)
+        try:
+            out = back_to(SS(*cn.ss_inv(to_ss(a).abcd), a.ts), a)
+        except MatlabError:
+            out = back_to(_tf_matrix_inverse(to_tf(a)), a)   # the inverse is improper: use polynomials
     out.in_name, out.out_name = list(a.out_name), list(a.in_name)
     out.in_unit, out.out_unit = list(a.out_unit), list(a.in_unit)
     out.time_unit = a.time_unit
+    return out
+
+
+def _reduce_fraction(num: np.ndarray, den: np.ndarray, tol: float = 1e-8):
+    """Cancel the roots that numerator and denominator share (within a relative tolerance)."""
+    if cn.piszero(num):
+        return np.zeros(1), np.ones(1)
+    zr, pr = list(cn.proots(num)), list(cn.proots(den))
+    k = num[0] / den[0]
+    kept = []
+    for v in zr:
+        if pr:
+            dist = [abs(v - q) for q in pr]
+            j = int(np.argmin(dist))
+            if dist[j] <= tol * max(1.0, abs(v)):
+                pr.pop(j)
+                continue
+        kept.append(v)
+    if len(kept) == len(zr):
+        return num, den
+    return k * cn.rpoly(cn.pair_conjugates(np.array(kept))), cn.rpoly(cn.pair_conjugates(np.array(pr)))
+
+
+def _tf_matrix_inverse(a: TF) -> TF:
+    """Inverse of a square transfer matrix by Gauss-Jordan elimination on its entries."""
+    n = a.ny
+    rows = [[(a.num[i][j], a.den[i][j]) for j in range(n)]
+            + [((np.ones(1) if i == j else np.zeros(1)), np.ones(1)) for j in range(n)] for i in range(n)]
+    for c in range(n):
+        piv = next((r for r in range(c, n) if not cn.piszero(rows[r][c][0])), None)
+        if piv is None:
+            raise MatlabError("Cannot invert this model: its transfer matrix is singular.")
+        rows[c], rows[piv] = rows[piv], rows[c]
+        pn, pd = rows[c][c]
+        rows[c] = [_reduce_fraction(*_tf_elem_mul(e[0], e[1], pd, pn)) for e in rows[c]]
+        for r in range(n):
+            if r == c or cn.piszero(rows[r][c][0]):
+                continue
+            fn, fd = rows[r][c]
+            rows[r] = [_reduce_fraction(*_tf_elem_add(e[0], e[1], *_tf_elem_mul(fn, fd, p_[0], p_[1]), -1.0))
+                       for e, p_ in zip(rows[r], rows[c])]
+    num = [[rows[i][n + j][0] for j in range(n)] for i in range(n)]
+    den = [[rows[i][n + j][1] for j in range(n)] for i in range(n)]
+    out = TF(num, den, a.ts, a.var)
     return out
 
 
@@ -2278,6 +2360,34 @@ def lti_ctranspose(a: LTI) -> LTI:
     res2 = TF(num, den, t.ts, t.var)
     res2._nu = t.nu
     return _carry(res2, t)
+
+
+def _polynomial_fallback(fn: Callable) -> Callable:
+    """Combine a state-space model with an improper one (e.g. an ideal PID) through polynomials.
+
+    The improper factor has no state-space form of its own, but the combination often is proper;
+    the result is returned in state space when it is.
+    """
+    def wrapped(x: Any, y: Any, *args: Any, **kw: Any) -> LTI:
+        try:
+            return fn(x, y, *args, **kw)
+        except MatlabError as err:
+            if err.identifier != cn.IMPROPER_ID or not any(isinstance(v, SS) for v in (x, y)):
+                raise
+            if any(isinstance(v, SS) and v.has_delay() and np.any(v.io_delay) for v in (x, y)):
+                raise
+            res = fn(to_tf(x) if isinstance(x, SS) else x, to_tf(y) if isinstance(y, SS) else y, *args, **kw)
+            try:
+                return to_ss(res)
+            except MatlabError:
+                return res
+    wrapped.__name__ = fn.__name__
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
+
+lti_add = _polynomial_fallback(_lti_add_raw)
+lti_mul = _polynomial_fallback(_lti_mul_raw)
 
 
 # -- concatenation ----------------------------------------------------------------------------
@@ -2412,7 +2522,7 @@ def lti_append(items: list) -> LTI:
 
 # -- feedback and other interconnections ------------------------------------------------------
 
-def lti_feedback(g: Any, h: Any, sign: float = -1.0, feedin=None, feedout=None) -> LTI:
+def _lti_feedback_raw(g: Any, h: Any, sign: float = -1.0, feedin=None, feedout=None) -> LTI:
     """Closed loop of ``g`` with ``h`` in the return path (negative feedback when sign = -1)."""
     a, b = promote_pair(g, h)
     ts = common_ts(a, b)
@@ -2475,6 +2585,9 @@ def lti_feedback(g: Any, h: Any, sign: float = -1.0, feedin=None, feedout=None) 
     out.in_group, out.out_group = dict(a.in_group), dict(a.out_group)
     out.time_unit = a.time_unit
     return out
+
+
+lti_feedback = _polynomial_fallback(_lti_feedback_raw)
 
 
 def lti_lft(x: Any, y: Any, nu: int | None = None, ny: int | None = None) -> LTI:

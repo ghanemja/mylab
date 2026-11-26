@@ -127,14 +127,31 @@ def lsim_plot(interp, items: list, u: np.ndarray, t: np.ndarray, out_names: list
         call(interp, "title", "Linear Simulation Results")
 
 
-def _recolor_last(interp, rgb: tuple) -> None:
+def _current_axes(interp):
     st = interp.state.get("plot")
     try:
-        ax = st.axes.get(st.current)
-        if ax is not None and ax.lines:
-            ax.lines[-1].set_color(rgb)
-    except (AttributeError, KeyError):
-        pass
+        return st.axes.get(st.current)
+    except AttributeError:
+        return None
+
+
+def _recolor_last(interp, rgb: tuple) -> None:
+    """Colour the line drawn last and give the colour it used back to the colour cycle."""
+    ax = _current_axes(interp)
+    if ax is not None and ax.lines:
+        ax.lines[-1].set_color(rgb)
+        ax.set_prop_cycle(None)
+
+
+def _open_markers(interp) -> None:
+    ax = _current_axes(interp)
+    if ax is not None and ax.lines:
+        ax.lines[-1].set_markerfacecolor("none")
+
+
+def grid_line(interp, x, y) -> None:
+    """A thin grey dotted guide line (damping and frequency grids)."""
+    call(interp, "plot", _column(x), _column(y), ":", "Color", np.array([[0.6, 0.6, 0.6]]), "LineWidth", 0.5)
 
 
 def bode_plot(interp, items: list, in_names: list, out_names: list, unit: str, mag_only: bool = False,
@@ -173,8 +190,16 @@ def bode_plot(interp, items: list, in_names: list, out_names: list, unit: str, m
                     call(interp, "title", title if nu == 1 else f"From: {_chan(in_names, j, 'In')}")
                 if row == rows - 1:
                     call(interp, "xlabel", xlabel)
+                elif rows > 2:
+                    _hide_xticklabels(interp)
     if nu > 1:
         call(interp, "sgtitle", title)
+
+
+def _hide_xticklabels(interp) -> None:
+    ax = _current_axes(interp)
+    if ax is not None:
+        ax.tick_params(axis="x", which="both", labelbottom=False)
 
 
 def _margin_marks(interp, marks: dict, part: int) -> None:
@@ -260,6 +285,7 @@ def pz_plot(interp, items: list, unit: str, discrete: bool, title: str = "Pole-Z
     hold = held(interp)
     first = True
     for it in items:
+        colour = None
         for vals, marker in ((it["p"], "x"), (it["z"], "o")):
             vals = np.asarray(vals, dtype=complex)
             vals = vals[np.isfinite(vals)]
@@ -268,6 +294,14 @@ def pz_plot(interp, items: list, unit: str, discrete: bool, title: str = "Pole-Z
             style = it.get("style")
             spec = marker if not style else "".join(ch for ch in style if ch.isalpha() and ch not in "xo") + marker
             _draw(interp, "plot", vals.real, vals.imag, spec, first, hold)
+            ax = _current_axes(interp)
+            if ax is not None and ax.lines:      # poles and zeros of one model share a colour
+                if colour is None:
+                    colour = ax.lines[-1].get_color()
+                else:
+                    ax.lines[-1].set_color(colour)
+            if marker == "o":
+                _open_markers(interp)
             first = False
     if first:
         _draw(interp, "plot", np.zeros(0), np.zeros(0), None, True, hold)
@@ -302,6 +336,7 @@ def rlocus_plot(interp, r: np.ndarray, poles: np.ndarray, zeros: np.ndarray, uni
         call(interp, "plot", _column(poles.real), _column(poles.imag), "kx")
     if zeros.size:
         call(interp, "plot", _column(zeros.real), _column(zeros.imag), "ko")
+        _open_markers(interp)
     if discrete:
         th = np.linspace(0, 2 * np.pi, 361)
         call(interp, "plot", _column(np.cos(th)), _column(np.sin(th)), "k:")

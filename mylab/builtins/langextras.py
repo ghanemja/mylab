@@ -822,5 +822,5 @@ def _step(interp, args, nargout):
             setup = obj.cls.methods["setupImpl"][0]
             obj.cls.call(interp, "setupImpl", list(args[:len(setup.params)]), 0)
         return tuple(obj.cls.call(interp, "stepImpl", list(args), max(nargout, 1))) or None
-    raise MatlabError("step works on System objects (classes with a stepImpl method). Step responses of "
-                      "control-system models are not supported.")
+    raise MatlabError("step needs a control-system model (tf, zpk, ss, pid), as in step(tf(1, [1 1])), or a "
+                      "System object (a class with a stepImpl method).")

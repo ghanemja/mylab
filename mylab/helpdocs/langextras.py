@@ -93,9 +93,15 @@ HELP = {
              "TimerFcn calls happen; it gives up with a warning after 100000 calls."),
     "timerfind": ("timerfind", "Returns an empty array: mylab keeps no list of timers."),
     "timerfindall": ("timerfindall", "Returns an empty array: mylab keeps no list of timers."),
-    "step": (["y = step(obj, x)", "y = obj.step(x)"],
-             "Runs one step of a System object: calls the object's stepImpl method (and setupImpl before "
-             "the first step). Step responses of control-system models are not supported."),
+    "step": (["y = step(obj, x)", "y = obj.step(x)", "step(sys)", "step(sys, tFinal)", "[y, t] = step(sys, t)",
+              "[y, t, x] = step(sys, ...)"],
+             "For a System object, runs one step: calls the object's stepImpl method (and setupImpl before "
+             "the first step). For a control-system model (tf, zpk, ss, pid), computes the unit step "
+             "response: y has one row per time, one column per output and one page per input, t is a "
+             "column of times and x holds the states of a state-space model. The time argument is a final "
+             "time or an evenly spaced vector; without it the duration is chosen so that the transient is "
+             "shown until it has settled. Without outputs the response is plotted, and several models can "
+             "be given, each with a line style. stepDataOptions sets the step size."),
 
     # -- messages and errors ---------------------------------------------------------------------------
     "message": ("msg = message(id, arg1, ...)",
