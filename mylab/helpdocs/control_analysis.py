@@ -1,9 +1,11 @@
 """Help text for poles, zeros and time responses of control-system models."""
 
 _TIME = (
-    " The optional time argument is either a final time or an evenly spaced vector such as 0:0.01:5 (for a "
-    "discrete-time model its step must equal Ts). Without it a duration and step are chosen from the poles "
-    "so that the transient is shown until it has settled."
+    " The optional time argument is either a final time or a vector of increasing times such as 0:0.01:5 "
+    "(for a discrete-time model its step must equal Ts). The response of a continuous-time model is exact at "
+    "the given times, which need not be evenly spaced, so the time vector of a simulation can be used. "
+    "Without a time argument a duration and step are chosen from the poles so that the transient is shown "
+    "until it has settled."
 )
 _PLOT = (
     " Without output arguments the response is plotted; several models, each optionally followed by a line "

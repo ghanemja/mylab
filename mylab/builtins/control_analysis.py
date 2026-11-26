@@ -471,8 +471,8 @@ def parse_time(arg: Any, sys: LTI, name: str):
     d = np.diff(a)
     if np.any(d <= 0):
         raise MatlabError(f"{name}: the time vector must be increasing.")
-    if np.any(np.abs(d - d[0]) > 1e-6 * abs(d[0])):
-        raise MatlabError(f"{name}: the time samples must be evenly spaced, e.g. 0:0.01:5.")
+    if sys.is_dt and np.any(np.abs(d - d[0]) > 1e-6 * abs(d[0])):
+        raise MatlabError(f"{name}: the time samples must be evenly spaced, e.g. 0:Ts:Tfinal.")
     if a[0] < 0:
         raise MatlabError(f"{name}: time starts at 0; negative times are not allowed.")
     if sys.is_dt and sys.ts > 0 and abs(d[0] - sys.ts) > 1e-6 * sys.ts:
