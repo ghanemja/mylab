@@ -314,59 +314,6 @@ def _realpow(interp, args, nargout):
     return r
 
 
-# -- rational approximation as text -----------------------------------------------------------------
-
-def _rat_fraction(x: float, tol: float) -> tuple[float, float]:
-    """Continued-fraction approximation n/d of a finite x with |x - n/d| <= tol."""
-    y = x
-    n_prev, n_cur = 0.0, 1.0
-    d_prev, d_cur = 1.0, 0.0
-    for _ in range(64):
-        t = float(np.round(y))
-        n_prev, n_cur = n_cur, n_cur * t + n_prev
-        d_prev, d_cur = d_cur, d_cur * t + d_prev
-        if y == t or abs(x - n_cur / d_cur) <= tol:
-            break
-        y = 1.0 / (y - t)
-    if d_cur < 0:
-        n_cur, d_cur = -n_cur, -d_cur
-    return n_cur, d_cur
-
-
-@builtin("rats")
-def _rats(interp, args, nargout):
-    nargs(args, 1, 2, "rats")
-    x = fnum(args[0])
-    if x.dtype.kind == "c":
-        raise MatlabError("rats: the input must be real.")
-    x = x.astype(float)
-    strlen = to_int(args[1], "strlen") if len(args) > 1 else 13
-    if strlen < 1:
-        raise MatlabError("rats: the string length must be positive.")
-    if x.ndim > 2:
-        raise MatlabError("rats: the input must be a 2-D array.")
-    finite = np.abs(x[np.isfinite(x)])
-    tol = 10.0 ** (-(strlen - 1) / 2.0) * (float(np.sum(finite)) if finite.size else 0.0)
-
-    def one(v: float) -> str:
-        if math.isnan(v):
-            return "NaN"
-        if math.isinf(v):
-            return "Inf" if v > 0 else "-Inf"
-        n, d = _rat_fraction(v, tol)
-        s = f"{n:.0f}" if d == 1 else f"{n:.0f}/{d:.0f}"
-        if len(s) > strlen:
-            # does not fit in the field: a tiny value prints as 0, anything else as an asterisk
-            return "0" if abs(v) < 1 else "*"
-        return s
-
-    # every element is centred in a field of strlen + 1 characters
-    rows = ["".join(one(float(v)).center(strlen + 1) for v in x[i, :]) for i in range(x.shape[0])]
-    if not rows or not rows[0]:
-        return char("")
-    return np.array([list(r) for r in rows], dtype="<U1").reshape(len(rows), len(rows[0]))
-
-
 # -- reductions and array helpers ---------------------------------------------------------------------
 
 def _empty(v: Any) -> bool:

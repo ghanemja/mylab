@@ -625,7 +625,6 @@ HELP: dict = {
                  "Concatenates the contents of a cell array into one array, joining each row of cells side "
                  "by side and then stacking the rows. The pieces must fit together. "
                  "Example: cell2mat({1 2; 3 4}) is [1 2; 3 4]."),
-    "num2cell": ("C = num2cell(A)", "Cell array the same size as A, with each element of A in its own cell."),
     "deal": (["[a, b, ...] = deal(x)", "[a, b, ...] = deal(x1, x2, ...)"],
              "Copies inputs to outputs: one input is copied to every output; otherwise there must be as "
              "many inputs as outputs and each goes to its own output."),
@@ -654,11 +653,6 @@ HELP: dict = {
                 "array. Non-struct input gives false."),
     "rmfield": (["s = rmfield(s, name)", "s = rmfield(s, {name1, name2, ...})"],
                 "Returns a copy of the struct without the named field(s). Naming a missing field is an error."),
-    "setfield": ("s = setfield(s, name, value)",
-                 "Returns a copy of the struct with the field set to value, the same as s.(name) = value. "
-                 "Only a single field level is supported."),
-    "getfield": ("v = getfield(s, name)",
-                 "Value of the named field, the same as s.(name). Only a single field level is supported."),
     "struct2cell": ("C = struct2cell(s)",
                     "Column cell array holding the field values of a scalar struct, in field order."),
     "cell2struct": ("s = cell2struct(C, fields)",

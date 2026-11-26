@@ -2342,12 +2342,3 @@ def _bitcmp(interp, args, nargout):
     full = (1 << bits) - 1
     r = [full ^ (int(x) & full) for x in _bit_ints(a).reshape(-1)]
     return _bit_finish(r, cls, a.shape)
-
-
-@builtin("swapbytes")
-def _swapbytes(interp, args, nargout):
-    nargs(args, 1, 1, "swapbytes")
-    a = args[0]
-    if not (isinstance(a, np.ndarray) and a.dtype.kind in "iu"):
-        raise MatlabError("swapbytes: the input must be an integer array (for example uint16).")
-    return a.byteswap()

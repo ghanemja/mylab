@@ -674,27 +674,6 @@ for _name in ("repmat", "fliplr", "flipud", "flip", "rot90", "circshift", "permu
     _string_shim(_name)
 
 
-_classic_num2cell = BUILTINS.get("num2cell")
-
-
-@builtin("num2cell")
-def _num2cell(interp, args, nargout):
-    if args and isinstance(args[0], (MString, StringArray)) and len(args) == 1:
-        from ..values import string_data
-        data = string_data(args[0])
-        out = np.empty(data.shape, dtype=object)
-        for idx in np.ndindex(data.shape):
-            x = data[idx]
-            if x is None:
-                d = np.empty((1, 1), dtype=object)
-                d[0, 0] = None
-                out[idx] = StringArray(d)
-            else:
-                out[idx] = MString(x)
-        return Cell(out)
-    return _classic_num2cell(interp, args, nargout)
-
-
 def _string_extreme(name: str, pick_last: bool) -> None:
     """max / min of string arrays: the text that sorts last / first."""
     original = BUILTINS.get(name)

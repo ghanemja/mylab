@@ -32,9 +32,6 @@ HELP = {
     "reallog": ("y = reallog(x)", "Natural logarithm that raises an error for negative input instead of "
                                   "returning a complex number."),
     "realpow": ("z = realpow(x, y)", "Element-wise power x.^y that raises an error when the result would be complex."),
-    "rats": (["s = rats(x)", "s = rats(x, strlen)"],
-             "Rational approximation as text, for example rats(0.75) contains '3/4'. Each element takes "
-             "strlen + 1 characters (default strlen 13); the accuracy grows with strlen."),
     "rms": (["y = rms(x)", "y = rms(x, dim)", "y = rms(x, 'all')", "y = rms(x, vecdim)", "y = rms(..., 'omitnan')"],
             "Root mean square: sqrt(mean(abs(x).^2)) along the first non-singleton dimension, a chosen "
             "dimension, several dimensions or all elements."),
