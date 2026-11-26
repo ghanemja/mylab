@@ -2146,7 +2146,9 @@ async function main() {
 
     /* ---------------- what is new in 1.1, in the app ---------------- */
     // The editor's list of functions comes from the engine itself, so it has every built-in.
-    const engineNames = JSON.parse(spawnSync(PY, ["-c", "import json; from mylab.interpreter import Interpreter; print(json.dumps(sorted(Interpreter().builtins)))"], { cwd: ROOT, encoding: "utf8" }).stdout);
+    const listed = spawnSync(PY, ["-c", "import json; from mylab.interpreter import Interpreter; print(json.dumps(sorted(Interpreter().builtins)))"], { cwd: ROOT, encoding: "utf8" });
+    check(listed.status === 0, `${PY} could not list the engine's built-ins (is mylab installed for it?): ${(listed.stderr || "").trim().split("\n").pop()}`);
+    const engineNames = JSON.parse(listed.stdout);
     const helpNames = await page.evaluate(() => Object.keys(window.mylab.app.helpIndex() || {}));
     const missing = engineNames.filter((n) => !helpNames.includes(n));
     check(engineNames.length > 2600 && !missing.length, `the editor misses ${missing.length} of ${engineNames.length} built-ins: ${missing.slice(0, 10).join(", ")}`);

@@ -120,6 +120,8 @@ jobs:
         with:
           node-version: "20"
       - run: pip install build setuptools wheel
+      # one check compares the editor's list of functions with the engine's own
+      - run: pip install -e .
       - run: npm install --no-save playwright@1.48.2
       - run: npx playwright install --with-deps chromium
       - run: node scripts/test_web.mjs --no-screenshot
