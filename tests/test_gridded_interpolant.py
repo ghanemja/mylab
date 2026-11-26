@@ -8,6 +8,16 @@ from scipy.interpolate import (Akima1DInterpolator, CubicSpline, PchipInterpolat
 from mylab.errors import MatlabError
 
 
+def _makima_ref(x, y):
+    """SciPy's modified Akima interpolant, extrapolating (SciPy before 1.14 has no extrapolate argument)."""
+    try:
+        return Akima1DInterpolator(x, y, method="makima", extrapolate=True)
+    except TypeError:
+        f = Akima1DInterpolator(x, y, method="makima")
+        f.extrapolate = True
+        return f
+
+
 def _set(m, **arrays):
     for k, v in arrays.items():
         m.interp.set_var(k, np.asarray(v, dtype=float))
@@ -33,7 +43,7 @@ def test_1d_linear_and_default_extrapolation(m):
 @pytest.mark.parametrize("method,ref", [
     ("spline", lambda x, y: CubicSpline(x, y, bc_type="not-a-knot")),
     ("pchip", lambda x, y: PchipInterpolator(x, y)),
-    ("makima", lambda x, y: Akima1DInterpolator(x, y, method="makima", extrapolate=True)),
+    ("makima", lambda x, y: _makima_ref(x, y)),
 ])
 def test_1d_piecewise_cubic_methods(m, method, ref):
     _set(m, x=X1, v=Y1, xq=XQ)

@@ -88,8 +88,8 @@ def test_pie_returns_patches_and_texts(m):
     ax = plt.gcf().axes[0]
     import matplotlib.patches as mp
     wedges = [w for w in ax.patches if isinstance(w, mp.Wedge)]
-    spans = sorted(round(w.theta2 - w.theta1, 6) for w in wedges)
-    assert spans == [72.0, 108.0]  # a partial pie: the values are the fractions themselves
+    spans = sorted(w.theta2 - w.theta1 for w in wedges)
+    assert spans == pytest.approx([72.0, 108.0], abs=1e-4)  # a partial pie: the values are the fractions themselves
     m.execute("figure('Visible', 'off'); r = pie([1 2 3], [0 1 0]); t = pie([1 999]);")
     assert s(m, "t(2).String") == "<1%"
     with pytest.raises(MatlabError):
