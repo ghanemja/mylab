@@ -157,56 +157,229 @@ builtin("width")(_array_size(1, "width"))
 _MAD_SCALE = 1.4826022185056018  # -1 / (sqrt(2) * erfcinv(3/2))
 
 
+_OUTLIER_METHODS = ("median", "mean", "quartiles", "grubbs", "gesd", "percentiles", "movmedian", "movmean")
+
+
+def _t_upper(p: np.ndarray | float, df: float) -> float:
+    """Upper critical value of Student's t distribution: P(T > t) = p."""
+    from scipy.stats import t as tdist
+    return float(tdist.isf(p, df))
+
+
+def _grubbs_mask(v: np.ndarray, alpha: float, max_out: int | None, gesd: bool):
+    """Outliers of one vector by repeated Grubbs tests or the generalized ESD test.
+
+    Returns the mask and the (lower, upper, center) of the points that are kept.
+    """
+    idx = np.nonzero(~np.isnan(v))[0]
+    vals = v[idx].astype(float)
+    n0 = vals.size
+    mask = np.zeros(v.size, dtype=bool)
+    removed: list[int] = []
+    limit = n0 - 2 if max_out is None else min(max_out, n0 - 2)
+    keep = np.ones(n0, dtype=bool)
+    last_sig = 0
+    lam_used = 0.0
+    for step in range(1, max(limit, 0) + 1):
+        cur = vals[keep]
+        n = cur.size
+        if n < 3:
+            break
+        mu, sd = cur.mean(), cur.std(ddof=1)
+        if sd == 0:
+            break
+        dev = np.abs(vals - mu)
+        dev[~keep] = -1.0
+        k = int(np.argmax(dev))
+        stat = dev[k] / sd
+        if gesd:
+            pp = 1 - alpha / (2 * (n0 - step + 1))
+            t = _t_upper(1 - pp, n0 - step - 1)
+            lam = (n0 - step) * t / np.sqrt((n0 - step - 1 + t * t) * (n0 - step + 1))
+        else:
+            t = _t_upper(alpha / (2 * n), n - 2)
+            lam = (n - 1) / np.sqrt(n) * np.sqrt(t * t / (n - 2 + t * t))
+        keep[k] = False
+        removed.append(k)
+        if stat > lam:
+            last_sig = step
+            lam_used = lam
+        elif not gesd:
+            keep[k] = True
+            removed.pop()
+            break
+    if gesd:
+        # the generalized test keeps the largest number of removals that was significant
+        keep[:] = True
+        for k in removed[:last_sig]:
+            keep[k] = False
+    mask[idx[~keep]] = True
+    cur = vals[keep]
+    if cur.size == 0:
+        return mask, np.nan, np.nan, np.nan
+    mu = float(cur.mean())
+    sd = float(cur.std(ddof=1)) if cur.size > 1 else 0.0
+    if not lam_used:
+        n = cur.size
+        if n > 2:
+            t = _t_upper(alpha / (2 * n), n - 2)
+            lam_used = (n - 1) / np.sqrt(n) * np.sqrt(t * t / (n - 2 + t * t))
+    return mask, mu - lam_used * sd, mu + lam_used * sd, mu
+
+
+def _prctile_vec(v: np.ndarray, p: float) -> float:
+    return _quantile(v, p / 100.0)
+
+
 @builtin("isoutlier")
 def _isoutlier(interp, args, nargout):
     nargs(args, 1, None, "isoutlier")
+    if nargout > 4:
+        raise MatlabError("isoutlier: too many output arguments.")
     a = _numeric(args[0], "isoutlier")
     x = np.real(a).astype(float)
     method, factor, dim = "median", None, None
+    pct = None
+    window = None
+    samples = None
+    max_out = None
     rest = list(args[1:])
     k = 0
     while k < len(rest):
         r = rest[k]
         if is_text(r):
             key = text(r).lower()
-            if key in ("median", "mean", "quartiles"):
+            if key in ("percentiles", "movmedian", "movmean"):
+                if k + 1 >= len(rest) or is_text(rest[k + 1]):
+                    raise MatlabError(f"isoutlier: the '{key}' method needs "
+                                      + ("a [lower upper] threshold pair." if key == "percentiles"
+                                         else "a window length."))
+                method = key
+                val = np.real(num(rest[k + 1])).astype(float).reshape(-1)
+                if key == "percentiles":
+                    if val.size != 2 or not 0 <= val[0] <= val[1] <= 100:
+                        raise MatlabError("isoutlier: percentile thresholds must be [lower upper] within 0..100.")
+                    pct = (float(val[0]), float(val[1]))
+                else:
+                    window = rest[k + 1]
+                k += 1
+            elif key in _OUTLIER_METHODS:
                 method = key
             elif key == "thresholdfactor" and k + 1 < len(rest):
-                factor = float(num(rest[k + 1]).flat[0])
+                factor = float(np.real(num(rest[k + 1])).flat[0])
+                if factor < 0:
+                    raise MatlabError("isoutlier: ThresholdFactor must be nonnegative.")
+                k += 1
+            elif key == "samplepoints" and k + 1 < len(rest):
+                samples = np.real(num(rest[k + 1])).astype(float).reshape(-1)
+                k += 1
+            elif key == "maxnumoutliers" and k + 1 < len(rest):
+                max_out = int(np.real(num(rest[k + 1])).flat[0])
                 k += 1
             else:
                 raise MatlabError(f"isoutlier: unsupported option '{text(r)}'.")
         else:
-            dim = int(num(r).flat[0]) - 1
+            dim = int(np.real(num(r)).flat[0]) - 1
+            if dim < 0:
+                raise MatlabError("isoutlier: the dimension must be a positive integer.")
         k += 1
+    if max_out is not None and method != "gesd":
+        raise MatlabError("isoutlier: MaxNumOutliers applies only to the 'gesd' method.")
+    if samples is not None and method not in ("movmedian", "movmean"):
+        raise MatlabError("isoutlier: SamplePoints applies only to the moving methods.")
+    if factor is not None and method == "percentiles":
+        raise MatlabError("isoutlier: ThresholdFactor does not apply to the 'percentiles' method.")
+    if method in ("grubbs", "gesd") and factor is not None and not 0 <= factor <= 1:
+        raise MatlabError("isoutlier: for 'grubbs' and 'gesd' the ThresholdFactor is a significance level "
+                          "between 0 and 1.")
+
+    def result(tf, lo, hi, c):
+        outs = (tf, lo, hi, c)
+        return outs[:max(nargout, 1)] if nargout > 1 else tf
+
     if x.size == 0:
-        return np.zeros(x.shape, dtype=bool)
+        z = np.zeros(x.shape)
+        return result(np.zeros(x.shape, dtype=bool), z, z, z)
     axis = default_dim(x) if dim is None else dim
     if axis >= x.ndim:
-        return np.zeros(x.shape, dtype=bool)
-    with np.errstate(all="ignore"):
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            if method == "median":
-                center = np.nanmedian(x, axis=axis, keepdims=True)
-                spread = _MAD_SCALE * np.nanmedian(np.abs(x - center), axis=axis, keepdims=True)
-                f = 3.0 if factor is None else factor
-                lo, hi = center - f * spread, center + f * spread
-            elif method == "mean":
-                center = np.nanmean(x, axis=axis, keepdims=True)
-                n = np.sum(~np.isnan(x), axis=axis, keepdims=True)
-                std0 = np.nanstd(x, axis=axis, keepdims=True, ddof=0)
-                spread = np.where(n > 1, std0 * np.sqrt(n / np.maximum(n - 1, 1)), 0.0)
-                f = 3.0 if factor is None else factor
-                lo, hi = center - f * spread, center + f * spread
+        return result(np.zeros(x.shape, dtype=bool), x.copy(), x.copy(), x.copy())
+    import warnings
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        if method == "median":
+            center = np.nanmedian(x, axis=axis, keepdims=True)
+            spread = _MAD_SCALE * np.nanmedian(np.abs(x - center), axis=axis, keepdims=True)
+            f = 3.0 if factor is None else factor
+            lo, hi = center - f * spread, center + f * spread
+        elif method == "mean":
+            center = np.nanmean(x, axis=axis, keepdims=True)
+            n = np.sum(~np.isnan(x), axis=axis, keepdims=True)
+            std0 = np.nanstd(x, axis=axis, keepdims=True, ddof=0)
+            spread = np.where(n > 1, std0 * np.sqrt(n / np.maximum(n - 1, 1)), 0.0)
+            f = 3.0 if factor is None else factor
+            lo, hi = center - f * spread, center + f * spread
+        elif method == "quartiles":
+            q1 = np.expand_dims(np.apply_along_axis(_quantile, axis, x, 0.25), axis)
+            q3 = np.expand_dims(np.apply_along_axis(_quantile, axis, x, 0.75), axis)
+            f = 1.5 if factor is None else factor
+            lo, hi = q1 - f * (q3 - q1), q3 + f * (q3 - q1)
+            center = (q1 + q3) / 2
+        elif method == "percentiles":
+            lo = np.expand_dims(np.apply_along_axis(_prctile_vec, axis, x, pct[0]), axis)
+            hi = np.expand_dims(np.apply_along_axis(_prctile_vec, axis, x, pct[1]), axis)
+            center = (lo + hi) / 2
+        elif method in ("grubbs", "gesd"):
+            alpha = 0.05 if factor is None else factor
+            xm = np.moveaxis(x, axis, 0)
+            n = xm.shape[0]
+            cols = xm.reshape(n, -1)
+            tfc = np.zeros(cols.shape, dtype=bool)
+            stats = np.zeros((3, cols.shape[1]))
+            limit = max_out if max_out is not None else (int(np.ceil(0.1 * n)) if method == "gesd" else None)
+            for c in range(cols.shape[1]):
+                tfc[:, c], stats[0, c], stats[1, c], stats[2, c] = _grubbs_mask(cols[:, c], alpha, limit,
+                                                                              method == "gesd")
+            tf = np.moveaxis(tfc.reshape(xm.shape), 0, axis)
+            shape = list(x.shape)
+            shape[axis] = 1
+            lo, hi, center = (stats[i].reshape(xm.shape[1:]).reshape(shape) for i in range(3))
+            return result(tf, lo, hi, center)
+        else:
+            from .stats import _window_extent
+            f = 3.0 if factor is None else factor
+            xm = np.moveaxis(x, axis, 0)
+            n = xm.shape[0]
+            if samples is not None:
+                if samples.size != n or np.any(np.diff(samples) <= 0):
+                    raise MatlabError("isoutlier: SamplePoints must be increasing, one per element along "
+                                      "the operating dimension.")
+                wv = np.real(num(window)).astype(float).reshape(-1)
+                back, fwd = (wv[0] / 2.0, wv[0] / 2.0) if wv.size == 1 else (wv[0], wv[1])
+                half_open = wv.size == 1
             else:
-                q1 = np.apply_along_axis(_quantile, axis, x, 0.25)
-                q3 = np.apply_along_axis(_quantile, axis, x, 0.75)
-                q1, q3 = np.expand_dims(q1, axis), np.expand_dims(q3, axis)
-                f = 1.5 if factor is None else factor
-                lo, hi = q1 - f * (q3 - q1), q3 + f * (q3 - q1)
-        return (x < lo) | (x > hi)
+                before, after = _window_extent(window)
+            center_m = np.empty(xm.shape)
+            spread_m = np.empty(xm.shape)
+            for i in range(n):
+                if samples is not None:
+                    d = samples - samples[i]
+                    sel = (d >= -back) & ((d < fwd) if half_open else (d <= fwd))
+                    win = xm[sel]
+                else:
+                    win = xm[max(i - before, 0):min(i + after, n - 1) + 1]
+                if method == "movmedian":
+                    c = np.nanmedian(win, axis=0)
+                    center_m[i] = c
+                    spread_m[i] = _MAD_SCALE * np.nanmedian(np.abs(win - c), axis=0)
+                else:
+                    center_m[i] = np.nanmean(win, axis=0)
+                    cnt = np.sum(~np.isnan(win), axis=0)
+                    spread_m[i] = np.where(cnt > 1, np.nanstd(win, axis=0, ddof=0)
+                                           * np.sqrt(cnt / np.maximum(cnt - 1, 1)), 0.0)
+            center = np.moveaxis(center_m, 0, axis)
+            spread = np.moveaxis(spread_m, 0, axis)
+            lo, hi = center - f * spread, center + f * spread
+        return result((x < lo) | (x > hi), lo, hi, center)
 
 
 def _quantile(v: np.ndarray, p: float) -> float:

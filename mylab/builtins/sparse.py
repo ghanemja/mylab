@@ -232,7 +232,7 @@ class SparseMatrix(MObject):
                 return SparseMatrix(_reshape(self.m, (r * c, 1)))
             pos, ishape = _positions(a, r * c)
             if pos.size == 1 and ishape == (1, 1):
-                return _dense_scalar(self._m[int(pos[0] % r), int(pos[0] // r)])
+                return _sparse_scalar(self._m[int(pos[0] % r), int(pos[0] // r)], self._m.dtype)
             vals = np.asarray(self.m[pos % r, pos // r]).ravel() if pos.size else np.zeros(0, self._m.dtype)
             shape = ix._linear_result_shape((r, c), ishape, pos.size)
             if len(shape) != 2:
@@ -246,7 +246,7 @@ class SparseMatrix(MObject):
         rp = None if args[0] is ix.COLON else _positions(args[0], r)[0]
         cp = None if args[1] is ix.COLON else _positions(args[1], c)[0]
         if rp is not None and cp is not None and rp.size == 1 and cp.size == 1:
-            return _dense_scalar(self._m[int(rp[0]), int(cp[0])])
+            return _sparse_scalar(self._m[int(rp[0]), int(cp[0])], self._m.dtype)
         sub = self._m
         if sub.format != "csc" and (rp is None or cp is None or rp.size * cp.size > 4096):
             sub = self.m
@@ -450,6 +450,18 @@ def _reshape(m: sp.csc_matrix, shape: tuple) -> sp.csc_matrix:
     rows = lin % shape[0] if shape[0] else lin
     cols = lin // shape[0] if shape[0] else lin
     return sp.csc_matrix((coo.data, (rows, cols)), shape=shape)
+
+
+def _sparse_scalar(v: Any, dtype) -> "SparseMatrix":
+    """One element of a sparse matrix: still sparse (1-by-1), as indexing a sparse matrix always is."""
+    v = np.asarray(v).reshape(-1)[0] if not np.isscalar(v) else v
+    if np.dtype(dtype).kind == "b":
+        val = np.array([[bool(v)]])
+    elif isinstance(v, (complex, np.complexfloating)) and v.imag != 0:
+        val = np.array([[complex(v)]])
+    else:
+        val = np.array([[float(np.real(v))]])
+    return SparseMatrix(sp.csc_matrix(val), canonical=True)
 
 
 def _dense_scalar(v: Any) -> np.ndarray:

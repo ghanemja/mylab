@@ -448,14 +448,45 @@ def _ipermute(interp, args, nargout):
 
 @builtin("pagemtimes")
 def _pagemtimes(interp, args, nargout):
-    a, b = fnum(args[0]), fnum(args[1])
-    a3 = a.reshape(a.shape[:2] + (-1,), order="F") if a.ndim > 2 else a[:, :, None]
-    b3 = b.reshape(b.shape[:2] + (-1,), order="F") if b.ndim > 2 else b[:, :, None]
-    out = np.einsum("ijk,jlk->ilk", a3, b3) if a3.shape[2] == b3.shape[2] else \
-        np.einsum("ijk,jl->ilk", a3, b3[:, :, 0]) if b3.shape[2] == 1 else np.einsum("ij,jlk->ilk", a3[:, :, 0], b3)
-    trailing = a.shape[2:] if a.ndim > 2 else b.shape[2:]
-    from ..values import as_2d
-    return as_2d(out.reshape(out.shape[:2] + tuple(trailing), order="F"))
+    if len(args) == 2:
+        x, y, tx, ty = args[0], args[1], "none", "none"
+    elif len(args) == 4:
+        x, y = args[0], args[2]
+        tx = text(args[1]).lower() if is_text(args[1]) else ""
+        ty = text(args[3]).lower() if is_text(args[3]) else ""
+        for t in (tx, ty):
+            if t not in ("none", "transpose", "ctranspose"):
+                raise MatlabError("pagemtimes: the transpose options must be 'none', 'transpose' or "
+                                  "'ctranspose'.")
+    else:
+        raise MatlabError("pagemtimes expects (X, Y) or (X, transpX, Y, transpY).")
+    a, b = fnum(x), fnum(y)
+    single = a.dtype in (np.float32, np.complex64) or b.dtype in (np.float32, np.complex64)
+
+    def prep(m, how):
+        if how != "none":
+            m = np.swapaxes(m, 0, 1)
+            if how == "ctranspose":
+                m = np.conj(m)
+        # pages lead (in reversed order, so that they line up from dimension 3 on)
+        return np.transpose(m, list(range(m.ndim - 1, 1, -1)) + [0, 1])
+
+    pa, pb = prep(a, tx), prep(b, ty)
+    if pa.shape[-1] != pb.shape[-2]:
+        if a.size == 1 or b.size == 1:
+            raise MatlabError("pagemtimes: use times (.*) to multiply by a scalar.")
+        raise MatlabError("Incorrect dimensions for matrix multiplication. The number of columns of each "
+                          "page of X must equal the number of rows of each page of Y.")
+    try:
+        r = np.matmul(pa, pb)
+    except ValueError:
+        raise MatlabError("pagemtimes: the page dimensions (3 and up) must match or be 1.")
+    out = np.transpose(r, [r.ndim - 2, r.ndim - 1] + list(range(r.ndim - 3, -1, -1)))
+    from ..values import as_2d, simplify
+    out = as_2d(simplify(np.ascontiguousarray(out)))
+    if single and out.dtype.kind in "fc":
+        out = out.astype(np.complex64 if out.dtype.kind == "c" else np.float32)
+    return out
 
 
 # -- type queries ------------------------------------------------------------------

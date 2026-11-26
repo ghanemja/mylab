@@ -112,8 +112,7 @@ _ELEMENTWISE = {
     "asinh": np.arcsinh, "acosh": _acosh,
     "atanh": lambda a: 0.5 * np.emath.log((1 + a) / (1 - a)),
     "sec": lambda a: 1 / np.cos(a), "csc": lambda a: 1 / np.sin(a), "cot": lambda a: 1 / np.tan(a),
-    "sind": lambda a: _sind(a), "cosd": lambda a: _sind(np.asarray(a) + 90.0),
-    "tand": lambda a: _sind(a) / _sind(np.asarray(a) + 90.0),
+    "sind": lambda a: _sind(a), "cosd": lambda a: _cosd(a), "tand": lambda a: _tand(a),
     "asind": lambda a: np.degrees(_asin(a)), "acosd": lambda a: np.degrees(_acos(a)),
     "atand": lambda a: np.degrees(np.arctan(a)),
     "deg2rad": np.radians, "rad2deg": np.degrees,
@@ -125,10 +124,55 @@ _ELEMENTWISE = {
 
 
 def _sind(a):
-    a = np.asarray(a, dtype=float)
-    r = np.sin(np.radians(a))
-    exact = np.mod(a, 180) == 0
-    return np.where(exact, 0.0, r)
+    """sin of an angle in degrees: exact at multiples of 30 and symmetric about every quadrant."""
+    a = np.asarray(a)
+    if a.dtype.kind == "c":
+        return np.sin(a * (np.pi / 180))
+    a = a.astype(float)
+    with np.errstate(invalid="ignore"):
+        r = np.fmod(a, 360.0)                       # (-360, 360), with the sign of a
+        sign = np.where(r < 0, -1.0, 1.0)
+        r = np.abs(r)                               # [0, 360)
+        sign = np.where(r > 180, -sign, sign)
+        r = np.where(r > 180, r - 180, r)           # [0, 180]
+        r = np.where(r > 90, 180 - r, r)            # [0, 90]
+        small = np.sin(np.radians(np.where(r <= 45, r, 0.0)))
+        large = np.cos(np.radians(np.where(r > 45, 90 - r, 0.0)))
+        out = np.where(r <= 45, small, large)
+        out = sign * np.where(r == 30, 0.5, out)
+        out = np.where(np.isfinite(a), out, np.nan)
+    return out + 0.0  # no negative zeros
+
+
+def _cosd(a):
+    """cos of an angle in degrees, from the same quadrant reduction as _sind."""
+    a = np.asarray(a)
+    if a.dtype.kind == "c":
+        return np.cos(a * (np.pi / 180))
+    a = a.astype(float)
+    with np.errstate(invalid="ignore"):
+        r = np.abs(np.fmod(a, 360.0))               # cos is even: [0, 360)
+        r = np.where(r > 180, 360 - r, r)           # [0, 180]
+        sign = np.where(r > 90, -1.0, 1.0)
+        r = np.where(r > 90, 180 - r, r)            # [0, 90]
+        small = np.cos(np.radians(np.where(r < 45, r, 0.0)))
+        large = np.sin(np.radians(np.where(r >= 45, 90 - r, 0.0)))
+        out = np.where(r < 45, small, large)
+        out = sign * np.where(r == 60, 0.5, out)
+        out = np.where(np.isfinite(a), out, np.nan)
+    return out + 0.0
+
+
+def _tand(a):
+    """tan of an angle in degrees: exactly +-1 at odd multiples of 45, +-Inf at odd multiples of 90."""
+    a = np.asarray(a)
+    if a.dtype.kind == "c":
+        return np.tan(a * (np.pi / 180))
+    s, c = _sind(a), _cosd(a)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = s / c
+        t = np.where((c == 0) & np.isfinite(s), np.where(s > 0, np.inf, -np.inf), t)
+    return t
 
 
 _SCALAR = {
@@ -374,10 +418,21 @@ builtin("rem")(_mod_rem(_rem, _rem_scalar, _int_exact(_py_rem), "rem"))
 
 
 def _nthroot(a, n):
+    if np.iscomplexobj(a) or np.iscomplexobj(n):
+        raise MatlabError("Both X and N must be real scalars or arrays.")
     bad = (a < 0) & ~((n == np.round(n)) & (np.mod(n, 2) == 1))
     if np.any(bad):
         raise MatlabError("If X is negative, N must be an odd integer.")
-    return np.sign(a) * np.abs(a) ** (1.0 / n)
+    a, n = np.asarray(a, dtype=float), np.asarray(n, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        y = np.sign(a) * np.abs(a) ** (1.0 / n)
+        # one Newton step removes the rounding error of the power, so nthroot(27, 3) is exactly 3
+        fix = (y != 0) & np.isfinite(y) & np.isfinite(a) & np.isfinite(n) & (n != 0)
+        yn1 = np.where(fix, np.abs(y) ** (n - 1), 1.0)
+        corr = np.where(fix, (np.abs(y) * yn1 - np.abs(a)) / (n * yn1), 0.0)
+        corr = np.where(np.isfinite(corr), corr, 0.0)
+        y = y - np.sign(a) * corr
+    return y
 
 
 builtin("nthroot")(_binary_math(_nthroot))
@@ -480,17 +535,29 @@ def _nchoosek(interp, args, nargout):
     return items[idx]
 
 
+def _same_class(values, like):
+    """A row of nonnegative integers in the class of ``like`` (double unless it is single or integer)."""
+    out = np.array(values, dtype=float).reshape(1, -1)
+    if isinstance(like, np.ndarray) and (like.dtype.kind in "iu" or like.dtype == np.float32):
+        return out.astype(like.dtype)
+    return out
+
+
 @builtin("primes")
 def _primes(interp, args, nargout):
-    n = int(fnum(args[0]).flat[0])
+    nargs(args, 1, 1, "primes")
+    a = num(args[0])
+    if a.size != 1 or a.dtype.kind == "c":
+        raise MatlabError("primes: N must be a real scalar.")
+    n = int(np.floor(float(a.flat[0]))) if np.isfinite(float(a.flat[0])) else -1
     if n < 2:
-        return np.zeros((1, 0))
+        return _same_class([], a).reshape(1, 0)
     sieve = np.ones(n + 1, dtype=bool)
     sieve[:2] = False
-    for p in range(2, int(n ** 0.5) + 1):
-        if sieve[p]:
-            sieve[p * p::p] = False
-    return np.nonzero(sieve)[0].astype(float).reshape(1, -1)
+    for q in range(2, int(n ** 0.5) + 1):
+        if sieve[q]:
+            sieve[q * q::q] = False
+    return _same_class(np.nonzero(sieve)[0], a)
 
 
 @builtin("isprime")
@@ -515,17 +582,27 @@ def _isprime(interp, args, nargout):
 
 @builtin("factor")
 def _factor(interp, args, nargout):
-    n = int(fnum(args[0]).flat[0])
+    nargs(args, 1, 1, "factor")
+    a = num(args[0])
+    if a.size != 1 or a.dtype.kind == "c":
+        raise MatlabError("factor: N must be a real scalar.")
+    x = float(a.flat[0]) if a.dtype.kind == "f" else int(a.flat[0])
+    if x != int(x) or x < 0:
+        raise MatlabError("factor: N must be a nonnegative integer.")
+    if a.dtype.kind == "f" and x > 2 ** 53:
+        raise MatlabError("factor: N is too large to be factored exactly in double precision; "
+                          "use an integer class such as uint64.")
+    n = int(x)
     out = []
     d = 2
     while d * d <= n:
         while n % d == 0:
             out.append(d)
             n //= d
-        d += 1
+        d += 1 if d == 2 else 2
     if n > 1 or not out:
         out.append(n)
-    return np.array(out, dtype=float).reshape(1, -1)
+    return _same_class(out, a)
 
 
 def _gcd_lcm(fn, name):
@@ -947,13 +1024,32 @@ def _minmax(is_max):
         return r.astype(bool) if both_logical else r
 
     def f(interp, args, nargout):
-        nargs(args, 1, 5, name)
-        rest, flags = flag_present(args, "omitnan", "includenan", "all")
+        args = list(args)
+        method = "auto"
+        for k in range(len(args) - 1):
+            if is_text(args[k]) and text(args[k]).lower() == "comparisonmethod":
+                method = text(args[k + 1]).lower() if is_text(args[k + 1]) else ""
+                if method not in ("auto", "real", "abs"):
+                    raise MatlabError(f"{name}: ComparisonMethod must be 'auto', 'real' or 'abs'.")
+                del args[k:k + 2]
+                break
+        nargs(args, 1, 6, name)
+        rest, flags = flag_present(args, "omitnan", "includenan", "omitmissing", "includemissing", "all",
+                                   "linear")
+        flags = _nan_flags(flags)
         if len(rest) >= 2 and not _no_arg(rest[1]):
-            if len(rest) > 2 or "all" in flags:
+            if len(rest) > 2 or "all" in flags or "linear" in flags:
                 raise MatlabError(f"{name} with two arrays to compare does not take a dimension.")
             if nargout > 1:
                 raise MatlabError(f"{name} with two arrays to compare returns only one output.")
+            if method != "auto":
+                a2, b2 = np.broadcast_arrays(num(rest[0]), num(rest[1]))
+                ka, kb = (np.abs(a2), np.abs(b2)) if method == "abs" else (np.real(a2), np.real(b2))
+                pick_a = (ka >= kb) if is_max else (ka <= kb)
+                na, nb = np.isnan(ka.astype(float)), np.isnan(kb.astype(float))
+                if "includenan" in flags:
+                    return np.where(na, a2, np.where(nb, b2, np.where(pick_a, a2, b2)))
+                return np.where(nb, a2, np.where(na, b2, np.where(pick_a, a2, b2)))
             return pair(rest[0], rest[1], flags)
         src = rest[0]
         a = src if isinstance(src, np.ndarray) and src.dtype == bool else num(src)
@@ -968,11 +1064,16 @@ def _minmax(is_max):
             else:
                 empty = np.zeros(shape if 0 in shape else a.shape, dtype=a.dtype)
             return (empty, np.zeros(empty.shape)) if nargout > 1 else empty
-        key = np.abs(b) if b.dtype.kind == "c" else b
+        if b.dtype.kind == "c":
+            key = np.real(b) if method == "real" else np.abs(b)
+        elif method == "abs" and b.dtype.kind in "if":
+            key = np.abs(b.astype(float)) if b.dtype.kind == "i" else np.abs(b)
+        else:
+            key = b
         nan = np.isnan(key) if key.dtype.kind == "f" else None
         if nan is not None and not nan.any():
             nan = None
-        if nan is None and nargout <= 1 and b.dtype.kind != "c":
+        if nan is None and nargout <= 1 and b.dtype.kind != "c" and key is b:
             return _unmerge((np.max if is_max else np.min)(b, axis=-1), shape)
         if nan is not None:
             if "includenan" in flags:
@@ -987,9 +1088,21 @@ def _minmax(is_max):
                 idx = np.where(nan.all(axis=-1), 0, np.argmax(masked, axis=-1))
         else:
             idx = (np.argmax if is_max else np.argmin)(key, axis=-1)
+        if key is not b and nan is None:
+            # ties in the comparison key: the phase angle decides (or the imaginary part for 'real')
+            best = np.take_along_axis(key, np.expand_dims(idx, -1), -1)
+            tie = key == best
+            if tie.sum(axis=-1).max() > 1:
+                second = np.imag(b) if method == "real" else np.angle(b.astype(complex))
+                second = np.where(tie, second, -np.inf if is_max else np.inf)
+                idx = (np.argmax if is_max else np.argmin)(second, axis=-1)
         vals = np.take_along_axis(b, np.expand_dims(idx, -1), -1)[..., 0]
         vals = _unmerge(vals, shape)
         if nargout > 1:
+            if "linear" in flags or len(dims) > 1:
+                lin, _ = _merge(np.arange(a.size).reshape(a.shape, order="F"), dims)
+                pos = np.take_along_axis(lin, np.expand_dims(idx, -1), -1)[..., 0]
+                return vals, _unmerge(pos.astype(float) + 1, shape)
             return vals, _unmerge(idx.astype(float) + 1, shape)
         return vals
     return f
@@ -1157,7 +1270,19 @@ def _cross(interp, args, nargout):
 
 @builtin("kron")
 def _kron(interp, args, nargout):
-    return np.kron(num(args[0]), num(args[1]))
+    if len(args) < 2:
+        raise MatlabError("Not enough input arguments for kron.")
+    out = num(args[0])
+    for other in args[1:]:  # kron(A, B, C) is kron(kron(A, B), C)
+        b = num(other)
+        if out.ndim > 2 or b.ndim > 2:
+            raise MatlabError("kron: inputs must be 2-D.")
+        if out.dtype.kind in "iu" or b.dtype.kind in "iu":
+            cls = _pair_class(out, b, "kron")
+            out = _saturate(np.kron(out.astype(float), b.astype(float)), cls)
+        else:
+            out = np.kron(out, b)
+    return out
 
 
 # -- find / sort / set operations ----------------------------------------------------
@@ -1198,23 +1323,107 @@ def _nnz(interp, args, nargout):
     return float(np.count_nonzero(num(args[0])))
 
 
+def _sort_parts(col, method):
+    """Keys (least significant first) that order a vector the way sort does."""
+    if col.dtype.kind == "c":
+        if method == "real":
+            return [np.imag(col), np.real(col)]
+        return [np.angle(col), np.abs(col)]
+    if method == "abs":
+        return [np.angle(col.astype(complex)), np.abs(col)]
+    return [col]
+
+
+def _lex_order(columns, descend, method="auto", missing="auto"):
+    """Stable ordering by several key columns (the first is the most significant)."""
+    keys = []
+    count = 0
+    for col, desc in zip(reversed(list(columns)), reversed(list(descend))):
+        col = np.asarray(col)
+        count = col.shape[-1]
+        if col.dtype.kind in "biu":
+            col = col.astype(np.longdouble if col.dtype.itemsize == 8 else float)
+        parts = _sort_parts(col, method)
+        nan = np.isnan(parts[-1].astype(float)) if parts[-1].dtype.kind in "fc" else np.zeros(col.shape, bool)
+        for part in parts:
+            part = np.where(nan, 0, part)
+            keys.append(-part if desc else part)
+        last = (missing == "last") or (missing == "auto" and not desc)
+        keys.append(nan if last else ~nan)
+    return np.lexsort(tuple(keys), axis=-1) if keys else np.arange(count)
+
+
+def _row_order(a, cols, descend, method="auto", missing="auto"):
+    """Stable ordering of the rows of a 2-D array by the given columns."""
+    if not cols:
+        return np.arange(a.shape[0])
+    return _lex_order([a[:, c] for c in cols], descend, method, missing)
+
+
+def _direction_list(v, count, name):
+    names = [to_str(x) for x in v.values_f()] if isinstance(v, Cell) else \
+        ([str(x) for x in v.values_f()] if isinstance(v, StringArray) else [text(v)])
+    out = []
+    for name_k in names:
+        if name_k.lower() not in ("ascend", "descend"):
+            raise MatlabError(f"{name}: the direction must be 'ascend' or 'descend'.")
+        out.append(name_k.lower() == "descend")
+    if len(out) == 1:
+        out = out * count
+    if len(out) != count:
+        raise MatlabError(f"{name}: give one direction, or one per sorting column.")
+    return out
+
+
+def _sort_options(args, name):
+    """Split off trailing 'ComparisonMethod' / 'MissingPlacement' pairs."""
+    rest = list(args)
+    method, missing = "auto", "auto"
+    while len(rest) >= 2 and is_text(rest[-2]) and text(rest[-2]).lower() in ("comparisonmethod",
+                                                                              "missingplacement"):
+        key = text(rest[-2]).lower()
+        val = text(rest[-1]).lower() if is_text(rest[-1]) else ""
+        if key == "comparisonmethod":
+            if val not in ("auto", "real", "abs"):
+                raise MatlabError(f"{name}: ComparisonMethod must be 'auto', 'real' or 'abs'.")
+            method = val
+        else:
+            if val not in ("auto", "first", "last"):
+                raise MatlabError(f"{name}: MissingPlacement must be 'auto', 'first' or 'last'.")
+            missing = val
+        rest = rest[:-2]
+    return rest, method, missing
+
+
 @builtin("sortrows")
 def _sortrows(interp, args, nargout):
+    args, method, missing = _sort_options(args, "sortrows")
     nargs(args, 1, 3, "sortrows")
     v = args[0]
-    descend = any(is_text(x) and text(x).lower() == "descend" for x in args[1:])
-    col_arg = next((x for x in args[1:] if not is_text(x) and not isinstance(x, Cell)), None)
+    col_arg = None
+    dir_arg = None
+    for x in args[1:]:
+        if is_text(x) or (isinstance(x, (Cell, StringArray)) and all(
+                is_text(e) and to_str(e).lower() in ("ascend", "descend") for e in x.values_f())):
+            dir_arg = x
+        elif isinstance(x, Cell):
+            raise MatlabError("sortrows: column names are only valid for tables.")
+        elif not _no_arg(x):
+            col_arg = x
     if isinstance(v, (Cell, StringArray)):
+        if method != "auto" or missing != "auto":
+            raise MatlabError("sortrows: ComparisonMethod and MissingPlacement are not supported for cell "
+                              "and string arrays.")
         data = v.data
         ncols = data.shape[1]
-        cols = [int(c) for c in num(col_arg).flatten()] if col_arg is not None and np.size(col_arg) else \
-            list(range(1, ncols + 1))
+        cols = [int(c) for c in num(col_arg).flatten()] if col_arg is not None else list(range(1, ncols + 1))
+        given = _direction_list(dir_arg, len(cols), "sortrows") if dir_arg is not None else [False] * len(cols)
         order = np.arange(data.shape[0])
-        for c in reversed(cols):
+        for c, d in zip(reversed(cols), reversed(given)):
             j = abs(c) - 1
-            if j >= ncols:
+            if j >= ncols or c == 0:
                 raise MatlabError("sortrows: column index exceeds the number of columns.")
-            desc = (c < 0) ^ descend
+            desc = (c < 0) ^ d
             column = [data[i, j] for i in order]
             if all(x is None or isinstance(x, str) or is_text(x) for x in column):
                 keys = ["" if x is None else to_str(x) for x in column]
@@ -1229,22 +1438,15 @@ def _sortrows(interp, args, nargout):
         out = type(v)(data[order, :])
         return (out, (order + 1.0).reshape(-1, 1)) if nargout > 1 else out
     a = num(v)
-    cols = [int(c) for c in num(col_arg).flatten()] if col_arg is not None and np.size(col_arg) else \
+    if a.ndim != 2:
+        raise MatlabError("sortrows: the input must be a matrix.")
+    spec = [int(c) for c in np.real(num(col_arg)).flatten()] if col_arg is not None else \
         list(range(1, a.shape[1] + 1))
-    order = np.arange(a.shape[0])
-    for c in reversed(cols):
-        if abs(c) - 1 >= a.shape[1] or c == 0:
-            raise MatlabError("sortrows: column index out of range.")
-        col = a[order, abs(c) - 1]
-        if col.dtype.kind == "c":
-            col = np.abs(col)
-        desc = (c < 0) ^ descend
-        if desc:
-            fcol = col.astype(float)
-            o = np.argsort(-np.where(np.isnan(fcol), np.inf, fcol), kind="stable")
-        else:
-            o = np.argsort(col, kind="stable")
-        order = order[o]
+    if any(c == 0 or abs(c) > a.shape[1] for c in spec):
+        raise MatlabError("sortrows: column index out of range.")
+    given = _direction_list(dir_arg, len(spec), "sortrows") if dir_arg is not None else [False] * len(spec)
+    order = _row_order(a, [abs(c) - 1 for c in spec], [(c < 0) ^ d for c, d in zip(spec, given)],
+                       method, missing)
     out = v[order, :]
     return (out, (order + 1.0).reshape(-1, 1)) if nargout > 1 else out
 
@@ -1273,9 +1475,13 @@ def _sort_index(work, descend):
 
 @builtin("sort")
 def _sort(interp, args, nargout):
+    args, method, missing = _sort_options(args, "sort")
     rest, flags = flag_present(args, "ascend", "descend")
     nargs(rest, 1, 2, "sort")
     v = rest[0]
+    if (method != "auto" or missing != "auto") and isinstance(v, (Cell, StringArray)):
+        raise MatlabError("sort: ComparisonMethod and MissingPlacement are not supported for cell and "
+                          "string arrays.")
     if isinstance(v, StringArray):
         from .strings import _as_cell_if_strings
         res = _sort(interp, [_as_cell_if_strings(v), *rest[1:], *(char(f) for f in flags)], nargout)
@@ -1301,10 +1507,15 @@ def _sort(interp, args, nargout):
         axis = default_dim(work)
     if work.size == 0 or axis >= work.ndim:
         return (a, np.ones(a.shape)) if nargout > 1 else a
-    if axis == work.ndim - 1:
-        idx = _sort_index(work, "descend" in flags)
+    desc = "descend" in flags
+    if method == "auto" and missing == "auto":
+        index_of = lambda w: _sort_index(w, desc)  # noqa: E731
     else:
-        idx = np.moveaxis(_sort_index(np.moveaxis(work, axis, -1), "descend" in flags), -1, axis)
+        index_of = lambda w: _lex_order([w], [desc], method, missing)  # noqa: E731
+    if axis == work.ndim - 1:
+        idx = index_of(work)
+    else:
+        idx = np.moveaxis(index_of(np.moveaxis(work, axis, -1)), -1, axis)
     out = np.take_along_axis(a, idx, axis)
     if nargout > 1:
         return out, idx.astype(float) + 1
@@ -1732,10 +1943,27 @@ def _histcounts(interp, args, nargout):
             norm = text(val).lower()
         elif name == "binmethod":
             meth = text(val).lower()
+            f = x[np.isfinite(x)]
             if meth == "integers":
-                f = x[np.isfinite(x)]
                 lo, hi = (np.floor(f.min()), np.ceil(f.max())) if f.size else (0.0, 0.0)
                 edges = np.arange(lo - 0.5, hi + 1.0, 1.0)
+            elif meth == "scott":
+                width = 3.5 * float(np.std(f, ddof=1)) / f.size ** (1 / 3) if f.size > 1 else 1.0
+                width = _nice_width(width) if width > 0 else 1.0
+            elif meth == "fd":
+                if f.size > 1:
+                    q = np.percentile(f, [25, 75], method="hazen")
+                    width = 2.0 * float(q[1] - q[0]) / f.size ** (1 / 3)
+                else:
+                    width = 1.0
+                width = _nice_width(width) if width > 0 else 1.0
+            elif meth == "sturges":
+                nbins = int(np.ceil(1 + np.log2(max(f.size, 1))))
+            elif meth == "sqrt":
+                nbins = int(np.ceil(np.sqrt(max(f.size, 1))))
+            elif meth != "auto":
+                raise MatlabError("histcounts: BinMethod must be 'auto', 'scott', 'fd', 'integers', "
+                                  "'sturges' or 'sqrt'.")
         else:
             raise MatlabError(f"Unknown histcounts option '{text(rest[k])}'.")
     if edges is None:
@@ -1752,6 +1980,8 @@ def _histcounts(interp, args, nargout):
         out = counts
     elif norm == "probability":
         out = counts / n_total if n_total else counts * np.nan
+    elif norm == "percentage":
+        out = 100.0 * counts / n_total if n_total else counts * np.nan
     elif norm == "pdf":
         out = counts / (n_total * widths) if n_total else counts * np.nan
     elif norm == "cdf":
@@ -1942,21 +2172,24 @@ def _issorted(interp, args, nargout):
 
 
 def _topk(largest: bool):
+    name = "maxk" if largest else "mink"
+
     def f(interp, args, nargout):
-        nargs(args, 2, 4, "maxk" if largest else "mink")
+        args, method, _ = _sort_options(args, name)
+        nargs(args, 2, 3, name)
         a = num(args[0])
         k = to_int(args[1], "k")
         if k < 0:
             raise MatlabError("k must be a nonnegative integer.")
         axis = get_dim(args, 2, a)
-        work = a.astype(float) if a.dtype.kind in "biu" else a
-        key = np.abs(work) if work.dtype.kind == "c" else work
-        if largest:
-            key = np.where(np.isnan(key), -np.inf, -key) if key.dtype.kind == "f" else -key
-        else:
-            key = np.where(np.isnan(key), np.inf, key) if key.dtype.kind == "f" else key
-        idx = np.argsort(key, axis=axis, kind="stable")
-        idx = np.take(idx, np.arange(min(k, a.shape[axis] if a.ndim > axis else 1)), axis=axis)
+        if axis >= a.ndim:
+            return (a, np.ones(a.shape)) if nargout > 1 else a
+        work = a.astype(float) if a.dtype.kind in "biu" and a.dtype.itemsize < 8 else a
+        moved = np.moveaxis(work, axis, -1)
+        # NaNs count as the largest values for mink and the smallest for maxk: they come last
+        idx = _lex_order([moved], [largest], method, "last")
+        idx = np.moveaxis(idx, -1, axis)
+        idx = np.take(idx, np.arange(min(k, a.shape[axis])), axis=axis)
         out = np.take_along_axis(a, idx, axis)
         return (out, idx.astype(float) + 1) if nargout > 1 else out
     return f
