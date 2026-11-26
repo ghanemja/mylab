@@ -121,7 +121,7 @@ def test_no_output_returns_nothing(m):
     out = m.run("plot(1:3)")
     assert out == ""
     with pytest.raises(MatlabError):
-        m.run("x = clf;")
+        m.run("x = hold;")  # hold has no output (clf returns the figure handle, as in MATLAB)
 
 
 def test_handle_display(m):
@@ -330,7 +330,7 @@ def test_inf_limits_keep_auto_side(m):
     assert lo == 0 and np.isclose(hi, auto_top) and np.isfinite(hi)
     m.run("xlim([-inf 5])")
     lo, hi = _ax(m).get_xlim()
-    assert hi == 5 and np.isfinite(lo) and lo < 1
+    assert hi == 5 and np.isfinite(lo) and lo <= 1  # the automatic side is the data minimum (1), as in MATLAB
     m.run("axis([0 inf 0 inf])")
     ax = _ax(m)
     assert ax.get_xlim()[0] == 0 and np.isfinite(ax.get_xlim()[1]) and ax.get_xlim()[1] >= 10

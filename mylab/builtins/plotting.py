@@ -32,6 +32,10 @@ from ._util import fnum, is_text, num, text
 
 _MPL = None
 
+# A new figure is 640 x 480 pixels at 100 pixels per inch, whatever matplotlib's own defaults are.
+FIG_DPI = 100.0
+FIG_SIZE_INCHES = (6.4, 4.8)
+
 
 def _plt():
     global _MPL
@@ -80,7 +84,9 @@ def _figure(interp, n: int | None = None):
     if n not in st.figures:
         # Another interpreter may own matplotlib's figure n; never reuse its contents.
         fresh = not plt.fignum_exists(n)
-        fig = plt.figure(n if fresh else None)
+        # Size and resolution are fixed here: a user or system matplotlibrc (figure.dpi, figure.figsize)
+        # must not change how many pixels a figure, a captured frame or a video has.
+        fig = plt.figure(n if fresh else None, figsize=FIG_SIZE_INCHES, dpi=FIG_DPI)
         if not fresh and fig.canvas.manager is not None:
             try:
                 fig.canvas.manager.set_window_title(f"Figure {n}")
@@ -90,6 +96,11 @@ def _figure(interp, n: int | None = None):
     st.current = n
     plt.figure(st.figures[n].number)
     return st.figures[n]
+
+
+def _fig_dpi(fig) -> float:
+    """Pixels per inch of a figure, without the scaling a high-resolution screen adds to it."""
+    return float(getattr(fig, "_original_dpi", None) or fig.dpi)
 
 
 def _fig_number(interp, fig) -> int | None:
@@ -166,8 +177,14 @@ def _axes(interp, fresh: bool = True, projection: str | None = None):
                 ax = fig.add_subplot(1, 1, 1, **kw)
             st.axes[st.current] = ax
     if projection is not None and getattr(ax, "name", "rectilinear") != projection:
-        return _replace_axes(interp, ax, projection)
-    if fresh and not st.hold.get(id(ax), False):
+        ax = _replace_axes(interp, ax, projection)
+        _axes_created(interp, ax)
+        _tick_aligned(ax)
+        return ax
+    if fresh and not st.hold.get(id(ax), False) and getattr(ax, "_mylab_nextplot", "") == "replacechildren":
+        _clear_children(interp, ax)
+    elif fresh and not st.hold.get(id(ax), False):
+        _forget_children(interp, ax)
         cb = getattr(ax, "_mylab_colorbar", None)
         if cb is not None:
             try:
@@ -176,8 +193,108 @@ def _axes(interp, fresh: bool = True, projection: str | None = None):
                 pass
             ax._mylab_colorbar = None
         ax.cla()
+        _clear_rulers(ax)
+        ax.__dict__.pop("_mylab_padded", None)
         _yy_restyle(ax)
+        _axes_created(interp, ax)
+    _tick_aligned(ax)
     return ax
+
+
+def _axes_created(interp, ax) -> None:
+    """Hook run for new or cleared axes: applies the default axes properties set on the root."""
+    hook = interp.state.get("axes_defaults_hook")
+    if hook is not None:
+        hook(interp, ax)
+
+
+_ALIGNED: dict = {}
+
+
+def aligned_limits(dmin: float, dmax: float, intervals: int = 10) -> tuple[float, float]:
+    """Limits around [dmin, dmax] on multiples of a 1-2-5 step, with at most ``intervals`` steps."""
+    span = dmax - dmin
+    if span <= 0 or not math.isfinite(span):
+        return dmin, dmax
+    mag = 10.0 ** math.floor(math.log10(span / intervals))
+    lo, hi = dmin, dmax
+    for m in (1, 2, 5, 10, 20, 50):
+        step = m * mag
+        lo = math.floor(dmin / step + 1e-9) * step
+        hi = math.ceil(dmax / step - 1e-9) * step
+        if round((hi - lo) / step) <= intervals:
+            break
+    digits = max(0, 12 - int(math.floor(math.log10(max(abs(lo), abs(hi), 1e-300)))))
+    return round(lo, digits), round(hi, digits)
+
+
+def _aligned_locators() -> dict:
+    """Tick locators whose automatic axis limits end on tick marks (built on first use)."""
+    if _ALIGNED:
+        return _ALIGNED
+    from matplotlib.ticker import LogLocator, MaxNLocator
+
+    class AlignedLocator(MaxNLocator):
+        """Linear axis: limits are the tick marks around the data; up to ten intervals."""
+
+        def __init__(self):
+            super().__init__(nbins=10, steps=[1, 2, 5, 10])
+
+        def tick_values(self, vmin, vmax):
+            space = self.axis.get_tick_space() if self.axis is not None else 10
+            self.set_params(nbins=int(min(max(space, 2), 10)))
+            return super().tick_values(vmin, vmax)
+
+        def nonsingular(self, v0, v1):
+            if math.isfinite(v0) and math.isfinite(v1) and v0 == v1:
+                return v0 - 1.0, v1 + 1.0  # a single value sits in the middle of an interval of 2
+            return super().nonsingular(v0, v1)
+
+        def view_limits(self, dmin, dmax):
+            dmin, dmax = (float(dmin), float(dmax)) if dmin <= dmax else (float(dmax), float(dmin))
+            if not (math.isfinite(dmin) and math.isfinite(dmax)):
+                return 0.0, 1.0
+            if dmin == dmax:
+                return dmin - 1.0, dmax + 1.0
+            return aligned_limits(dmin, dmax)
+
+    class AlignedLogLocator(LogLocator):
+        """Logarithmic axis: limits are the powers of the base around the data."""
+
+        def view_limits(self, vmin, vmax):
+            vmin, vmax = self.nonsingular(vmin, vmax)
+            b = float(self._base)
+            if vmin > 0 and vmax > 0:
+                lo = b ** math.floor(math.log(vmin, b) + 1e-12)
+                hi = b ** math.ceil(math.log(vmax, b) - 1e-12)
+                if lo == hi:
+                    lo, hi = lo / b, hi * b
+                return lo, hi
+            return vmin, vmax
+
+    _ALIGNED.update(lin=AlignedLocator, log=AlignedLogLocator)
+    return _ALIGNED
+
+
+def _tick_aligned(ax) -> None:
+    """Give a 2-D axes automatic limits without padding that end on tick marks, as MATLAB draws them."""
+    if getattr(ax, "name", "") != "rectilinear":
+        return
+    changed = False
+    for which in "xy":
+        axis = getattr(ax, f"{which}axis")
+        name = type(axis.get_major_locator()).__name__
+        if name == "AutoLocator":
+            axis.set_major_locator(_aligned_locators()["lin"]())
+            changed = True
+        elif name == "LogLocator":
+            axis.set_major_locator(_aligned_locators()["log"](base=axis.get_major_locator()._base))
+            changed = True
+    if changed and not getattr(ax, "_mylab_padded", False):
+        if ax._xmargin != 0:
+            ax.set_xmargin(0)
+        if ax._ymargin != 0:
+            ax.set_ymargin(0)
 
 
 def close_all(interp) -> None:
@@ -473,10 +590,10 @@ def _redraw(interp):
 
 
 def _ret(interp, kind: str, objs: list, nargout: int):
-    """Return handle(s) for ``objs`` when an output was requested."""
+    """Register handle(s) for ``objs``; they are returned when an output was requested."""
+    hs = [_wrap(interp, kind, o) for o in objs]
     if nargout <= 0:
         return None
-    hs = [_wrap(interp, kind, o) for o in objs]
     if len(hs) == 1:
         return hs[0]
     return GraphicsArray(hs)
@@ -507,6 +624,30 @@ _TYPE = {"root": "root", "figure": "figure", "axes": "axes", "polaraxes": "polar
          "errorbar": "errorbar", "area": "area", "image": "image", "patch": "patch", "text": "text",
          "legend": "legend", "colorbar": "colorbar", "pie": "patch", "tiledlayout": "tiledlayout",
          "animatedline": "animatedline", "rectangle": "rectangle"}
+
+
+# Hooks filled in by mylab.builtins.plot_objects (which imports this module).
+_ROOT_HOOKS = None    # (get, set) for default properties on the root: set(groot, 'DefaultLineLineWidth', 2)
+_LINK_HOOK = None     # called after a property is set, to keep objects joined by linkprop in step
+_TEXT_RENDER = None   # (text, interpreter) -> the string matplotlib draws (TeX markup translated)
+_DELETE_HOOK = None   # called before an object is deleted (runs its DeleteFcn)
+
+
+def _tex(interp, s: str, interpreter: str | None = None, kind: str = "text") -> str:
+    """Label text as matplotlib should draw it under the given text interpreter."""
+    if _TEXT_RENDER is None:
+        return s
+    return _TEXT_RENDER(interp, s, interpreter, kind)
+
+
+def set_text(interp, artist, raw: str, interpreter: str | None = None, kind: str = "text") -> None:
+    """Give a text artist its string, remembering what the user typed."""
+    if interpreter is None:
+        interpreter = getattr(artist, "_mylab_interp", None)
+    artist._mylab_raw = raw
+    if interpreter is not None:
+        artist._mylab_interp = interpreter
+    artist.set_text(_tex(interp, raw, interpreter, kind))
 
 
 class _Root:
@@ -553,11 +694,15 @@ class _GraphicsBase(MObject):
 class GraphicsHandle(_GraphicsBase):
     """A reference to one graphics object (figure, axes, line, ...)."""
 
+    _counter = 0
+
     def __init__(self, interp, kind: str, obj):
         self.interp = interp
         self.kind = kind
         self.obj = obj
         self.extra: dict[str, Any] = {}
+        GraphicsHandle._counter += 1
+        self.serial = GraphicsHandle._counter  # creation order (children are listed newest first)
 
     def class_name(self) -> str:
         return _CLASS.get(self.kind, "matlab.graphics.Graphics")
@@ -566,7 +711,7 @@ class GraphicsHandle(_GraphicsBase):
         return name in (self.class_name(), _short(self.kind), "handle", "matlab.graphics.Graphics")
 
     def has_method(self, name: str) -> bool:
-        return name in ("delete", "isvalid")
+        return name in ("delete", "isvalid", "isprop", "properties", "double", "eq", "ne", "addprop")
 
     def call_method(self, interp, name: str, args: list, nargout: int) -> list:
         if name == "delete":
@@ -576,12 +721,66 @@ class GraphicsHandle(_GraphicsBase):
             return []
         if name == "isvalid":
             return [np.array([[_alive(self)]])]
+        if name == "isprop":
+            ok = len(args) > 1 and is_text(args[1]) and (_lookup(self, text(args[1]))[0] is not None
+                                                         or text(args[1]) in self.extra.get("_dynamic", ()))
+            return [np.array([[bool(ok)]])]
+        if name == "properties":
+            names = property_names(self)
+            if nargout:
+                return [_cell_column([char(n) for n in names])]
+            interp.out(f"\nProperties for class {self.class_name()}:\n\n" + "".join(f"    {n}\n" for n in names)
+                       + "\n")
+            return []
+        if name == "double":
+            if self.kind == "figure":
+                return [_num_val(_fig_number(interp, self.obj) or 0)]
+            if self.kind == "root":
+                return [_num_val(0)]
+            raise MatlabError(f"A {_short(self.kind)} handle is an object, not a number; only figures have a "
+                              "number (use f.Number).")
+        if name in ("eq", "ne"):
+            a, b = (args + [None, None])[:2]
+            if isinstance(a, np.ndarray) and a.size == 1 and isinstance(b, GraphicsHandle):
+                a, b = b, a
+            if isinstance(b, GraphicsArray):
+                flags = np.array([x is a or (x.obj is a.obj and x.kind == a.kind) for x in b.items], dtype=bool)
+                flags = flags.reshape(b.matlab_shape())
+                return [flags if name == "eq" else ~flags]
+            if isinstance(b, GraphicsHandle):
+                same = a is b or (a.obj is b.obj and a.kind == b.kind)
+            elif isinstance(b, np.ndarray) and b.size == 1 and not is_char(b) and a.kind in ("figure", "root"):
+                n = 0 if a.kind == "root" else (_fig_number(interp, a.obj) or -1)
+                same = float(np.real(b.flat[0])) == n
+            else:
+                same = False
+            return [np.array([[same if name == "eq" else not same]])]
+        if name == "addprop":
+            if len(args) < 2 or not is_text(args[1]):
+                raise MatlabError("addprop needs a property name.")
+            self.extra.setdefault("_dynamic", {}).setdefault(text(args[1]), np.zeros((0, 0)))
+            return []
         return super().call_method(interp, name, args, nargout)
 
+    def binary_op(self, interp, op: str, left: Any, right: Any) -> Any:
+        if op in ("==", "~=") and isinstance(left, (GraphicsHandle, GraphicsArray, np.ndarray)) \
+                and isinstance(right, (GraphicsHandle, GraphicsArray, np.ndarray)):
+            a, b = (left, right) if isinstance(left, GraphicsHandle) else (right, left)
+            if isinstance(a, GraphicsHandle):
+                return a.call_method(interp, "eq" if op == "==" else "ne", [a, b], 1)[0]
+        return NotImplemented
+
     def get_field(self, interp, name: str) -> Any:
+        dyn = self.extra.get("_dynamic")
+        if dyn and name in dyn:
+            return dyn[name]
         return _get_prop(self, name)
 
     def set_field(self, interp, name: str, value: Any) -> "GraphicsHandle":
+        dyn = self.extra.get("_dynamic")
+        if dyn and name in dyn:
+            dyn[name] = value
+            return self
         _set_prop(self, name, value)
         _redraw(interp)
         return self
@@ -619,17 +818,36 @@ class GraphicsHandle(_GraphicsBase):
 class GraphicsArray(_GraphicsBase):
     """Several graphics handles, e.g. the lines drawn by one plot call (a column vector)."""
 
-    def __init__(self, items: list[GraphicsHandle], row: bool = False):
-        self.items = list(items)
+    def __init__(self, items: list[GraphicsHandle], row: bool = False, shape: tuple | None = None):
+        self.items = list(items)   # column-major order
         self.row = row
+        self.shape2 = tuple(shape) if shape is not None and int(np.prod(shape)) == len(self.items) \
+            and len(shape) == 2 and 1 not in shape else None
 
     def class_name(self) -> str:
         kinds = {h.kind for h in self.items}
-        return _CLASS.get(kinds.pop(), "matlab.graphics.Graphics") if len(kinds) == 1 \
-            else "matlab.graphics.Graphics"
+        return self.items[0].class_name() if len(kinds) == 1 else "matlab.graphics.Graphics"
+
+    def isa_class(self, name: str) -> bool:
+        return name in ("handle", "matlab.graphics.Graphics", self.class_name()) or (
+            bool(self.items) and all(h.isa_class(name) for h in self.items))
 
     def matlab_shape(self) -> tuple:
+        if self.shape2 is not None:
+            return self.shape2
         return (1, len(self.items)) if self.row else (len(self.items), 1)
+
+    def binary_op(self, interp, op: str, left: Any, right: Any) -> Any:
+        if op in ("==", "~="):
+            other = right if left is self else left
+            if isinstance(other, GraphicsHandle):
+                return other.call_method(interp, "eq" if op == "==" else "ne", [other, self], 1)[0]
+            if isinstance(other, GraphicsArray) and len(other.items) == len(self.items):
+                flags = np.array([a is b or (a.obj is b.obj and a.kind == b.kind)
+                                  for a, b in zip(self.items, other.items)], dtype=bool)
+                flags = flags.reshape(self.matlab_shape(), order="F")
+                return flags if op == "==" else ~flags
+        return NotImplemented
 
     def has_method(self, name: str) -> bool:
         return name in ("delete", "isvalid")
@@ -654,6 +872,18 @@ class GraphicsArray(_GraphicsBase):
         return self
 
     def _indices(self, args: list) -> list[int]:
+        if len(args) == 2 and self.shape2 is not None:  # h(i, j) into a matrix of handles
+            r, c = self.shape2
+            sub = []
+            for a, n in zip(args, (r, c)):
+                if is_char(a) and text(a) == ":":
+                    sub.append(list(range(n)))
+                else:
+                    sub.append([int(round(float(x))) - 1 for x in np.real(fnum(a)).flatten(order="F")])
+            for vals, n in zip(sub, (r, c)):
+                if any(i < 0 or i >= n for i in vals):
+                    raise MatlabError("Index exceeds the size of the array of graphics handles.")
+            return [i + j * r for j in sub[1] for i in sub[0]]
         if len(args) == 2:  # h(1, k) / h(k, 1)
             a, b = args
             args = [b] if self.row else [a]
@@ -804,6 +1034,19 @@ def _artists(o) -> list:
 
 def _delete_handle(interp, h: GraphicsHandle) -> None:
     st = _state(interp)
+    if h.kind == "placeholder" or not _alive(h) or h.extra.get("_deleting"):
+        return
+    if _DELETE_HOOK is not None:
+        h.extra["_deleting"] = True
+        try:
+            _DELETE_HOOK(interp, h)
+        finally:
+            h.extra.pop("_deleting", None)
+    custom = h.extra.get("_delete")
+    if custom is not None:  # chart objects made of several artists remove themselves
+        custom(h)
+        h.extra["deleted"] = True
+        return
     if h.kind == "figure":
         n = _fig_number(interp, h.obj)
         if n is not None:
@@ -818,7 +1061,12 @@ def _delete_handle(interp, h: GraphicsHandle) -> None:
         return
     if h.kind == "colorbar":
         h.obj.remove()
+        ax = getattr(h.obj, "_mylab_parent_ax", None)
+        if ax is not None and getattr(ax, "_mylab_colorbar", None) is h.obj:
+            ax._mylab_colorbar = None
     elif h.kind == "histogram":
+        h.obj.remove()
+    elif h.kind == "legend":
         h.obj.remove()
     else:
         for a in _artists(h.obj):
@@ -851,6 +1099,15 @@ def _fmt_prop(v) -> str:
             return s if v.size == 1 else f"[{s}]"
         r, c = v.shape[:2]
         return f"[{r}x{c} double]"
+    if isinstance(v, FunctionHandle):
+        return v.text if getattr(v, "text", None) else "@" + str(getattr(v, "name", "function"))
+    if isinstance(v, MString):
+        return f'"{to_str(v)}"'
+    if isinstance(v, MObject):
+        shape = "x".join(str(n) for n in v.matlab_shape())
+        return f"[{shape} {v.class_name().rsplit('.', 1)[-1]}]"
+    if isinstance(v, Struct):
+        return "[1x1 struct]"
     return str(v)
 
 
@@ -977,28 +1234,135 @@ def _axes_kind(ax) -> str:
     return "polaraxes" if getattr(ax, "name", "") == "polar" else "axes"
 
 
+_NOT_CHILDREN = ("root", "figure", "axes", "polaraxes", "geoaxes", "tiledlayout", "legend", "colorbar", "ruler",
+                 "placeholder", "annotationinfo", "legendentry", "layoutoptions", "proplink")
+
+
+def _guess_kind(artist) -> str:
+    name = artist.__class__.__name__
+    if name in ("Line2D", "Line3D"):
+        return "line"
+    if name in ("PathCollection", "Path3DCollection"):
+        return "scatter"
+    if name in ("AxesImage",):
+        return "image"
+    if name in ("Text", "Annotation", "Text3D"):
+        return "text"
+    if getattr(artist, "_mylab_surface", False) or name == "Line3DCollection":
+        return "surface"
+    if name in ("QuadContourSet", "ContourSet"):
+        return "contour"
+    if name in ("Quiver",):
+        return "quiver"
+    return "patch"
+
+
+def _axes_children(interp, ax, hidden: bool = True) -> list:
+    """Handles of the objects drawn in an axes, newest first (the order MATLAB lists them in)."""
+    st = _state(interp)
+    present: dict[int, Any] = {}
+    for a in list(ax.lines) + list(ax.collections) + list(ax.images) + list(ax.texts) + list(ax.patches):
+        if not getattr(a, "_mylab_internal", False) and getattr(a, "_mylab_is_subtitle_of", None) is None:
+            present[id(a)] = a
+    for c in ax.containers:
+        present[id(c)] = c
+    groups = []
+    owned: set[int] = set()
+    for g in list(st.handles.values()):
+        if g.kind in _NOT_CHILDREN or g.extra.get("deleted"):
+            continue
+        if g.extra.get("_child_of") is ax:
+            arts = _artists(g.obj) if not g.extra.get("_artists") else list(g.extra["_artists"])
+        else:
+            arts = _artists(g.obj)
+            if id(g.obj) not in present and not any(id(a) in present for a in arts):
+                continue
+        if g.extra.get("_part_of") is not None:  # belongs to a larger chart object
+            continue
+        groups.append(g)
+        owned.update(id(a) for a in arts)
+        owned.add(id(g.obj))
+        for extra_art in g.extra.get("_artists", ()):
+            owned.add(id(extra_art))
+    for key, a in present.items():
+        if key in owned or a.__class__.__name__.endswith("Container"):
+            continue
+        groups.append(_wrap(interp, _guess_kind(a), a))
+    groups.sort(key=lambda g: g.serial, reverse=True)
+    if not hidden:
+        groups = [g for g in groups if str(g.extra.get("HandleVisibility", "on")) != "off"]
+    return groups
+
+
 def _children_get(h):
     interp = h.interp
     out: list[GraphicsHandle] = []
+    show_hidden = str(_wrap(interp, "root", _ROOT).extra.get("ShowHiddenHandles", "off")) == "on"
     if h.kind == "figure":
-        out = [_wrap(interp, _axes_kind(a), a) for a in h.obj.axes if not _is_colorbar_axes(a)]
-    elif h.kind in ("axes", "polaraxes"):
-        ax = h.obj
-        for a in ax.lines:
-            out.append(_wrap(interp, "line", a))
-        for c in ax.collections:
-            out.append(_wrap(interp, "scatter" if c.__class__.__name__ == "PathCollection" else "patch", c))
-        for im in ax.images:
-            out.append(_wrap(interp, "image", im))
-        for t in ax.texts:
-            out.append(_wrap(interp, "text", t))
-        out.reverse()  # newest first, as MATLAB lists them
+        out = [_wrap(interp, _axes_kind(a), a) for a in h.obj.axes if not _is_colorbar_axes(a)
+               and not getattr(a, "_mylab_internal", False)]
+        out.reverse()
+    elif h.kind in ("axes", "polaraxes", "geoaxes"):
+        out = _axes_children(interp, h.obj, hidden=show_hidden)
     elif h.kind == "root":
         st = _state(interp)
         out = [_wrap(interp, "figure", st.figures[n]) for n in sorted(st.figures, reverse=True)]
+    elif h.extra.get("_children") is not None:
+        out = [c for c in h.extra["_children"] if _alive(c)]
+    if not show_hidden and h.kind in ("figure", "root"):
+        out = [c for c in out if str(c.extra.get("HandleVisibility", "on")) != "off"]
     if not out:
         return np.zeros((0, 1))
     return out[0] if len(out) == 1 else GraphicsArray(out)
+
+
+def _forget_children(interp, ax) -> None:
+    """The objects of an axes are about to be cleared: mark their handles deleted and drop them."""
+    st = _state(interp)
+    keep = {id(ax.xaxis.label), id(ax.yaxis.label)}
+    if hasattr(ax, "zaxis"):
+        keep.add(id(ax.zaxis.label))
+    for key, g in list(st.handles.items()):
+        if g.kind in _NOT_CHILDREN or key in keep:
+            continue
+        try:
+            owner = _obj_axes(g) if g.extra.get("_child_of") is None else g.extra["_child_of"]
+        except (AttributeError, TypeError, IndexError):
+            continue
+        if owner is ax:
+            g.extra["deleted"] = True
+            del st.handles[key]
+
+
+def _clear_children(interp, ax) -> None:
+    """Remove what is plotted in an axes but keep the axes itself: its labels, limits, scale and grid."""
+    _forget_children(interp, ax)
+    for a in list(ax.lines) + list(ax.collections) + list(ax.images) + list(ax.patches) + \
+            [t for t in ax.texts if getattr(t, "_mylab_is_subtitle_of", None) is None]:
+        try:
+            a.remove()
+        except (ValueError, NotImplementedError, AttributeError):
+            pass
+    del ax.containers[:]
+    leg = ax.get_legend()
+    if leg is not None:
+        leg.remove()
+    cb = getattr(ax, "_mylab_colorbar", None)
+    if cb is not None:
+        try:
+            cb.remove()
+        except (ValueError, AttributeError, KeyError):
+            pass
+        ax._mylab_colorbar = None
+    try:
+        ax.set_prop_cycle(None)
+        hook = interp.state.get("cycle_hook")
+        if hook is not None:
+            hook(ax)
+    except (ValueError, AttributeError):
+        pass
+    ax.relim()
+    ax.autoscale_view()
 
 
 # line-like objects (Line2D)
@@ -1310,6 +1674,298 @@ def _hist_edges(x, nbins=None, edges=None, width=None, limits=None, method=None)
     return start + w * np.arange(k + 1)
 
 
+# -- rulers: datetime, duration and categorical axes ------------------------------------------------
+
+class Ruler:
+    """What one axis measures when it is not plain numbers.
+
+    ``kind`` is 'datetime' (axis numbers are days since 1970-01-01), 'datenum' (days since year 0, used
+    by datetick), 'duration' (axis numbers are multiples of ``unit`` seconds) or 'categorical' (axis
+    numbers are positions 1..n in ``categories``).
+    """
+
+    def __init__(self, kind: str, zone: str = "", fmt: str | None = None, unit: float = 1.0,
+                 categories: list | None = None, dfmt: str = "s"):
+        self.kind = kind
+        self.zone = zone
+        self.fmt = fmt              # tick label format chosen by the user (None = automatic)
+        self.unit = unit            # seconds per axis unit (duration)
+        self.dfmt = dfmt            # display format of a duration ruler
+        self.categories = list(categories or [])
+        self.step = None            # tick spacing chosen by the locator: ('s' | 'mo' | 'y', size)
+        self.secondary = None       # text of the secondary label set by the user (None = automatic)
+        self.classic = False        # fmt uses datestr letters (mm = month, MM = minute), as datetick does
+
+    def seconds(self, nums) -> np.ndarray:
+        nums = np.asarray(nums, dtype=float)
+        if self.kind == "datetime":
+            return nums * 86400.0
+        if self.kind == "datenum":
+            return (nums - 719529.0) * 86400.0
+        return nums * self.unit
+
+    def numbers(self, secs) -> np.ndarray:
+        secs = np.asarray(secs, dtype=float)
+        if self.kind == "datetime":
+            return secs / 86400.0
+        if self.kind == "datenum":
+            return secs / 86400.0 + 719529.0
+        return secs / self.unit
+
+
+def _is_time_like(v) -> bool:
+    return isinstance(v, MObject) and getattr(v, "kind", None) in ("datetime", "duration", "categorical")
+
+
+def _ruler_of(ax, which: str):
+    return getattr(ax, "_mylab_rulers", {}).get(which)
+
+
+def _duration_unit(secs: np.ndarray, fmt: str) -> float:
+    from .datetimes import _UNIT_SECONDS
+    if fmt in _UNIT_SECONDS:
+        return float(_UNIT_SECONDS[fmt])
+    finite = np.abs(secs[np.isfinite(secs)]) if secs.size else secs
+    top = float(finite.max()) if finite.size else 0.0
+    for unit in (86400.0, 3600.0, 60.0):
+        if top >= 2 * unit:
+            return unit
+    return 1.0
+
+
+def new_ruler_for(v, existing=None):
+    """A ruler suited to the datetime, duration or categorical value ``v`` (reusing ``existing``)."""
+    kind = v.kind
+    if existing is not None and existing.kind == kind:
+        if kind == "categorical":
+            for c in v.categories:
+                if c not in existing.categories:
+                    existing.categories.append(c)
+        return existing
+    if existing is not None and existing.kind == "datenum" and kind == "datetime":
+        return existing
+    if kind == "datetime":
+        return Ruler("datetime", zone=v.zone)
+    if kind == "duration":
+        return Ruler("duration", unit=_duration_unit(np.asarray(v.data, float), v.format), dfmt=v.format)
+    return Ruler("categorical", categories=list(v.categories))
+
+
+def ruler_numbers(r: Ruler, v) -> np.ndarray:
+    """Axis numbers (same shape as ``v``) of a datetime, duration or categorical array on ruler ``r``."""
+    if v.kind == "categorical":
+        codes = np.asarray(v.data, dtype=float)
+        out = np.full(codes.shape, np.nan)
+        for idx in np.ndindex(codes.shape):
+            c = codes[idx]
+            if np.isfinite(c):
+                out[idx] = r.categories.index(v.categories[int(c) - 1]) + 1
+        return out
+    return r.numbers(np.asarray(v.data, dtype=float))
+
+
+def ruler_values(ax, which: str, nums):
+    """Axis numbers as a row of the values the ruler shows (datetime, duration, categorical, numbers)."""
+    r = _ruler_of(ax, which)
+    nums = np.asarray(nums, dtype=float).reshape(1, -1)
+    if r is None or r.kind == "datenum":
+        return nums
+    if r.kind == "datetime":
+        from .datetimes import DatetimeArray
+        return DatetimeArray(r.seconds(nums), None, r.zone)
+    if r.kind == "duration":
+        from .datetimes import DurationArray
+        return DurationArray(r.seconds(nums), r.dfmt)
+    from .categorical import CategoricalArray
+    n = max(len(r.categories), 1)
+    if nums.size == 2 and nums.flat[0] != np.floor(nums.flat[0]):  # limits: first and last category inside
+        codes = np.array([[max(math.ceil(nums.flat[0]), 1), min(math.floor(nums.flat[1]), n)]], float)
+    else:
+        codes = np.clip(np.round(nums), 1, n)
+    return CategoricalArray(codes, list(r.categories))
+
+
+def axis_numbers(ax, which: str, v) -> np.ndarray:
+    """Numbers for a limit or tick value given to an axis: converts datetime/duration/categories."""
+    r = _ruler_of(ax, which)
+    if _is_time_like(v):
+        if r is None or (r.kind != v.kind and not (r.kind == "datenum" and v.kind == "datetime")):
+            r = new_ruler_for(v)
+            install_ruler(ax, which, r)
+        elif v.kind == "categorical":
+            new_ruler_for(v, r)
+        return ruler_numbers(r, v)
+    if r is not None and r.kind == "categorical" and (isinstance(v, (Cell, StringArray, MString)) or is_char(v)):
+        names = _text_list(v)
+        missing = [n for n in names if n not in r.categories]
+        if missing:
+            raise MatlabError(f"'{missing[0]}' is not one of the categories of this axis.")
+        return np.array([r.categories.index(n) + 1 for n in names], dtype=float)
+    return np.real(fnum(v))
+
+
+_RULER_CLASSES: dict = {}
+
+
+def _date_tick_classes():
+    """Locator and formatter classes for date axes (built on first use: they subclass matplotlib's)."""
+    if _RULER_CLASSES:
+        return _RULER_CLASSES["loc"], _RULER_CLASSES["fmt"]
+    from matplotlib.ticker import Formatter, Locator
+
+    from .datetimes import add_months, fields_from_seconds, format_classic, seconds_from_fields
+    from .datetimes import format_datetime as _format_modern
+
+    def format_datetime(secs, fmt, zone, classic=False):
+        return format_classic(secs, fmt) if classic else _format_modern(secs, fmt, zone)
+
+    ladder = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200,
+              86400, 2 * 86400, 7 * 86400, 14 * 86400]
+
+    class DateLocator(Locator):
+        def __init__(self, ruler, target: int = 7):
+            self.ruler = ruler
+            self.target = target
+
+        def __call__(self):
+            lo, hi = self.axis.get_view_interval()
+            return self.tick_values(lo, hi)
+
+        def tick_values(self, vmin, vmax):
+            r = self.ruler
+            lo, hi = sorted(float(v) for v in r.seconds([vmin, vmax]))
+            span = hi - lo
+            if not np.isfinite(span) or span <= 0:
+                return np.array([vmin])
+            n = self.target
+            month = 30.4375 * 86400
+            if span / (14 * 86400) <= n:
+                step = next((s for s in ladder if span / s <= n), ladder[-1])
+                r.step = ("s", step)
+                first = math.ceil(lo / step - 1e-9) * step
+                secs = first + step * np.arange(0, int(math.floor((hi - first) / step + 1e-9)) + 1)
+            elif span / (6 * month) <= n:
+                k = next(m for m in (1, 2, 3, 4, 6) if span / (m * month) <= n)
+                r.step = ("mo", k)
+                y, mo = (float(np.asarray(v).flat[0]) for v in fields_from_seconds(lo)[:2])
+                start = float(np.asarray(seconds_from_fields(y, 1 + k * math.floor((mo - 1) / k), 1)).flat[0])
+                found = []
+                for i in range(0, 4 * n + 4):
+                    t = float(np.asarray(add_months(np.array([start]), np.array([float(i * k)]))).flat[0])
+                    if t > hi + 1e-6:
+                        break
+                    if t >= lo - 1e-6:
+                        found.append(t)
+                secs = np.array(found)
+            else:
+                years = span / (365.2425 * 86400)
+                k = 1
+                for mag in (1, 10, 100, 1000, 10000):
+                    k = next((m * mag for m in (1, 2, 5) if years / (m * mag) <= n), None)
+                    if k is not None:
+                        break
+                k = k or 50000
+                r.step = ("y", k)
+                y0 = float(np.asarray(fields_from_seconds(lo)[0]).flat[0])
+                first = math.ceil(y0 / k) * k
+                cand = [float(np.asarray(seconds_from_fields(float(first + (i - 1) * k), 1, 1)).flat[0])
+                        for i in range(0, 3 * n + 4)]
+                secs = np.array([t for t in cand if lo - 1e-6 <= t <= hi + 1e-6])
+            return r.numbers(secs)
+
+    class DateFormatter(Formatter):
+        def __init__(self, ruler):
+            self.ruler = ruler
+            self._offset = ""
+
+        def _format(self):
+            r = self.ruler
+            if r.fmt:
+                return r.fmt, ""
+            kind, size = r.step or ("s", 86400)
+            if kind == "y":
+                return "yyyy", ""
+            if kind == "mo":
+                return "MMM yyyy", ""
+            if size >= 86400:
+                return "MMM dd", "yyyy"
+            if size >= 60:
+                return "HH:mm", "MMM dd, yyyy"
+            return "HH:mm:ss", "MMM dd, yyyy"
+
+        def __call__(self, x, pos=None):
+            fmt, _ = self._format()
+            r = self.ruler
+            return format_datetime(float(r.seconds(x)), fmt, r.zone, bool(r.fmt) and r.classic)
+
+        def format_ticks(self, values):
+            fmt, second = self._format()
+            r = self.ruler
+            secs = np.atleast_1d(r.seconds(np.asarray(values, dtype=float)))
+            self._offset = ""
+            if r.secondary is not None:
+                self._offset = r.secondary
+            elif second and secs.size:
+                a = format_datetime(float(np.min(secs)), second, r.zone)
+                b = format_datetime(float(np.max(secs)), second, r.zone)
+                self._offset = a if a == b else f"{a} - {b}"
+            return [format_datetime(float(t), fmt, r.zone, bool(r.fmt) and r.classic) for t in secs]
+
+        def get_offset(self):
+            return self._offset
+
+    _RULER_CLASSES.update(loc=DateLocator, fmt=DateFormatter)
+    return DateLocator, DateFormatter
+
+
+def install_ruler(ax, which: str, r) -> None:
+    """Make axis ``which`` of ``ax`` a datetime, duration or categorical ruler (None: plain numbers)."""
+    rulers = ax.__dict__.setdefault("_mylab_rulers", {})
+    axis = getattr(ax, f"{which}axis", None)
+    if axis is None:
+        return
+    if r is None:
+        if rulers.pop(which, None) is not None:
+            _set_ticks_auto(ax, which)
+        return
+    rulers[which] = r
+    setattr(ax, f"_mylab_{which}ticklabels", None)
+    from matplotlib.ticker import FixedLocator, FuncFormatter, MaxNLocator
+    if r.kind in ("datetime", "datenum"):
+        loc, fmt = _date_tick_classes()
+        axis.set_major_locator(loc(r, 7 if which == "x" else 8))
+        axis.set_major_formatter(fmt(r))
+    elif r.kind == "duration":
+        from .datetimes import format_duration
+        axis.set_major_locator(MaxNLocator(nbins=8, steps=[1, 2, 2.5, 3, 5, 6, 10]))
+        axis.set_major_formatter(FuncFormatter(
+            lambda x, pos, r=r: format_duration(float(np.round(x * r.unit, 9)), r.fmt or r.dfmt)))
+    else:
+        n = len(r.categories)
+        axis.set_major_locator(FixedLocator(list(range(1, n + 1))))
+        axis.set_major_formatter(FuncFormatter(
+            lambda x, pos, r=r: r.categories[int(round(x)) - 1]
+            if abs(x - round(x)) < 1e-9 and 1 <= round(x) <= len(r.categories) else ""))
+
+
+def refresh_categorical_ruler(ax, which: str) -> None:
+    """After plotting on a categorical axis: one tick per category, and limits that show them all."""
+    r = _ruler_of(ax, which)
+    if r is not None and r.kind == "categorical":
+        install_ruler(ax, which, r)
+        inverted = getattr(ax, f"{which}axis_inverted", lambda: False)()
+        lo, hi = sorted(getattr(ax, f"get_{which}lim")())
+        n = len(r.categories)
+        if lo > 0.5 or hi < n + 0.5:
+            lo, hi = min(lo, 0.5), max(hi, n + 0.5)
+            getattr(ax, f"set_{which}lim")((hi, lo) if inverted else (lo, hi))
+
+
+def _clear_rulers(ax) -> None:
+    ax.__dict__.pop("_mylab_rulers", None)
+    ax.__dict__.pop("_mylab_tickfmt", None)
+
+
 # axes ---------------------------------------------------------------------------------------
 
 def _lim_get(which):
@@ -1318,13 +1974,15 @@ def _lim_get(which):
         if f is None:
             return np.zeros((1, 0))
         lo, hi = f()
-        return _row(sorted([lo, hi]))
+        return ruler_values(h.obj, which, sorted([lo, hi]))
     return g
 
 
 def _lim_set(which):
     def s(h, v):
-        lim = np.real(fnum(v)).flatten()
+        lim = np.real(axis_numbers(h.obj, which, v)).flatten()
+        if lim.size != 2:
+            raise MatlabError("Limits must be a 2-element vector of increasing values.")
         _set_lim(h.obj, which, lim[0], lim[1])
     return s
 
@@ -1453,22 +2111,49 @@ def _ticks_get(which):
         ticks = np.asarray(getattr(ax, f"get_{which}ticks")(), float)
         lo, hi = sorted(getattr(ax, f"get_{which}lim")())
         ticks = ticks[(ticks >= lo - 1e-12 * max(1, abs(lo))) & (ticks <= hi + 1e-12 * max(1, abs(hi)))]
-        return _row(ticks)
+        if isinstance(h, _FakeAxesHandle) and not h.rulers:
+            return _row(ticks)
+        return ruler_values(ax, which, ticks)
     return g
 
 
 def _ticks_set(which):
     def s(h, v):
-        if is_text(v):
-            _set_ticks_auto(h.obj, which)
+        if is_text(v) and text(v).lower() in ("auto", "manual") and _ruler_of(h.obj, which) is None:
+            if text(v).lower() == "auto":
+                _set_ticks_auto(h.obj, which)
             return
-        getattr(h.obj, f"set_{which}ticks")(np.real(fnum(v)).flatten())
+        _set_tick_values(h.obj, which, np.real(axis_numbers(h.obj, which, v)).flatten())
     return s
 
 
+def _set_tick_values(ax, which: str, vals: np.ndarray) -> None:
+    """Fix the tick positions of one axis, keeping the label format of its ruler."""
+    from matplotlib.ticker import FixedLocator
+    r = _ruler_of(ax, which)
+    if r is None and getattr(ax, "_mylab_tickfmt", {}).get(which) is None:
+        getattr(ax, f"set_{which}ticks")(vals)
+    else:
+        getattr(ax, f"{which}axis").set_major_locator(FixedLocator(list(vals)))
+        if r is not None and r.kind in ("datetime", "datenum") and vals.size > 1:
+            d = float(np.min(np.diff(np.sort(r.seconds(vals)))))
+            r.step = ("y", 1) if d >= 360 * 86400 else ("mo", 1) if d >= 28 * 86400 else ("s", d)
+    setattr(ax, f"_mylab_{which}ticks_fixed", True)
+
+
 def _set_ticks_auto(ax, which):
-    from matplotlib.ticker import AutoLocator, ScalarFormatter
+    from matplotlib.ticker import AutoLocator, LogFormatterSciNotation, LogLocator, ScalarFormatter
     axis = getattr(ax, f"{which}axis")
+    r = _ruler_of(ax, which)
+    setattr(ax, f"_mylab_{which}ticks_fixed", False)
+    setattr(ax, f"_mylab_{which}ticklabels", None)
+    if r is not None:
+        install_ruler(ax, which, r)
+        return
+    if getattr(ax, f"get_{which}scale", lambda: "linear")() == "log":
+        axis.set_major_locator(LogLocator())
+        axis.set_major_formatter(LogFormatterSciNotation())
+        return
     axis.set_major_locator(AutoLocator())
     axis.set_major_formatter(ScalarFormatter())
 
@@ -1476,11 +2161,14 @@ def _set_ticks_auto(ax, which):
 def _ticklabels_get(which):
     def g(h):
         ax = h.obj
-        ticks = _ticks_get(which)(h).flatten()
+        ticks = np.asarray(_ticks_get(which)(_FakeAxesHandle(ax)), dtype=float).flatten()
         fixed = getattr(ax, f"_mylab_{which}ticklabels", None)
         if fixed is not None:
             return _cell_column([char(s) for s in fixed])
-        labels = [f"{t:g}" for t in ticks]
+        if _ruler_of(ax, which) is not None or getattr(ax, "_mylab_tickfmt", {}).get(which) is not None:
+            labels = [str(s) for s in getattr(ax, f"{which}axis").get_major_formatter().format_ticks(list(ticks))]
+        else:
+            labels = [f"{t:g}" for t in ticks]
         return _cell_column([char(s) for s in labels]) if labels else Cell.from_list([])
     return g
 
@@ -1507,9 +2195,10 @@ def _set_ticklabels(ax, which: str, v) -> None:
 
 
 class _FakeAxesHandle:
-    def __init__(self, ax):
+    def __init__(self, ax, rulers: bool = False):
         self.obj = ax
         self.extra: dict = {}
+        self.rulers = rulers  # True: tick values come back as datetime/duration/categorical
 
 
 def _dir_get(which):
@@ -1541,11 +2230,17 @@ def _scale_get(which):
 
 def _nextplot_get(h):
     st = _state(h.interp)
-    return char("add" if st.hold.get(id(h.obj), False) else "replace")
+    if st.hold.get(id(h.obj), False):
+        return char("add")
+    return char(getattr(h.obj, "_mylab_nextplot", "") or "replace")
 
 
 def _nextplot_set(h, v):
-    _state(h.interp).hold[id(h.obj)] = text(v).lower() == "add"
+    mode = text(v).lower()
+    if mode not in ("add", "replace", "replacechildren", "replaceall"):
+        raise MatlabError("NextPlot must be 'add', 'replace', 'replacechildren' or 'replaceall'.")
+    _state(h.interp).hold[id(h.obj)] = mode == "add"
+    h.obj._mylab_nextplot = "replacechildren" if mode == "replacechildren" else ""
 
 
 def _legend_prop_get(h):
@@ -1764,7 +2459,7 @@ def _fig_name_set(h, v):
 
 
 def _fig_pos_get(h):
-    w, hh = h.obj.get_size_inches() * h.obj.dpi
+    w, hh = h.obj.get_size_inches() * _fig_dpi(h.obj)
     left, bottom = getattr(h.obj, "_mylab_origin", (100.0, 100.0))
     return _row([left, bottom, round(w), round(hh)])
 
@@ -1777,15 +2472,15 @@ def _fig_pos_set(h, v):
     if units == "normalized":
         w, hh = p[2] * 1920, p[3] * 1080
     elif units == "inches":
-        w, hh = p[2] * h.obj.dpi, p[3] * h.obj.dpi
+        w, hh = p[2] * _fig_dpi(h.obj), p[3] * _fig_dpi(h.obj)
     elif units == "centimeters":
-        w, hh = p[2] / 2.54 * h.obj.dpi, p[3] / 2.54 * h.obj.dpi
+        w, hh = p[2] / 2.54 * _fig_dpi(h.obj), p[3] / 2.54 * _fig_dpi(h.obj)
     else:
         w, hh = p[2], p[3]
     if w <= 0 or hh <= 0:
         raise MatlabError("Figure width and height must be positive.")
     h.obj._mylab_origin = (float(p[0]), float(p[1]))
-    h.obj.set_size_inches(w / h.obj.dpi, hh / h.obj.dpi, forward=True)
+    h.obj.set_size_inches(w / _fig_dpi(h.obj), hh / _fig_dpi(h.obj), forward=True)
 
 
 def _fig_current_axes(h):
@@ -2068,10 +2763,6 @@ def _root_current_figure(h):
     return _wrap(h.interp, "figure", st.figures[st.current])
 
 
-_ROOT_DEFAULTS = {"defaultlinelinewidth": "lines.linewidth", "defaultlinemarkersize": "lines.markersize",
-                  "defaultaxesfontsize": "font.size", "defaulttextfontsize": "font.size",
-                  "defaultaxeslinewidth": "axes.linewidth"}
-
 _ROOT_PROPS: dict[str, tuple] = {
     "ScreenSize": (lambda h: _row([1, 1, 1920, 1080]), None),
     "MonitorPositions": (lambda h: _row([1, 1, 1920, 1080]), None),
@@ -2146,12 +2837,11 @@ def _lookup(h: GraphicsHandle, name: str):
 def _get_prop(h: GraphicsHandle, name: str) -> Any:
     key, entry = _lookup(h, name)
     if key is None:
-        if h.kind == "root" and name.lower().startswith("default"):
-            import matplotlib as mpl
-            rc = _ROOT_DEFAULTS.get(name.lower())
-            if rc:
-                return _num_val(mpl.rcParams[rc])
-            return h.extra.get(name.lower(), np.zeros((0, 0)))
+        low = name.lower()
+        if h.kind in ("root", "figure", "axes") and low.startswith(("default", "factory")) and _ROOT_HOOKS:
+            return _ROOT_HOOKS[0](h, name)
+        if h.kind == "placeholder":
+            raise MatlabError("This element of the graphics array is an empty placeholder (see gobjects).")
         raise MatlabError(f"Unrecognized property '{name}' for class '{_short(h.kind)}'.")
     if not _alive(h) and key not in ("Type", "Tag", "UserData"):
         raise MatlabError("Invalid or deleted object.")
@@ -2163,17 +2853,13 @@ def _get_prop(h: GraphicsHandle, name: str) -> Any:
 
 
 def _set_prop(h: GraphicsHandle, name: str, value: Any) -> None:
-    if h.kind == "root":
-        low = name.lower()
-        if low.startswith("default"):
-            import matplotlib as mpl
-            rc = _ROOT_DEFAULTS.get(low)
-            if rc:
-                mpl.rcParams[rc] = _scalar(value)
-            h.extra[low] = value
-            return
+    if h.kind in ("root", "figure", "axes") and name.lower().startswith("default") and _ROOT_HOOKS:
+        _ROOT_HOOKS[1](h, name, value)
+        return
     key, entry = _lookup(h, name)
     if key is None:
+        if h.kind == "placeholder":
+            raise MatlabError("This element of the graphics array is an empty placeholder (see gobjects).")
         raise MatlabError(f"Unrecognized property '{name}' for class '{_short(h.kind)}'.")
     if not _alive(h):
         raise MatlabError("Invalid or deleted object.")
@@ -2194,6 +2880,8 @@ def _set_prop(h: GraphicsHandle, name: str, value: Any) -> None:
         raise MatlabError(f"Unable to set the '{key}' property of class '{_short(h.kind)}' because it is "
                           "read-only.")
     setter(h, value)
+    if _LINK_HOOK is not None and h.extra.get("_links"):
+        _LINK_HOOK(h, key, value)
 
 
 def _resolve(interp, v) -> list[GraphicsHandle]:
@@ -2212,6 +2900,8 @@ def _resolve(interp, v) -> list[GraphicsHandle]:
             else:
                 raise MatlabError("Invalid or deleted object.")
         return out
+    if isinstance(v, MObject) and hasattr(v, "graphics_handles"):
+        return list(v.graphics_handles())
     raise MatlabError("Expected a graphics handle.")
 
 
@@ -2223,30 +2913,110 @@ def _set_b(interp, args, nargout):
         raise MatlabError("Not enough input arguments for set.")
     hs = _resolve(interp, args[0])
     rest = list(args[1:])
-    if len(rest) == 1 and isinstance(rest[0], Struct):
-        s = rest[0]
-        pairs = [(f, s.data.flat[0][f]) for f in s.fields]
-    elif len(rest) == 2 and isinstance(rest[0], Cell) and isinstance(rest[1], Cell):
-        pairs = list(zip([to_str(x) for x in rest[0].values_f()], rest[1].values_f()))
+    if not rest or (len(rest) == 1 and is_text(rest[0])):  # set(h) / set(h, 'Prop'): what can be set
+        if len(hs) != 1:
+            raise MatlabError("set(h) and set(h, name) need a single graphics object.")
+        info = _settable_props(hs[0])
+        if rest:
+            key, entry = _lookup(hs[0], text(rest[0]))
+            if key is None:
+                raise MatlabError(f"Unrecognized property '{text(rest[0])}' for class '{_short(hs[0].kind)}'.")
+            if key not in info.fields:
+                raise MatlabError(f"The '{key}' property is read-only.")
+            val = info.get_field(0, key)
+            if nargout:
+                return val
+            interp.out("".join(f"    '{to_str(c)}'\n" for c in val.values_f())
+                       if val.data.size else f"    The '{key}' property does not have a fixed set of values.\n")
+            return None
+        if nargout:
+            return info
+        lines = []
+        for f in info.fields:
+            c = info.get_field(0, f)
+            lines.append(f"    {f}: " + ("{" + " | ".join(f"'{to_str(x)}'" for x in c.values_f()) + "}"
+                                         if c.data.size else "{}"))
+        interp.out("\n".join(lines) + "\n")
+        return None
+    pairs: list = []
+    per_handle = None
+    if len(rest) == 2 and isinstance(rest[0], Cell) and isinstance(rest[1], Cell):
+        names = [to_str(x) for x in rest[0].values_f()]
+        vals = rest[1]
+        if vals.data.ndim == 2 and vals.data.shape == (len(hs), len(names)) and len(hs) > 1:
+            per_handle = [[(n, vals.data[i, j]) for j, n in enumerate(names)] for i in range(len(hs))]
+        else:
+            pairs = list(zip(names, vals.values_f()))
     else:
-        if len(rest) % 2:
-            raise MatlabError("set expects property name/value pairs.")
-        pairs = [(text(rest[i], "property name"), rest[i + 1]) for i in range(0, len(rest), 2)]
-    for h in hs:
-        for name, value in pairs:
+        k = 0
+        while k < len(rest):
+            a = rest[k]
+            if isinstance(a, Struct):
+                pairs.extend((f, a.data.flat[0][f]) for f in a.fields)
+                k += 1
+                continue
+            if k + 1 >= len(rest):
+                raise MatlabError("set expects property name/value pairs.")
+            pairs.append((text(a, "property name"), rest[k + 1]))
+            k += 2
+    for i, h in enumerate(hs):
+        for name, value in (per_handle[i] if per_handle is not None else pairs):
             _set_prop(h, name, value)
     _redraw(interp)
     return None
 
 
+def property_names(h: GraphicsHandle) -> list[str]:
+    """Every property of a handle, in alphabetical order."""
+    names = set(_PROPS.get(h.kind, {})) | set(_COMMON_PROPS) | set(_IGNORED.get(h.kind, ()))
+    if h.kind in ("root", "figure"):
+        names.discard("Annotation")
+    return sorted(names, key=str.lower)
+
+
 def _all_props(h: GraphicsHandle) -> Struct:
     mapping = {}
-    for name in list(_PROPS.get(h.kind, {})) + list(_COMMON_PROPS):
+    for name in property_names(h):
         try:
             mapping[name] = _get_prop(h, name)
-        except (MatlabError, ValueError, TypeError, AttributeError, IndexError, KeyError):
+        except (MatlabError, ValueError, TypeError, AttributeError, IndexError, KeyError, NotImplementedError):
             continue
     return Struct.scalar(mapping)
+
+
+def _settable_props(h: GraphicsHandle) -> Struct:
+    """set(h): the properties that can be set, each with the list of words it accepts (if it is a choice)."""
+    mapping = {}
+    for name in property_names(h):
+        key, entry = _lookup(h, name)
+        if entry is not None and entry[1] is None:
+            continue
+        choices = _PROP_CHOICES.get(name)
+        mapping[name] = _cell_column([char(c) for c in choices]) if choices else Cell(np.empty((0, 0), dtype=object))
+    return Struct.scalar(mapping)
+
+
+_PROP_CHOICES = {
+    "Visible": ("on", "off"), "Box": ("on", "off"), "XGrid": ("on", "off"), "YGrid": ("on", "off"),
+    "ZGrid": ("on", "off"), "XMinorGrid": ("on", "off"), "YMinorGrid": ("on", "off"), "XMinorTick": ("on", "off"),
+    "YMinorTick": ("on", "off"), "XScale": ("linear", "log"), "YScale": ("linear", "log"),
+    "ZScale": ("linear", "log"), "XDir": ("normal", "reverse"), "YDir": ("normal", "reverse"),
+    "ZDir": ("normal", "reverse"), "NextPlot": ("add", "replace", "replacechildren"),
+    "LineStyle": ("-", "--", ":", "-.", "none"),
+    "Marker": ("o", "+", "*", ".", "x", "_", "|", "square", "diamond", "^", "v", ">", "<", "pentagram",
+               "hexagram", "none"),
+    "FontWeight": ("normal", "bold"), "FontAngle": ("normal", "italic"),
+    "HorizontalAlignment": ("left", "center", "right"),
+    "VerticalAlignment": ("middle", "top", "bottom", "baseline", "cap"),
+    "Interpreter": ("tex", "latex", "none"), "HandleVisibility": ("on", "off", "callback"),
+    "Units": ("normalized", "pixels", "inches", "centimeters", "points", "characters"),
+    "TickDir": ("in", "out", "both", "none"), "XAxisLocation": ("bottom", "top", "origin"),
+    "YAxisLocation": ("left", "right", "origin"), "Orientation": ("vertical", "horizontal"),
+    "Normalization": ("count", "probability", "percentage", "countdensity", "cumcount", "pdf", "cdf"),
+    "Layer": ("bottom", "top"), "XLimMode": ("auto", "manual"), "YLimMode": ("auto", "manual"),
+    "ZLimMode": ("auto", "manual"), "Selected": ("on", "off"), "HitTest": ("on", "off"),
+    "Clipping": ("on", "off"), "BusyAction": ("queue", "cancel"), "Interruptible": ("on", "off"),
+}
 
 
 @builtin("get")
@@ -2256,11 +3026,16 @@ def _get_b(interp, args, nargout):
     hs = _resolve(interp, args[0])
     if len(args) == 1:
         if len(hs) == 1:
+            s = _all_props(hs[0])
             if nargout == 0:
-                interp.out("\n".join(hs[0].display_lines()[2:]) + "\n")
+                width = max((len(f) for f in s.fields), default=0)
+                interp.out("".join(f"    {f.rjust(width)}: {_fmt_prop(s.get_field(0, f))}\n" for f in s.fields))
                 return None
-            return _all_props(hs[0])
+            return s
         raise MatlabError("get with several handles needs a property name.")
+    if is_text(args[1]) and text(args[1]).lower() in ("default", "factory") and len(hs) == 1 and _ROOT_HOOKS:
+        from . import plot_objects
+        return plot_objects.all_defaults(interp, factory=text(args[1]).lower() == "factory")
     prop = args[1]
     if isinstance(prop, Cell) or isinstance(prop, StringArray):
         names = _text_list(prop)
@@ -2631,14 +3406,12 @@ def _bar_core(interp, args, nargout, horizontal: bool):
             bottom = bottom + y[:, k]
         conts.append(cont)
     _redraw(interp)
-    if nargout <= 0:
-        return None
     hs = []
     for k, cont in enumerate(conts):
         h = _wrap(interp, "bar", cont)
         h.extra.update({"BarWidth": width, "XData": x, "YData": y[:, k], "axes": ax, "figure": ax.figure})
         hs.append(h)
-    return hs[0] if len(hs) == 1 else GraphicsArray(hs, row=True)
+    return (hs[0] if len(hs) == 1 else GraphicsArray(hs, row=True)) if nargout > 0 else None
 
 
 @builtin("histogram")
@@ -2686,12 +3459,10 @@ def _histogram(interp, args, nargout):
     hs = _Hist(ax, data, e, norm, orientation, style, label)
     hs.draw()
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "histogram", hs)
     shape_src = np.real(fnum(raw))
     h.extra["DataShape"] = lambda: shape_src
-    return h
+    return (h) if nargout > 0 else None
 
 
 @builtin("hist")
@@ -2758,11 +3529,9 @@ def _stem(interp, args, nargout):
         elif k in ("markersize", "marker", "markerfacecolor", "markeredgecolor"):
             getattr(cont.markerline, f"set_{k}")(v)
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "stem", cont)
     h.extra.update({"axes": ax, "figure": ax.figure})
-    return h
+    return (h) if nargout > 0 else None
 
 
 @builtin("stairs")
@@ -2848,11 +3617,9 @@ def _fill_core(interp, args, nargout, patch: bool):
     else:
         polys = ax.fill(x.flatten(), y.flatten(), **kw)
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "patch", polys)
     h.extra.update({"axes": ax, "figure": ax.figure})
-    return h
+    return (h) if nargout > 0 else None
 
 
 @builtin("errorbar")
@@ -2876,11 +3643,9 @@ def _errorbar(interp, args, nargout):
     cap = _scalar(opts["capsize"]) if "capsize" in opts else 3
     cont = ax.errorbar(x, y, yerr=yerr, fmt=spec or "-", capsize=cap, **kw)
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "errorbar", cont)
     h.extra.update({"axes": ax, "figure": ax.figure})
-    return h
+    return (h) if nargout > 0 else None
 
 
 @builtin("pie")
@@ -2892,11 +3657,9 @@ def _pie(interp, args, nargout):
     res = ax.pie(x, labels=labels, autopct="%1.0f%%" if labels is None else None)
     ax.axis("equal")
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "pie", list(res[0]))
     h.extra.update({"axes": ax, "figure": ax.figure})
-    return h
+    return (h) if nargout > 0 else None
 
 
 @builtin("quiver")
@@ -2953,12 +3716,10 @@ def _quiver(interp, args, nargout):
     ax.update_datalim(np.column_stack([np.concatenate([x, x + u * k]), np.concatenate([y, y + v * k])]))
     ax.autoscale_view()
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "quiver", q)
     h.extra.update({"UData": np.asarray(U, float), "VData": np.asarray(V, float), "XData": np.asarray(X, float),
                     "YData": np.asarray(Y, float)})
-    return h
+    return (h) if nargout > 0 else None
 
 
 # -- surfaces and images ----------------------------------------------------------------------
@@ -3030,11 +3791,9 @@ def _surface(interp, args, kind: str, nargout: int):
     else:
         coll = ax.plot_wireframe(X, Y, Z, linewidth=0.5, rcount=rc, ccount=cc)
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "surface", coll)
     h.extra.update({"XData": X, "YData": Y, "ZData": Z})
-    return h
+    return (h) if nargout > 0 else None
 
 
 builtin("surf", "surfc")(_with_axes_arg(lambda interp, args, nargout: _surface(interp, args, "surf", nargout)))
@@ -3323,23 +4082,30 @@ def _figure_b(interp, args, nargout):
         n = _fig_num_arg(interp, args[0])
         if n < 1:
             raise MatlabError("Figure number must be a positive integer.")
+        created = n not in st.figures
         fig = _figure(interp, n)
         rest = list(args[1:])
     else:
         n = 1
         while n in st.figures:
             n += 1
+        created = True
         fig = _figure(interp, n)
         rest = list(args)
     h = _wrap(interp, "figure", fig)
+    if created:
+        hook = interp.state.get("figure_defaults_hook")
+        if hook is not None:
+            hook(interp, h)
+    if len(rest) == 1 and isinstance(rest[0], Struct):
+        rest = [x for f in rest[0].fields for x in (char(f), rest[0].data.flat[0][f])]
     if len(rest) % 2:
         raise MatlabError("figure options must be name/value pairs.")
     for i in range(0, len(rest), 2):
         name = text(rest[i], "property name")
         key, _ = _lookup(h, name)
-        if key is None:
-            h.extra[name] = rest[i + 1]  # unknown figure options are accepted and ignored
-            continue
+        if key is None and not name.lower().startswith("default"):
+            raise MatlabError(f"Unrecognized property '{name}' for class 'Figure'.")
         _set_prop(h, name, rest[i + 1])
     return h if nargout > 0 else None
 
@@ -3357,17 +4123,38 @@ def _gca(interp, args, nargout):
 
 @builtin("clf")
 def _clf(interp, args, nargout):
-    if args and isinstance(args[0], GraphicsHandle):
-        n = _fig_num_arg(interp, args[0])
-        fig = _state(interp).figures[n]
+    args = list(args)
+    st = _state(interp)
+    target = None
+    if args and not is_text(args[0]):
+        target = args.pop(0)
+    reset = bool(args) and is_text(args[0]) and text(args[0]).lower() == "reset"
+    if args and not reset:
+        raise MatlabError("clf expects a figure and, optionally, 'reset'.")
+    if target is not None:
+        n = _fig_num_arg(interp, target)
+        if n not in st.figures:
+            raise MatlabError("Invalid or deleted figure handle.")
+        fig = st.figures[n]
     else:
         fig = _figure(interp)
-        n = _state(interp).current
+        n = st.current
+    for ax in list(fig.axes):
+        _forget_children(interp, ax)
     fig.clf()
-    st = _state(interp)
     st.axes.pop(n, None)
     st.layouts.pop(n, None)
-    return None
+    h = _wrap(interp, "figure", fig)
+    if reset:  # back to the default figure properties, keeping only where and how big the window is
+        import matplotlib as mpl
+        keep = {k: v for k, v in h.extra.items() if k in ("Units", "_PaperPositionIn", "PaperUnits",
+                                                          "PaperPositionMode", "_appdata")}
+        h.extra.clear()
+        h.extra.update(keep)
+        fig.set_facecolor(mpl.rcParams["figure.facecolor"])
+        fig._mylab_name = ""
+    _redraw(interp)
+    return h if nargout > 0 else None
 
 
 @builtin("cla")
@@ -3375,10 +4162,26 @@ def _clf(interp, args, nargout):
 def _cla(interp, args, nargout):
     st = _state(interp)
     ax = _axes(interp, fresh=False)
-    ax.cla()
-    _yy_restyle(ax)
-    if args and is_text(args[0]) and text(args[0]).lower() == "reset":
+    reset = bool(args) and is_text(args[0]) and text(args[0]).lower() == "reset"
+    if args and not reset:
+        raise MatlabError("cla expects an axes and, optionally, 'reset'.")
+    if reset:
+        _forget_children(interp, ax)
+        ax.cla()
+        _clear_rulers(ax)
+        ax.__dict__.pop("_mylab_padded", None)
+        ax.__dict__.pop("_mylab_nextplot", None)
+        h = st.handles.get(id(ax))
+        if h is not None:
+            keep = {k: v for k, v in h.extra.items() if k in ("Units", "_appdata")}
+            h.extra.clear()
+            h.extra.update(keep)
         st.hold[id(ax)] = False
+        _yy_restyle(ax)
+        _axes_created(interp, ax)
+        _tick_aligned(ax)
+    else:
+        _clear_children(interp, ax)
     _redraw(interp)
     return None
 
@@ -3388,6 +4191,16 @@ def _close_number(interp, n: int) -> None:
     plt = _plt()
     if n in st.figures:
         fig = st.figures.pop(n)
+        for key, g in list(st.handles.items()):  # the figure's objects are gone: forget their handles
+            if g.kind in ("figure", "root") or getattr(g, "ui_alive", None) is not None:
+                continue
+            try:
+                owner = _obj_figure(g)
+            except (AttributeError, TypeError, IndexError):
+                continue
+            if owner is fig:
+                g.extra["deleted"] = True
+                del st.handles[key]
         plt.close(fig)
         st.axes.pop(n, None)
         st.layouts.pop(n, None)
@@ -3395,38 +4208,71 @@ def _close_number(interp, n: int) -> None:
             st.current = max(st.figures) if st.figures else None
 
 
+def _request_close(interp, n: int, force: bool) -> bool:
+    """Close figure ``n`` the way close does: through its CloseRequestFcn unless forced. True if closed."""
+    st = _state(interp)
+    fig = st.figures.get(n)
+    if fig is None:
+        return False
+    h = _wrap(interp, "figure", fig)
+    cb = h.extra.get("CloseRequestFcn")
+    custom = cb is not None and not (isinstance(cb, np.ndarray) and cb.size == 0) and not (
+        (isinstance(cb, str) and cb in ("", "closereq")) or (is_text(cb) and text(cb) in ("", "closereq")))
+    if custom and not force:
+        from .. import ui as U
+        prev = st.current
+        U.invoke(interp, h, cb, Struct.scalar({"Source": h, "EventName": char("Close")}))
+        if prev in st.figures and st.current not in st.figures:
+            st.current = prev
+        return n not in st.figures
+    _delete_handle(interp, h)
+    return True
+
+
 @builtin("close")
 def _close(interp, args, nargout):
     st = _state(interp)
-    if args and is_text(args[0]):
-        s = text(args[0]).lower()
-        if s in ("all", "all hidden", "all force"):
-            close_all(interp)
-            return None
-        if s in ("force", "hidden"):
-            args = []
-        else:
-            for n, f in list(st.figures.items()):
-                if getattr(f, "_mylab_name", None) == text(args[0]):
-                    _close_number(interp, n)
-                    return None
-            raise MatlabError(f"Specified window '{text(args[0])}' does not exist.")
-    if not args:
-        if st.current is not None:
-            _close_number(interp, st.current)
-        return None
-    targets = args[0]
-    if isinstance(targets, (GraphicsHandle, GraphicsArray)):
-        for h in _handles_of(targets):
-            if h.kind != "figure":
-                raise MatlabError("close only accepts figure handles.")
-            n = _fig_number(interp, h.obj)
-            if n is not None:
-                _close_number(interp, n)
-        return None
-    for x in np.real(num(targets)).flatten():
-        _close_number(interp, int(round(float(x))))
-    return None
+    args = list(args)
+    words = [text(a).lower() for a in args if is_text(a)]
+    force = "force" in words or any(w.endswith(" force") for w in words)
+    targets: list[int] = []
+    named = [a for a in args if is_text(a)]
+    rest = [a for a in args if not is_text(a)]
+    phrase = " ".join(words)
+    if "all" in phrase.split():
+        hidden = "hidden" in phrase.split() or force
+        for n, f in list(st.figures.items()):
+            vis = str(_wrap(interp, "figure", f).extra.get("HandleVisibility", "on"))
+            if hidden or vis != "off":
+                targets.append(n)
+    elif rest:
+        for a in rest:
+            if isinstance(a, (GraphicsHandle, GraphicsArray)):
+                for h in _handles_of(a):
+                    if h.kind != "figure":
+                        raise MatlabError("close only accepts figure handles.")
+                    n = _fig_number(interp, h.obj)
+                    if n is not None:
+                        targets.append(n)
+            elif isinstance(a, np.ndarray) and a.size == 0:
+                continue
+            else:
+                targets.extend(int(round(float(x))) for x in np.real(num(a)).flatten())
+    elif named and words[0] not in ("force", "hidden"):
+        name = text(named[0])
+        hits = [n for n, f in st.figures.items() if getattr(f, "_mylab_name", None) == name]
+        if not hits and name.isdigit():
+            hits = [int(name)]
+        if not hits:
+            raise MatlabError(f"Specified window '{name}' does not exist.")
+        targets = hits
+    elif st.current is not None:
+        targets = [st.current]
+    ok = True
+    for n in targets:
+        if n in st.figures:
+            ok = _request_close(interp, n, force) and ok
+    return np.array([[ok]]) if nargout > 0 else None
 
 
 @builtin("hold")
@@ -3437,7 +4283,8 @@ def _hold(interp, args, nargout):
     if not args:
         st.hold[id(ax)] = not st.hold.get(id(ax), False)
     else:
-        mode = text(args[0]).lower()
+        mode = "on" if isinstance(args[0], np.ndarray) and not is_char(args[0]) and args[0].size == 1 \
+            and bool(args[0].flat[0]) else ("off" if not is_text(args[0]) else text(args[0]).lower())
         if mode not in ("on", "off", "all"):
             raise MatlabError("hold must be 'on' or 'off'.")
         st.hold[id(ax)] = mode in ("on", "all")
@@ -4135,7 +4982,7 @@ def _lim(which):
         ax = _axes(interp, fresh=False)
         getter = getattr(ax, f"get_{which}lim", None)
         if not args:
-            return _row(sorted(getter())) if getter else None
+            return ruler_values(ax, which, sorted(getter())) if getter else None
         if is_text(args[0]):
             mode = text(args[0]).lower()
             if mode == "auto":
@@ -4156,7 +5003,7 @@ def _lim(which):
                 raise MatlabError(f"Invalid {which}lim option '{text(args[0])}'.")
             _redraw(interp)
             return None
-        lim = np.real(fnum(args[0])).flatten()
+        lim = np.real(axis_numbers(ax, which, args[0])).flatten()
         if lim.size != 2:
             raise MatlabError("Limits must be a 2-element vector.")
         _set_lim(ax, which, float(lim[0]), float(lim[1]))
@@ -4176,13 +5023,18 @@ def _ticks(which):
         if not hasattr(ax, f"set_{which}ticks"):
             return None
         if not args:
-            return _ticks_get(which)(_FakeAxesHandle(ax))
-        if is_text(args[0]):
-            if text(args[0]).lower() == "auto":
+            return _ticks_get(which)(_FakeAxesHandle(ax, rulers=True))
+        if is_text(args[0]) and text(args[0]).lower() in ("auto", "manual", "mode"):
+            mode = text(args[0]).lower()
+            if mode == "auto":
                 _set_ticks_auto(ax, which)
+            elif mode == "mode":
+                return char("manual" if getattr(ax, f"_mylab_{which}ticks_fixed", False) else "auto")
+            else:
+                _set_tick_values(ax, which, np.asarray(getattr(ax, f"get_{which}ticks")(), float))
+            _redraw(interp)
             return None
-        getattr(ax, f"set_{which}ticks")(np.real(fnum(args[0])).flatten())
-        setattr(ax, f"_mylab_{which}ticks_fixed", True)
+        _set_tick_values(ax, which, np.real(axis_numbers(ax, which, args[0])).flatten())
         _redraw(interp)
         return None
     return _with_axes_arg(f)
@@ -4253,13 +5105,11 @@ def _text(interp, args, nargout):
         else:
             texts.append(ax.text(float(xs[i]), float(ys[min(i, ys.size - 1)]), lab, **kw))
     _redraw(interp)
-    if nargout <= 0:
-        return None
     hs = [_wrap(interp, "text", t) for t in texts]
     for h in hs:
         if "interpreter" in opts:
             h.extra["Interpreter"] = text(opts["interpreter"])
-    return hs[0] if len(hs) == 1 else GraphicsArray(hs)
+    return (hs[0] if len(hs) == 1 else GraphicsArray(hs)) if nargout > 0 else None
 
 
 @builtin("annotation")
@@ -4310,11 +5160,9 @@ def _annotation(interp, args, nargout):
     else:
         raise MatlabError(f"Unknown annotation type '{kind}'.")
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "patch", art)
     h.extra["figure"] = fig
-    return h
+    return (h) if nargout > 0 else None
 
 
 def _annotation_arrow(fig, x, y, style, color, lw, s, fontsize):
@@ -4464,7 +5312,7 @@ def _noninteractive() -> bool:
 
 def _render_rgb(fig, dpi: float | None = None) -> np.ndarray:
     """The figure as an H x W x 3 uint8 image."""
-    dpi = float(dpi or fig.dpi)
+    dpi = float(dpi or _fig_dpi(fig))
     buf = io.BytesIO()
     fig.savefig(buf, format="rgba", dpi=dpi)
     raw = buf.getvalue()
@@ -4586,7 +5434,7 @@ def _capture_frame(interp, seconds: float = 0.0) -> bool:
 def _snapshot(cap: _AnimCapture, n: int, fig, seconds: float = 0.0) -> None:
     frames = cap.frames.setdefault(n, [])
     try:
-        rgb = _render_rgb(fig, min(float(fig.dpi), ANIM_MAX_WIDTH / max(float(fig.get_size_inches()[0]), 0.1)))
+        rgb = _render_rgb(fig, min(_fig_dpi(fig), ANIM_MAX_WIDTH / max(float(fig.get_size_inches()[0]), 0.1)))
     except Exception:  # a figure that cannot be drawn must not stop the script here
         return
     raw = rgb.tobytes()
@@ -5257,7 +6105,7 @@ def _axes_b(interp, args, nargout):
     else:
         rect = [float(x) for x in pos]
         if units == "pixels" or (units == "normalized" and max(rect) > 2):
-            w, h_px = fig.get_size_inches() * fig.dpi
+            w, h_px = fig.get_size_inches() * _fig_dpi(fig)
             rect = [rect[0] / w, rect[1] / h_px, rect[2] / w, rect[3] / h_px]
     st.counter = getattr(st, "counter", 0) + 1
     ax = fig.add_axes(rect, label=f"mylab-axes-{st.counter}")
@@ -5369,10 +6217,12 @@ def _handle_list(hs: list):
 _CONTAINER_KINDS = ("bar", "errorbar", "stem", "histogram", "pie", "patch", "area")
 
 
-def _child_handles(interp, h: GraphicsHandle) -> list:
-    """Children of a handle, including charts that are groups of matplotlib artists."""
-    kids = _handles_of(_children_get(h)) if h.kind in ("root", "figure", "axes", "polaraxes") else []
+def _child_handles(interp, h: GraphicsHandle, hidden: bool = True) -> list:
+    """Children of a handle, including legends and colorbars of a figure, and hidden objects."""
     if h.kind == "figure":
+        kids = [_wrap(interp, _axes_kind(a), a) for a in h.obj.axes if not _is_colorbar_axes(a)
+                and not getattr(a, "_mylab_internal", False)]
+        kids.reverse()
         for ax in h.obj.axes:
             leg = ax.get_legend()
             if leg is not None:
@@ -5380,14 +6230,16 @@ def _child_handles(interp, h: GraphicsHandle) -> list:
             cb = getattr(ax, "_mylab_colorbar", None)
             if cb is not None:
                 kids.append(_wrap(interp, "colorbar", cb))
-    elif h.kind in ("axes", "polaraxes"):
-        ax = h.obj
-        groups = [g for g in list(_state(interp).handles.values())
-                  if g.kind in _CONTAINER_KINDS + ("rectangle",) and not g.extra.get("deleted")
-                  and _obj_axes(g) is ax]
-        owned = {id(a) for g in groups for a in _artists(g.obj)}
-        kids = [k for k in kids if id(k.obj) not in owned or k in groups]
-        kids += [g for g in groups if g not in kids]
+    elif h.kind in ("axes", "polaraxes", "geoaxes"):
+        kids = _axes_children(interp, h.obj)
+    elif h.kind == "root":
+        kids = _handles_of(_children_get(h))
+    elif h.extra.get("_children") is not None:
+        kids = [c for c in h.extra["_children"] if _alive(c)]
+    else:
+        kids = []
+    if not hidden:
+        kids = [k for k in kids if str(k.extra.get("HandleVisibility", "on")) != "off"]
     return kids
 
 
@@ -5397,12 +6249,14 @@ def _prop_matches(h: GraphicsHandle, name: str, want, regexp: bool) -> bool:
     except (MatlabError, ValueError, TypeError, AttributeError, IndexError, KeyError):
         return False
     if is_text(want):
+        if isinstance(have, Cell) and not regexp:
+            return False
         if not is_text(have):
             return False
         a, b = text(have), text(want)
         if regexp:
             return re.search(b, a) is not None
-        return a.lower() == b.lower() if name.lower() == "type" else a == b
+        return a.lower() == b.lower() if name.lower() in ("type", "visible", "linestyle", "marker") else a == b
     if isinstance(want, (GraphicsHandle, GraphicsArray)):
         return have is want
     if isinstance(want, np.ndarray) and isinstance(have, np.ndarray) and not is_char(have):
@@ -5414,7 +6268,7 @@ def _prop_matches(h: GraphicsHandle, name: str, want, regexp: bool) -> bool:
     return False
 
 
-def _find_objects(interp, args) -> list:
+def _find_objects(interp, args, hidden: bool = True) -> list:
     args = list(args)
     st = _state(interp)
     if args and not is_text(args[0]):
@@ -5424,6 +6278,8 @@ def _find_objects(interp, args) -> list:
         roots = _resolve(interp, first)
     else:
         roots = [_wrap(interp, "root", _ROOT)]
+    if not hidden and str(_wrap(interp, "root", _ROOT).extra.get("ShowHiddenHandles", "off")) == "on":
+        hidden = True
     depth = math.inf
     conds: list = []  # (operator, negate, kind, name, value)
     op, negate, regexp = "and", False, False
@@ -5469,7 +6325,7 @@ def _find_objects(interp, args) -> list:
         seen.add(id(h))
         found.append(h)
         if d < depth:
-            for c in _child_handles(interp, h):
+            for c in _child_handles(interp, h, hidden):
                 visit(c, d + 1)
 
     for r in roots:
@@ -5507,9 +6363,14 @@ def _find_objects(interp, args) -> list:
     return out
 
 
-@builtin("findobj", "findall")
+@builtin("findobj")
 def _findobj(interp, args, nargout):
-    return _handle_list(_find_objects(interp, args))
+    return _handle_list(_find_objects(interp, args, hidden=False))
+
+
+@builtin("findall")
+def _findall(interp, args, nargout):
+    return _handle_list(_find_objects(interp, args, hidden=True))
 
 
 @builtin("allchild")
@@ -5850,11 +6711,9 @@ def _add_polys(interp, ax, polys: list, opts: dict, color, nargout: int):
         ax.update_datalim(pts[:, :2])
         ax.autoscale_view()
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "patch", coll)
     h.extra.update({"axes": ax, "figure": ax.figure})
-    return h
+    return (h) if nargout > 0 else None
 
 
 _POLY_OPTS = {"facecolor", "edgecolor", "facealpha", "displayname", "linewidth", "linestyle", "edgealpha"}
@@ -6133,11 +6992,9 @@ def _waterfall(interp, args, nargout):
     ax = _axes(interp, projection="3d")
     coll = ax.plot_wireframe(X, Y, Z, rstride=1, cstride=0, linewidth=0.8)
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "surface", coll)
     h.extra.update({"XData": X, "YData": Y, "ZData": Z})
-    return h
+    return (h) if nargout > 0 else None
 
 
 @builtin("ribbon")

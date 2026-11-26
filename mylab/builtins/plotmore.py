@@ -77,11 +77,9 @@ def _quiver3(interp, args, nargout):
     if ends.size:
         ax.auto_scale_xyz(ends[:, 0], ends[:, 1], ends[:, 2])
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "quiver", q)
     h.extra.update({"XData": X, "YData": Y, "ZData": Z, "UData": U, "VData": V, "WData": W})
-    return h
+    return (h) if nargout > 0 else None
 
 
 # -- surfaces -----------------------------------------------------------------------------------------
@@ -155,11 +153,9 @@ def _pcolor(interp, args, nargout):
     ax.set_xlim(float(np.min(X)), float(np.max(X)))
     ax.set_ylim(float(np.min(Y)), float(np.max(Y)))
     _redraw(interp)
-    if nargout <= 0:
-        return None
     h = _wrap(interp, "surface", mesh)
     h.extra.update({"XData": X, "YData": Y, "ZData": np.zeros_like(C), "CData": C})
-    return h
+    return (h) if nargout > 0 else None
 
 
 @builtin("surfl")
@@ -346,10 +342,8 @@ def _ref_line(interp, args, nargout, vertical: bool):
                 ax.annotate(label, xy=(1, value), xycoords=("axes fraction", "data"), xytext=(-3, 3),
                             textcoords="offset points", va="bottom", ha="right", fontsize=9)
     _redraw(interp)
-    if nargout <= 0:
-        return None
     hs = [_wrap(interp, "line", ln) for ln in lines]
-    return hs[0] if len(hs) == 1 else GraphicsArray(hs)
+    return (hs[0] if len(hs) == 1 else GraphicsArray(hs)) if nargout > 0 else None
 
 
 builtin("xline")(_with_axes_arg(lambda interp, args, nargout: _ref_line(interp, args, nargout, True)))
