@@ -308,3 +308,28 @@ def test_files_written_in_the_same_clock_tick_are_seen(tmp_path, monkeypatch):
     os.utime(tmp_path / "first_r.m", ns=(before.st_atime_ns, before.st_mtime_ns))  # and the same time
     time.sleep(0.03)
     assert num(m, "first_r()").item() == 7
+
+
+# -- command syntax in class methods; Z properties of 2-D axes; h.Prop on several graphics objects -------------
+
+def test_command_syntax_inside_class_methods():
+    from mylab.parser import parse
+    src = ("classdef T < handle\n properties\n  name string\n  x double = 3\n end\n"
+           " methods\n  function f(obj)\n   lighting gouraud\n   syms q\n  end\n end\nend\n")
+    prog = parse(src)  # 'name string' is still a declaration; 'lighting gouraud' a command
+    assert prog.classdefs
+
+
+def test_z_properties_of_2d_axes_are_kept():
+    m = Interpreter(out=lambda s: None)
+    m.execute("figure; plot(1:3); set(gca, 'ZMinorTick', 'on', 'ZColor', [1 0 0], 'ZDir', 'reverse');"
+              "c = get(gca, 'ZColor'); d = get(gca, 'ZDir');")
+    assert num(m, "c").tolist() == [[1, 0, 0]] and to_str(m.eval_expression("d")) == "reverse"
+
+
+def test_dot_access_on_several_graphics_objects_is_a_list():
+    m = Interpreter(out=lambda s: None)
+    m.execute("figure; hp = plot(rand(5, 3)); mk = {hp.Marker}; c = reshape([hp.Color], 3, [])';"
+              "g = get(hp, 'Color');")
+    assert num(m, "size(mk)").tolist() == [[1, 3]] and to_str(m.eval_expression("class(mk{1})")) == "char"
+    assert num(m, "size(c)").tolist() == [[3, 3]] and to_str(m.eval_expression("class(g)")) == "cell"

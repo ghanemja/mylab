@@ -560,7 +560,7 @@ class Interpreter:
             base = self.lookup_existing(target.base, frame)
             if isinstance(base, Struct) and base.numel() > 1:
                 return base.numel()
-            if isinstance(base, MObject) and hasattr(base, "field_list"):
+            if isinstance(base, MObject) and hasattr(base, "field_list") and hasattr(base, "data"):
                 return int(base.data.size)
         if isinstance(target, A.CellIndex):
             base = self.lookup_existing(target.base, frame)
@@ -654,7 +654,7 @@ class Interpreter:
         elif isinstance(iterable, (MString, FunctionHandle)):
             columns = [iterable]
         elif isinstance(iterable, MObject) and not hasattr(iterable, "ndim"):
-            if hasattr(iterable, "field_list"):  # object array: one column per iteration
+            if hasattr(iterable, "field_list") and hasattr(iterable, "data"):  # object array: a column each
                 data = iterable.data.reshape((iterable.data.shape[0], -1), order="F")
                 columns = [iterable.index_get(self, [ix.COLON, np.array([[j + 1.0]])])
                            for j in range(data.shape[1])] if data.size else []

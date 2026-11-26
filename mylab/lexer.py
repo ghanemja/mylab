@@ -336,10 +336,11 @@ class Lexer:
         after_dot = self.last is not None and self.last.kind == "OP" and self.last.value == "."
         at_start = len(self.tokens) == 0 or self.tokens[-1].kind == "NL" or (
             self.tokens[-1].kind == "OP" and self.tokens[-1].value in (";", ","))
-        if word == "arguments" and at_start and not self.brackets:
+        if word in ("arguments", "properties", "events", "enumeration") and at_start and not self.brackets \
+                and (word == "arguments" or self.in_classdef):
             rest = self.text[self.pos:self.text.find("\n", self.pos) if "\n" in self.text[self.pos:] else None]
             if not rest.split("%")[0].strip() or rest.lstrip().startswith("("):
-                self.in_arguments = True
+                self.in_arguments = True  # a block of declarations ('name string' is not a command)
         elif word in ("end", *OCTAVE_ENDS) and at_start and self.in_arguments and not after_dot:
             self.in_arguments = False
         if word in OCTAVE_ENDS and not after_dot:
@@ -389,8 +390,8 @@ class Lexer:
             return True  # e.g. figure 2, pause 1
         if word in COMMAND_WORDS and first in "*?" and len(rest) > 1 and rest[1] not in " \t=":
             return True  # e.g. dir *.m, ls ?.txt
-        if (self.in_classdef or self.in_arguments) and word not in COMMAND_WORDS:
-            return False  # 'name string' in properties/arguments blocks is a declaration
+        if self.in_arguments and word not in COMMAND_WORDS:
+            return False  # 'name string' in properties/events/arguments blocks is a declaration
         # Any other name: ``shading interp``, ``colormap jet``, ``clearvars -except y``,
         # ``addpath ../lib``, ``web http://example.org``, ``title 'Results'``.
         # The first argument must look like a word, a path or quoted text, so expressions

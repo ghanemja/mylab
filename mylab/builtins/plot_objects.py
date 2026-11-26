@@ -959,6 +959,22 @@ def _z_only(fn):
     return s
 
 
+def _z_prop(name: str, getter, setter):
+    """A Z property: on 2-D axes MATLAB still has it, so the value is kept (and shown by get), with no
+    visible effect until the axes are 3-D."""
+    def g(h):
+        if not hasattr(h.obj, "zaxis") and name in h.extra.get("_z2d", {}):
+            return h.extra["_z2d"][name]
+        return getter(h)
+
+    def s(h, v):
+        if not hasattr(h.obj, "zaxis"):
+            h.extra.setdefault("_z2d", {})[name] = v
+            return
+        setter(h, v)
+    return g, s
+
+
 def _zdir_get(h):
     return char("reverse" if hasattr(h.obj, "zaxis_inverted") and h.obj.zaxis_inverted() else "normal")
 
@@ -1163,16 +1179,16 @@ P._AXES_PROPS.update({
     "ZTickLabelMode": _ticklabel_mode("z"),
     "XMinorTick": (_minor_tick_get("x"), P._minortick_set("x")),
     "YMinorTick": (_minor_tick_get("y"), P._minortick_set("y")),
-    "ZMinorTick": (_minor_tick_get("z"), _z_only(P._minortick_set("z"))),
+    "ZMinorTick": _z_prop("ZMinorTick", _minor_tick_get("z"), P._minortick_set("z")),
     "ZMinorGrid": _onoff_state("ZMinorGrid", "off"),
     "ZGrid": (_zgrid_get, lambda h, v: h.obj.grid(P._onoff(v)) if hasattr(h.obj, "zaxis")
               else h.extra.__setitem__("ZGrid", "on" if P._onoff(v) else "off")),
-    "ZDir": (_zdir_get, _z_only(_zdir_set)),
-    "ZColor": (lambda h: P._rgb(h.obj.zaxis.label.get_color()) if hasattr(h.obj, "zaxis")
-               else P._row([0.15, 0.15, 0.15]), _z_only(_zcolor_set)),
-    "ZTickLabel": (_zticklabel_get, _z_only(_zticklabel_set)),
-    "ZTickLabelRotation": (lambda h: P._num_val(0), _z_only(lambda h, v: h.obj.tick_params(
-        axis="z", labelrotation=P._scalar(v)))),
+    "ZDir": _z_prop("ZDir", _zdir_get, _zdir_set),
+    "ZColor": _z_prop("ZColor", lambda h: P._rgb(h.obj.zaxis.label.get_color()) if hasattr(h.obj, "zaxis")
+                      else P._row([0.15, 0.15, 0.15]), _zcolor_set),
+    "ZTickLabel": _z_prop("ZTickLabel", _zticklabel_get, _zticklabel_set),
+    "ZTickLabelRotation": _z_prop("ZTickLabelRotation", lambda h: P._num_val(0), lambda h, v: h.obj.tick_params(
+        axis="z", labelrotation=P._scalar(v))),
     "XAxisLocation": (lambda h: char(h.extra.get("XAxisLocation", "bottom")), _axisloc_set("x")),
     "YAxisLocation": (lambda h: char(h.extra.get("YAxisLocation", "left")), _axisloc_set("y")),
     "Layer": _choice("Layer", ("bottom", "top"), "bottom", _layer_apply),

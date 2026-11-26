@@ -1055,6 +1055,11 @@ class GraphicsArray(_GraphicsBase):
     def get_field(self, interp, name: str) -> Any:
         return _cell_column([_get_prop(h, name) for h in self.items])
 
+    def field_list(self, interp, name: str) -> list:
+        """h.Name on several objects: one value per object, a comma-separated list as in MATLAB
+        ({h.Marker} is a cell of the markers, [h.Color] their colours side by side)."""
+        return [_get_prop(h, name) for h in self.items]
+
     def set_field(self, interp, name: str, value: Any) -> "GraphicsArray":
         for h in self.items:
             _set_prop(h, name, value)
