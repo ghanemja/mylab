@@ -112,6 +112,12 @@ def _attach(new, artist) -> None:
     elif isinstance(artist, AxesImage):
         new.add_image(artist)
     elif isinstance(artist, Patch):
+        from mpl_toolkits.mplot3d import art3d
+        if isinstance(artist, art3d.Patch3D) and not hasattr(artist, "_path2d"):
+            # add_patch reads the path; Matplotlib before 3.9 has it only after the patch is first projected
+            artist.axes = new
+            new.M = new.get_proj()
+            artist.do_3d_projection()
         new.add_patch(artist)
     elif isinstance(artist, Text):
         new._add_text(artist)
