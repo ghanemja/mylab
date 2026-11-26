@@ -231,7 +231,10 @@ def _w_taylor(n: int, nbar: int, sll: float) -> np.ndarray:
 
 
 def _w_cheb(n: int, r: float) -> np.ndarray:
-    return _sig().windows.chebwin(n, at=r, sym=True)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")      # SciPy remarks on low attenuations; the window is still right
+        return _sig().windows.chebwin(n, at=r, sym=True)
 
 
 def _w_hamming(n: int, periodic: bool = False) -> np.ndarray:
@@ -639,7 +642,6 @@ def _remez(n: int, f: np.ndarray, a: np.ndarray, w: np.ndarray, kind: str, densi
     if ng < r + 1:
         raise MatlabError("firpm: the bands are too narrow for this filter order.")
     first = np.r_[True, band[1:] != band[:-1]]
-    last = np.r_[band[1:] != band[:-1], True]
     ext = np.round(np.linspace(0, ng - 1, r + 1)).astype(int)
     delta, coef = 0.0, np.zeros(r)
     sgn = (-1.0) ** np.arange(r + 1)
@@ -652,16 +654,18 @@ def _remez(n: int, f: np.ndarray, a: np.ndarray, w: np.ndarray, kind: str, densi
         coef, delta = sol[:r], float(sol[r])
         err = wq * (dq - cheb.chebval(x, coef))
         ae = np.abs(err)
-        left_ok = first | (ae >= np.r_[0.0, ae[:-1]])
-        right_ok = last | (ae > np.r_[ae[1:], 0.0])
-        cand = np.flatnonzero(left_ok & right_ok)
+        # one candidate per lobe: the largest error inside every run of constant sign (within a band)
+        pos = err >= 0
+        starts = np.flatnonzero(np.r_[True, (pos[1:] != pos[:-1]) | first[1:]])
+        ends = np.r_[starts[1:], ng]
+        cand = [int(s0 + np.argmax(ae[s0:e0])) for s0, e0 in zip(starts, ends)]
         kept: list[int] = []
         for k in cand:
-            if kept and (err[k] >= 0) == (err[kept[-1]] >= 0):
+            if kept and pos[k] == pos[kept[-1]]:
                 if ae[k] > ae[kept[-1]]:
-                    kept[-1] = int(k)
+                    kept[-1] = k
             else:
-                kept.append(int(k))
+                kept.append(k)
         while len(kept) > r + 1:
             excess = len(kept) - (r + 1)
             smallest = min(range(len(kept)), key=lambda i: ae[kept[i]])
@@ -2346,8 +2350,15 @@ def _minorder_equiripple(edges: np.ndarray, amps: np.ndarray, devs: np.ndarray, 
     a2 = np.repeat(amps, 2)
 
     def ok(order):
-        h, delta = _remez(order, edges, a2, wts, "symmetric")
-        return delta <= float(np.max(devs)) * (1 + 1e-9), h
+        h, _delta = _remez(order, edges, a2, wts, "symmetric")
+        taps = np.arange(h.size)
+        for b in range(devs.size):
+            # measure the error on a grid much finer than the one the design used
+            fq = np.linspace(edges[2 * b], edges[2 * b + 1], 60 * h.size)
+            mag = np.abs(np.exp(-1j * np.pi * np.outer(fq, taps)) @ h)
+            if np.max(np.abs(mag - amps[b])) > devs[b] * (1 + 1e-9):
+                return False, h
+        return True, h
 
     step = 2 if even_only else 1
     if even_only and n % 2:
