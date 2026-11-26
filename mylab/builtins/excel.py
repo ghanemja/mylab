@@ -1,9 +1,11 @@
-"""Excel workbooks (.xlsx): xlsread, xlswrite, sheetnames, and Excel support for
-readtable, writetable, readmatrix, writematrix, readcell and writecell.
+"""Spreadsheets: xlsread, xlswrite, sheetnames, and spreadsheet support for readtable,
+writetable, readmatrix, writematrix, readcell and writecell.
 
-When the ``openpyxl`` package is installed (``pip install mylab[excel]``) it does
-the reading and writing. Without it a small built-in reader and writer handles
-plain workbooks: numbers, text and logical values, no formatting.
+Excel workbooks (.xlsx, .xlsm): when the ``openpyxl`` package is installed
+(``pip install mylab[excel]``) it does the reading and writing. Without it a small
+built-in reader and writer handles plain workbooks: numbers, text and logical values,
+no formatting. OpenDocument spreadsheets (.ods) are read and written by ``_ods`` and
+Excel 97-2003 workbooks (.xls) are read by ``_xls``; .xlsb is refused.
 """
 
 from __future__ import annotations
@@ -42,9 +44,22 @@ def is_excel_file(name: Any) -> bool:
 
 def _check_format(fname: str, what: str) -> None:
     ext = os.path.splitext(fname)[1].lower()
-    if ext in (".xls", ".xlsb", ".ods"):
-        raise MatlabError(f"{what}: '{ext}' spreadsheets are not supported. Save the file as an Excel "
-                          "workbook (.xlsx) or as .csv and read that.")
+    if ext == ".xlsb":
+        raise MatlabError(f"{what}: Excel binary workbooks (.xlsb) are not supported. Save the file as an "
+                          "Excel workbook (.xlsx), an OpenDocument spreadsheet (.ods) or as .csv and use that.")
+
+
+def _read_any(fname: str, sheet: Any) -> tuple[list[list], list[str]]:
+    """Rows of one sheet and all sheet names, for every workbook format that can be read."""
+    ext = os.path.splitext(fname)[1].lower()
+    if ext == ".ods":
+        from . import _ods
+        return _ods.read(fname, sheet, _pick_sheet)
+    if ext == ".xls":
+        from . import _xls
+        return _xls.read(fname, sheet, _pick_sheet)
+    lib = _openpyxl()
+    return _openpyxl_read(lib, fname, sheet) if lib else _builtin_read(fname, sheet)
 
 
 def _openpyxl():
@@ -196,8 +211,7 @@ def read_sheet(fname: str, sheet: Any = None, rng: str | None = None, what: str 
     if not os.path.isfile(fname):
         raise MatlabError(f"{what}: the file '{fname}' was not found.")
     _check_format(fname, what)
-    lib = _openpyxl()
-    rows, _ = _openpyxl_read(lib, fname, sheet) if lib else _builtin_read(fname, sheet)
+    rows, _ = _read_any(fname, sheet)
     r0, c0, r1, c1 = _parse_range(rng, what)
     if rng:
         last_r = r1 if r1 is not None else len(rows) - 1
@@ -223,10 +237,7 @@ def sheet_names(fname: str, what: str) -> list[str]:
     if not os.path.isfile(fname):
         raise MatlabError(f"{what}: the file '{fname}' was not found.")
     _check_format(fname, what)
-    lib = _openpyxl()
-    if lib:
-        return _openpyxl_read(lib, fname, None)[1]
-    return _builtin_read(fname, None)[1]
+    return _read_any(fname, None)[1]
 
 
 # -- writing -----------------------------------------------------------------------------------------
@@ -289,10 +300,13 @@ def write_sheet(fname: str, rows: list[list], sheet: Any = None, rng: str | None
                 what: str = "xlswrite", replace_file: bool = False) -> None:
     """Write rows (float, str, bool or None) into a worksheet, keeping the file's other sheets."""
     _check_format(fname, what)
-    if os.path.splitext(fname)[1].lower() not in (".xlsx", ".xlsm"):
-        raise MatlabError(f"{what}: Excel files are written as .xlsx; '{fname}' has another extension.")
+    ext = os.path.splitext(fname)[1].lower()
+    if ext not in (".xlsx", ".xlsm", ".ods"):
+        raise MatlabError(f"{what}: spreadsheets are written as Excel workbooks (.xlsx) or OpenDocument "
+                          f"spreadsheets (.ods); '{fname}' has another extension.")
     r0, c0, _, _ = _parse_range(rng, what)
-    lib = _openpyxl()
+    ods = ext == ".ods"
+    lib = None if ods else _openpyxl()
     exists = os.path.isfile(fname) and not replace_file
     if lib:
         wb = lib.load_workbook(fname) if exists else lib.Workbook()
@@ -317,9 +331,8 @@ def write_sheet(fname: str, rows: list[list], sheet: Any = None, rng: str | None
         return
     sheets: list[tuple[str, list[list]]] = []
     if exists:
-        with zipfile.ZipFile(fname) as z:
-            names = [n for n, _ in _builtin_sheets(z)]
-        sheets = [(n, _builtin_read(fname, char(n))[0]) for n in names]
+        names = _read_any(fname, None)[1]
+        sheets = [(n, _read_any(fname, np.array([[float(k + 1)]]))[0]) for k, n in enumerate(names)]
     names = [n for n, _ in sheets]
     if is_text(sheet):
         target = text(sheet)
@@ -341,7 +354,11 @@ def write_sheet(fname: str, rows: list[list], sheet: Any = None, rng: str | None
             line.append(None)
         for c, v in enumerate(row):
             line[c0 + c] = v
-    _builtin_write(fname, sheets)
+    if ods:
+        from . import _ods
+        _ods.write(fname, sheets)
+    else:
+        _builtin_write(fname, sheets)
 
 
 # -- conversions between sheet rows and MATLAB values ----------------------------------------------------
@@ -486,7 +503,9 @@ def _xlsfinfo(interp, args, nargout):
     if not args or not is_text(args[0]):
         raise MatlabError("xlsfinfo needs the name of an Excel file.")
     names = sheet_names(text(args[0]), "xlsfinfo")
-    return char("Microsoft Excel Spreadsheet"), Cell.from_list([char(n) for n in names]), char("xlOpenXMLWorkbook")
+    fmt = {".xls": "xlWorkbookNormal", ".ods": "xlOpenDocumentSpreadsheet"}.get(
+        os.path.splitext(text(args[0]))[1].lower(), "xlOpenXMLWorkbook")
+    return char("Microsoft Excel Spreadsheet"), Cell.from_list([char(n) for n in names]), char(fmt)
 
 
 # -- Excel files in readtable, readmatrix, readcell and their write counterparts ----------------------

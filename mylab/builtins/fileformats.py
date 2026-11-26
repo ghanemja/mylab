@@ -812,7 +812,7 @@ def _datastore_args(interp, args: list, fn: str):
     nv = _textimport.name_values(list(args[1:]), known, fn)
     kind = text(nv.pop("Type")).lower() if "Type" in nv else "tabulartext"
     if kind != "tabulartext":
-        raise MatlabError(f"{fn}: only datastores of type 'tabulartext' are supported, not '{kind}'.")
+        raise MatlabError(f"{fn}: only datastores of type 'tabulartext' and 'image' are supported, not '{kind}'.")
     nv.pop("AlternateFileSystemRoots", None)
     exts = None
     if "FileExtensions" in nv:
@@ -842,7 +842,13 @@ def _tabular_text_datastore(interp, args, nargout):
 
 @builtin("datastore")
 def _datastore(interp, args, nargout):
-    return _datastore_args(interp, list(args), "datastore")
+    args = list(args)
+    for k in range(1, len(args) - 1, 2):
+        if is_text(args[k]) and text(args[k]).lower() == "type" and is_text(args[k + 1]) \
+                and text(args[k + 1]).lower() == "image":
+            from .imagedatastore import make_image_datastore
+            return make_image_datastore(interp, args[:k] + args[k + 2:], "datastore")
+    return _datastore_args(interp, args, "datastore")
 
 
 # -- memory-mapped files ----------------------------------------------------------------------------

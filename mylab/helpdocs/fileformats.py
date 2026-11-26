@@ -61,11 +61,14 @@ HELP = {
         "SelectedVariableNames, SelectedFormats, Delimiter, NumHeaderLines, ReadVariableNames, TextType "
         "and DatetimeType. Options: those of readtable plus 'FileExtensions', 'IncludeSubfolders', "
         "'ReadSize', 'SelectedVariableNames' and 'SelectedFormats'. Also available: partition(ds, n, k), "
-        "subset(ds, indices), shuffle(ds), numpartitions(ds) and progress(ds)."),
+        "subset(ds, indices), shuffle(ds), numpartitions(ds), progress(ds), transform(ds, @fcn) and "
+        "combine(ds1, ds2)."),
     "datastore": (
-        ["ds = datastore(location)", "ds = datastore(location, 'Type', 'tabulartext', Name, Value)"],
-        "Creates a datastore for a collection of files. mylab has one kind, the tabular text datastore "
-        "(see tabularTextDatastore); another 'Type' is an error."),
+        ["ds = datastore(location)", "ds = datastore(location, 'Type', 'tabulartext', Name, Value)",
+         "ds = datastore(location, 'Type', 'image', Name, Value)"],
+        "Creates a datastore for a collection of files. The default kind is the tabular text datastore "
+        "(see tabularTextDatastore); 'Type', 'image' makes an image datastore (see imageDatastore) and "
+        "takes its options. Another 'Type' is an error."),
     "memmapfile": (
         ["m = memmapfile(filename)", "m = memmapfile(filename, 'Format', type)",
          "m = memmapfile(filename, 'Format', {type, size, fieldname; ...})",

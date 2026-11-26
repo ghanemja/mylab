@@ -74,9 +74,13 @@ HELP = {
                "x^2 + 2*x + 1." + _NEEDS),
     "collect": (["c = collect(expr)", "c = collect(expr, x)"],
                 "Groups the terms of an expression by powers of x (or of the default variable)."),
-    "combine": (["c = combine(expr)", "c = combine(expr, 'log')", "c = combine(expr, 'sincos')"],
+    "combine": (["c = combine(expr)", "c = combine(expr, 'log')", "c = combine(expr, 'sincos')",
+                 "cds = combine(ds1, ds2, ...)"],
                 "Combines terms of the same kind: powers with the same base, logarithms, or products of "
-                "sines and cosines."),
+                "sines and cosines. With datastores, combine(ds1, ds2, ...) returns a datastore that reads "
+                "them side by side: each read returns a cell array with one column per datastore (a value "
+                "that is not a cell array is put in one), and readall stacks the reads. The datastores are "
+                "copied and start from the beginning."),
     "rewrite": ("r = rewrite(expr, target)",
                 "Rewrites an expression in terms of another function. Targets include 'exp', 'sin', 'cos', "
                 "'tan', 'log', 'sincos', 'sqrt' and 'heaviside'."),

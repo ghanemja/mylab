@@ -1158,12 +1158,13 @@ HELP.update({
                    "T = readtable(..., 'ReadVariableNames', false)", "T = readtable(..., 'TextType', 'string')"],
                   "Reads a delimited text file (CSV, tab, semicolon...) into a table. The first row gives the "
                   "variable names; all-numeric columns become numbers (blank cells become NaN), other columns "
-                  "become cell arrays of text (or strings with 'TextType', 'string'). Excel files (.xlsx) "
-                  "are read too, with the options 'Sheet' and 'Range'."),
+                  "become cell arrays of text (or strings with 'TextType', 'string'). Spreadsheets (.xlsx, "
+                  ".xls and .ods) are read too, with the options 'Sheet' and 'Range'."),
     "writetable": (["writetable(T, file)", "writetable(T, file, 'Delimiter', d)",
                     "writetable(..., 'WriteVariableNames', false)"],
                    "Writes a table to a delimited text file with a header row of variable names. A file "
-                   "name ending in .xlsx writes an Excel workbook; 'Sheet' and 'Range' choose where."),
+                   "name ending in .xlsx writes an Excel workbook and one ending in .ods an OpenDocument "
+                   "spreadsheet; 'Sheet' and 'Range' choose where."),
 })
 HELP["summary"] = ("summary(T)",
                    "Prints a short description of each table variable: its size and type, plus the minimum, "
@@ -2135,8 +2136,8 @@ HELP.update({
                    "Reads delimited numeric text into a matrix. The delimiter (comma, tab, semicolon, bar "
                    "or whitespace) is detected when not given. Leading lines with only text, such as a "
                    "header row, are skipped automatically unless 'NumHeaderLines' says how many to skip. "
-                   "Empty or non-numeric fields become NaN, and short rows are padded with NaN. Excel "
-                   "files (.xlsx) are read too, with the options 'Sheet' and 'Range'."),
+                   "Empty or non-numeric fields become NaN, and short rows are padded with NaN. "
+                   "Spreadsheets (.xlsx, .xls and .ods) are read too, with the options 'Sheet' and 'Range'."),
     "csvread": (["A = csvread(filename)", "A = csvread(filename, r, c)"],
                 "Reads a comma-separated numeric file; empty fields become 0. r and c are zero-based row "
                 "and column offsets of the first value to read."),
@@ -2147,8 +2148,8 @@ HELP.update({
                     "Writes a matrix to a delimited text file with full precision, one row per line. The "
                     "delimiter may be 'comma' (default; tab for .tsv files), 'tab', 'space', 'semi', 'bar' "
                     "or any single character. Cell arrays, strings and char arrays are written as text, "
-                    "quoted when they contain the delimiter. A file name ending in .xlsx writes an Excel "
-                    "workbook; 'Sheet' and 'Range' choose where."),
+                    "quoted when they contain the delimiter. A file name ending in .xlsx (or .ods) writes an "
+                    "Excel workbook (or an OpenDocument spreadsheet); 'Sheet' and 'Range' choose where."),
     "csvwrite": (["csvwrite(filename, A)", "csvwrite(filename, A, r, c)"],
                  "Writes a numeric matrix as comma-separated values with five significant digits; r and c "
                  "shift the data down and right, padding with zeros."),
@@ -2159,12 +2160,13 @@ HELP.update({
                  "(default five significant digits)."),
     "writecell": (["writecell(C, filename)", "writecell(C, filename, 'Delimiter', d)"],
                   "Writes a cell array of numbers and text to a delimited text file, one row of the cell "
-                  "array per line. A file name ending in .xlsx writes an Excel workbook."),
+                  "array per line. A file name ending in .xlsx (or .ods) writes an Excel workbook (or an "
+                  "OpenDocument spreadsheet)."),
     "readcell": (["C = readcell(filename)", "C = readcell(filename, 'Delimiter', d)",
                   "C = readcell(filename, 'NumHeaderLines', n)"],
                  "Reads a delimited text file into a cell array: numeric fields become numbers, other "
-                 "fields char vectors and empty fields <missing>. Excel files (.xlsx) are read too, with "
-                 "the options 'Sheet' and 'Range'."),
+                 "fields char vectors and empty fields <missing>. Spreadsheets (.xlsx, .xls and .ods) are "
+                 "read too, with the options 'Sheet' and 'Range'."),
     "readlines": (["lines = readlines(filename)", "lines = readlines(filename, 'EmptyLineRule', 'skip')",
                    "lines = readlines(filename, 'WhitespaceRule', 'trim')"],
                   "Reads a text file into a string column, one element per line (a final line break does "

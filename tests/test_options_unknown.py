@@ -147,6 +147,7 @@ CALLS = {
     'imboxfilt': '1:5',
     'imguidedfilter': '1:5',
     'imhistmatch': '[1 2 3], [4 5 6]',
+    'imageDatastore': "'img.png'",
     'imread': "'img.png'",
     'imsharpen': '1:5',
     'imshow': '1:5',

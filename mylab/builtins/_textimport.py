@@ -1534,6 +1534,12 @@ class TabularTextDatastore(MObject):
             other.opts = self.opts.copy()
             other.read_size = self.read_size
             return [other]
+        if name == "transform":
+            from .imagedatastore import _make_transform
+            return [_make_transform(interp, self, rest)]
+        if name == "combine":
+            from .imagedatastore import CombinedDatastore, _fresh, _require_ds
+            return [CombinedDatastore([_fresh(interp, _require_ds(a, "combine")) for a in args])]
         raise MatlabError(f"The datastore function '{name}' is not supported.")
 
     def display_lines(self) -> list[str]:
