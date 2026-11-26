@@ -365,10 +365,12 @@ def test_class_changed_since_saving(folder, version):
 
 @pytest.mark.parametrize("version", VERSIONS)
 def test_class_not_on_the_path(folder, version):
-    in_session(f"x = Pt; x.x = 9; y = [Pt Pt]; y(2).y = 4; z = {{Pt}}; save('f.mat', 'x', 'y', 'z', '{version}');")
+    in_session(f"x = Pt; x.x = 9; y = [Pt Pt]; y(2).y = 4; z = {{Pt}}; e = [Mood.Calm Mood.Gone];"
+               f"save('f.mat', 'x', 'y', 'z', 'e', '{version}');")
     os.remove(folder / "Pt.m")
+    os.remove(folder / "Mood.m")
     s = Fresh()
     out = s.run("load('f.mat');")
-    assert out.count("Warning") == 3 and "'Pt'" in out          # one warning for each variable
+    assert out.count("Warning") == 4 and "'Pt'" in out and "'Mood'" in out   # one warning for each variable
     assert s.ok("isstruct(x) && x.x == 9 && isstruct(y) && isequal(size(y), [1 2]) && y(2).y == 4")
-    assert s.ok("iscell(z) && isstruct(z{1}) && z{1}.x == 1")
+    assert s.ok("iscell(z) && isstruct(z{1}) && z{1}.x == 1 && isequal(e, {'Calm', 'Gone'})")

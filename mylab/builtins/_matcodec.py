@@ -379,8 +379,9 @@ class Decoder:
         if kind == "enumeration":
             cls = self.interp.find_class(to_str(d["name"]))
             if cls is None:
-                self.warn(f"Variable '{self.var}': the enumeration class '{to_str(d['name'])}' was not found; "
-                          "the member name was loaded as text.")
+                if not self._quiet:
+                    self.warn(f"Variable '{self.var}': the enumeration class '{to_str(d['name'])}' was not found; "
+                              "the member name was loaded as text.")
                 return d["member"]
             return cls.enum_lookup(self.interp, d["member"])
         if kind == "object_ref":
@@ -537,22 +538,24 @@ class Decoder:
         shape = tuple(int(x) for x in np.asarray(d["size"]).flatten())
         name = to_str(d["name"]) if d["name"].size else ""
         cls = self.interp.find_class(name) if name else None
-        if name and cls is None:
-            self.warn(f"Variable '{self.var}': the class '{name}' was not found, so the object array was loaded as "
-                      "an array of structs holding the saved properties.")
-            self._quiet += 1
+        missing = bool(name) and cls is None
+        self._quiet += missing  # the elements are not warned about one by one
         try:
             items = [self.decode(x) for x in d["items"].values_f()]
         finally:
-            if name and cls is None:
-                self._quiet -= 1
+            self._quiet -= missing
         data = np.empty(len(items), dtype=object)
         for k, x in enumerate(items):
             data[k] = x
         data = data.reshape(shape, order="F")
-        if cls is None or any(not hasattr(x, "cls") for x in items):
-            return _struct_array(data) or Cell(data)
-        return ObjectArray(data, cls)
+        if cls is not None and all(hasattr(x, "cls") for x in items):
+            return ObjectArray(data, cls)
+        out = _struct_array(data)
+        if missing:
+            self.warn(f"Variable '{self.var}': the class '{name}' was not found, so the object array was loaded as "
+                      + ("a struct array of the saved properties." if out is not None else
+                         "a cell array of what was saved for each element."))
+        return out if out is not None else Cell(data)
 
     def _make_object(self, name: str, fields: Any) -> Any:
         """An object from a class name and a struct of property values (old-style and MCOS objects)."""
