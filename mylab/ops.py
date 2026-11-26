@@ -411,9 +411,14 @@ def binop(op: str, a: Any, b: Any) -> Any:
             r = fastnum.binop_bool(op, a, b)
             if r is not None:
                 return r
-        elif a.shape == _S11 and b.shape == _S11 and fastnum.ENABLED \
-                and (a.dtype.kind in "iu" or b.dtype.kind in "iu"):
-            r = fastnum.binop_int(op, a, b)  # integer scalars: Python arithmetic, rounded and saturated
+        elif a.shape == _S11 and b.shape == _S11 and fastnum.ENABLED:
+            ta, tb = a.dtype, b.dtype
+            if ta.kind in "iu" or tb.kind in "iu":
+                r = fastnum.binop_int(op, a, b)  # integer scalars: Python arithmetic, rounded and saturated
+            elif (ta is _BOOL and tb is _F64) or (ta is _F64 and tb is _BOOL):
+                r = fastnum.binop_logical_double(op, a, b)  # e.g. isempty(x) == 0
+            else:
+                r = None
             if r is not None:
                 return r
     if isinstance(a, _NO_OPERATORS) or isinstance(b, _NO_OPERATORS):

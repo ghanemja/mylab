@@ -248,6 +248,25 @@ def binop_int(op: str, a: np.ndarray, b: np.ndarray):
     return None
 
 
+def binop_logical_double(op: str, a: np.ndarray, b: np.ndarray):
+    """``a op b`` for a 1x1 logical and a 1x1 double (either order): the logical counts as 0 or 1, the
+    result is a double (arithmetic) or a logical (comparison); None when the general code must do it."""
+    f = _SC_ARITH.get(op)
+    if f is not None:
+        r = f(float(a.item()), float(b.item()))
+        if r is None:
+            return None
+        out = _empty(_S11)
+        out[0, 0] = r
+        return out
+    f = _SC_COMPARE.get(op)
+    if f is not None:
+        out = _empty(_S11, _BOOL)
+        out[0, 0] = f(a.item(), b.item())
+        return out
+    return None
+
+
 _BOOL_UFUNC = {"&": np.logical_and, "|": np.logical_or, "==": np.equal, "~=": np.not_equal}
 
 

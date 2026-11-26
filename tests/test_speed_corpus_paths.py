@@ -278,3 +278,64 @@ def test_one_thread_wrapper_skips_large_arguments():
     assert f(None, [np.zeros((3, 3))], 1).shape == (3, 3)
     assert f(None, [np.zeros((30, 3))], 1).shape == (30, 3)
     assert f.__wrapped__ is slow and f.one_thread
+
+
+# -- compiled conditions in loops the compiler does not take --------------------------------------------
+
+class _CondGen:
+    def __init__(self, rng):
+        self.rng = rng
+
+    def atom(self):
+        rng = self.rng
+        return rng.choice([
+            "k", "a", "b", "v(k)", "v(end)", "w(mod(k, 3) + 1)", "numel(v)", "c{mod(k, 2) + 1}", "s",
+            num(rand_double(rng, 0.4)), "NaN", "true", "false", "int8(k)", "uint8(200)", "t", "str(k)",
+            "isempty(strfind(str, 'b'))", "numel(strfind(str, 'a'))", "any(v > k)", "all(w)", "sum(v)",
+            "mod(k, 3)", "abs(a - k)", "max(k, b)", "x", "f(k)", "[k 1]", "w",
+        ])
+
+    def expr(self, depth):
+        rng = self.rng
+        if depth == 0 or rng.random() < 0.3:
+            return self.atom()
+        r = rng.random()
+        if r < 0.6:
+            op = rng.choice(["==", "~=", "<", ">", "<=", ">=", "&", "|", "&&", "||", "+", "-", "*", "/"])
+            return f"({self.expr(depth - 1)} {op} {self.expr(depth - 1)})"
+        if r < 0.75:
+            return f"~({self.expr(depth - 1)})"
+        return f"{rng.choice(['isempty', 'abs', 'any', 'numel', 'double', 'logical'])}({self.expr(depth - 1)})"
+
+    def program(self):
+        rng = self.rng
+        x = rng.choice(["3", "NaN", "[1 2]", "'a'"])
+        init = (f"a = {num(rand_double(rng, 0.3))}; b = {rng.choice(['2', 'int16(3)', 'true', '[]', '0.5'])};"
+                f" v = {rng.choice(['[3 1 4 1 5 9 2 6]', 'int8([3 1 4 1 5 9 2 6])', '[1 NaN 3 4 5 6 7 8]'])};"
+                f" w = {rng.choice(['[1 0 1]', 'logical([1 1 1])', '[2 3 4]'])}; c = {{'ab', [1 2]}};"
+                f" s = 0; t = int32(2); str = 'abcab'; x = {x};"
+                f" f = @(z) z * 2;")
+        body = [
+            "j = 0; while j < 1, j = j + 1; end",  # (a loop inside: the loop itself stays interpreted)
+            f"if {self.expr(3)}, s = s + 1; elseif {self.expr(2)}, s = s - 1; end",
+            f"q = 0; while q < 2 && ({self.expr(2)}), q = q + 1; end",
+            f"if {self.expr(2)} | {self.expr(1)}, s = s + 10; end",
+        ]
+        return init + f"\nfor k = 1:{rng.randint(17, 40)}\n" + "\n".join(body) + "\nend"
+
+
+def test_compiled_conditions_match_the_interpreter():
+    rng = random.Random(2468)
+    gen = _CondGen(rng)
+    check_all(gen.program() for _ in range(count(150)))
+
+
+def test_conditions_are_compiled():
+    m = Interpreter(out=lambda s: None)
+    program = parse("raw = {'xa', 'b'}; n = 0; for k = 1:40, j = 0; while j < 1, j = j + 1; end\n"
+                    "if isempty(strfind(raw{mod(k, 2) + 1}, 'a')) == 0, n = n + 1; end\nend")
+    m.run_program(program, m.base)
+    cond = program.body[2].body[2].clauses[0][0]
+    info = cond._jit_cond
+    assert info and info["bails"] == 0 and any(c is not None for c in info["compiled"].values())
+    assert np.asarray(val(m, "n")).item() == 20

@@ -248,6 +248,13 @@ def _df(v):
     raise Bail
 
 
+def _lb(v):
+    """A built-in's result that must be a logical scalar, as a bool."""
+    if type(v) is _ND and v.shape == _S11 and v.dtype is _BOOL:
+        return v.item()
+    raise Bail
+
+
 def _bd(x):
     r = np.empty(_S11)
     r[0, 0] = x
@@ -648,7 +655,8 @@ _NS: dict[str, Any] = {
     "_ix": _ix, "_lin": _lin, "_tr": _tr, "_pow": _pow, "_round": _round, "_sign": _sign,
     "_min2": _min2, "_max2": _max2, "_mod": _mod, "_rem": _rem, "_floor": _floor, "_ceil": _ceil,
     "_fix": _fix, "_math": math, "_UNSET": _UNSET, "_Bail": Bail, "_inf": math.inf, "_nan": math.nan,
-    "_d": _d, "_df": _df, "_bd": _bd, "_bb": _bb, "_truth": _truth, "_sc": _sc, "_binop": _binop, "_unary": _unary,
+    "_d": _d, "_df": _df, "_lb": _lb, "_bd": _bd, "_bb": _bb, "_truth": _truth, "_sc": _sc, "_binop": _binop,
+    "_unary": _unary,
     "_transpose": _transpose, "_arr": _arr, "_build": _build, "_get1": _get1, "_get2": _get2,
     "_set1": _set1, "_set2": _set2, "_copy": _copy, "_cellget": _cellget, "_lset": _lset, "_field": _field,
     "_numelf": _numelf, "_endf": _endf, "_index": _index, "_range": _range, "_count": _count,
@@ -694,7 +702,7 @@ _PURE = frozenset("""
 abs acos acosd acosh all angle any asin asind asinh atan atan2 atand atanh bitand bitor bitshift bitxor
 blanks cat ceil cell cell2mat char circshift colon columns complex conj contains cos cosd cosh
 cot cross cummax cummin cumprod cumsum deblank deg2rad det diag diff dot double endsWith eps erf
-erfc exp expm1 eye factorial false fieldnames find fix fliplr flipud floor gamma gcd horzcat hypot idivide
+erfc exp expm expm1 eye factorial false fieldnames find fix fliplr flipud floor gamma gcd horzcat hypot idivide
 imag int16 int2str int32 int64 int8 isa iscell iscellstr ischar iscolumn isempty isequal isfield isfinite
 isfloat isinf isinteger islogical ismatrix ismember isnan isnumeric isreal isrow isscalar isspace isstring
 isstruct isvector kron lcm length linspace log log10 log1p log2 logical lower mat2str max mean median min
@@ -709,6 +717,11 @@ _LIKELY_SCALAR = frozenset("""
 sum prod max min norm dot numel length ndims nnz str2double mean median std var det trace abs sqrt exp log
 floor ceil round fix mod rem sin cos tan atan atan2 sign real imag gcd lcm factorial nchoosek strlength
 polyval trapz double
+""".split())
+# ... whose result is always a logical scalar, whatever the arguments
+_ALWAYS_LOGICAL = frozenset("""
+isempty ischar iscell iscellstr isstruct isnumeric islogical isreal isfloat isinteger isscalar isvector isrow
+iscolumn ismatrix isstring isequal isa
 """.split())
 # ... and those that may see a whole array that the loop also writes to (their result never shares
 # memory with the argument)
@@ -1292,6 +1305,8 @@ class _Gen:
             return f"_d(_callb({fn}, [{boxed}]))", "d"
         if name in _LIKELY_SCALAR and all(typ != "O" for _, typ in parts):
             return f"_df(_callb({fn}, [{boxed}]))", "d"
+        if name in _ALWAYS_LOGICAL:
+            return f"_lb(_callb({fn}, [{boxed}]))", "b"
         return f"_callb({fn}, [{boxed}])", ("o" if name in _LIKELY_SCALAR else "O")
 
     def int_conversion(self, name: str, node, code: str, typ: str, builtin) -> tuple[str, str] | None:
@@ -2301,3 +2316,134 @@ def run_while(interp, stmt, frame) -> bool:
         except ContinueSignal:
             pass
     return False  # the interpreter's own while loop carries on from the current state
+
+
+# -- conditions -----------------------------------------------------------------------------------
+# The condition of an if or while statement in code that is not compiled (a loop body with a while
+# loop, file input or a struct-array assignment in it) is evaluated by the interpreter one node at a
+# time: isempty(strfind(raw{n}, 'Gravity:')) == 0 costs about 25 us there. A condition that is run
+# often and calls functions or indexes values is compiled on its own: it is side-effect free (only
+# the built-ins in _PURE, compiled pure functions and element reads), so when the compiled code bails
+# out the interpreter simply evaluates it again, and the result is the interpreter's.
+
+NOT_COMPILED = object()
+CONDITION_RUNS_BEFORE_COMPILE = 16
+_COND_BOX = {"S": "x", "L": "x", "r": "x", "c": "x", "m": "x", "n": "x"}
+
+
+class _Cond:
+    __slots__ = ("fn", "names", "kinds", "typ", "deps", "checked")
+
+
+def _cond_worth(node) -> bool:
+    """Whether a condition does enough (calls, indexing, several operators) to gain from compiling."""
+    work = 0
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        t = type(n)
+        if t is A.Index or t is A.CellIndex:
+            work += 3
+            stack.append(n.base)
+            stack.extend(n.args)
+        elif t is A.BinOp:
+            work += 1
+            stack.append(n.left)
+            stack.append(n.right)
+        elif t is A.UnaryOp or t is A.Postfix:
+            stack.append(n.operand)
+    return work >= 3
+
+
+def _compile_cond(interp, node, scan: _Scan, kinds: dict, frame) -> _Cond:
+    gen = _Gen(interp, frame.functions, dict(kinds), scan, "loop")
+    gen.variables = {n for n in scan.names if kinds.get(n, "-") != "-"}
+    code, typ = gen.expr(node)
+    if gen.lists or gen.structs or gen.arrays:
+        raise Reject
+    names = sorted(gen.variables)
+    fn_name = _unique("_cond")
+    params = "".join(f", {gen.py(n)}" for n in names)
+    src = f"def {fn_name}(_dp{params}):\n    return {code}"
+    exec(compile(src, "<mylab-jit condition>", "exec"), _NS)  # noqa: S102 - code generated above
+    cond = _Cond()
+    cond.fn = _NS.pop(fn_name)
+    cond.names = names
+    cond.kinds = [kinds[n] for n in names]
+    cond.typ = typ
+    cond.deps = gen.deps
+    cond.checked = None
+    return cond
+
+
+def eval_condition(interp, node, frame):
+    """The value of an if/while condition, compiled; NOT_COMPILED when the interpreter must evaluate it."""
+    info = node.__dict__.get("_jit_cond")
+    if info is None:
+        scan = _Scan(allow_loops=False)
+        try:
+            scan.expr(node)
+        except Reject:
+            node._jit_cond = False
+            return NOT_COMPILED
+        if scan.fields or not _cond_worth(node):
+            node._jit_cond = False
+            return NOT_COMPILED
+        info = node._jit_cond = {"scan": scan, "runs": 0, "bails": 0, "compiled": {}}
+    elif info is False:
+        return NOT_COMPILED
+    info["runs"] += 1
+    if info["runs"] < CONDITION_RUNS_BEFORE_COMPILE:
+        return NOT_COMPILED
+    scan = info["scan"]
+    if frame.globals and any(n in frame.globals for n in scan.names):
+        return NOT_COMPILED
+    fvars = frame.vars
+    kinds = {}
+    for n in scan.names:
+        k = _kind(fvars.get(n))
+        kinds[n] = _COND_BOX.get(k, k)
+    sig = (id(frame.functions), tuple(kinds.items()))
+    cond = info["compiled"].get(sig, _MISSING)
+    if cond is not _MISSING and cond is not None and cond.deps:
+        # What the called names mean can only change when the interpreter looks at the disk again,
+        # a class is defined or an import is made: check the dependencies only then.
+        token = (interp._lookup_checked, len(interp.classes), bool(frame.imports))
+        if cond.checked != token:
+            if not _deps_valid(interp, cond.deps):
+                cond = _MISSING
+            else:
+                cond.checked = token
+    if cond is _MISSING:
+        if len(info["compiled"]) >= 8:
+            node._jit_cond = False  # too many different kinds of values here
+            return NOT_COMPILED
+        try:
+            cond = _compile_cond(interp, node, scan, kinds, frame)
+        except (Reject, KeyError, SyntaxError, RecursionError):
+            cond = None
+        info["compiled"][sig] = cond
+        info.setdefault("keep", []).append(frame.functions)  # so that id(frame.functions) is never reused
+    if cond is None:
+        return NOT_COMPILED
+    args = []
+    for n, k in zip(cond.names, cond.kinds):
+        v = fvars[n]
+        args.append(v.item() if k in "db" or k in _IDT else v)
+    _NS["_lim"][0] = interp.max_depth
+    _INTERP[0] = interp
+    try:
+        r = cond.fn(interp.depth, *args)
+    except Exception:  # noqa: BLE001 - a bail-out: the interpreter evaluates the condition itself
+        info["bails"] += 1
+        if info["bails"] >= 4 * MAX_BAILS:
+            node._jit_cond = False
+        return NOT_COMPILED
+    typ = cond.typ
+    if typ == "b":
+        return _bb(r)
+    if typ == "d":
+        return _bd(r)
+    if typ in _IDT:
+        return _NS["_b" + typ](r)
+    return r

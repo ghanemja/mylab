@@ -628,6 +628,10 @@ class Interpreter:
         There the element-wise | and & short-circuit, as in MATLAB: when the left operand is a scalar
         that decides the result, the right one is not evaluated. Old code relies on it, e.g.
         if (exist('ht') ~= 1) | (ht == 'auto') when ht was not passed.
+
+        Each operand of such a | or & chain that is run often is compiled on its own
+        (jit.eval_condition): its value is exactly what evaluating it gives, so the chain keeps
+        MATLAB's short-circuit rules (true | [] is true here, though the element-wise operator gives []).
         """
         if type(node) is A.BinOp and node.op in ("|", "&"):
             left = self._cond(node.left, frame)
@@ -639,6 +643,10 @@ class Interpreter:
                     if node.op == "&" and not v:
                         return _FALSE_1x1
             return self.binop_values(node.op, left, self._cond(node.right, frame))
+        if self.jit_enabled and self.trace_hook is None and type(frame) is Frame:
+            r = jit.eval_condition(self, node, frame)
+            if r is not jit.NOT_COMPILED:
+                return r
         return self.eval(node, frame)
 
     def exec_for(self, stmt: A.For, frame: Frame) -> None:
