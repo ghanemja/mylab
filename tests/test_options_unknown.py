@@ -117,6 +117,7 @@ CALLS = {
     'fit': "(1:5)', (2:6)', 'poly1'",
     'fitoptions': "'poly1'",
     'fittype': "'a*x+b'",
+    'round': '2.5',
     'sfit': "fittype('poly11'), 1, 2, 3",
     'fitnlm': "(1:10)', 2*(1:10)'+1, @(b,x) b(1)*x+b(2), [1 1]",
     'fitrensemble': "(1:10)', (1:10)'",

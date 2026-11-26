@@ -250,10 +250,15 @@ HELP: dict = {
     "floor": ("y = floor(x)", "Rounds each element down, toward -Inf. Example: floor(-2.5) is -3."),
     "ceil": ("y = ceil(x)", "Rounds each element up, toward +Inf. Example: ceil(2.1) is 3."),
     "fix": ("y = fix(x)", "Rounds each element toward zero, dropping the fractional part. Example: fix(-2.7) is -2."),
-    "round": (["y = round(x)", "y = round(x, n)"],
+    "round": (["y = round(x)", "y = round(x, n)", "y = round(x, n, 'decimals')", "y = round(x, n, 'significant')",
+               "y = round(..., 'TieBreaker', direction)"],
               "Rounds to the nearest integer, with halves going away from zero (round(2.5) is 3, "
               "round(-2.5) is -3). With n, rounds to n digits after the decimal point; negative n rounds "
-              "to tens, hundreds and so on. Integer-class input is returned unchanged."),
+              "to tens, hundreds and so on. With 'significant', n counts significant digits instead "
+              "(round(1234, 2, 'significant') is 1200). 'TieBreaker' says where a value exactly halfway "
+              "between two candidates goes: 'fromzero' (the default), 'tozero', 'even', 'odd', 'plusinf' "
+              "(up) or 'minusinf' (down); round(2.5, 'TieBreaker', 'even') is 2. Integer-class input keeps "
+              "its class and is unchanged unless n is negative. Complex values are rounded part by part."),
     "mod": ("r = mod(a, b)",
             "Remainder after division, defined as a - floor(a./b).*b, so a nonzero result has the sign of "
             "b. mod(a, 0) is a. Example: mod(-1, 3) is 2. See rem for the truncating version."),

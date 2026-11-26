@@ -84,50 +84,62 @@ def _content_class(x) -> str:
     return "other"
 
 
+def num2cell_dims(arg) -> list[int]:
+    """The 0-based dimensions named by num2cell's dims argument (positive integers)."""
+    d = np.real(num(arg)).flatten()
+    if d.size == 0 or np.any(d < 1) or np.any(d != np.round(d)):
+        raise MatlabError("num2cell: dimensions must be positive integers.", "MATLAB:num2cell:InvalidDim")
+    return sorted({int(x) - 1 for x in d})
+
+
+def split_to_cells(data: np.ndarray, dims: list[int], wrap) -> Cell:
+    """Cell array of the pieces of ``data``: single elements, or with ``dims`` the slices that span those
+    dimensions. ``wrap`` turns each piece (an ndarray of ``data``'s kind) into a MATLAB value."""
+    from ..values import as_2d
+    nd = max(data.ndim, dims[-1] + 1 if dims else 0)
+    full = data.reshape(data.shape + (1,) * (nd - data.ndim))
+    out_shape = tuple(1 if d in dims else full.shape[d] for d in range(nd))
+    out = np.empty(out_shape, dtype=object)
+    for idx in np.ndindex(out_shape):
+        sel = tuple(slice(None) if d in dims else slice(idx[d], idx[d] + 1) for d in range(nd))
+        out[idx] = wrap(as_2d(full[sel].copy()))
+    return Cell(as_2d(out))
+
+
 @builtin("num2cell")
 def _num2cell(interp, args, nargout):
     nargs(args, 1, 2, "num2cell")
     v = args[0]
-    if isinstance(v, (MString, StringArray)) and len(args) == 1:
-        # each string becomes a 1-by-1 string in its own cell; <missing> stays missing
-        from ..values import string_data
-        sdata = string_data(v)
-        data = np.empty(sdata.shape, dtype=object)
-        for idx in np.ndindex(sdata.shape):
-            x = sdata[idx]
-            if x is None:
-                d = np.empty((1, 1), dtype=object)
-                d[0, 0] = None
-                data[idx] = StringArray(d)
-            else:
-                data[idx] = MString(x)
-        return Cell(data)
-    if isinstance(v, Cell):
-        data = np.empty(v.shape, dtype=object)
-        for idx in np.ndindex(v.shape):
-            inner = np.empty((1, 1), dtype=object)
-            inner[0, 0] = v.data[idx]
-            data[idx] = Cell(inner)
-        return Cell(data)
-    if not isinstance(v, np.ndarray):
-        v = num(v)
-    if len(args) > 1:
-        # num2cell(A, dims): each cell holds a slice that spans the listed dimensions
-        dims = sorted({int(d) - 1 for d in np.real(num(args[1])).flatten()})
-        if not dims or dims[0] < 0:
-            raise MatlabError("num2cell: dimensions must be positive integers.")
-        from ..values import as_2d
-        nd = max(v.ndim, dims[-1] + 1)
-        full = v.reshape(v.shape + (1,) * (nd - v.ndim))
-        out_shape = tuple(1 if d in dims else full.shape[d] for d in range(nd))
-        data = np.empty(out_shape, dtype=object)
+    dims = num2cell_dims(args[1]) if len(args) > 1 else []
+    if isinstance(v, np.ndarray):  # numeric, logical and char arrays
+        if not dims:
+            data = np.empty(v.shape, dtype=object)
+            for idx in np.ndindex(v.shape):
+                data[idx] = v[idx].reshape(1, 1).copy()
+            return Cell(data)
+        return split_to_cells(v, dims, lambda d: d)
+    if isinstance(v, Cell):  # each cell is wrapped in a cell of its own
+        return split_to_cells(v.data, dims, Cell)
+    if isinstance(v, Struct):
+        fields = list(v.fields)
+        return split_to_cells(v.data, dims, lambda d: Struct(d, fields).copy())
+    if isinstance(v, (MString, StringArray)):  # each string is a string scalar; <missing> stays missing
+        from ..values import string_data, string_result
+        return split_to_cells(string_data(v), dims, string_result)
+    shape = getattr(v, "matlab_shape", None)
+    if shape is not None and hasattr(v, "index_get"):  # objects (datetime, categorical, ...): their indexing
+        shape = tuple(shape())
+        nd = max(len(shape), dims[-1] + 1 if dims else 0)
+        shape = shape + (1,) * (nd - len(shape))
+        out_shape = tuple(1 if d in dims else shape[d] for d in range(nd))
+        out = np.empty(out_shape, dtype=object)
         for idx in np.ndindex(out_shape):
-            sel = tuple(slice(None) if d in dims else slice(idx[d], idx[d] + 1) for d in range(nd))
-            data[idx] = as_2d(full[sel].copy())
-        return Cell(as_2d(data))
-    data = np.empty(v.shape, dtype=object)
-    for idx in np.ndindex(v.shape):
-        data[idx] = v[idx].reshape(1, 1).copy()
+            subs = [char(":") if d in dims else np.array([[idx[d] + 1.0]]) for d in range(nd)]
+            out[idx] = v if all(s == 1 for s in shape) else v.index_get(interp, subs)
+        from ..values import as_2d
+        return Cell(as_2d(out))
+    data = np.empty((1, 1), dtype=object)  # a function handle or other scalar value
+    data[0, 0] = v
     return Cell(data)
 
 

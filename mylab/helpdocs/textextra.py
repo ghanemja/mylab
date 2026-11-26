@@ -37,9 +37,11 @@ HELP = {
                 "With 'class' the text is wrapped in the class name, e.g. int8([1 2 3]). An empty array is "
                 "written as zeros(m,n)."),
     "num2cell": (["C = num2cell(A)", "C = num2cell(A, dims)"],
-                 "Cell array with each element of A in its own cell (each string of a string array becomes a "
-                 "1-by-1 string). With dims, the listed dimensions are kept together: num2cell(A, 1) puts "
-                 "each column of A in one cell."),
+                 "Cell array with each element of A in its own cell, keeping its class: A can be numeric, "
+                 "logical, char, a struct array (each cell holds a 1-by-1 struct), a cell array (each cell "
+                 "holds a 1-by-1 cell), a string array (each cell holds a string) or an array of objects. "
+                 "With dims, the listed dimensions are kept together: num2cell(A, 1) puts each column of A "
+                 "in one cell, and num2cell(A, [1 2]) each page."),
     "numfields": ("n = numfields(s)", "Number of fields of the struct s (0 if s is not a struct)."),
     "toupper": ("t = toupper(s)", "Same as upper: converts text to upper case."),
     "tolower": ("t = tolower(s)", "Same as lower: converts text to lower case."),

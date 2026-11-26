@@ -14,7 +14,7 @@ from ..ops import binop, unary
 from ..values import Cell, MString, StringArray, char, is_char, simplify, string_result, to_int, to_str
 from ._registry import builtin
 from ._util import (
-    as_row_or_col, default_dim, flag_present, fnum, get_dim, is_text, keep2d, nargs, num, text,
+    as_row_or_col, default_dim, flag_present, fnum, get_dim, is_text, keep2d, nargs, num, split_options, text,
 )
 
 sp = lazy_module("scipy.special", globals(), "sp")  # imported on first use: keeps start-up fast
@@ -271,23 +271,61 @@ def _sign(interp, args, nargout):
     return np.sign(a).astype(a.dtype if a.dtype.kind in "iuf" else float)
 
 
-def _round_scaled(a, n):
+_TIES = ("fromzero", "tozero", "even", "odd", "plusinf", "minusinf")
+
+
+def _round_ties(a, tie: str = "fromzero"):
+    """Round to the nearest integer; an exact half goes the way ``tie`` names (one of _TIES)."""
+    if a.dtype.kind == "c":
+        return _round_ties(a.real, tie) + 1j * _round_ties(a.imag, tie)
+    if tie == "fromzero":
+        return _round_half_away(a)
+    mag = np.abs(a)
+    with np.errstate(invalid="ignore"):
+        low = np.floor(mag)
+        frac = mag - low  # exact on magnitudes, unlike a - floor(a) for negative a
+        if tie == "tozero":
+            up = np.zeros(a.shape, bool)
+        elif tie == "even":
+            up = np.fmod(low, 2) == 1
+        elif tie == "odd":
+            up = np.fmod(low, 2) == 0
+        elif tie == "plusinf":
+            up = a > 0  # toward +Inf: away from zero for positive values, toward it for negative ones
+        else:
+            up = a < 0
+        r = np.where((frac > 0.5) | ((frac == 0.5) & up), low + 1, low)
+    return np.copysign(r, a).astype(a.dtype, copy=False)
+
+
+def _round_scaled(a, n, tie: str = "fromzero"):
     """Round to n decimal places; n is an integer array that broadcasts with a."""
     n = np.asarray(n, dtype=float)
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-        up = _round_half_away(a * 10.0 ** np.maximum(n, 0)) / 10.0 ** np.maximum(n, 0)
-        down = _round_half_away(a / 10.0 ** np.maximum(-n, 0)) * 10.0 ** np.maximum(-n, 0)
+        up = _round_ties(a * 10.0 ** np.maximum(n, 0), tie) / 10.0 ** np.maximum(n, 0)
+        down = _round_ties(a / 10.0 ** np.maximum(-n, 0), tie) * 10.0 ** np.maximum(-n, 0)
     r = np.where(n >= 0, up, down)
     return np.where(np.isfinite(a), r, a).astype(a.dtype, copy=False)
 
 
 @builtin("round")
 def _round(interp, args, nargout):
-    nargs(args, 1, 3, "round")
+    nargs(args, 1, 5, "round")
     a = num(args[0])
-    if len(args) > 1:
-        n = to_int(args[1], "digits")
-        mode = text(args[2]).lower() if len(args) > 2 else "decimals"
+    rest, opts = split_options(list(args[1:]), ["TieBreaker"], "round", flags=("significant", "decimals"))
+    tie = "fromzero"
+    if "TieBreaker" in opts:
+        word = opts["TieBreaker"]
+        tie = text(word).lower() if is_text(word) else ""
+        if tie not in _TIES:
+            raise MatlabError("round: 'TieBreaker' must be 'fromzero', 'tozero', 'even', 'odd', 'plusinf' or "
+                              "'minusinf'.", "MATLAB:round:InvalidTieBreaker")
+    if len(rest) > 2 or (rest and is_text(rest[0])):
+        raise MatlabError("round: use round(X), round(X, n) or round(X, n, type), followed by 'TieBreaker' "
+                          "and a value if needed.", "MATLAB:round:InvalidInput")
+    if rest:
+        n = to_int(rest[0], "digits")
+        mode = text(rest[1]).lower() if len(rest) > 1 else "decimals"
         if mode not in ("significant", "decimals"):
             raise MatlabError("round: the rounding type must be 'significant' or 'decimals'.")
         int_class = a.dtype if a.dtype.kind in "iu" else None
@@ -303,18 +341,18 @@ def _round(interp, args, nargout):
             with np.errstate(divide="ignore", invalid="ignore"):
                 e = np.floor(np.log10(np.abs(a)))
             e = np.where(np.isfinite(e), e, 0.0)
-            r = _round_scaled(a, n - 1 - e)
+            r = _round_scaled(a, n - 1 - e, tie)
         elif a.dtype.kind == "c":
-            r = _round_scaled(a.real, n) + 1j * _round_scaled(a.imag, n)
+            r = _round_scaled(a.real, n, tie) + 1j * _round_scaled(a.imag, n, tie)
         else:
-            r = _round_scaled(a, n)
+            r = _round_scaled(a, n, tie)
         if int_class is not None:
             from ..values import saturate_int
             return saturate_int(r, int_class)
         return r
     if a.dtype.kind in "iu":
         return a
-    return _round_half_away(a)
+    return _round_ties(a, tie)
 
 
 @builtin("isnan")
@@ -1144,7 +1182,15 @@ def _minmax(is_max):
                 return vals, _unmerge(pos.astype(float) + 1, shape)
             return vals, _unmerge(idx.astype(float) + 1, shape)
         return vals
-    return f
+
+    def real_if_zero_imag(interp, args, nargout):
+        # Like other built-in results, a complex maximum or minimum whose imaginary parts are all zero is
+        # returned as a real array: max([1+2i, 3]) is the real 3.
+        out = f(interp, args, nargout)
+        if isinstance(out, tuple):
+            return (simplify(out[0]),) + tuple(out[1:])
+        return simplify(out)
+    return real_if_zero_imag
 
 
 builtin("max")(_minmax(True))

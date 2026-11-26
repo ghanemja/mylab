@@ -1133,7 +1133,7 @@ def _fopen(interp, args, nargout):
     if mode not in ("r", "w", "a", "r+", "w+", "a+"):
         raise MatlabError(f"Invalid permission '{perm}'.")
     endian = machine_format(args[2], _NATIVE) if len(args) > 2 else _NATIVE
-    encoding = text(args[3]) if len(args) > 3 else "UTF-8"
+    encoding = (text(args[3]) if len(args) > 3 else "") or "UTF-8"  # '' means the default encoding
     try:
         "".encode(encoding)
     except LookupError:
