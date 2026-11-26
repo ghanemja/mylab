@@ -81,6 +81,29 @@ def _measure() -> tuple[int, int, int, int, int]:
     return dict_and_local, element, caller_local, fresh_left, fresh_right
 
 
+class _Slot:
+    __slots__ = ("data",)
+
+
+def _slot_and_local() -> int:
+    # interpreter._assign_field_inplace:  data = struct.data; getrefcount(data)  (Struct keeps it in a slot)
+    holder = _Slot()
+    holder.data = np.empty((1, 1), dtype=object)
+    data = holder.data
+    return sys.getrefcount(data)
+
+
+def _measure_slot() -> int:
+    gil = getattr(sys, "_is_gil_enabled", None)
+    if gil is not None and not gil():
+        return -1
+    n = _slot_and_local()
+    return n if n >= 2 else -1  # (the slot and the local must both be counted)
+
+
+#: ``getrefcount(data)`` for an array held by one ``__slots__`` attribute and one local variable.
+SLOT_AND_LOCAL = _measure_slot()
+
 #: ``getrefcount(arr)`` for an array held by one dict entry and one local variable, nothing else.
 #: Also the struct object itself in ``jit._prepare``.
 #: ``getrefcount(box[0, 0])`` for an object-array element held by nothing but the array.

@@ -653,8 +653,12 @@ def _times(a: Any, b: Any) -> "SparseMatrix":
     if isinstance(a, SparseMatrix) and isinstance(b, SparseMatrix):
         if A == B:
             return SparseMatrix(a.fm().multiply(b.fm()))
-        return _sparse_from_dense_op(".*", a, b)
-    s, d = (a, b) if isinstance(a, SparseMatrix) else (b, a)
+        # a matrix times a row or a column (singleton expansion): only the vector is made full
+        s, d = (a, b) if A[0] * A[1] >= B[0] * B[1] else (b, a)
+        if 1 not in d.shape:
+            return _sparse_from_dense_op(".*", a, b)
+    else:
+        s, d = (a, b) if isinstance(a, SparseMatrix) else (b, a)
     dd = _dense(d)
     ops._check_broadcast(np.empty(A), np.empty(B), ".*")
     if np.all(np.isfinite(dd)) and (dd.shape[0] <= s.shape[0] and dd.shape[1] <= s.shape[1]):
@@ -1412,6 +1416,24 @@ for _op, _fname in {"+": "plus", "-": "minus", ".*": "times", "*": "mtimes", "./
                     ".\\": "ldivide", "\\": "mldivide", ".^": "power", "^": "mpower", "==": "eq", "~=": "ne",
                     "<": "lt", "<=": "le", ">": "gt", ">=": "ge", "&": "and", "|": "or"}.items():
     _NATIVE[_fname] = _op_function(_op)
+
+
+# bsxfun(@op, A, B) is op(A, B) with singleton dimensions expanded. These operators expand the dimensions
+# of a sparse operand themselves, so bsxfun hands them the operands as they are: a sparse result stays
+# sparse, and a large sparse matrix is not made full (and copied twice) first.
+_BSX_OPERATORS = frozenset({"plus", "minus", "times", "rdivide", "ldivide", "power", "eq", "ne", "lt", "le", "gt",
+                            "ge", "and", "or"})
+
+
+@native("bsxfun")
+def _n_bsxfun(interp, args, nargout):
+    f = args[0] if args else None
+    if len(args) == 3 and isinstance(f, FunctionHandle) and not f.is_anonymous and f.name in _BSX_OPERATORS \
+            and f.name not in f.closure.get("__functions__", {}) and interp.find_file_function(f.name) is None:
+        return interp.call_function_value(f, [args[1], args[2]], 1)[0]
+    dense = [a.to_dense() if isinstance(a, SparseMatrix) else a for a in args]
+    vals = interp.call_named("bsxfun", dense, nargout, interp.frame)
+    return vals[0] if vals else None
 
 
 @native("uminus")

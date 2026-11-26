@@ -214,6 +214,10 @@ def matmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
             "MATLAB:innerdim",
         )
     rtype = _result_type(a, b)
+    if fastnum.ENABLED and rtype is None and a.ndim == 2 and b.ndim == 2:
+        r = fastnum.matmul_exact(a, b)  # mostly-zero integer matrices: the same numbers by a sparse product
+        if r is not None:
+            return r
     return _finish(np.asarray(a, dtype=None if a.dtype.kind in "fc" else float)
                    @ np.asarray(b, dtype=None if b.dtype.kind in "fc" else float), rtype)
 
@@ -354,6 +358,7 @@ def _logical_operand(v: Any) -> np.ndarray:
 
 _F64 = np.dtype(float)
 _BOOL = np.dtype(bool)
+_S11 = (1, 1)
 
 
 def _scalar_fast(op: str, x: float, y: float):
@@ -404,6 +409,11 @@ def binop(op: str, a: Any, b: Any) -> Any:
                     return np.array([[r]], dtype=bool if isinstance(r, bool) else float)
         elif a.dtype is _BOOL and b.dtype is _BOOL and fastnum.ENABLED:
             r = fastnum.binop_bool(op, a, b)
+            if r is not None:
+                return r
+        elif a.shape == _S11 and b.shape == _S11 and fastnum.ENABLED \
+                and (a.dtype.kind in "iu" or b.dtype.kind in "iu"):
+            r = fastnum.binop_int(op, a, b)  # integer scalars: Python arithmetic, rounded and saturated
             if r is not None:
                 return r
     if isinstance(a, _NO_OPERATORS) or isinstance(b, _NO_OPERATORS):

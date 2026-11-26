@@ -496,8 +496,39 @@ def _int_helpers(code: str) -> dict:
                 return v.item()
         raise Bail
 
+    def get1(a, i):
+        """``a(i)`` for a 2-D or 3-D array of this class held as a boxed value (column-major order)."""
+        if type(a) is not _ND or a.dtype != dt or not 2 <= a.ndim <= 3:
+            raise Bail
+        k = int(i)
+        if k != i or k < 1 or k > a.size:
+            raise Bail
+        shape = a.shape
+        rows = shape[0]
+        k -= 1
+        if a.ndim == 2:
+            if rows == 1 or shape[1] == 1:
+                return a.item(k)
+            return a.item(k % rows, k // rows)
+        plane = rows * shape[1]
+        return a.item(k % rows, (k % plane) // rows, k // plane)
+
+    def get2(a, i, j):
+        """``a(i, j)``; of a 3-D array, j runs over its columns page after page."""
+        if type(a) is not _ND or a.dtype != dt or not 2 <= a.ndim <= 3:
+            raise Bail
+        r, c = int(i), int(j)
+        shape = a.shape
+        cols = shape[1] if a.ndim == 2 else shape[1] * shape[2]
+        if r != i or c != j or r < 1 or c < 1 or r > shape[0] or c > cols:
+            raise Bail
+        if a.ndim == 2:
+            return a.item(r - 1, c - 1)
+        c -= 1
+        return a.item(r - 1, c % shape[1], c // shape[1])
+
     out = {f"_s{code}": sat, f"_b{code}": box, f"_n{code}": neg, f"_u{code}": unbox, f"_c{code}": clamp,
-           f"_q{code}": operand}
+           f"_q{code}": operand, f"_g{code}1": get1, f"_g{code}2": get2}
     if code in _WIDE:
         def wide(op, x, y):
             """``x op y`` (+, - or *) for this 64-bit class and an int, bool or double operand."""
@@ -742,7 +773,7 @@ class _Scan:
                 raise Reject
             self.names.add(target.name)
             self.assigned.add(target.name)
-        elif t is A.Index and type(target.base) is A.Ident and 1 <= len(target.args) <= 2:
+        elif t is A.Index and type(target.base) is A.Ident and 1 <= len(target.args) <= 3:
             self.names.add(target.base.name)
             self.index_written.add(target.base.name)
             for a in target.args:
@@ -920,7 +951,7 @@ class _Gen:
         k = self.kinds.get(name, "-")
         if k == "d" or k == "b" or k in _IDT:
             return k
-        return "O" if k == "x" or k.startswith("h:") else "d"
+        return "O" if k == "x" or k[:1] == "a" or k.startswith("h:") else "d"
 
     def const(self, value, key=None) -> str:
         key = id(value) if key is None else key
@@ -1170,8 +1201,6 @@ class _Gen:
         else:
             raise Reject
         if name in self.arrays:
-            if not 1 <= len(args) <= 2:
-                raise Reject
             return f"{self.py(name, 'a')}.item({self.index(name, args)})", "d"
         if name in self.lists or name in self.structs or name in self.blocked:
             raise Reject
@@ -1188,17 +1217,20 @@ class _Gen:
             code, typ = self.ident(name)
             if typ not in "oO":
                 raise Reject  # indexing into a scalar variable
-            return self.boxed_index(code, args)
+            return self.boxed_index(code, args, self.kinds.get(name, "-"))
         if "." in name:
             raise Reject
         return self.call(name, args, ctx)
 
-    def boxed_index(self, code: str, args: list) -> tuple[str, str]:
+    def boxed_index(self, code: str, args: list, kind: str = "-") -> tuple[str, str]:
         count = len(args)
         if 1 <= count <= 2 and all(type(a) not in (A.Colon, A.Range, A.Matrix, A.String) for a in args):
             parts = [self.expr(a, f"_endf({code}, {k}, {count})") for k, a in enumerate(args)]
             if all(typ in "dbo" or typ in _IDT for _, typ in parts):
                 idx = ", ".join(self.as_index(c, typ) for c, typ in parts)
+                if kind[:1] == "a" and kind[1:] in _IDT:
+                    # an element of an integer-class array (the helper checks the class at run time)
+                    return f"_g{kind[1:]}{count}({code}, {idx})", kind[1:]
                 return f"_get{count}({code}, {idx})", "d"
         items = []
         for k, a in enumerate(args):
@@ -1221,6 +1253,8 @@ class _Gen:
                 if name == "numel" and len(args) == 1:
                     return f"float(n{arr})", "d"
                 if name == "length" and len(args) == 1:
+                    if self.kinds.get(target) == "n":
+                        return f"float(max(r{arr}, c{arr}, p{arr}))", "d"
                     return f"float(max(r{arr}, c{arr}))", "d"
                 if name == "size" and len(args) == 2 and type(args[1]) is A.Number and args[1].value in (1, 2):
                     return f"float({'r' if args[1].value == 1 else 'c'}{arr})", "d"
@@ -1308,6 +1342,11 @@ class _Gen:
     def index(self, name: str, args: list) -> str:
         kind = self.kinds[name]
         n = self.py(name, "")
+        if (kind == "n") != (len(args) == 3) or not 1 <= len(args) <= 3:
+            raise Reject  # a 3-D array with fewer subscripts folds its dimensions: the interpreter's job
+        if kind == "n":
+            i, j, k = (self.as_index(*self.expr(a, f"float({d}{n})")) for a, d in zip(args, "rcp"))
+            return f"(_ix({i}, r{n}), _ix({j}, c{n}), _ix({k}, p{n}))"
         if len(args) == 1:
             i = self.as_index(*self.expr(args[0], f"float(n{n})"))
             if kind in "rc":
@@ -1449,6 +1488,8 @@ class _Gen:
             raise Reject
         var = self.py(name)
         count = len(target.args)
+        if count > 2:
+            raise Reject  # (three subscripts: only for a 3-D double array held element by element)
         idx = ", ".join(self.as_index(*self.expr(a, f"_endf({var}, {k}, {count})"))
                         for k, a in enumerate(target.args))
         self.emit(indent, f"_set{count}({var}, {idx}, {value})")
@@ -1477,8 +1518,15 @@ def _kind(value: Any) -> str:
         return "L" if shape == (0, 0) or (len(shape) == 2 and shape[0] == 1) else "x"
     if t is Struct:
         return "S" if value.data.shape == (1, 1) else "x"
-    if t is not np.ndarray or value.ndim != 2:
+    if t is not np.ndarray:
         return "x"
+    if value.ndim != 2:
+        if value.ndim != 3 or not value.size:
+            return "x"
+        if value.dtype is _F64:
+            return "n"
+        code = _DT_CODE.get(value.dtype)
+        return "x" if code is None else "a" + code
     if value.shape == (1, 1):
         if value.dtype is _F64:
             return "d"
@@ -1486,7 +1534,8 @@ def _kind(value: Any) -> str:
             return "b"
         return _DT_CODE.get(value.dtype, "x")
     if value.dtype is not _F64 or value.size == 0:
-        return "x"
+        code = _DT_CODE.get(value.dtype) if value.size else None
+        return "x" if code is None else "a" + code  # an integer-class array: its elements are read typed
     return "r" if value.shape[0] == 1 else ("c" if value.shape[1] == 1 else "m")
 
 
@@ -1504,10 +1553,10 @@ def _roles(gen: _Gen, scan: _Scan, kinds: dict, declared: set) -> None:
             if kind != "L" or name in scan.assigned or name in scan.index_written or scan.reads.get(name, 0):
                 raise Reject
             gen.lists.add(name)
-        elif kind in ("r", "c", "m") and name not in scan.assigned:
+        elif kind in ("r", "c", "m", "n") and name not in scan.assigned:
             gen.arrays.add(name)
         elif kind != "-" or name in scan.assigned or name in declared:
-            if kind in ("r", "c", "m", "L", "S") or kind.startswith("h:"):
+            if kind in ("r", "c", "m", "n", "L", "S") or kind.startswith("h:"):
                 kinds[name] = "x" if not kind.startswith("h:") else kind
             gen.variables.add(name)
     for s, f in scan.fields:
@@ -2020,6 +2069,10 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
         "".join(f"{gen.py(n, 'l')}, {gen.py(n, 'm')}, " for n in list_names) + ")"
     name = _unique("_loop")
     src = [f"def {name}({', '.join(params)}):", "    _p = 0", "    _i = _it0"]
+    for n in arr_names:
+        if kinds.get(n) == "n":
+            suffix = gen.py(n, "")
+            src.append(f"    p{suffix} = n{suffix} // (r{suffix} * c{suffix})")
     src += [f"    {gen.py(n, 'm')} = False" for n in list_names]
     src += ["    try:"] + gen.lines
     src += ["    except BaseException as _e:",
