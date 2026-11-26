@@ -181,6 +181,16 @@ may have relied on.
 - `echo`, `pkg load` (for the Octave packages mylab has built in), `bucky`,
   `randg`, `handle`, `fields`, `dlmread` ranges, `exist` for data files on
   the path.
+- `timeseries` objects: construction from data, times and names (dates as
+  text or `datetime`), `TimeInfo`, `DataInfo`, `QualityInfo` and events,
+  `resample`, `synchronize`, `getsampleusingtime`, `addsample`/`delsample`,
+  `append`, statistics with time weighting and quality codes, arithmetic,
+  `plot`, conversion to and from timetables, and save/load in MAT-files.
+- `properties`, `fieldnames` and `isprop` list the public properties of
+  built-in objects (`datetime`, `duration`, `calendarDuration`,
+  `containers.Map`, tables, `MException`, `RandStream`, graphs, ...), all
+  from one list per class; `properties('datetime')` takes a class name.
+  `calendarDuration` has a `Format` property.
 
 ### Speed
 - Every case of the speed comparison with GNU Octave 10.3
@@ -228,6 +238,9 @@ may have relied on.
   version 7.3 files still load as empty, with a warning.
 - `isequal` compares tables and timetables by value (two tables built apart
   were unequal); `isequaln` works for `calendarDuration`.
+- `print` accepts `-tiff` (an EPS preview; the file is written without it);
+  `boxplot(X, g)` takes one group value per column of a matrix; `set` on an
+  empty handle array does nothing.
 - **Graphics:** after `yyaxis right`, `xlabel`, `title`, `grid`, `xlim`,
   x-tick functions and `box` act on the chart's one shared x-axis, title and
   grid, and `ax.Legend` finds the legend from either side; `cla reset`

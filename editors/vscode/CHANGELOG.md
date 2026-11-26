@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- Hover help, completion and call hints cover the built-in functions of
+  mylab 1.1.0: more than 2,800 entries (about 770 in 1.0.0), including the
+  Curve Fitting functions, HDF5 and NetCDF, `polyshape`, `timeseries` and
+  the methods of `RandStream` and other objects.
+- Use it with mylab 1.1.0 (`pip install --upgrade mylab-lang`): the Problems
+  panel and the run commands call the `mylab` you have installed.
+
 ## 1.0.0
 
 First release.

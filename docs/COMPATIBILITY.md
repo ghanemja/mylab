@@ -53,7 +53,8 @@ expected values come from MATLAB's documented behaviour.
 - `containers.Map`, `table` and `timetable` (joins, grouping, `rowfun`,
   `stack`/`unstack`, multi-column variables, `readtable`/`writetable`),
   sparse matrices, `datetime` (with IANA time zones), `duration`,
-  calendar durations (`calmonths`, `calyears`, …) and `categorical`.
+  calendar durations (`calmonths`, `calyears`, …), `categorical` and
+  `timeseries`.
 - `inputParser`, `onCleanup`, `RandStream`, `timer`, `parfor` (run as an
   ordinary loop), `gpuArray` (data stays on the CPU).
 - Files: MAT-files of every version, including version 7.3 (`save -v7.3`,
@@ -99,7 +100,7 @@ expected values come from MATLAB's documented behaviour.
   `fileDatastore`, `augmentedImageDatastore`; `.mlapp` files and GUIDE
   layouts.
 - **Toolboxes:** deep learning, computer vision, the Robotics System
-  Toolbox's `se2`/`se3` objects, `timeseries`, Simscape and physical
+  Toolbox's `se2`/`se3` objects, `tscollection`, Simscape and physical
   modelling, and the other toolboxes not listed above.
 - **Language:** compiled MEX files and Java.
 
@@ -149,6 +150,11 @@ expected values come from MATLAB's documented behaviour.
   An object whose class is not on the path loads as a struct of its saved
   properties, with a warning. Like MATLAB, `matfile` creates a version 7.3
   file when the file does not exist yet.
+- **`timeseries`:** one series per variable: `[ts1 ts2]` is an error and
+  `[ts1; ts2]` joins the series in time, like `append`. An event inside a
+  series cannot be changed in place (`ts.Events(1).Name = ...`); change a
+  copy and assign `ts.Events` again. A timeseries in a MAT-file that MATLAB
+  wrote is not read.
 - **Sound:** `sound`, `soundsc` and `audioplayer` play nothing.
 - **Excel:** `xlsread`, `xlswrite`, `readtable`, `writetable`, `readmatrix`,
   `writematrix`, `readcell` and `writecell` work with `.xlsx` and `.ods`
