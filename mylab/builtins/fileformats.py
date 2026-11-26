@@ -1,7 +1,7 @@
 """Data files: MAT-files (save, load, matfile), HDF5, NetCDF, XML, struct files and memory maps.
 
 The MAT container code lives in ``_matio`` (Level 5 files), ``_mat73`` (HDF5-based version 7.3
-files, optional h5py) and ``_matcodec`` (how values without a standard MAT type are stored).
+files, through h5py) and ``_matcodec`` (how values without a standard MAT type are stored).
 """
 
 from __future__ import annotations
@@ -602,6 +602,15 @@ def listing_rows(interp, args: list, fn: str) -> list[dict]:
 
 # -- matfile ---------------------------------------------------------------------------------------
 
+def _new_matfile_version() -> str | None:
+    """matfile creates a version 7.3 file, as MATLAB does; the default version if h5py is missing."""
+    try:
+        import h5py  # noqa: F401
+    except ImportError:
+        return None
+    return "7.3"
+
+
 class MatFileObject(MObject):
     """m = matfile(name): variables of a MAT-file read and written as properties of m."""
 
@@ -665,7 +674,10 @@ class MatFileObject(MObject):
                               "MATLAB:MatFile:NotWritable")
         if not re.fullmatch(r"[A-Za-z]\w*", name):
             raise MatlabError(f"'{name}' is not a valid variable name.")
-        write_mat(interp, self.path, {name: value}, append=True)
+        version = None
+        if not os.path.isfile(self.path) or os.path.getsize(self.path) == 0:
+            version = _new_matfile_version()
+        write_mat(interp, self.path, {name: value}, version=version, append=True)
         self._stamp = None
         return self
 
@@ -1738,7 +1750,7 @@ def _nc_load(path: str) -> _NcFile:
         if magic == b"\x89HDF\r\n\x1a\n":
             raise MatlabError(f"'{path}' is a NetCDF-4 file (stored as HDF5), which is not supported. mylab reads "
                               "and writes the classic NetCDF formats; the h5read functions can read the data of "
-                              "a NetCDF-4 file when h5py is installed.", "mylab:netcdf:netcdf4")
+                              "a NetCDF-4 file.", "mylab:netcdf:netcdf4")
         raise MatlabError(f"'{path}' is not a NetCDF file.", "MATLAB:imagesci:netcdf:fileOpen")
     nc = _NcFile()
     try:
@@ -2267,7 +2279,7 @@ def _ncwriteatt(interp, args, nargout):
     return None
 
 
-# -- HDF5 (through the optional h5py package) ----------------------------------------------------------
+# -- HDF5 (through the h5py package) -------------------------------------------------------------------
 
 _H5_TYPES = {"double": np.float64, "single": np.float32, "int8": np.int8, "uint8": np.uint8, "int16": np.int16,
              "uint16": np.uint16, "int32": np.int32, "uint32": np.uint32, "int64": np.int64, "uint64": np.uint64}

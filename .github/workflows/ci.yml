@@ -53,10 +53,10 @@ jobs:
         include:
           - name: oldest
             python-version: "3.10"
-            pins: "numpy==1.26.* scipy==1.13.* matplotlib==3.8.* pillow==10.*"
+            pins: "numpy==1.26.* scipy==1.13.* matplotlib==3.8.* pillow==10.* h5py==3.15.1"
           - name: newest
             python-version: "3.14"
-            pins: "--upgrade numpy scipy matplotlib pillow"
+            pins: "--upgrade numpy scipy matplotlib pillow h5py"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -64,7 +64,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install ${{ matrix.pins }} pytest
       - run: pip install -e .
-      - run: python -c "import numpy, scipy, matplotlib; print(numpy.__version__, scipy.__version__, matplotlib.__version__)"
+      - run: python -c "import numpy, scipy, matplotlib, h5py; print(numpy.__version__, scipy.__version__, matplotlib.__version__, h5py.__version__)"
       - run: python -m pytest -q -p no:cacheprovider
 
   probes:

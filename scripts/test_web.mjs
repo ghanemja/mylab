@@ -302,6 +302,8 @@ async function main() {
     });
     const page = await context.newPage();
     watchErrors(page, consoleErrors);
+    const h5pyRequests = []; // h5py may only be downloaded once a program uses HDF5
+    context.on("request", (r) => { if (/\/h5py-[^/]*\.whl$/.test(r.url())) h5pyRequests.push(r.url()); });
     const h = helpers(page);
     const { setCode: cm, consoleText, waitIdle } = h;
 
@@ -2025,6 +2027,18 @@ async function main() {
     await input.press("Enter");
     await page.waitForFunction(() => /isym =\s*\n?\s*9\b/.test(document.querySelector("#console-out").innerText), null, { timeout: 60000 });
     ok("symbolic math loads SymPy on first use ('Loading symbolic math…') and computes diff and int");
+
+    // HDF5 and version 7.3 MAT-files: h5py is not part of start-up; it is downloaded the first time a program uses it.
+    check(!h5pyRequests.length, "h5py was downloaded before any program used HDF5: " + h5pyRequests.join(", "));
+    await input.fill("h5create('t.h5', '/d', [2 3]); h5write('t.h5', '/d', [1 2 3; 4 5 6]); h5r = h5read('t.h5', '/d', [2 1], [1 3])");
+    await input.press("Enter");
+    await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /Loading HDF5 support/.test(t.textContent)), null, { timeout: 30000 });
+    await page.waitForFunction(() => /h5r =\s*\n?\s*4\s+5\s+6/.test(document.querySelector("#console-out").innerText), null, { timeout: 180000 });
+    await input.fill("v73 = {1, 'two'}; save('v73.mat', 'v73', '-v7.3'); clear v73; load('v73.mat'); v73c = v73{2}");
+    await input.press("Enter");
+    await page.waitForFunction(() => /v73c =\s*\n?\s*'two'/.test(document.querySelector("#console-out").innerText), null, { timeout: 60000 });
+    check(h5pyRequests.length > 0, "h5py was not downloaded from the Pyodide CDN");
+    ok("HDF5 loads h5py on first use ('Loading HDF5 support…'): h5create/h5write/h5read and save -v7.3/load work");
 
     // 10. Stop restarts the engine
     await input.fill("k = 0; while true, k = k + 1; end");

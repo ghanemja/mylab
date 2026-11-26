@@ -63,6 +63,9 @@ You need Python 3.10 or newer.
 pip install "git+https://github.com/ghanemja/mylab"
 ```
 
+This also installs NumPy, SciPy, Matplotlib, Pillow and h5py (for HDF5 files
+and version 7.3 MAT-files).
+
 Optional extras: `[symbolic]` for symbolic math (`syms`, `solve`; see
 [docs/SYMBOLIC.md](docs/SYMBOLIC.md)), `[fast]` for faster large-array math,
 `[excel]`, `[jupyter]`, `[mcp]`.

@@ -4,8 +4,8 @@ options and datastores, memory maps, XML, struct files, NetCDF, HDF5 and video.
 Written from scratch for mylab.
 """
 
-_H5 = (" HDF5 support uses the optional Python package h5py (pip install h5py); without it the function "
-       "stops with an error that says so.")
+_H5 = (" HDF5 files are read and written with the Python package h5py, which is installed with mylab; the "
+       "browser app loads it the first time a program uses HDF5.")
 _H5_ORDER = (" Sizes and positions are given the MATLAB way, first dimension first; in the file the "
              "dimensions are stored in the opposite order, as MATLAB also does.")
 _NC = (" mylab reads and writes the classic NetCDF formats ('classic' and '64bit'); NetCDF-4 files, which "
@@ -21,7 +21,8 @@ HELP = {
                 "must have been opened with 'Writable', true, which is the default only for a file that "
                 "does not exist yet). who(m), whos(m) and size(m, 'name') describe what is stored, and "
                 "m.Properties holds Source and Writable. Unlike MATLAB, a variable is read into memory as "
-                "a whole when part of it is used. All MAT-file versions that load reads are accepted."),
+                "a whole when part of it is used. All MAT-file versions that load reads are accepted; like "
+                "MATLAB, matfile creates a version 7.3 (HDF5) file when the file does not exist yet."),
     # -- import options and datastores -----------------------------------------------------------------
     "detectImportOptions": (
         ["opts = detectImportOptions(filename)", "opts = detectImportOptions(filename, Name, Value)",

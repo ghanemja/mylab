@@ -27,6 +27,10 @@ or to import `.m` files you already have.
    pip install "git+https://github.com/ghanemja/mylab"
    ```
 
+   This also installs the packages mylab is built on: NumPy, SciPy,
+   Matplotlib, Pillow and h5py (h5py reads and writes HDF5 files and
+   version 7.3 MAT-files).
+
    If `pip` is not found, try `python -m pip install ...` (or `py -m pip ...`
    on Windows).
 

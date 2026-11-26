@@ -27,6 +27,11 @@
   `writetable`, `readmatrix`, `writematrix`, `readcell`, `writecell`.
 - Plots: `quiver3`, `surface`, `pcolor`, `surfl`, `trisurf`, `trimesh`,
   `triplot`, `stem3`, `xline`, `yline`, `alpha`, `boxplot`, `gobjects`.
+- HDF5 files and version 7.3 MAT-files work in the default install: h5py
+  (3.15.1 or newer) is now a dependency. The browser app loads it the first
+  time a program uses HDF5. `matfile` creates version 7.3 files, as MATLAB
+  does. `MATLAB_class` attributes are null-terminated strings and `struct()`
+  is an empty group, as in MATLAB's own files.
 ### Web app
 - Editor conveniences: a command palette (Ctrl+Shift+P) and file switcher
   (Ctrl+P); find and replace, and search across the project; problems
