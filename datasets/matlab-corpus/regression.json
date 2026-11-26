@@ -529,7 +529,7 @@
      "name": "unit tests geom3d",
      "cwd": ".",
      "timeout": 300,
-     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/geom3d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 246);"
+     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/geom3d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 252);"
     },
     {
      "name": "unit tests graphs",
@@ -540,13 +540,13 @@
      "name": "unit tests meshes3d",
      "cwd": ".",
      "timeout": 300,
-     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/meshes3d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 105);"
+     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/meshes3d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 107);"
     },
     {
      "name": "unit tests polygons2d",
      "cwd": ".",
      "timeout": 600,
-     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/polygons2d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 86);"
+     "code": "addpath(genpath(fullfile(pwd, 'matGeom'))); r = runtests('tests/polygons2d'); n = sum([r.Passed]); fprintf('PASSED %d of %d\\n', n, numel(r)); assert(n >= 89);"
     }
    ],
    "note": "The library's own matlab.unittest suites (known results), each must keep at least as many passes; plus its demos."
