@@ -309,7 +309,26 @@ def _offset_text(zone: str, s: float, colon: bool) -> str:
     return f"{sign}{hh:02d}:{mm:02d}" if colon else f"{sign}{hh:02d}{mm:02d}"
 
 
-def format_datetime(s: float, fmt: str, zone: str = "") -> str:
+def locale_key(v: Any) -> str | None:
+    """The language of a locale such as 'fr_FR', 'de-DE' or 'ja' (None for the default, en_US)."""
+    from ._locale_data import LOCALES
+    tag = text(v, "Locale").strip()
+    if tag.lower() == "system" or not tag:
+        return None
+    lang = re.split(r"[_\-]", tag)[0].lower()
+    if lang not in LOCALES or not re.fullmatch(r"[A-Za-z]{2,3}([_\-][A-Za-z0-9]{2,4})*", tag):
+        raise MatlabError(f"Unrecognized locale '{tag}'. Use a locale such as 'en_US', 'fr_FR', 'de_DE', 'es_ES', "
+                          "'it_IT', 'pt_BR', 'nl_NL', 'sv_SE', 'pl_PL', 'ru_RU', 'ja_JP' or 'zh_CN'.",
+                          "MATLAB:datetime:UnknownLocale")
+    return None if lang == "en" else lang
+
+
+def locale_names(locale: str | None) -> dict:
+    from ._locale_data import LOCALES
+    return LOCALES[locale or "en"]
+
+
+def format_datetime(s: float, fmt: str, zone: str = "", locale: str | None = None) -> str:
     if s != s:
         return "NaT"
     if math.isinf(s):
@@ -319,6 +338,7 @@ def format_datetime(s: float, fmt: str, zone: str = "") -> str:
     q = 10.0 ** max(frac_digits, 6)
     s = math.floor(s * q + 0.5) / q
     y, mo, d, h, mi, sec = (float(x) for x in fields_from_seconds(s))
+    names = locale_names(locale)
     out = []
     for kind, n in _tokens(fmt):
         if kind == "lit":
@@ -328,8 +348,9 @@ def format_datetime(s: float, fmt: str, zone: str = "") -> str:
             out.append(f"{yi % 100:02d}" if n == 2 else (f"{yi:0{n}d}" if yi >= 0 else f"-{-yi:0{n}d}"))
         elif kind == "M" or kind == "L":
             mi_ = int(mo)
-            out.append(str(mi_) if n == 1 else f"{mi_:02d}" if n == 2 else MONTHS[mi_ - 1][:3] if n == 3
-                       else MONTHS[mi_ - 1] if n == 4 else MONTHS[mi_ - 1][0])
+            full = names.get("months_sa", names["months"]) if kind == "L" else names["months"]
+            out.append(str(mi_) if n == 1 else f"{mi_:02d}" if n == 2 else names["months_abbr"][mi_ - 1] if n == 3
+                       else full[mi_ - 1] if n == 4 else full[mi_ - 1][0])
         elif kind == "d":
             out.append(f"{int(d):0{n}d}")
         elif kind == "D":
@@ -340,7 +361,7 @@ def format_datetime(s: float, fmt: str, zone: str = "") -> str:
             if kind == "e" and n <= 2:
                 out.append(f"{w + 1:0{n}d}")
             else:
-                out.append(WEEKDAYS[w][:3] if n <= 3 else WEEKDAYS[w] if n == 4 else WEEKDAYS[w][0])
+                out.append(names["days_abbr"][w] if n <= 3 else names["days"][w] if n == 4 else names["days"][w][0])
         elif kind == "H":
             out.append(f"{int(h):0{n}d}")
         elif kind == "h":
@@ -353,7 +374,7 @@ def format_datetime(s: float, fmt: str, zone: str = "") -> str:
             frac = sec - math.floor(sec + 1e-9)
             out.append(f"{int(math.floor(max(frac, 0.0) * 10 ** n + 1e-3)):0{n}d}"[:n])
         elif kind == "a":
-            out.append("AM" if h < 12 else "PM")
+            out.append(names["ampm"][0 if h < 12 else 1])
         elif kind == "Q":
             qn = (int(mo) - 1) // 3 + 1
             out.append(str(qn) if n < 3 else f"Q{qn}")
@@ -371,8 +392,29 @@ def format_datetime(s: float, fmt: str, zone: str = "") -> str:
     return "".join(out)
 
 
+def _alternation(words) -> str:
+    """A case-insensitive regex group matching any of the words (longest first, final period optional)."""
+    forms = set()
+    for w in words:
+        forms.add(re.escape(w))
+        if w.endswith("."):
+            forms.add(re.escape(w[:-1]))
+    return "((?i:" + "|".join(sorted(forms, key=len, reverse=True)) + "))"
+
+
+def _locale_words(locale: str | None, what: str) -> list:
+    names = locale_names(locale)
+    eng = locale_names(None)
+    if what == "months":
+        return names["months"] + names.get("months_sa", []) + names["months_abbr"] + eng["months"] + \
+            eng["months_abbr"] + ["Sept"]
+    if what == "days":
+        return names["days"] + names["days_abbr"] + eng["days"] + eng["days_abbr"]
+    return names["ampm"] + ["AM", "PM", "am", "pm", "a.m.", "p.m."]
+
+
 @lru_cache(maxsize=256)
-def _parse_regex(fmt: str):
+def _parse_regex(fmt: str, locale: str | None = None):
     parts, keys = [], []
     toks = _tokens(fmt)
     numeric = [t[0] != "lit" and (t[0] in "yudDHhmsS" or (t[0] in "ML" and t[1] <= 2)) for t in toks]
@@ -386,7 +428,10 @@ def _parse_regex(fmt: str):
             pat = r"(\d{4})" if n == 4 else r"(\d{2})" if n == 2 else r"(-?\d+)"
             keys.append("yy" if n == 2 else "y")
         elif kind in "ML":
-            pat = two if n == 2 else r"(\d{1,2})" if n == 1 else r"([A-Za-z]{3})" if n == 3 else r"([A-Za-z]+)"
+            if n >= 3 and locale is not None:
+                pat = _alternation(_locale_words(locale, "months"))
+            else:
+                pat = two if n == 2 else r"(\d{1,2})" if n == 1 else r"([A-Za-z]{3})" if n == 3 else r"([A-Za-z]+)"
             keys.append("M" if n <= 2 else "Mname")
         elif kind == "d":
             pat = two if n == 2 else r"(\d{1,2})"
@@ -395,7 +440,10 @@ def _parse_regex(fmt: str):
             pat = r"(\d{1,3})"
             keys.append("D")
         elif kind in "eE":
-            pat = r"([A-Za-z]+)" if n >= 3 or kind == "E" else r"(\d{1,2})"
+            if (n >= 3 or kind == "E") and locale is not None:
+                pat = _alternation(_locale_words(locale, "days"))
+            else:
+                pat = r"([A-Za-z]+)" if n >= 3 or kind == "E" else r"(\d{1,2})"
             keys.append("skip")
         elif kind in "Hh":
             pat = two if n == 2 else r"(\d{1,2})"
@@ -410,7 +458,7 @@ def _parse_regex(fmt: str):
             pat = r"(\d{1,9})"
             keys.append("S")
         elif kind == "a":
-            pat = r"([AaPp]\.?[Mm]\.?)"
+            pat = _alternation(_locale_words(locale, "ampm")) if locale is not None else r"([AaPp]\.?[Mm]\.?)"
             keys.append("a")
         elif kind in "ZxX":
             pat = r"(Z|[+-]\d{2}:?\d{2})"
@@ -427,19 +475,34 @@ def _parse_regex(fmt: str):
     return re.compile(r"\s*" + "".join(parts) + r"\s*$"), tuple(keys)
 
 
-def _month_number(name: str) -> int | None:
+def _month_number(name: str, locale: str | None = None) -> int | None:
     key = name.lower()
     for i, full in enumerate(MONTHS):
         if key == full.lower() or key == full[:3].lower():
             return i + 1
     if key == "sept":
         return 9
+    if locale is not None:
+        names = locale_names(locale)
+        key = key.rstrip(".")
+        for table in (names["months"], names.get("months_sa", []), names["months_abbr"]):
+            for i, w in enumerate(table):
+                if key == w.lower().rstrip("."):
+                    return i + 1
     return None
 
 
-def parse_with_format(s: str, fmt: str) -> float:
+def _is_pm(val: str, locale: str | None) -> bool:
+    if locale is not None:
+        marks = [m.lower() for m in locale_names(locale)["ampm"]]
+        if val.lower() in marks:
+            return marks.index(val.lower()) == 1
+    return val.lower().startswith("p")
+
+
+def parse_with_format(s: str, fmt: str, locale: str | None = None) -> float:
     """Seconds since 1970 for text in the given format; NaN when it does not match."""
-    rx, keys = _parse_regex(fmt)
+    rx, keys = _parse_regex(fmt, locale)
     m = rx.match(s)
     if not m:
         return float("nan")
@@ -457,7 +520,7 @@ def parse_with_format(s: str, fmt: str) -> float:
         elif key == "M":
             mo = float(val)
         elif key == "Mname":
-            num = _month_number(val)
+            num = _month_number(val, locale)
             if num is None:
                 return float("nan")
             mo = float(num)
@@ -476,7 +539,7 @@ def parse_with_format(s: str, fmt: str) -> float:
         elif key == "S":
             sec += float("0." + val)
         elif key == "a":
-            pm = val.lower().startswith("p")
+            pm = _is_pm(val, locale)
     if twelve or pm is not None:
         if h < 1 or h > 12:
             return float("nan")
@@ -527,14 +590,14 @@ def _parse_iso(s: str) -> tuple[float, bool] | None:
     return float(seconds_from_fields(y, mo, d, h, mi, sec)), m.group(4) is not None
 
 
-def parse_texts(items: list, fmt: str | None) -> tuple[np.ndarray, bool]:
+def parse_texts(items: list, fmt: str | None, locale: str | None = None) -> tuple[np.ndarray, bool]:
     """Parse a list of strings (None/'' -> NaT). Returns seconds and whether a time of day was present."""
     out = np.full(len(items), np.nan)
     live = [(k, s.strip()) for k, s in enumerate(items)
             if s is not None and s.strip() != "" and s.strip().lower() not in ("nat", "<missing>")]
     if fmt is not None:
         for k, s in live:
-            out[k] = parse_with_format(s, fmt)
+            out[k] = parse_with_format(s, fmt, locale)
             if out[k] != out[k]:
                 raise MatlabError(f"Unable to convert '{s}' to datetime using the format '{fmt}'.",
                                   "MATLAB:datetime:ParseErr")
@@ -548,7 +611,7 @@ def parse_texts(items: list, fmt: str | None) -> tuple[np.ndarray, bool]:
         return out, any(r[1] for r in iso)
     best, best_count = None, 0
     for cand in _AUTO_FORMATS:
-        vals = [parse_with_format(s, cand) for _, s in live]
+        vals = [parse_with_format(s, cand, locale) for _, s in live]
         good = sum(1 for v in vals if v == v)
         if good > best_count:
             best, best_count = (cand, vals), good
@@ -720,9 +783,10 @@ class _TimeArray(MObject):
 class DatetimeArray(_TimeArray):
     kind = "datetime"
 
-    def __init__(self, data: Any, fmt: str | None = None, zone: str = ""):
+    def __init__(self, data: Any, fmt: str | None = None, zone: str = "", locale: str | None = None):
         super().__init__(data, fmt)
         self.zone = zone
+        self.locale = locale  # language of month and day names in the display (None: en_US)
         if zone not in ("", "UTC", "local") and zone[0] not in "+-" and self.data.size and self.data.size <= 4096:
             # a wall-clock time that the zone skips (the daylight saving gap) moves forward
             fixed = from_utc(to_utc(self.data, zone), zone)
@@ -730,7 +794,7 @@ class DatetimeArray(_TimeArray):
                 self.data = fixed
 
     def like(self, data: Any) -> "DatetimeArray":
-        return DatetimeArray(data, self.fmt, self.zone)
+        return DatetimeArray(data, self.fmt, self.zone, self.locale)
 
     @property
     def format(self) -> str:
@@ -739,11 +803,13 @@ class DatetimeArray(_TimeArray):
         d = self.data[np.isfinite(self.data)]
         return DEFAULT_DATE if d.size == 0 or bool(np.all(np.mod(d, DAY) == 0)) else DEFAULT_FULL
 
-    def element_texts(self, fmt: str | None = None) -> np.ndarray:
+    def element_texts(self, fmt: str | None = None, locale: str | None = None) -> np.ndarray:
         f = fmt or self.format
+        loc = locale if locale is not None else self.locale
+        loc = None if loc == "en" else loc
         out = np.empty(self.data.shape, dtype=object)
         for idx in np.ndindex(self.data.shape):
-            out[idx] = format_datetime(float(self.data[idx]), f, self.zone)
+            out[idx] = format_datetime(float(self.data[idx]), f, self.zone, loc)
         return out
 
     def coerce(self, value: Any) -> np.ndarray:
@@ -792,12 +858,13 @@ class DatetimeArray(_TimeArray):
         if name == "Format":
             f = text(value)
             if f.lower() in ("default", "defaultdate"):
-                return DatetimeArray(self.data, DEFAULT_DATE if f.lower() == "defaultdate" else None, self.zone)
+                return DatetimeArray(self.data, DEFAULT_DATE if f.lower() == "defaultdate" else None, self.zone,
+                                     self.locale)
             _check_datetime_format(f)
-            return DatetimeArray(self.data, f, self.zone)
+            return DatetimeArray(self.data, f, self.zone, self.locale)
         if name == "TimeZone":
             new = _zone(text(value))
-            return DatetimeArray(_rezone(self.data, self.zone, new), self.fmt, new)
+            return DatetimeArray(_rezone(self.data, self.zone, new), self.fmt, new, self.locale)
         raise MatlabError(f"Unrecognized or read-only property '{name}' for class 'datetime'.")
 
     def binary_op(self, interp, op: str, left: Any, right: Any) -> Any:
@@ -1269,6 +1336,14 @@ _DATETIME_OPTS = ("Format", "InputFormat", "ConvertFrom", "TimeZone", "Locale", 
 @builtin("datetime")
 def _datetime(interp, args, nargout):
     args, opts = _split_options(args, _DATETIME_OPTS)
+    loc = locale_key(opts["Locale"]) if "Locale" in opts else None
+    out = _datetime_make(interp, args, opts, loc)
+    if "Locale" in opts and isinstance(out, DatetimeArray):
+        out.locale = loc
+    return out
+
+
+def _datetime_make(interp, args: list, opts: dict, loc: str | None):
     zone = _zone(text(opts["TimeZone"])) if "TimeZone" in opts else ""
     fmt = None
     if "Format" in opts:
@@ -1280,7 +1355,7 @@ def _datetime(interp, args, nargout):
         return DatetimeArray(np.array([[now_seconds(zone)]]), fmt or DEFAULT_FULL, zone)
     first = args[0]
     if isinstance(first, DatetimeArray):
-        out = DatetimeArray(first.data, fmt or first.fmt, first.zone)
+        out = DatetimeArray(first.data, fmt or first.fmt, first.zone, first.locale)
         return out.set_field(interp, "TimeZone", char(zone)) if "TimeZone" in opts else out
     if "ConvertFrom" in opts:
         kind = text(opts["ConvertFrom"]).lower()
@@ -1324,7 +1399,7 @@ def _datetime(interp, args, nargout):
             raise MatlabError("datetime: unexpected extra inputs after the date text. Options are name-value "
                               "pairs such as 'InputFormat' and 'Format'.")
         infmt = text(opts["InputFormat"]) if "InputFormat" in opts else None
-        vals, has_time = parse_texts(items[0], infmt)
+        vals, has_time = parse_texts(items[0], infmt, loc)
         shown = fmt or (DEFAULT_FULL if has_time else DEFAULT_DATE)
         return DatetimeArray(vals.reshape(items[1], order="F"), shown, zone)
     if isinstance(first, Cell):
@@ -1759,7 +1834,10 @@ def _month(interp, args, nargout):
     m = fields_from_seconds(secs)[1]
     kind = text(args[1]).lower() if len(args) > 1 else "monthofyear"
     if kind in ("name", "shortname"):
-        return _names_cell(m - 1, MONTHS, kind == "shortname")
+        names = locale_names(getattr(args[0], "locale", None))
+        if kind == "shortname":
+            return _names_cell(m - 1, names["months_abbr"], False)
+        return _names_cell(m - 1, names.get("months_sa", names["months"]), False)
     if kind != "monthofyear":
         raise MatlabError(f"month: unknown option '{text(args[1])}'. Use 'monthofyear', 'name' or 'shortname'.")
     return m
@@ -1779,7 +1857,8 @@ def _day(interp, args, nargout):
     if kind == "dayofweek":
         return weekday_index(secs) + 1
     if kind in ("name", "shortname"):
-        return _names_cell(weekday_index(secs), WEEKDAYS, kind == "shortname")
+        names = locale_names(getattr(args[0], "locale", None))
+        return _names_cell(weekday_index(secs), names["days_abbr" if kind == "shortname" else "days"], False)
     raise MatlabError(f"day: unknown option '{text(args[1])}'. Use 'dayofmonth', 'dayofweek', 'dayofyear', "
                       "'name' or 'shortname'.")
 
@@ -1927,9 +2006,18 @@ def _convert_to(interp, args, nargout):
 builtin("convertTo")(_convert_to)
 
 
-def _texts_of(v: Any, fmt_arg: Any = None) -> np.ndarray:
+def _texts_of(v: Any, fmt_arg: Any = None, locale_arg: Any = None) -> np.ndarray:
     if isinstance(v, CalendarDuration):
         return v.element_texts()
+    if locale_arg is not None:
+        if not isinstance(v, DatetimeArray):
+            raise MatlabError("A locale can only be given when converting datetime values to text.")
+        loc = locale_key(locale_arg)
+        f = None
+        if fmt_arg is not None and not (isinstance(fmt_arg, np.ndarray) and fmt_arg.size == 0):
+            f = text(fmt_arg)
+            _check_datetime_format(f)
+        return v.element_texts(f, loc or "en")
     if fmt_arg is not None:
         f = text(fmt_arg)
         if isinstance(v, DatetimeArray):
@@ -1942,12 +2030,13 @@ def _texts_of(v: Any, fmt_arg: Any = None) -> np.ndarray:
 
 @native("string")
 def _string(interp, args, nargout):
-    return string_result(_texts_of(args[0], args[1] if len(args) > 1 else None))
+    return string_result(_texts_of(args[0], args[1] if len(args) > 1 else None,
+                                   args[2] if len(args) > 2 else None))
 
 
 @native("cellstr")
 def _cellstr(interp, args, nargout):
-    texts = _texts_of(args[0], args[1] if len(args) > 1 else None)
+    texts = _texts_of(args[0], args[1] if len(args) > 1 else None, args[2] if len(args) > 2 else None)
     out = np.empty(texts.shape, dtype=object)
     for idx in np.ndindex(texts.shape):
         out[idx] = char(texts[idx])
@@ -1956,7 +2045,8 @@ def _cellstr(interp, args, nargout):
 
 @native("char")
 def _char(interp, args, nargout):
-    texts = list(_texts_of(args[0], args[1] if len(args) > 1 else None).flatten(order="F"))
+    texts = list(_texts_of(args[0], args[1] if len(args) > 1 else None,
+                           args[2] if len(args) > 2 else None).flatten(order="F"))
     return _char_rows(texts)
 
 
