@@ -127,7 +127,7 @@ def _adapt(src: np.ndarray, dst: np.ndarray) -> np.ndarray:
 
 
 def _space_opts(args: list, name: str, extra: tuple = ()) -> tuple[list, str, np.ndarray, dict]:
-    rest, opts = _options(list(args), ("ColorSpace", "WhitePoint") + extra, name)
+    rest, opts = _options(list(args), ("ColorSpace", "WhitePoint") + extra, name, flags=())
     space = text(opts["colorspace"]).lower() if "colorspace" in opts else "srgb"
     if space not in ("srgb", "adobe-rgb-1998", "linear-rgb"):
         raise MatlabError(f"{name}: 'ColorSpace' must be 'srgb', 'adobe-rgb-1998' or 'linear-rgb'.")
@@ -207,7 +207,7 @@ def _lab2rgb(interp, args, nargout):
 
 @builtin("xyz2lab")
 def _xyz2lab(interp, args, nargout):
-    rest, opts = _options(list(args), ("WhitePoint",), "xyz2lab")
+    rest, opts = _options(list(args), ("WhitePoint",), "xyz2lab", flags=())
     nargs(rest, 1, 1, "xyz2lab")
     xyz, shape, dt = _color_in(rest[0], "xyz2lab", scale=False)
     return _color_out(_xyz_to_lab(xyz, _white(opts.get("whitepoint"), "xyz2lab")), shape, dt)
@@ -215,7 +215,7 @@ def _xyz2lab(interp, args, nargout):
 
 @builtin("lab2xyz")
 def _lab2xyz(interp, args, nargout):
-    rest, opts = _options(list(args), ("WhitePoint",), "lab2xyz")
+    rest, opts = _options(list(args), ("WhitePoint",), "lab2xyz", flags=())
     nargs(rest, 1, 1, "lab2xyz")
     lab, shape, dt = _color_in(rest[0], "lab2xyz", scale=False)
     return _color_out(_lab_to_xyz(lab, _white(opts.get("whitepoint"), "lab2xyz")), shape, dt)
@@ -267,7 +267,7 @@ def _ntsc2rgb(interp, args, nargout):
 
 @builtin("imhistmatch")
 def _imhistmatch(interp, args, nargout):
-    rest, opts = _options(list(args), ("Method",), "imhistmatch")
+    rest, opts = _options(list(args), ("Method",), "imhistmatch", flags=())
     nargs(rest, 2, 3, "imhistmatch")
     a, ref = _img(rest[0], "imhistmatch"), _img(rest[1], "imhistmatch", "reference image")
     nbins = to_int(rest[2], "number of bins") if len(rest) > 2 else 64
@@ -318,7 +318,7 @@ def _clip_hist(h: np.ndarray, limit: float) -> np.ndarray:
 @builtin("adapthisteq")
 def _adapthisteq(interp, args, nargout):
     rest, opts = _options(list(args), ("NumTiles", "ClipLimit", "NBins", "Range", "Distribution", "Alpha"),
-                          "adapthisteq")
+                          "adapthisteq", flags=())
     nargs(rest, 1, 1, "adapthisteq")
     a = _img(rest[0], "adapthisteq")
     if a.ndim != 2 or a.dtype == bool:
@@ -469,7 +469,7 @@ def _box_mean(g: np.ndarray, size: tuple[int, int], mode: str = "nearest") -> np
 
 @builtin("adaptthresh")
 def _adaptthresh(interp, args, nargout):
-    rest, opts = _options(list(args), ("NeighborhoodSize", "Statistic", "ForegroundPolarity"), "adaptthresh")
+    rest, opts = _options(list(args), ("NeighborhoodSize", "Statistic", "ForegroundPolarity"), "adaptthresh", flags=())
     nargs(rest, 1, 2, "adaptthresh")
     a = _img(rest[0], "adaptthresh")
     if a.ndim != 2:
@@ -528,7 +528,7 @@ def _pad_spec(v, name: str):
 
 @builtin("imboxfilt")
 def _imboxfilt(interp, args, nargout):
-    rest, opts = _options(list(args), ("Padding", "NormalizationFactor"), "imboxfilt")
+    rest, opts = _options(list(args), ("Padding", "NormalizationFactor"), "imboxfilt", flags=())
     nargs(rest, 1, 2, "imboxfilt")
     a = _img(rest[0], "imboxfilt")
     size = _odd_size(rest[1] if len(rest) > 1 else None, 3, "imboxfilt")
@@ -548,7 +548,7 @@ def _gauss_blur(p: np.ndarray, sigma: float, radius: int) -> np.ndarray:
 
 @builtin("imsharpen")
 def _imsharpen(interp, args, nargout):
-    rest, opts = _options(list(args), ("Radius", "Amount", "Threshold"), "imsharpen")
+    rest, opts = _options(list(args), ("Radius", "Amount", "Threshold"), "imsharpen", flags=())
     nargs(rest, 1, 1, "imsharpen")
     a = _img(rest[0], "imsharpen")
     radius = _scalar(opts["radius"], "Radius") if "radius" in opts else 1.0
@@ -722,7 +722,7 @@ def _imgradient(interp, args, nargout):
 
 @builtin("imbilatfilt")
 def _imbilatfilt(interp, args, nargout):
-    rest, opts = _options(list(args), ("NeighborhoodSize", "Padding"), "imbilatfilt")
+    rest, opts = _options(list(args), ("NeighborhoodSize", "Padding"), "imbilatfilt", flags=())
     nargs(rest, 1, 3, "imbilatfilt")
     a = _img(rest[0], "imbilatfilt")
     if a.ndim > 3 or (a.ndim == 3 and a.shape[2] != 3):
@@ -758,7 +758,7 @@ def _imbilatfilt(interp, args, nargout):
 
 @builtin("imguidedfilter")
 def _imguidedfilter(interp, args, nargout):
-    rest, opts = _options(list(args), ("NeighborhoodSize", "DegreeOfSmoothing"), "imguidedfilter")
+    rest, opts = _options(list(args), ("NeighborhoodSize", "DegreeOfSmoothing"), "imguidedfilter", flags=())
     nargs(rest, 1, 2, "imguidedfilter")
     a = _img(rest[0], "imguidedfilter")
     guide = _img(rest[1], "imguidedfilter", "guidance image") if len(rest) > 1 else a
@@ -785,7 +785,7 @@ def _imguidedfilter(interp, args, nargout):
 
 @builtin("integralBoxFilter")
 def _integral_box_filter(interp, args, nargout):
-    rest, opts = _options(list(args), ("NormalizationFactor",), "integralBoxFilter")
+    rest, opts = _options(list(args), ("NormalizationFactor",), "integralBoxFilter", flags=())
     nargs(rest, 1, 2, "integralBoxFilter")
     ii = _img(rest[0], "integralBoxFilter", "integral image").astype(float)
     size = _odd_size(rest[1] if len(rest) > 1 else None, 3, "integralBoxFilter")
@@ -1121,7 +1121,7 @@ def _corner(interp, args, nargout):
 
 @builtin("hough")
 def _hough(interp, args, nargout):
-    rest, opts = _options(list(args), ("RhoResolution", "Theta", "ThetaResolution"), "hough")
+    rest, opts = _options(list(args), ("RhoResolution", "Theta", "ThetaResolution"), "hough", flags=())
     nargs(rest, 1, 1, "hough")
     bw = _img(rest[0], "hough")
     if bw.ndim != 2:
@@ -1156,7 +1156,7 @@ def _hough(interp, args, nargout):
 
 @builtin("houghpeaks")
 def _houghpeaks(interp, args, nargout):
-    rest, opts = _options(list(args), ("Threshold", "NHoodSize", "Theta"), "houghpeaks")
+    rest, opts = _options(list(args), ("Threshold", "NHoodSize", "Theta"), "houghpeaks", flags=())
     nargs(rest, 1, 2, "houghpeaks")
     H = _img(rest[0], "houghpeaks", "Hough matrix").astype(float)
     if H.ndim != 2:
@@ -1199,7 +1199,7 @@ def _houghpeaks(interp, args, nargout):
 
 @builtin("houghlines")
 def _houghlines(interp, args, nargout):
-    rest, opts = _options(list(args), ("FillGap", "MinLength"), "houghlines")
+    rest, opts = _options(list(args), ("FillGap", "MinLength"), "houghlines", flags=())
     nargs(rest, 4, 4, "houghlines")
     bw = _img(rest[0], "houghlines")
     theta, rho = _vec(rest[1], "theta"), _vec(rest[2], "rho")
@@ -2034,7 +2034,7 @@ def _bwarea(interp, args, nargout):
 
 @builtin("bwskel")
 def _bwskel(interp, args, nargout):
-    rest, opts = _options(list(args), ("MinBranchLength",), "bwskel")
+    rest, opts = _options(list(args), ("MinBranchLength",), "bwskel", flags=())
     nargs(rest, 1, 1, "bwskel")
     bw = _bw(rest[0], "bwskel")
     if "minbranchlength" in opts and _scalar(opts["minbranchlength"], "MinBranchLength") > 0:
@@ -3148,7 +3148,7 @@ _TILE_OPTS = ("GridSize", "BorderSize", "BackgroundColor", "ThumbnailSize", "Fra
 
 @builtin("imtile")
 def _imtile(interp, args, nargout):
-    rest, opts = _options(list(args), _TILE_OPTS, "imtile")
+    rest, opts = _options(list(args), _TILE_OPTS, "imtile", flags=())
     nargs(rest, 1, 2, "imtile")
     items = _frames(rest[0], "imtile")
     if "frames" in opts:
@@ -3159,7 +3159,7 @@ def _imtile(interp, args, nargout):
 
 @builtin("montage")
 def _montage(interp, args, nargout):
-    rest, opts = _options(list(args), _TILE_OPTS, "montage")
+    rest, opts = _options(list(args), _TILE_OPTS, "montage", flags=())
     nargs(rest, 1, 2, "montage")
     items = _frames(rest[0], "montage")
     if "size" in opts and "gridsize" not in opts:

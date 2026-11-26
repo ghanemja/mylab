@@ -1562,7 +1562,7 @@ def _confusionchart(interp, args, nargout):
     if not args:
         raise MatlabError("confusionchart: expected confusionchart(trueLabels, predictedLabels) or confusionchart(m).")
     known = ["Normalization", "Title", "XLabel", "YLabel", "RowSummary", "ColumnSummary", "Order", "FontSize"]
-    pos, opts = get_opts(args, 1, known, "confusionchart")
+    pos, opts = get_opts(args, 1, known, "confusionchart", text_pos=(1,))
     for o in ("rowsummary", "columnsummary"):
         if o in opts and text(opts[o]).lower() != "off":
             raise MatlabError(f"confusionchart: the option '{o}' is not supported.")

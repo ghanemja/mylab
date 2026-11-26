@@ -28,7 +28,8 @@ def _tail(v: Any) -> str:
 
 def _test_args(args: list, ndata: int, fname: str, extra: tuple = (), legacy: tuple = ("alpha", "tail", "dim")):
     """Data arguments plus alpha/tail/dim given by name or (older style) by position."""
-    pos, opts = get_opts(args, 1, ["Alpha", "Tail", "Dim", *extra], fname)
+    pos, opts = get_opts(args, 1, ["Alpha", "Tail", "Dim", *extra], fname,
+                          text_pos=tuple(ndata + i for i, n in enumerate(legacy) if n in ("tail", "vartype")))
     data = pos[:ndata]
     rest = pos[ndata:]
     if len(rest) > len(legacy):
@@ -312,7 +313,7 @@ def _vartestn(interp, args, nargout):
     import scipy.stats as st
     if not args:
         raise MatlabError("vartestn: expected vartestn(x) or vartestn(x, group, ...).")
-    pos, opts = get_opts(args, 1, ["Display", "TestType"], "vartestn")
+    pos, opts = get_opts(args, 1, ["Display", "TestType"], "vartestn", text_pos=(1,))
     if len(pos) > 4:
         raise MatlabError("Too many input arguments for vartestn.")
     display = _display_opt(opts.get("display", pos[2] if len(pos) > 2 else None), "vartestn")
@@ -593,7 +594,7 @@ def _kstest(interp, args, nargout):
     import scipy.stats as st
     if not args:
         raise MatlabError("Not enough input arguments for kstest.")
-    pos, opts = get_opts(args, 1, ["CDF", "Alpha", "Tail"], "kstest")
+    pos, opts = get_opts(args, 1, ["CDF", "Alpha", "Tail"], "kstest", text_pos=(3,))
     if len(pos) > 4:
         raise MatlabError("Too many input arguments for kstest.")
     legacy = dict(zip(("cdf", "alpha", "tail"), pos[1:]))
@@ -624,7 +625,7 @@ def _kstest(interp, args, nargout):
 def _kstest2(interp, args, nargout):
     if len(args) < 2:
         raise MatlabError("Not enough input arguments for kstest2.")
-    pos, opts = get_opts(args, 2, ["Alpha", "Tail"], "kstest2")
+    pos, opts = get_opts(args, 2, ["Alpha", "Tail"], "kstest2", text_pos=(3,))
     if len(pos) > 4:
         raise MatlabError("Too many input arguments for kstest2.")
     for k, v in zip(("alpha", "tail"), pos[2:]):
@@ -759,7 +760,7 @@ def _fitted_cdf(dist: str, x: np.ndarray) -> np.ndarray:
 def _lillietest(interp, args, nargout):
     if not args:
         raise MatlabError("Not enough input arguments for lillietest.")
-    pos, opts = get_opts(args, 1, ["Alpha", "Distribution", "MCTol"], "lillietest")
+    pos, opts = get_opts(args, 1, ["Alpha", "Distribution", "MCTol"], "lillietest", text_pos=(2,))
     if len(pos) > 3:
         raise MatlabError("Too many input arguments for lillietest.")
     for k, v in zip(("alpha", "distribution"), pos[1:]):
@@ -1028,7 +1029,7 @@ def _runstest(interp, args, nargout):
     from scipy.special import comb
     if not args:
         raise MatlabError("Not enough input arguments for runstest.")
-    pos, opts = get_opts(args, 1, ["Alpha", "Method", "Tail"], "runstest")
+    pos, opts = get_opts(args, 1, ["Alpha", "Method", "Tail"], "runstest", text_pos=(1,))
     if len(pos) > 2:
         raise MatlabError("Too many input arguments for runstest.")
     alpha = scalar(opts["alpha"], "Alpha") if "alpha" in opts else 0.05

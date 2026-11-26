@@ -11,7 +11,7 @@ import numpy as np
 from ..errors import MatlabError
 from ..values import Struct, char, empty_double
 from ._registry import builtin
-from ._util import fnum, nargs
+from ._util import fnum, is_text, nargs, text, unknown_option_error
 from . import optim_more as om
 from .optim_more import EPS, Objective, Opt, OutputHook, Report, outs, output_struct
 
@@ -1470,6 +1470,9 @@ def _quadprog(interp, args, nargout):
 def _lsqlin(interp, args, nargout):
     args = om.problem_args(args, ("C", "d", "Aineq", "bineq", "Aeq", "beq", "lb", "ub", "x0", "options"),
                            "lsqlin")
+    for a in args:
+        if is_text(a):
+            raise unknown_option_error("lsqlin", text(a), (), None)
     nargs(args, 2, 10, "lsqlin")
     C, d = om._arg(args, 0), om._arg(args, 1)
     if C is None or d is None:

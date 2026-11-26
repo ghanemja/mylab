@@ -591,6 +591,7 @@ def _tetramesh(interp, args, nargout):
     args = list(args)
     lead = [args.pop(0)] if args and isinstance(args[0], P.GraphicsHandle) else []
     args, opts = P._split_name_values(args, {"facecolor", "edgecolor", "facealpha", "linewidth"})
+    P._reject_text(args, "patch")
     nums = [a for a in args if not is_text(a)]
     if len(nums) < 2:
         raise MatlabError("tetramesh needs the tetrahedra and the points, tetramesh(T, X).")

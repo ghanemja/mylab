@@ -45,16 +45,6 @@ def _rng(interp):
     return rng
 
 
-def _options(args: list, start: int) -> dict[str, object]:
-    opts: dict[str, object] = {}
-    k = start
-    while k < len(args) - 1:
-        if is_text(args[k]):
-            opts[text(args[k]).lower()] = args[k + 1]
-        k += 2
-    return opts
-
-
 def _vec_out(values, like: np.ndarray) -> np.ndarray:
     v = np.asarray(values)
     return v.reshape(1, -1) if like.shape[0] == 1 else v.reshape(-1, 1)
@@ -944,7 +934,9 @@ def _rescale(interp, args, nargout):
     k = 1 + len(pos)
     lo = _scalar(pos[0]) if len(pos) > 0 else 0.0
     hi = _scalar(pos[1]) if len(pos) > 1 else 1.0
-    opts = _options(args, k)
+    from ._util import parse_options
+    opts = {key.lower(): v for key, v in parse_options(list(args[k:]), ("InputMin", "InputMax"), "rescale",
+                                                        first_arg=k + 1).items()}
     if x.size == 0:
         return x
     imin = fnum(opts["inputmin"]) if "inputmin" in opts else np.nanmin(x)

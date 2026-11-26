@@ -976,7 +976,7 @@ class TreeBaggerModel(StatObject):
                  "MinLeaf", "NumPredictorsToSample", "NVarToSample", "InBagFraction", "FBoot",
                  "SampleWithReplacement", "SampleWithReplace", "MaxNumSplits", "SplitCriterion", "NumPrint",
                  "NPrint", "Options", "MergeLeaves", "Prune", "Surrogate", "PredictorSelection"]
-        _, probe = get_opts(args, 2, COMMON_OPTS + known, "TreeBagger")
+        _, probe = get_opts(args, 2, COMMON_OPTS + known, "TreeBagger", text_pos=(2,))
         method = choice(probe["method"], ["classification", "regression"], "Method") if "method" in probe \
             else "classification"
         self.cls = method == "classification"
