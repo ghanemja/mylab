@@ -1491,7 +1491,7 @@ def _polybuffer_builtin(interp, args, nargout):
     return _polybuffer(interp, args[0], list(args[1:]))
 
 
-# simplify is also a symbolic function, registered by its own module
-for _name in sorted(set(_METHODS) - {"simplify"}):
+# simplify (symbolic) and triangulation have built-ins of their own in modules imported after this one
+for _name in sorted(set(_METHODS) - {"simplify", "triangulation"}):
     if _name not in BUILTINS:
         builtin(_name)(_dispatcher(_name))
