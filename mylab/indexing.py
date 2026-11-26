@@ -66,6 +66,14 @@ def _to_positions(idx: Any, extent: int, *, for_set: bool) -> tuple[np.ndarray, 
     """
     if idx is COLON:
         return np.arange(extent), None
+    if type(idx) is np.ndarray and idx.size == 1 and idx.dtype.kind in "fiu":
+        x = idx.item()  # one real number: the checks below, without the array machinery
+        if 1 <= x < 2 ** 62 and (type(x) is int or x.is_integer()):
+            p = int(x) - 1
+            if not for_set and p >= extent:
+                raise MatlabError(f"Index exceeds the number of array elements. Index must not exceed {extent}.",
+                                  "MATLAB:badsubscript")
+            return np.array([p], dtype=np.int64), idx.shape
     if isinstance(idx, np.ndarray) and idx.dtype.kind == "U":
         if idx.size == 1 and idx.flat[0] == ":":
             return np.arange(extent), None
@@ -136,6 +144,22 @@ def get(arr: np.ndarray, args: list[Any]) -> np.ndarray:
         out = flat[pos]
         shape = _linear_result_shape(arr.shape, ishape, pos.size)
         return canonical(out.reshape(shape, order="F"))
+    if k == arr.ndim:  # whole dimensions and single elements, e.g. A(i, :): a slice, not a gather
+        shape = arr.shape
+        index = []
+        for d, idx in enumerate(args):
+            if idx is COLON:
+                index.append(slice(None))
+                continue
+            if type(idx) is not np.ndarray or idx.size != 1 or idx.dtype.kind not in "fiu":
+                break
+            x = idx.item()
+            if not (1 <= x <= shape[d] and (type(x) is int or x.is_integer())):
+                break
+            p = int(x)
+            index.append(slice(p - 1, p))
+        else:
+            return canonical(arr[tuple(index)].copy())
     eshape = _effective_shape(arr.shape, k)
     view = arr.reshape(eshape, order="F") if eshape != arr.shape else arr
     positions = []
@@ -263,6 +287,79 @@ def set_(arr: np.ndarray, args: list[Any], rhs: np.ndarray, fill: Callable[[], A
     if folded:
         work = work.reshape(shape, order="F")
     return canonical(work)
+
+
+def set_inplace(arr: np.ndarray, args: list[Any], rhs: np.ndarray) -> bool:
+    """``arr(args) = rhs`` written into ``arr`` itself; False (and nothing written) when that is not plain.
+
+    For an array nobody else can see (the caller checks that) whose class already fits ``rhs``: the
+    result is what :func:`set_` returns, without copying the whole array. Anything set_ would treat
+    specially - growing, an index error, a size mismatch, an array not laid out in column-major order -
+    is left to it, so its results and error messages stay the only ones.
+    """
+    if arr.dtype.kind == "O" or rhs.dtype != arr.dtype or arr.size == 0 or rhs.size == 0:
+        return False
+    k = len(args)
+    try:
+        if k == 1:
+            idx = args[0]
+            n = arr.size
+            if idx is COLON:
+                if rhs.size != 1 and rhs.size != n:
+                    return False
+                arr[...] = rhs.reshape(-1)[0] if rhs.size == 1 else rhs.reshape(arr.shape, order="F")
+                return True
+            pos, _ = _to_positions(idx, n, for_set=True)
+            if pos.size == 0:
+                return True
+            if (rhs.size != 1 and rhs.size != pos.size) or pos.max() >= n:
+                return False
+            vals = rhs.reshape(-1)[0] if rhs.size == 1 else rhs.reshape(-1, order="F")
+            if arr.flags.f_contiguous:
+                arr.reshape(-1, order="F")[pos] = vals  # a view of arr
+            else:  # positions count down the columns: turn them into subscripts
+                arr[np.unravel_index(pos, arr.shape, order="F")] = vals
+            return True
+        shape = arr.shape
+        if k != len(shape):
+            return False
+        index: list[Any] = []
+        target: list[int] = []
+        arrays = 0
+        for d, idx in enumerate(args):
+            if idx is COLON:
+                index.append(slice(None))
+                target.append(shape[d])
+                continue
+            pos, _ = _to_positions(idx, shape[d], for_set=True)
+            if pos.size and pos.max() >= shape[d]:
+                return False
+            if pos.size == 1:
+                p = int(pos[0])
+                index.append(slice(p, p + 1))
+            else:
+                index.append(pos)
+                arrays += 1
+            target.append(pos.size)
+    except MatlabError:
+        return False
+    if 0 in target:
+        return True
+    tshape = tuple(target)
+    if rhs.size == 1:
+        vals = rhs.reshape(-1)[0]
+    elif rhs.size == _prod(tshape) and (rhs.shape == tshape
+                                        or [t for t in tshape if t != 1] == [r for r in rhs.shape if r != 1]):
+        vals = rhs if rhs.shape == tshape else rhs.reshape(-1, order="F").reshape(tshape, order="F")
+    else:
+        return False
+    if arrays > 1:
+        index = [(np.arange(shape[d]) if s.start is None else np.arange(s.start, s.stop))
+                 if isinstance(s, slice) else s for d, s in enumerate(index)]
+        arr[np.ix_(*index)] = vals
+    else:
+        arr[tuple(index)] = vals
+    return True
 
 
 def _set_linear(arr: np.ndarray, idx: Any, rhs: np.ndarray, fill: Callable[[], Any]) -> np.ndarray:

@@ -53334,6 +53334,16 @@
     ]
    }
   },
+  "strings/blanks_repmat_misc": {
+   "b2": {
+    "class": "double",
+    "re": "1 0",
+    "size": [
+     1,
+     2
+    ]
+   }
+  },
   "strings/char_padding_conversion": {
    "c7": {
     "class": "char",

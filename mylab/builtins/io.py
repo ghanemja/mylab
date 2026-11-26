@@ -6,12 +6,10 @@ simpler versions in system.py; this module is imported after it, so these regist
 
 from __future__ import annotations
 
-import csv
 import datetime as _dt
 import glob
 import os
 import re
-import shutil
 
 import numpy as np
 
@@ -23,6 +21,10 @@ from . import _fastcsv
 from ._registry import builtin
 from ._util import bool_scalar, is_text, nargs, num, parse_options, text
 from .system import file_handle
+from .._lazy import lazy_module
+
+csv = lazy_module("csv", globals(), "csv")  # imported on first use, not at start-up
+shutil = lazy_module("shutil", globals(), "shutil")
 
 _DELIM_NAMES = {"tab": "\t", "\\t": "\t", "space": " ", "comma": ",", "semi": ";", "bar": "|"}
 

@@ -1011,6 +1011,12 @@
    "why": "Octave leaves the third output empty with 'stable'; MATLAB returns the index column"
   }
  },
+ "strings/blanks_repmat_misc": {
+  "b2": {
+   "matlab": "[1 0]",
+   "why": "MATLAB documents blanks(n) as a 1-by-n character vector, so blanks(0) is 1-by-0; Octave returns 0-by-0"
+  }
+ },
  "strings/char_padding_conversion": {
   "c7": {
    "matlab": "'A'",

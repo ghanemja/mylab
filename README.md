@@ -28,7 +28,7 @@ students, researchers and engineers who can't afford a MATLAB license.
   browser or on Gradescope.
 - **Covers a lot of the language:** matrices, N-D arrays, cells, structs,
   strings, tables, sparse matrices, dates, `containers.Map`, `classdef`
-  classes and more than 2,600 functions, from linear algebra to `fft`,
+  classes and more than 2,700 functions, from linear algebra to `fft`,
   `ode45`, `fminsearch`, `fit`, `imread` and plotting.
 
 ![mylab running in the browser](docs/images/demo.gif)
@@ -143,7 +143,7 @@ mylab also publishes two datasets for the community (see [datasets/](datasets/))
 | Functions | Script-local functions, `.m` files on the path, multiple outputs, `nargin`/`nargout`, `varargin`/`varargout`, anonymous functions with captured variables, `global`, `eval`/`feval` |
 | Data types | double, single, logical, char, int8–uint64 (saturating), complex numbers, N-D arrays, cell arrays, structs and struct arrays, string arrays, function handles, `containers.Map`, `table`, sparse matrices, `datetime`/`duration` |
 | Classes | `classdef` value and handle classes, properties with defaults, `Constant`/`Dependent` properties, `get.`/`set.` methods, constructors, `Static` methods, inheritance with `obj@Parent`, operator overloading, custom `disp`, object arrays, enumerations, events and listeners, `@Class` and `+package` folders |
-| Library | More than 2,600 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations, categorical arrays, JSON, WAV audio and Excel files, curve fitting (`fit`, `fittype`, `cfit`), HDF5 and version 7.3 MAT-files, symbolic math (`syms`, `diff`, `int`, `solve`, `dsolve`; needs SymPy) |
+| Library | More than 2,700 functions: math, linear algebra, sparse solvers, statistics and distributions, signal processing (`fft`, `butter`, `filtfilt`, …), image processing (`imread`, `imresize`, `imfilter`, `edge`, `regionprops`, …), optimization (`fzero`, `fminsearch`, `fmincon`, `linprog`, …), ODEs (`ode45`, `ode15s`, …), interpolation, polynomials, strings and regex, dates, text and binary file I/O, tables, plotting with handles, animations, categorical arrays, JSON, WAV audio, Excel and OpenDocument spreadsheets, curve fitting (`fit`, `fittype`, `cfit`), `polyshape`, HDF5, NetCDF and version 7.3 MAT-files, symbolic math (`syms`, `diff`, `int`, `solve`, `dsolve`; needs SymPy) |
 
 The full list is in [docs/FUNCTIONS.md](docs/FUNCTIONS.md). Type `help name` in
 mylab for any function. Known differences and gaps are in

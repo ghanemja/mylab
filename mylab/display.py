@@ -10,13 +10,15 @@ that is wider than the window is split into ``Columns 1 through N`` blocks.
 from __future__ import annotations
 
 import math
-from fractions import Fraction
 from typing import Any
 
 import numpy as np
 
 from . import ast as A
+from ._lazy import lazy_function
 from .values import Cell, FunctionHandle, MString, StringArray, Struct, class_name, is_char, to_str
+
+Fraction = lazy_function("fractions", "Fraction")  # for format rat; imported on first use
 
 TIMES = "×"  # multiplication sign used in size strings, e.g. 2x3
 

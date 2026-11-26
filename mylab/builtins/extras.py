@@ -123,6 +123,9 @@ def _bsxfun(interp, args, nargout):
     f, a, b = args
     if not isinstance(a, np.ndarray) or not isinstance(b, np.ndarray):
         raise MatlabError("bsxfun: inputs must be arrays.")
+    nd = max(a.ndim, b.ndim)  # missing trailing dimensions have length one, as in MATLAB
+    a = a.reshape(a.shape + (1,) * (nd - a.ndim))
+    b = b.reshape(b.shape + (1,) * (nd - b.ndim))
     for da, db in zip(a.shape, b.shape):
         if da != db and da != 1 and db != 1:
             raise MatlabError("bsxfun: non-singleton dimensions of the two inputs must match.")

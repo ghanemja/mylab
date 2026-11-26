@@ -22,16 +22,25 @@ Contents: [For students](#for-students) · [For teachers](#for-teachers) ·
 | **Files** (left) | The files of the current project, in folders if you like. Create, rename, move, delete, import and download files. The button at the top switches between projects. |
 | **Editor** (center) | Tabs, syntax highlighting, automatic indentation, name suggestions, help on hover, problems underlined as you type, find and replace. Files save automatically. See [Editor help](#editor-help). |
 | **Command Window** (bottom) | Type a command and press Enter. Arrow keys walk through your history. Tab completes names. `clc` clears the window. The **Problems** tab next to it lists what the checker found; a **Search** tab appears when you search all files. |
-| **Workspace** (right) | Every variable with its size and class. Click one to open it in the [variable viewer](#variable-viewer). |
-| **Plots** (right) | Figures and animations drawn by your code. Click to enlarge, or download them (PNG, or GIF for animations). |
+| **Workspace** (right) | Every variable with its size, class and a short preview (the model of a fit, the text of a date, the properties of an object). Click one to open it in the [variable viewer](#variable-viewer). |
+| **Plots** (right) | Figures and animations drawn by your code, shown at their own size (560×420 by default) or smaller when the panel is narrow, never stretched. On high-resolution screens figures are drawn at twice the size so they stay sharp. Click to enlarge, or download them (PNG, or GIF for animations). |
 | **Assignment** | Appears when you open an assignment: the problems, and a button to check your answers. |
 | **App** | Appears when your code opens an app window (`uifigure`, `uicontrol`). See [Apps](#apps). |
 | **Assistant** (optional) | An AI helper, see below. |
 
 The first time you open the app, a welcome window points to the examples, to
-*Step through*, to *Open from GitHub*, to an example assignment and to
-[block diagrams](#block-diagrams). You can open it again with **Getting
-started** at the bottom of the page.
+*Step through*, to *Open from GitHub*, to an example assignment, to
+[block diagrams](#block-diagrams) and to *What's new in 1.1*. You can open it
+again with **Getting started** at the bottom of the page.
+
+**What's new in 1.1** (at the bottom of the page, in the command palette, and
+shown once to anyone who used an earlier version) lists the main new features.
+Each of its cards opens a short example from the `whats_new` folder of *My
+files*: curve fitting with `fit` and `plot(f, x, y)`, HDF5 files and version
+7.3 MAT-files, `griddedInterpolant`, and graphics properties (`xline`,
+`yyaxis` rulers, `pie`). The examples are added once to *My files* of people
+who already had the other examples; files you already have are never
+replaced.
 
 Everything the app can do is also in the **command palette**: press
 Ctrl+Shift+P (or the ⋯ button in the top bar), type a few letters of what you
@@ -96,11 +105,20 @@ it and just type.
   called and one line about what it does. Type `name(` to see the same while
   you fill in the inputs. F1 opens the full help for the name at the cursor.
   This works for mylab's functions and for functions in your own files (the
-  comment lines under a `function` line are its help).
+  comment lines under a `function` line are its help). Dotted names are looked
+  up whole: `RandStream.create`, `containers.Map`. After an object, such as
+  the fit in `f.confint(...)`, the help is that of the method.
 - **Suggestions.** While you type a name, a list offers your variables, the
   functions in your project and mylab's functions, each with a short
   description. Tab accepts a suggestion; Enter always starts a new line.
-  Ctrl+Space asks for the list.
+  Ctrl+Space asks for the list. After a dot the list holds what can follow:
+  the functions of a dotted name (`RandStream.` offers `create`, `list`, …),
+  the fields of a struct, or the properties and methods of an object in the
+  workspace (`f.` for a fit offers `confint`, `coeffvalues`, …).
+
+  The list of mylab's functions, and their help, comes from the engine itself
+  when it starts, so every built-in function is known, including new ones,
+  and there is no separate list to keep up to date.
 - **Find your way.** Ctrl+click a function name (or press F12) to go to where
   it is defined, in this file or another file of the project. Ctrl+Shift+O
   lists the functions and `%%` sections of the file. Ctrl+F finds text in the
@@ -143,9 +161,18 @@ browser.
 
 Click a variable in the Workspace panel to open it:
 
-- Matrices, tables, cell arrays, string arrays and structs are shown as a
-  **grid**. Large values are shown one page at a time (100 rows and 25
-  columns). Values inside a struct or a cell can be opened with a click.
+- Matrices, tables and timetables (with the row times down the side), cell
+  arrays, string arrays, structs and arrays of dates, durations or
+  categories are shown as a **grid**. Large values are shown one page at a
+  time (100 rows and 25 columns). Values inside a struct or a cell can be
+  opened with a click.
+- Objects such as fits (`cfit`, `sfit`), `griddedInterpolant`,
+  `triangulation`, `containers.Map` and instances of your own classes are
+  shown **property by property**; click a property such as `Points` to open
+  it. Objects without properties (a `fittype`, a graphics handle) are shown
+  as the Command Window prints them. Figures are closed after each run once
+  they are drawn in the Plots panel, so a graphics handle kept in a variable
+  reads as deleted afterwards; the viewer says so.
 - **Text** shows the value the way the Command Window prints it.
 - **Copy as CSV** copies the whole value (with full precision) so you can
   paste it into a spreadsheet.
@@ -207,16 +234,33 @@ and the later sections are not run.
   `homework1/solve.m` (new file, or rename). Click a folder to fold it.
 - **New file** (the **+** button, Alt+N) makes a script or function (`.m`)
   or a [block diagram](#block-diagrams) (`.mlb.json`).
-- Projects can hold **data files** too: `.csv`, `.txt`, `.json`, `.mat`,
-  images and so on. Click an image to view it. The eye button previews a CSV
-  file as a table.
+- Projects can hold **data files** too: `.csv`, `.txt`, `.json`, `.mat`
+  (version 7.3 too), HDF5 (`.h5`, `.hdf5`), NetCDF (`.nc`), spreadsheets
+  (`.xlsx`, `.ods`, `.xls`), images and so on, each with its own icon. Click
+  an image to view it. The eye button previews a CSV file as a table.
+- **Load a data file into the workspace** by double-clicking it (or Shift+Enter
+  on it, or its import button, or the button in its preview). This runs the
+  command in the Command Window, in the file's folder, so you can see it and
+  copy it into a script:
+
+  | File | Command |
+  |------|---------|
+  | `.mat` | `load('data.mat')` |
+  | `.h5`, `.hdf5` | `h5disp('data.h5')` and `data_info = h5info('data.h5');` |
+  | `.nc` | `ncdisp('data.nc')` and `data_info = ncinfo('data.nc');` |
+  | `.csv`, `.tsv`, `.xlsx`, `.ods`, `.xls` | `data = readtable('data.csv');` and `head(data)` |
+  | `.json` | `data = jsondecode(fileread('data.json'))` |
+  | images | `photo = imread('photo.png');` and `imshow(photo)` |
+
+  The variable is named after the file. (`.xls` and `.ods` files are
+  imported, but `readtable` reads only `.xlsx` workbooks for now and says so.)
 - Files that your code writes (for example `saveas(gcf, 'plot.png')` or
   `writematrix(A, 'out.csv')`) appear in the Files panel after the run, where
   you can view and download them. Files over 5 MB are not copied back.
 - **Open folder** imports a folder from your computer as a new project. You
   can also drop a folder, a `.zip` or single files onto the page. mylab
-  imports `.m` files and common data files up to 5 MB each (30 MB in total)
-  and shows a list of anything it skipped.
+  imports `.m` files and the data files above up to 5 MB each (30 MB in
+  total) and shows a list of anything it skipped.
 - **Open from GitHub** asks for the address of a public repository (or of a
   folder inside one) and downloads its `.m` and data files into a new
   project. Your copy is saved in the browser; opening the same link again
@@ -545,9 +589,20 @@ needed).
   WebAssembly, together with NumPy, SciPy, Matplotlib and Pillow.
 - SymPy, used for [symbolic math](SYMBOLIC.md), is downloaded the first time
   a program uses `syms`, `sym`, `solve` or a related function. The app shows
-  "Loading symbolic math…" while it loads.
+  "Loading symbolic math…" while it loads. h5py (HDF5 files and version 7.3
+  MAT-files) is fetched the same way ("Loading HDF5 support…"). The worker
+  looks for these functions in the code being run and in the project's `.m`
+  files that it can reach by name (the files it calls, the files those call,
+  and so on), so an example elsewhere in the project, such as
+  `whats_new/hdf5_files.m`, does not trigger a download on its own.
 - The engine runs in a **Web Worker** (`web/worker.js`), so the page stays
   responsive while code runs.
+- Figures are drawn at 100 pixels per inch, so a default 560×420 figure is
+  560×420 pixels. On screens with a device pixel ratio of 1.5 or more the page
+  starts the worker as `worker.js?scale=2`, figures are drawn at 200 pixels
+  per inch, and the Plots panel and published reports show each picture at
+  half its pixel size (`width` from the PNG header). Animations (GIFs) are
+  shown at their own pixel size.
 - Nothing runs on a server. The site is plain static files.
 
 ### Local development
@@ -627,11 +682,19 @@ Requests are `{ id, type, … }`; replies are `{ id, ok, result | error }`.
   functions; it is appended to every section.
 - `test { files, code }` wipes `/home/pyodide/grade`, writes `files` there and
   runs `code` in a fresh session with that folder as the current folder.
-- `variables`, `showVariable`, `complete`, `help`, `reset`.
+- `variables`, `showVariable`, `complete`, `help`, `reset`. The variables
+  carry a `preview`; for objects the worker makes one from the printed form
+  (the formula of a fit, the properties of an object).
 - `lint { code, known }` returns `mylab.lint.check_source(code)` without the
   warnings about names in `known` (the project's `.m` files) or in the
   workspace. `helpIndex` returns `{ name: [usage lines, one-line description] }`
-  from `mylab.help_data` for hover help and autocomplete.
+  for every name in `mylab.help_data` and every built-in of the interpreter
+  (dotted names such as `RandStream.create` included), for hover help, usage
+  hints, F1 and autocomplete. It is read from the engine at start-up, so new
+  functions appear without any change to the app.
+- `members { name }` returns `{ class, properties, methods }` of a workspace
+  variable (the fields of a struct), or null; the editor uses it for
+  suggestions after `name.`.
 - Results of `run` carry `ui` when app windows are open: the component tree
   described at the top of `mylab/ui.py`. `uiEvent { event }` delivers one
   user action (`{ id, event, value, … }`), runs the callbacks and returns
@@ -647,8 +710,14 @@ Requests are `{ id, type, … }`; replies are `{ id, ok, result | error }`.
   messages with new scope samples; `Engine` re-emits them as a `blocks`
   event. `check` and `validate` are sent in the background.
 - `inspect { name, path, row, rows, col, cols }` returns one page of a
-  variable as a grid of short texts (`path` walks into struct fields and
-  cells); `csv { name, path, maxCells }` returns it as CSV text.
+  variable as a grid of short texts (`path` walks into struct fields, cells,
+  table variables and object properties: `["f", field, index]`,
+  `["c", row, col]`, `["t", column]`, `["p", property]`). `kind` is
+  `matrix`, `char`, `string`, `cell`, `struct`, `structarray`, `table` (also
+  timetables, with the row times as row names), `values` (datetime, duration
+  and categorical arrays), `object` (one row per property) or `text` (the
+  printed form, with a `note` for graphics handles). `csv { name, path,
+  maxCells }` returns it as CSV text.
 
 Requests that only look things up (`lint`, `helpIndex`, `help`, `inspect`,
 `csv`) are sent with `Engine.background()`: they wait their turn in the
@@ -694,7 +763,8 @@ node scripts/test_web.mjs --no-screenshot    # all checks, leave the images alon
 PYTHON=.venv/bin/python node scripts/test_web.mjs --gif   # record docs/images/demo.gif (needs Pillow)
 ```
 
-It checks the welcome window, command window, workspace, plotting, error line
+It checks the welcome window (and *What's new*, shown once to returning users),
+command window, workspace, plotting (figure size on a 2× screen), error line
 numbers, functions in other files, run selection, the assistant (mocked),
 the editor helpers (command palette and file switcher, find/replace and
 search in files, problems as you type, hover help, usage hints and F1,
@@ -713,7 +783,13 @@ submission .zip, reload), block diagrams (found from the Files panel, from
 New file and from the welcome window; an example model run and its scope
 values, building a model with the mouse and with the keyboard alone,
 parameter validation, undo and redo, subsystems, error markers, `.slx`
-import, themes, an 800 px window, touch), Stop, persistence (files, tabs, cursor,
+import, themes, an 800 px window, touch), the 1.1 additions (the editor's
+function list compared with the engine's 2,600+ built-ins, suggestions for
+`fit`, `griddedInterpolant` and after `RandStream.` and `f.`, hover and F1
+help, the variable viewer on a `cfit` and other objects, data file icons,
+loading a `.mat` and a version 7.3 MAT-file from the Files panel, dropping
+`.h5`, `.csv` and `.xlsx` files, and each example of *What's new* run in the
+app), Stop, persistence (files, tabs, cursor,
 breakpoints), the phone layout down to 320 px, and that there are no console
 errors.
 

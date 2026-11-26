@@ -85,6 +85,7 @@ class InputParser(MObject):
         self.optional: list[tuple[str, Any, Any]] = []
         self.params: dict[str, tuple[Any, Any]] = {}
         self.switches: list[str] = []
+        self.priority: dict[str, int] = {}  # PartialMatchPriority of parameters and switches
         self.settings: dict[str, Any] = dict(self._SETTINGS)
         self.results: dict[str, Any] = {}
         self.unmatched: dict[str, Any] = {}
@@ -103,7 +104,8 @@ class InputParser(MObject):
     def _check_new(self, name: str) -> None:
         if not name.isidentifier():
             raise MatlabError(f"'{name}' is not a valid argument name (it becomes a field of Results).")
-        if name in self._names():
+        fold = (lambda s: s) if self.settings["CaseSensitive"] else str.lower
+        if any(fold(n) == fold(name) for n in self._names()):
             raise MatlabError(f"An argument named '{name}' is already defined in this inputParser.")
 
     def get_field(self, interp, name: str) -> Any:
@@ -142,25 +144,68 @@ class InputParser(MObject):
             other = InputParser()
             other.required, other.optional = list(self.required), list(self.optional)
             other.params, other.switches = dict(self.params), list(self.switches)
-            other.settings = dict(self.settings)
+            other.priority, other.settings = dict(self.priority), dict(self.settings)
             return [other]
         if not rest:
             raise MatlabError(f"{name} needs the argument name.")
         arg_name = text(rest[0], "argument name")
         self._check_new(arg_name)
         if name == "addRequired":
-            self.required.append((arg_name, rest[1] if len(rest) > 1 else None))
-        elif name == "addSwitch":
+            self.required.append((arg_name, self._validator_arg(name, rest[1:], 1)))
+            return []
+        if name == "addSwitch":
+            self.priority[arg_name] = self._priority(name, rest[1:])
             self.switches.append(arg_name)
+            return []
+        if len(rest) < 2:
+            raise MatlabError(f"{name} needs a default value: {name}(p, '{arg_name}', defaultValue).")
+        extra = rest[2:]
+        validator = None
+        if extra and not (name != "addOptional" and is_text(extra[0])
+                          and text(extra[0]).lower() == "partialmatchpriority"):
+            validator = self._validator_arg(name, extra[:1], 1)
+            extra = extra[1:]
+        if name == "addOptional":
+            if extra:
+                raise MatlabError("addOptional takes the argument name, a default value and a validation "
+                                  "function; it has no further options.", "MATLAB:InputParser:UnknownOption")
+            self.optional.append((arg_name, rest[1], validator))
         else:
-            if len(rest) < 2:
-                raise MatlabError(f"{name} needs a default value: {name}(p, '{arg_name}', defaultValue).")
-            validator = rest[2] if len(rest) > 2 and isinstance(rest[2], FunctionHandle) else None
-            if name == "addOptional":
-                self.optional.append((arg_name, rest[1], validator))
-            else:
-                self.params[arg_name] = (rest[1], validator)
+            self.priority[arg_name] = self._priority(name, extra)
+            self.params[arg_name] = (rest[1], validator)
         return []
+
+    @staticmethod
+    def _validator_arg(method: str, extra: list, limit: int) -> Any:
+        """The validation function given to an add* method (or None)."""
+        if len(extra) > limit:
+            raise MatlabError(f"Too many inputs to {method}.", "MATLAB:TooManyInputs")
+        if not extra:
+            return None
+        v = extra[0]
+        if not isinstance(v, FunctionHandle):
+            raise MatlabError(f"The validation function given to {method} must be a function handle, such as "
+                              "@isnumeric.", "MATLAB:InputParser:ValidationFunctionNotHandle")
+        return v
+
+    @staticmethod
+    def _priority(method: str, extra: list) -> int:
+        """Read the PartialMatchPriority option of addParameter and addSwitch."""
+        prio = 1
+        if len(extra) % 2:
+            raise MatlabError(f"{method}: options must come in name-value pairs.", "MATLAB:InputParser:UnknownOption")
+        for k in range(0, len(extra), 2):
+            key = text(extra[k], "option name") if is_text(extra[k]) else ""
+            if key.lower() != "partialmatchpriority":
+                shown = key or _class(extra[k])
+                raise MatlabError(f"Unknown option '{shown}' for {method}; the only option is "
+                                  "'PartialMatchPriority'.", "MATLAB:InputParser:UnknownOption")
+            value = num(extra[k + 1])
+            if value.size != 1 or value.flat[0] != int(value.flat[0]) or value.flat[0] < 1:
+                raise MatlabError("PartialMatchPriority must be a positive integer.",
+                                  "MATLAB:InputParser:InvalidPartialMatchPriority")
+            prio = int(value.flat[0])
+        return prio
 
     # -- parsing ------------------------------------------------------------------------------
     def _prefix(self) -> str:
@@ -189,21 +234,48 @@ class InputParser(MObject):
             return False
         return True
 
-    def _match(self, key: str, names: list[str]) -> str | None:
+    def _lookup(self, key: str, optional: list[str], partial: bool = True) -> tuple[str | None, list[str]]:
+        """Find the input a name refers to: (match, []) or (None, the names it could mean).
+
+        Every name-value input matches exactly (by CaseSensitive); with PartialMatching a leading part
+        of a name matches too (fitEllipse3d(p, 'vis', true) for an optional 'visualization'), and
+        PartialMatchPriority settles a tie.
+        """
         fold = (lambda s: s) if self.settings["CaseSensitive"] else str.lower
         k = fold(key)
-        exact = [n for n in names if fold(n) == k]
-        if exact:
-            return exact[0]
-        if self.settings["PartialMatching"] and k:
-            partial = [n for n in names if fold(n).startswith(k)]
-            if len(partial) == 1:
-                return partial[0]
-            if len(partial) > 1:
-                raise MatlabError(f"{self._prefix()}'{key}' matches multiple parameter names: "
-                                  + ", ".join(partial) + ". Write more of the name.",
-                                  "MATLAB:InputParser:AmbiguousParamName")
-        return None
+        named = list(self.params) + self.switches
+        for n in named + optional:
+            if fold(n) == k:
+                return n, []
+        if not (partial and self.settings["PartialMatching"] and k):
+            return None, []
+        found = [n for n in named + optional if fold(n).startswith(k)]
+        if len(found) > 1:
+            best = min(self.priority.get(n, 1) for n in found)
+            top = [n for n in found if self.priority.get(n, 1) == best]
+            if len(top) == 1:
+                return top[0], []
+            return None, top
+        return (found[0], []) if found else (None, [])
+
+    def _names_input(self, key: str, optional: list[str]) -> bool:
+        match, ambiguous = self._lookup(key, optional)
+        return match is not None or bool(ambiguous)
+
+    def _pairs_from(self, rest: list, optional: list[str]) -> bool:
+        """Whether ``rest`` reads as name-value arguments: names (or structs) each followed by a value."""
+        k = 0
+        while k < len(rest):
+            a = rest[k]
+            if isinstance(a, Struct) and self.settings["StructExpand"] and a.numel() == 1:
+                k += 1
+            elif not _name_text(a):
+                return False
+            elif self._lookup(text(a), optional)[0] in self.switches:
+                k += 1
+            else:
+                k += 2
+        return k == len(rest)
 
     def parse(self, interp, args: list) -> None:
         self.results, self.unmatched, self.using_defaults = {}, {}, []
@@ -216,75 +288,103 @@ class InputParser(MObject):
             self._validate(interp, name, value, validator)
             self.results[name] = value
         rest = args[len(self.required):]
-        named = list(self.params) + self.switches
-        # Optional inputs can also be given by name: MATLAB reads text without a validator as a
-        # parameter name, and the names include the optional ones (seqNMF(X, 'K', 3, 'L', 7) with
-        # every input added by addOptional).
-        by_name = named + [n for n, _, _ in self.optional]
-        for name, default, validator in self.optional:
+        start = len(self.required)
+        # Optional inputs are positional until an argument starts the name-value part:
+        #  - text that names an input given by name (a parameter, a switch, or an optional input not
+        #    yet given), when the arguments from there on read as name-value pairs;
+        #  - text an optional input cannot take: it has no validation function (the parser cannot tell
+        #    a value from a name), or its validation function rejects the text;
+        #  - with StructExpand, a struct the optional input's validation function does not accept (with
+        #    no validation function, a struct whose fields all name inputs).
+        free = [n for n, _, _ in self.optional]  # optional inputs that may still be given by name
+        rejected = None
+        for name, _default, validator in self.optional:
             take = bool(rest)
-            if take and is_text(rest[0]):
-                try:
-                    is_name = self._match(text(rest[0]), named) is not None
-                    if not is_name and validator is None and len(rest) >= 2:
-                        is_name = self._match(text(rest[0]), by_name) is not None
-                except MatlabError:
-                    is_name = True
-                exact = text(rest[0]).lower() in [n.lower() for n in named] and len(rest) % 2 == 0
-                if is_name and (validator is None or exact or not self._accepts(interp, rest[0], validator)):
-                    take = False  # the text names a parameter: the optional arguments end here
-                elif validator is not None and not self._accepts(interp, rest[0], validator):
-                    take = False  # text the validator rejects is read as a parameter name, as in MATLAB
-            if take and isinstance(rest[0], Struct) and self.settings["StructExpand"] \
-                    and not self._accepts(interp, rest[0], validator):
-                take = False  # a struct of name-value pairs
-            if take:
-                self._validate(interp, name, rest[0], validator)
-                self.results[name] = rest.pop(0)
-            else:
-                self.results[name] = default
-                self.using_defaults.append(name)
-        pairs: list[tuple[str, Any]] = []
+            if take and _name_text(rest[0]):
+                key = text(rest[0])
+                if validator is None:
+                    take = False
+                elif self._names_input(key, free) and self._pairs_from(rest, free):
+                    take = False
+                elif not self._accepts(interp, rest[0], validator):
+                    take, rejected = False, name
+            elif take and isinstance(rest[0], Struct) and self.settings["StructExpand"] and rest[0].numel() == 1:
+                if validator is None:  # a struct of name-value pairs when its fields name inputs
+                    take = not rest[0].fields or not all(self._lookup(f, free, partial=False)[0]
+                                                         for f in rest[0].fields)
+                else:
+                    take = self._accepts(interp, rest[0], validator)
+            if not take:
+                break
+            self._validate(interp, name, rest[0], validator)
+            self.results[name] = rest.pop(0)
+            free.remove(name)
+            start += 1
+        optional = {n: v for n, _, v in self.optional}
+        pairs: list[tuple[str, Any, bool]] = []  # (name as given, value, from a struct)
         k = 0
         while k < len(rest):
             a = rest[k]
             if isinstance(a, Struct) and self.settings["StructExpand"] and a.numel() == 1:
-                pairs += [(f, a.data.flat[0][f]) for f in a.fields]
+                pairs += [(f, a.data.flat[0][f], True) for f in a.fields]
                 k += 1
                 continue
-            if not is_text(a):
+            if not _name_text(a):
                 raise MatlabError(f"{self._prefix()}Expected a parameter name (text) at position "
-                                  f"{len(args) - len(rest) + k + 1}, but found a value of class "
+                                  f"{start + k + 1}, but found a value of class "
                                   f"'{_class(a)}'. Too many positional arguments?",
                                   "MATLAB:InputParser:ParamMustBeChar")
             key = text(a)
-            if self._match_switch(key):
-                pairs.append((key, np.array([[True]])))
+            if self._lookup(key, free)[0] in self.switches:
+                pairs.append((key, np.array([[True]]), False))
                 k += 1
                 continue
             if k + 1 >= len(rest):
+                if k == 0 and rejected is not None:  # text meant for an optional input that refused it
+                    self._validate(interp, rejected, a, optional[rejected])
+                if not self._names_input(key, free) and not self.settings["KeepUnmatched"]:
+                    hint = ""
+                    if k == 0 and free:
+                        hint = (f" Text where the optional input '{free[0]}' could go is read as a name unless "
+                                "that input has a validation function that accepts it.")
+                    raise MatlabError(f"{self._prefix()}'{key}' is not a recognized parameter.{hint}",
+                                      "MATLAB:InputParser:UnmatchedParameter")
                 raise MatlabError(f"{self._prefix()}No value was given for the parameter '{key}'. "
                                   "Name-value arguments come in pairs.", "MATLAB:InputParser:ParamMissingValue")
-            pairs.append((key, rest[k + 1]))
+            pairs.append((key, rest[k + 1], False))
             k += 2
-        optional = {n: v for n, _, v in self.optional}
-        for key, value in pairs:
-            name = self._match(key, named + [n for n in optional if n in self.using_defaults])
-            if name in optional:  # an optional input given by name
-                self._validate(interp, name, value, optional[name])
-                self.results[name] = value
-                self.using_defaults.remove(name)
-                continue
+        given_by_name: set[str] = set()
+        for key, value, from_struct in pairs:
+            name, ambiguous = self._lookup(key, free, partial=not from_struct)
             if name is None:
                 if self.settings["KeepUnmatched"]:
                     self.unmatched[key] = value
                     continue
-                known = ", ".join(sorted(named)) or "(none)"
+                if ambiguous:
+                    raise MatlabError(f"{self._prefix()}'{key}' matches more than one parameter name: "
+                                      + ", ".join(ambiguous) + ". Write more of the name.",
+                                      "MATLAB:InputParser:AmbiguousParamName")
+                fold = (lambda t: t) if self.settings["CaseSensitive"] else str.lower
+                taken = [n for n in optional if n not in free and fold(n) == fold(key)]
+                if taken:
+                    raise MatlabError(f"{self._prefix()}The optional input '{taken[0]}' was already given by "
+                                      "position, so it cannot also be given by name.",
+                                      "MATLAB:InputParser:UnmatchedParameter")
+                if rejected is not None and not given_by_name and not from_struct:
+                    self._validate(interp, rejected, char(key), optional[rejected])
+                known = ", ".join(sorted(list(self.params) + self.switches + free, key=str.lower)) or "(none)"
                 raise MatlabError(f"{self._prefix()}'{key}' is not a recognized parameter. "
-                                  f"Valid parameter names: {known}.", "MATLAB:InputParser:UnmatchedParameter")
-            if name in self.params:
+                                  f"Valid names: {known}.", "MATLAB:InputParser:UnmatchedParameter")
+            given_by_name.add(name)
+            if name in optional:
+                self._validate(interp, name, value, optional[name])
+            elif name in self.params:
                 self._validate(interp, name, value, self.params[name][1])
-            self.results[name] = value
+            self.results[name] = value  # a name given twice keeps the last value
+        for name, default, _ in self.optional:
+            if name not in self.results:
+                self.results[name] = default
+                self.using_defaults.append(name)
         for name, (default, _) in self.params.items():
             if name not in self.results:
                 self.results[name] = default
@@ -293,12 +393,6 @@ class InputParser(MObject):
             if name not in self.results:
                 self.results[name] = np.array([[False]])
                 self.using_defaults.append(name)
-
-    def _match_switch(self, key: str) -> bool:
-        try:
-            return self._match(key, list(self.params) + self.switches) in self.switches
-        except MatlabError:
-            return False
 
     def display_lines(self) -> list[str]:
         from ..display import summary
@@ -314,6 +408,11 @@ class InputParser(MObject):
 def _class(v: Any) -> str:
     from ..values import class_name
     return class_name(v)
+
+
+def _name_text(v: Any) -> bool:
+    """A char row vector or a string scalar: something that can be an argument name."""
+    return isinstance(v, MString) or (is_text(v) and v.ndim == 2 and v.shape[0] == 1)
 
 
 @builtin("inputParser")

@@ -75,14 +75,51 @@ def _rng(interp):
     return rng
 
 
-def _legacy_seed(interp, args) -> bool:
-    """rand('seed', n), rand('state', n), randn('twister', n): the old way to seed the generator."""
-    if args and is_text(args[0]) and text(args[0]).lower() in ("seed", "state", "twister"):
-        seed = int(abs(float(np.real(num(args[1]).flat[0])))) % (2 ** 32) if len(args) > 1 else 0
-        interp.state["rng"] = new_generator(seed)
-        interp.state["rng_seed"] = seed
-        return True
-    return False
+def _legacy_seed(interp, args, name: str) -> tuple[bool, object]:
+    """The old generator syntaxes, rand('seed'|'state'|'twister') and rand(word, s), for rand and randn.
+
+    Returns (handled, value). All three words act on the one generator that rng controls:
+    rand('state') and rand('twister') return its whole state (625 words, as a double or a uint32
+    column), and rand('seed') returns a scalar seed after restarting the stream from that seed, so
+    each query form gives a value that, passed back as rand(word, s), resumes the same sequence. A
+    scalar s seeds the generator like rng(s); any other vector is reduced to a seed.
+    """
+    if not (args and is_text(args[0])):
+        return False, None
+    word = text(args[0]).lower()
+    if word not in ("seed", "state", "twister"):
+        return False, None
+    if len(args) > 2:
+        raise MatlabError(f"{name}('{word}', s) takes one value after the word.", "MATLAB:TooManyInputs")
+    from .langextras import _decode_state, _encode_state
+    if len(args) == 1:
+        if word == "seed":
+            seed = int(_rng(interp).integers(1, 2 ** 31))
+            interp.state["rng"] = new_generator(seed)
+            interp.state["rng_seed"] = seed
+            return True, np.array([[float(seed)]])
+        words = _encode_state(_rng(interp))
+        if words.size != 625:  # another kind of stream (RandStream): no twister state to report
+            words = _encode_state(new_generator(interp.state.get("rng_seed", 0)))
+        return True, words if word == "twister" else words.astype(float)
+    a = num(args[1])
+    if a.dtype.kind == "c":
+        a = np.real(a)
+    flat = a.flatten(order="F")
+    if flat.size == 625 and np.all(np.isfinite(flat)) and np.all(flat >= 0) and np.all(flat == np.round(flat)):
+        gen = new_generator(0)
+        _decode_state(gen, flat)
+        interp.state["rng"] = gen
+        interp.state["rng_seed"] = 0
+        return True, None
+    if flat.size == 1:
+        seed = int(abs(float(flat[0]))) % (2 ** 32) if np.isfinite(flat[0]) else 0
+    else:  # some other state vector (from another program): any fixed seed made from its values will do
+        import zlib
+        seed = zlib.crc32(np.ascontiguousarray(flat, dtype=float).tobytes()) if flat.size else 0
+    interp.state["rng"] = new_generator(seed)
+    interp.state["rng_seed"] = seed
+    return True, None
 
 
 def _float_class(cls, name: str):
@@ -99,8 +136,9 @@ def uniform(interp, shape: tuple) -> np.ndarray:
 
 @builtin("rand")
 def _rand(interp, args, nargout):
-    if _legacy_seed(interp, args):
-        return None
+    handled, value = _legacy_seed(interp, args, "rand")
+    if handled:
+        return value
     shape, cls = dims_from_args(args, "rand")
     return cast_class(uniform(interp, shape), _float_class(cls, "rand"))
 
@@ -242,8 +280,9 @@ def normal(interp, count: int) -> np.ndarray:
 
 @builtin("randn")
 def _randn(interp, args, nargout):
-    if _legacy_seed(interp, args):
-        return None
+    handled, value = _legacy_seed(interp, args, "randn")
+    if handled:
+        return value
     shape, cls = dims_from_args(args, "randn")
     count = int(np.prod(shape, dtype=np.int64))
     return cast_class(normal(interp, count).reshape(shape, order="F"), _float_class(cls, "randn"))

@@ -27,13 +27,20 @@ HELP = {
                     "@isnumeric or @(x) x > 0."),
     "addOptional": (["addOptional(p, name, default)", "addOptional(p, name, default, validator)"],
                     "Adds an optional positional argument with a default value to the inputParser p. "
-                    "Optional arguments come after the required ones. A text value that is exactly the "
-                    "name of a parameter and starts a complete list of name-value pairs is read as that "
-                    "parameter name, not as the optional value."),
-    "addParameter": (["addParameter(p, name, default)", "addParameter(p, name, default, validator)"],
+                    "Optional arguments come after the required ones, in the order they were added. "
+                    "Positional reading stops at text that names a parameter, a switch or an optional "
+                    "argument not yet given, when the rest reads as name-value pairs; at text the optional "
+                    "argument's validator rejects; and at any text when it has no validator (so give text "
+                    "arguments a validator). An optional argument not given by position can be given by "
+                    "name, like a parameter: f(x, 'w', 2) sets w."),
+    "addParameter": (["addParameter(p, name, default)", "addParameter(p, name, default, validator)",
+                      "addParameter(..., 'PartialMatchPriority', n)"],
                      "Adds a name-value argument with a default value to the inputParser p. Callers pass "
                      "it as 'Name', value after the positional arguments, or as a field of a struct. "
-                     "Names match without regard to case and may be shortened as long as they stay unique."),
+                     "Names match without regard to case (unless CaseSensitive) and, with PartialMatching, "
+                     "may be shortened as long as they stay unique; when a short name fits several, the one "
+                     "with the lowest PartialMatchPriority (default 1) wins. Struct field names must match "
+                     "in full. A name given twice keeps its last value."),
     "addParamValue": (["addParamValue(p, name, default)", "addParamValue(p, name, default, validator)"],
                       "Older name of addParameter: adds a name-value argument with a default value to the "
                       "inputParser p."),

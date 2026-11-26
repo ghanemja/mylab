@@ -8,6 +8,7 @@
  *   "variables", "showVariable" {name}, "complete" {prefix}, "help" {name}, "reset"
  *   "lint"     { code, known }              problems in one file (mylab.lint.check_source)
  *   "helpIndex"                             { name: [usage lines, one-line description] }
+ *   "members"  { name }                     { class, properties, methods } of a workspace variable, or null
  *   "uiEvent"  { event }                    one user action in an app window (mylab.ui); runs callbacks
  *   "uiClose"                               close every app window
  *   "inspect"  { name, path, row, rows, col, cols }  one page of a variable as a grid
@@ -35,6 +36,10 @@ const WORKDIR = "/home/pyodide/work";
 const GRADEDIR = "/home/pyodide/grade";
 const MAX_WRITTEN_FILE = 5 * 1024 * 1024; // files written by code that are copied back into the project
 const MAX_WRITTEN_TOTAL = 20 * 1024 * 1024;
+// Figures are drawn at 100 pixels per inch (a 560×420 figure is 560×420 pixels), times this scale
+// for sharp pictures on high-resolution screens. The page passes it as ?scale=2 and shows each
+// picture at its pixel size divided by the scale.
+const FIG_SCALE = Math.min(2, Math.max(1, Math.round(Number(new URLSearchParams(self.location.search).get("scale")) || 1)));
 
 let pyodide = null;
 let api = null; // Python dict of helper functions
@@ -79,7 +84,7 @@ def _dialog_handler(kind, payload):
     return None
 
 def _make_session():
-    s = Session()
+    s = Session(dpi=${100 * FIG_SCALE})
     s.interp.input_func = _no_input
     # Nobody can answer a blocking dialog inside the worker: dialogs return their default
     # answer and print a one-line note (see mylab/builtins/dialogs.py).
@@ -95,7 +100,46 @@ def _new_session():
 _new_session()
 
 def _vars():
-    return [v.to_dict() for v in _session.variables()]
+    out = []
+    for v in _session.variables():
+        d = v.to_dict()
+        if not d["preview"]:
+            d["preview"] = _object_preview(_session.interp.base.vars.get(v.name), v.name)
+        out.append(d)
+    return out
+
+_HEADER = None
+
+def _object_preview(v, name="ans", limit=60):
+    """One line for the Workspace panel for objects (fits, interpolants, dates, maps, ...).
+
+    Session.variables() leaves objects without a preview; this one is taken from the printed
+    form: the model formula of a fit, the properties of an object, the text of a date."""
+    global _HEADER
+    import numpy as np
+    from mylab.values import Cell, Struct, StringArray, shape_of, class_name
+    from mylab.display import format_display
+    try:
+        if v is None or isinstance(v, (np.ndarray, Cell, Struct, StringArray)) or class_name(v) in ("table", "timetable"):
+            return ""
+        n = 1
+        for k in shape_of(v):
+            n *= int(k)
+        if n > 12:
+            return ""
+        if _HEADER is None:
+            _HEADER = _re.compile(r"^(\\d+(×\\d+)+ \\S+( array)?|\\S+ with properties:|datetime|duration|calendarDuration|categorical)$")
+        lines = [s.strip() for s in format_display(name, v).splitlines() if s.strip()]
+        lines = [s for s in lines[1:] if not _HEADER.match(s)]
+        if not lines:
+            return ""
+        if lines[0].startswith("handle to deleted "):
+            return lines[0][len("handle to deleted "):] + " (figure closed after drawing)"
+        formula = next((s for s in lines if _re.match(r"^\\w+\\([\\w,]*\\) = ", s)), None)
+        s = formula or "  ".join(_re.sub(r"\\s+", " ", s) for s in lines)
+    except Exception:
+        return ""
+    return s if len(s) <= limit else s[: limit - 1] + "\\u2026"
 
 def _search_path(root):
     """The project root and every subfolder that holds .m files."""
@@ -314,6 +358,8 @@ def _cell_text(v, limit=80):
     try:
         if v is None:
             s = "<missing>"
+        elif isinstance(v, MatlabError):
+            s = "<cannot be read: " + str(v) + ">"
         elif isinstance(v, str):
             s = str(v)
         elif isinstance(v, np.ndarray) and is_char(v) and v.shape[0] <= 1:
@@ -345,7 +391,8 @@ def _num_text(x):
         return str(x)
 
 def _walk_path(v, path):
-    """Follow [["f", field, index] | ["c", row, col] | ["t", column]] steps into structs, cells and tables."""
+    """Follow [["f", field, index] | ["c", row, col] | ["t", column] | ["p", property]] steps
+    into structs, cells, tables and objects."""
     from mylab.values import Cell, Struct
     for step in path:
         if step[0] == "f" and isinstance(v, Struct):
@@ -354,17 +401,58 @@ def _walk_path(v, path):
             v = v.data[int(step[1]), int(step[2])]
         elif step[0] == "t" and hasattr(v, "columns"):
             v = v.columns[int(step[1])]
+        elif step[0] == "p" and step[1] in _object_props(v):
+            v = _prop_value(v, step[1])
         else:
             raise MatlabError("That value is no longer there.")
     return v
+
+def _object_props(v):
+    """Public property names of an object (fit, interpolant, triangulation, class instance), else []."""
+    import numpy as np
+    from mylab.values import Cell, Struct, StringArray
+    if v is None or isinstance(v, (np.ndarray, Cell, Struct, StringArray, str, bool, int, float, complex)):
+        return []
+    try:
+        from mylab.builtins.objfuncs import _member_lists
+        return [str(p) for p in _member_lists(_session.interp, v)[1]]
+    except Exception:
+        return []
+
+def _prop_value(v, name):
+    try:
+        return v.get_field(_session.interp, name)
+    except Exception as e:
+        return MatlabError(str(e))
+
+def _members(name):
+    """Properties and methods of a workspace variable, for completions after 'name.'."""
+    from mylab.values import Struct, class_name
+    try:
+        v = _session.interp.get_var(name)
+    except Exception:
+        return json.dumps(None)
+    if isinstance(v, Struct):
+        return json.dumps({"class": "struct", "properties": list(v.fields), "methods": []})
+    try:
+        from mylab.builtins.objfuncs import _member_lists
+        cls, props, methods = _member_lists(_session.interp, v)
+    except Exception:
+        return json.dumps(None)
+    return json.dumps({"class": class_name(v), "properties": [str(p) for p in props], "methods": [str(m) for m in methods]})
 
 def _grid_of(v):
     """(kind, rows, cols, colnames, rownames, get(r, c), note, plottable), or None for values shown as text."""
     import numpy as np
     from mylab.values import Cell, Struct, StringArray, is_char, class_name
-    if class_name(v) == "table" and hasattr(v, "columns"):
+    if isinstance(v, MatlabError):
+        return None
+    if class_name(v) in ("table", "timetable") and hasattr(v, "columns"):
         names, cols = list(v.names), list(v.columns)
         n = v.nrows
+        rownames = v.row_names
+        if class_name(v) == "timetable" and hasattr(v.row_times, "element_texts"):
+            rownames = _LazyTexts(v.row_times)  # the row times label the rows
         def elem(col, r):
             if isinstance(col, np.ndarray):
                 if is_char(col):
@@ -379,7 +467,7 @@ def _grid_of(v):
                 return " ".join(s.strip() for s in display_lines(_rows(col, np.array([r]))) if s.strip())
             except Exception:
                 return col
-        return ("table", n, len(cols), names, v.row_names, lambda r, c: elem(cols[c], r), "", False)
+        return ("table", n, len(cols), names, rownames, lambda r, c: elem(cols[c], r), "", False)
     if isinstance(v, Struct):
         items = v.data.flatten(order="F")
         fields = list(v.fields)
@@ -404,7 +492,41 @@ def _grid_of(v):
         if is_char(v):
             return ("char", a.shape[0], 1, ["Text"], None, lambda r, c: "".join(str(x) for x in a[r]), note, False)
         return ("matrix", a.shape[0], a.shape[1], None, None, lambda r, c: a[r, c], note, v.ndim <= 2 and a.dtype.kind in "fiub")
+    if hasattr(v, "element_texts") and isinstance(getattr(v, "data", None), np.ndarray) and v.data.ndim == 2 and v.data.size > 1:
+        rows = _LazyTexts(v)  # datetime, duration and categorical arrays: one text per element
+        return ("values", v.data.shape[0], v.data.shape[1], None, None, lambda r, c: rows.row(r)[c], "", False)
+    props = _object_props(v)
+    if props:
+        note = ""
+        if any(isinstance(_prop_value(v, p), MatlabError) for p in props[:1]):
+            note = "Some properties could not be read."
+        return ("object", len(props), 1, ["Value"], props, lambda r, c: _prop_value(v, props[r]), note, False)
     return None
+
+class _LazyTexts:
+    """The element texts of a datetime, duration or categorical array, one row at a time."""
+    def __init__(self, arr):
+        self.arr, self.cache = arr, {}
+    def row(self, r):
+        if r not in self.cache:
+            if len(self.cache) > 400:
+                self.cache.clear()
+            self.cache[r] = [str(t) for t in self.arr[r:r + 1].element_texts().ravel()]
+        return self.cache[r]
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return [self.row(r)[0] for r in range(*key.indices(self.arr.data.shape[0]))]
+        return self.row(key)[0]
+
+def _can_open(x):
+    """Can the viewer step into this value? Grids, and objects (shown as printed)."""
+    import numpy as np
+    from mylab.values import MString
+    if x is None or isinstance(x, (MatlabError, str, bool, int, float, complex, np.generic, MString)):
+        return False
+    if isinstance(x, np.ndarray):
+        return _grid_of(x) is not None
+    return True
 
 def _inspect(name, path_json, r0, nr, c0, nc):
     """One page of a variable as a grid of short texts (or its printed form when it is not a grid)."""
@@ -416,7 +538,10 @@ def _inspect(name, path_json, r0, nr, c0, nc):
     g = _grid_of(v)
     if g is None:
         out["kind"] = "text"
-        out["text"] = format_display("ans" if path else name, v)
+        out["text"] = str(v) if isinstance(v, MatlabError) else format_display("ans" if path else name, v)
+        if out["class"].startswith("matlab.graphics."):
+            out["note"] = ("A graphics object. Figures are drawn into the Plots panel and closed after each run, "
+                           "so a handle kept in a variable reads as deleted afterwards.")
         return json.dumps(out)
     kind, rows, cols, colnames, rownames, get, note, plottable = g
     r0, c0 = max(0, int(r0)), max(0, int(c0))
@@ -427,7 +552,7 @@ def _inspect(name, path_json, r0, nr, c0, nc):
         for c in range(c0, c1):
             x = get(r, c)
             row.append(_cell_text(x))
-            if kind in ("struct", "structarray", "cell") and _grid_of(x) is not None:
+            if kind in ("struct", "structarray", "cell", "object") and _can_open(x):
                 opens.append([r, c])
         cells.append(row)
     out.update(kind=kind, rows=rows, cols=cols, r0=r0, c0=c0, cells=cells, opens=opens, note=note, plottable=plottable,
@@ -500,7 +625,7 @@ _api = {
     "vars": lambda: json.dumps(_vars()), "show": _show,
     "complete": _complete, "help": _help, "reset": _reset, "cwd": _cwd,
     "clear_cache": lambda: _session.clear_file_cache(),
-    "lint": _lint, "help_index": _help_index, "inspect": _inspect, "csv": _csv,
+    "lint": _lint, "help_index": _help_index, "inspect": _inspect, "csv": _csv, "members": _members,
     "version": getattr(mylab, "__version__", "?"),
 }
 _api
@@ -587,6 +712,7 @@ function writeInto(root, path, content) {
 
 function syncFiles(fs) {
   if (!fs) return;
+  noteProjectM(fs);
   let changed = false;
   if (fs.reset) {
     call("wipe", WORKDIR);
@@ -717,6 +843,9 @@ const handlers = {
   helpIndex() {
     return { result: JSON.parse(call("help_index")) };
   },
+  members({ name }) {
+    return { result: JSON.parse(call("members", String(name))) };
+  },
   inspect({ name, path, row, rows, col, cols }) {
     return { result: JSON.parse(call("inspect", String(name), JSON.stringify(path || []), row || 0, rows || 50, col || 0, cols || 20)) };
   },
@@ -744,7 +873,8 @@ let sympyState = "none"; // none | loaded | failed
 
 // h5py (HDF5 files and version 7.3 MAT-files) is also fetched on first use: by an h5* function,
 // matfile or '-v7.3' in the code, or by load/whos/... while the project holds an HDF5 file.
-const HDF5_RE = /\b(?:h5create|h5write|h5read|h5writeatt|h5readatt|h5info|h5disp|matfile)\b|v7\.3/;
+const HDF5_RE =
+  /\b(?:h5create|h5write|h5read|h5writeatt|h5readatt|h5info|h5disp|matfile|nccreate|ncwrite|ncread|ncinfo|ncdisp|ncreadatt|ncwriteatt)\b|\bH5(?:F|D|S|G|A|T|ML)\.\w|v7\.3/;
 const HDF5_READERS_RE = /\b(?:load|who|whos|importdata|open|uiimport)\b/;
 const HDF5_MAGIC = [0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a];
 const hdf5Files = new Set(); // project paths whose content is an HDF5 file
@@ -760,13 +890,45 @@ function requestFiles(msg) {
   return [...((msg.fs && msg.fs.files) || []), ...(msg.files || [])];
 }
 
+// The .m files of the project, as last sent (a request only carries the files that changed).
+const projectM = new Map(); // path -> text
+
+/**
+ * The code a request runs, and the project's .m files it can reach: those it calls by name,
+ * and those that they call, and so on. Files nobody calls (an example in another folder) do
+ * not make the app download SymPy or h5py. An autograder test reaches all of its files.
+ */
 function programTexts(msg) {
   const texts = [msg.code, msg.tail];
   for (const s of msg.sections || []) texts.push(typeof s === "string" ? s : s && s.code);
-  for (const f of requestFiles(msg)) {
+  for (const f of msg.files || []) {
     if (typeof f.content === "string" && /\.m$/i.test(f.path || "")) texts.push(f.content);
   }
-  return texts.filter((t) => typeof t === "string");
+  noteProjectM(msg.fs);
+  const out = texts.filter((t) => typeof t === "string");
+  const left = [...projectM].map(([p, t]) => [p.slice(p.lastIndexOf("/") + 1, -2), t]).filter(([name]) => /^[A-Za-z]\w*$/.test(name));
+  for (let grew = true; grew && left.length; ) {
+    grew = false;
+    const all = out.join("\n");
+    for (let i = left.length - 1; i >= 0; i--) {
+      if (!new RegExp("\\b" + left[i][0] + "\\b").test(all)) continue;
+      out.push(left[i][1]);
+      left.splice(i, 1);
+      grew = true;
+    }
+  }
+  return out;
+}
+
+/** Keep projectM in step with the project mirrored by a request's fs (see syncFiles). */
+function noteProjectM(fs) {
+  if (!fs) return;
+  if (fs.reset) projectM.clear();
+  const listed = new Set((fs.files || []).map((f) => f.path));
+  for (const p of [...projectM.keys()]) if (!listed.has(p)) projectM.delete(p);
+  for (const f of fs.files || []) {
+    if (typeof f.content === "string" && /\.m$/i.test(f.path || "")) projectM.set(f.path, f.content);
+  }
 }
 
 function usesHdf5(msg, texts) {

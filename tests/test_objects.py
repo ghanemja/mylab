@@ -126,7 +126,7 @@ def test_access_abstract_validation(cm):
         m.run("c.hidden();")
     with pytest.raises(MatlabError, match="positive"):
         m.run("c.r = -1;")
-    with pytest.raises(MatlabError, match="must be 1x1"):
+    with pytest.raises(MatlabError, match="Value must be a scalar"):
         m.run("c.r = [1 2];")
     m.run("c.r = int8(3);")
     assert m.str("class(c.r)") == "double"

@@ -8,8 +8,10 @@ _H5 = (" HDF5 files are read and written with the Python package h5py, which is 
        "browser app loads it the first time a program uses HDF5.")
 _H5_ORDER = (" Sizes and positions are given the MATLAB way, first dimension first; in the file the "
              "dimensions are stored in the opposite order, as MATLAB also does.")
-_NC = (" mylab reads and writes the classic NetCDF formats ('classic' and '64bit'); NetCDF-4 files, which "
-       "are HDF5 files, are not supported.")
+_NC = (" Classic files ('classic' and '64bit') are read and written directly; NetCDF-4 files ('netcdf4' and "
+       "'netcdf4_classic', which are HDF5 files) through the Python package h5py, which is installed with "
+       "mylab. The format of a file is detected when it is read. In a NetCDF-4 file a variable or group is "
+       "named by its path, such as '/grp/var'.")
 
 HELP = {
     # -- MAT-files -----------------------------------------------------------------------------------
@@ -20,9 +22,13 @@ HELP = {
                 "Assigning m.name = value, or to part of a variable, writes the file at once (the file "
                 "must have been opened with 'Writable', true, which is the default only for a file that "
                 "does not exist yet). who(m), whos(m) and size(m, 'name') describe what is stored, and "
-                "m.Properties holds Source and Writable. Unlike MATLAB, a variable is read into memory as "
-                "a whole when part of it is used. All MAT-file versions that load reads are accepted; like "
-                "MATLAB, matfile creates a version 7.3 (HDF5) file when the file does not exist yet."),
+                "m.Properties holds Source and Writable. In a version 7.3 (HDF5) file, indexing a numeric, "
+                "char or logical variable reads only the selected elements, and assigning to part of one "
+                "writes only that part, as long as the variable keeps its size and class; size(m, 'name') "
+                "and whos(m) read no data. Indices can be scalars, ranges such as a:b and a:step:b, colons "
+                "and 'end'. Other variables, and every variable of an older version of file, are read as a "
+                "whole. All MAT-file versions that load reads are accepted; like MATLAB, matfile creates a "
+                "version 7.3 file when the file does not exist yet."),
     # -- import options and datastores -----------------------------------------------------------------
     "detectImportOptions": (
         ["opts = detectImportOptions(filename)", "opts = detectImportOptions(filename, Name, Value)",
@@ -61,11 +67,14 @@ HELP = {
         "SelectedVariableNames, SelectedFormats, Delimiter, NumHeaderLines, ReadVariableNames, TextType "
         "and DatetimeType. Options: those of readtable plus 'FileExtensions', 'IncludeSubfolders', "
         "'ReadSize', 'SelectedVariableNames' and 'SelectedFormats'. Also available: partition(ds, n, k), "
-        "subset(ds, indices), shuffle(ds), numpartitions(ds) and progress(ds)."),
+        "subset(ds, indices), shuffle(ds), numpartitions(ds), progress(ds), transform(ds, @fcn) and "
+        "combine(ds1, ds2)."),
     "datastore": (
-        ["ds = datastore(location)", "ds = datastore(location, 'Type', 'tabulartext', Name, Value)"],
-        "Creates a datastore for a collection of files. mylab has one kind, the tabular text datastore "
-        "(see tabularTextDatastore); another 'Type' is an error."),
+        ["ds = datastore(location)", "ds = datastore(location, 'Type', 'tabulartext', Name, Value)",
+         "ds = datastore(location, 'Type', 'image', Name, Value)"],
+        "Creates a datastore for a collection of files. The default kind is the tabular text datastore "
+        "(see tabularTextDatastore); 'Type', 'image' makes an image datastore (see imageDatastore) and "
+        "takes its options. Another 'Type' is an error."),
     "memmapfile": (
         ["m = memmapfile(filename)", "m = memmapfile(filename, 'Format', type)",
          "m = memmapfile(filename, 'Format', {type, size, fieldname; ...})",
@@ -119,20 +128,26 @@ HELP = {
     # -- NetCDF ----------------------------------------------------------------------------------------
     "nccreate": (
         ["nccreate(filename, varname)", "nccreate(filename, varname, 'Dimensions', {name1, len1, name2, len2})",
-         "nccreate(..., 'Datatype', type, 'Format', 'classic', 'FillValue', value)"],
-        "Creates a variable in a NetCDF file, and the file and the named dimensions if they do not exist "
-        "yet. A dimension that exists already is given by its name alone; a length of Inf makes the "
-        "dimension unlimited (one per file, and it must be the variable's last). Without Dimensions the "
-        "variable holds one value. Datatype is 'double' (the default), 'single', 'int32', 'int16', "
-        "'int8' or 'char'. A new variable is filled with the fill value, which ncread returns as NaN "
-        "for double and single variables." + _NC),
+         "nccreate(..., 'Datatype', type, 'Format', fmt, 'FillValue', value)",
+         "nccreate(..., 'ChunkSize', chunk, 'DeflateLevel', level, 'Shuffle', tf)"],
+        "Creates a variable in a NetCDF file, and the file, the groups on its path and the named "
+        "dimensions if they do not exist yet. A dimension that exists already is given by its name alone; "
+        "a length of Inf makes the dimension unlimited. Without Dimensions the variable holds one value. "
+        "Format applies when the file is created: 'classic' (the default), '64bit', 'netcdf4' or "
+        "'netcdf4_classic'. Datatype is 'double' (the default), 'single', 'int32', 'int16', 'int8' or "
+        "'char'; NetCDF-4 files also take 'uint8', 'uint16', 'uint32', 'int64', 'uint64' and, in the "
+        "'netcdf4' format, 'string'. Classic and netcdf4_classic files allow one unlimited dimension, "
+        "which must be the variable's last; 'netcdf4' files allow several, anywhere, and groups. "
+        "ChunkSize, DeflateLevel (0 to 9) and Shuffle set the storage of NetCDF-4 variables. A new "
+        "variable is filled with the fill value ('disable': no filling), which ncread returns as NaN for "
+        "double and single variables." + _NC),
     "ncwrite": (
         ["ncwrite(filename, varname, data)", "ncwrite(filename, varname, data, start)",
          "ncwrite(filename, varname, data, start, stride)"],
-        "Writes data to a variable of a NetCDF file, starting at index 1 of each dimension or at start. "
-        "Writing past the end of the unlimited dimension makes it longer. The data is converted to the "
-        "variable's type; if the variable has scale_factor or add_offset attributes they are applied "
-        "in reverse first, and NaN is stored as the fill value." + _NC),
+        "Writes data to a variable of a NetCDF file, starting at index 1 of each dimension or at start, "
+        "taking every stride-th position. Writing past the end of an unlimited dimension makes it longer. "
+        "The data is converted to the variable's type; if the variable has scale_factor or add_offset "
+        "attributes they are applied in reverse first, and NaN is stored as the fill value." + _NC),
     "ncread": (
         ["data = ncread(filename, varname)", "data = ncread(filename, varname, start, count)",
          "data = ncread(filename, varname, start, count, stride)"],
@@ -144,19 +159,23 @@ HELP = {
     "ncinfo": (
         ["info = ncinfo(filename)", "vinfo = ncinfo(filename, varname)"],
         "Describes a NetCDF file as a struct with Filename, Name, Dimensions (Name, Length, Unlimited), "
-        "Variables (Name, Dimensions, Size, Datatype, Attributes, FillValue), Attributes (Name, Value) "
-        "and Format, or one variable of it." + _NC),
+        "Variables (Name, Dimensions, Size, Datatype, Attributes, ChunkSize, FillValue, DeflateLevel, "
+        "Shuffle), Attributes (Name, Value), Groups (the same fields for each group of a NetCDF-4 file) "
+        "and Format, or one group or variable of it." + _NC),
     "ncdisp": (
         ["ncdisp(filename)", "ncdisp(filename, varname)"],
-        "Prints the dimensions, variables and attributes of a NetCDF file, or of one variable." + _NC),
+        "Prints the dimensions, variables, attributes and groups of a NetCDF file, or of one group or "
+        "variable." + _NC),
     "ncreadatt": (
         ["value = ncreadatt(filename, location, attname)"],
-        "Reads an attribute of a NetCDF file. location is '/' for the file's own attributes or the name "
-        "of a variable." + _NC),
+        "Reads an attribute of a NetCDF file. location is '/' for the file's own attributes, the path of "
+        "a group, or the name of a variable. Text comes back as a character vector, NC_STRING values "
+        "as strings and numbers as a row vector of their class." + _NC),
     "ncwriteatt": (
         ["ncwriteatt(filename, location, attname, value)"],
-        "Creates or replaces an attribute of a NetCDF file ('/') or of one of its variables. The value "
-        "is text or a numeric vector of class double, single, int32, int16 or int8." + _NC),
+        "Creates or replaces an attribute of a NetCDF file ('/'), of a group or of a variable. The value "
+        "is text or a numeric vector of class double, single, int32, int16 or int8; a 'netcdf4' file also "
+        "takes the other integer classes and string arrays." + _NC),
     # -- HDF5 ------------------------------------------------------------------------------------------
     "h5create": (
         ["h5create(filename, dataset, size)", "h5create(filename, dataset, size, 'Datatype', type)",

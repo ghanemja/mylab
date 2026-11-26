@@ -5,7 +5,7 @@ import { toStored, formatSize } from "./codec.js";
 import { parseGithub, githubSpecText, fetchGithub } from "./github.js";
 import { DEFAULT_PROJECT } from "./storage.js";
 
-export const IMPORT_EXT = /\.(m|txt|csv|tsv|dat|json|md|xml|png|jpe?g|gif|bmp|mat|slx)$/i;
+export const IMPORT_EXT = /\.(m|txt|csv|tsv|dat|json|md|xml|png|jpe?g|gif|bmp|tiff?|mat|h5|hdf5|he5|nc|nc4|xlsx|xlsm|xls|ods|slx)$/i;
 const MAX_FILE = 5 * 1024 * 1024;
 const MAX_TOTAL = 30 * 1024 * 1024;
 const MAX_COUNT = 500;
@@ -81,7 +81,7 @@ export function initProjects(app) {
     if (skipped.length) {
       summaryDialog({
         title: `${what}: ${n} file${n === 1 ? "" : "s"} imported, ${skipped.length} skipped`,
-        text: "mylab imports .m files and common data files (.csv, .txt, .json, .md, .mat, images) up to 5 MB each and 30 MB in total.",
+        text: "mylab imports .m files and common data files (.csv, .txt, .json, .md, .mat, .h5, .nc, .xlsx, .ods, images) up to 5 MB each and 30 MB in total.",
         groups: [{ title: "Skipped", items: skipped }, { title: "Imported", items: files.map((f) => ({ path: f.path })) }],
       });
     } else {
@@ -100,7 +100,7 @@ export function initProjects(app) {
     if (!result.files.length) {
       summaryDialog({
         title: `${what}: nothing to import`,
-        text: "No .m files or data files were found. mylab imports .m, .csv, .txt, .json, .md, .mat and image files up to 5 MB each.",
+        text: "No .m files or data files were found. mylab imports .m, .csv, .txt, .json, .md, .mat, HDF5 (.h5), NetCDF (.nc), spreadsheet (.xlsx, .ods) and image files up to 5 MB each.",
         groups: [{ title: "Skipped", items: result.skipped }],
       });
       return null;

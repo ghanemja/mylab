@@ -715,20 +715,26 @@ class Interpreter:
             from .classdef import overloaded_assign
             if overloaded_assign(self, target, value, frame):  # a class with its own subsasgn
                 return
+        if type(target) is A.Index and type(target.base) is A.Field and type(target.base.base) is A.Ident:
+            holder = frame.lookup(target.base.base.name)  # matfile: m.x(i, j) = v writes only that part
+            if isinstance(holder, MObject) and hasattr(holder, "assign_field_index") \
+                    and holder.assign_field_index(self, target.base.name, target.args, value, frame):
+                return
         current = self.lvalue_current(target, frame)
         new = self.assign_into(target, current, value, frame)
         self.assign(target.base, new, frame)
 
-    def _scalar_positions(self, args: list[A.Node], arr: np.ndarray, frame: Frame) -> tuple | None:
+    def _scalar_positions(self, args: list[A.Node], arr: np.ndarray, frame: Frame, checked: bool = False
+                          ) -> tuple | None:
         """0-based positions for all-scalar, in-range numeric indices; None otherwise."""
         count = len(args)
         if count == 0 or count > arr.ndim or (count > 1 and count != arr.ndim):
             return None
-        if not all(self._pure(a, frame) for a in args):
+        if not checked and not all(self._pure(a, frame) for a in args):
             return None  # may have side effects: let the general path evaluate it exactly once
         pos = []
         for i, node in enumerate(args):
-            if type(node) is A.Colon:
+            if type(node) is A.Colon or type(node) is A.Range:
                 return None
             self.end_stack.append((arr.shape, i, count))
             try:
@@ -761,28 +767,55 @@ class Interpreter:
             return node.op not in ("&&", "||") and self._pure(node.left, frame) and self._pure(node.right, frame)
         if t is A.UnaryOp:
             return self._pure(node.operand, frame)
-        if t is A.Index and type(node.base) is A.Ident and node.base.name in _PURE_FUNCS \
-                and not frame.has(node.base.name) and node.base.name not in frame.functions:
-            return all(self._pure(a, frame) for a in node.args)
+        if t is A.Colon:
+            return True
+        if t is A.Range:
+            return self._pure(node.start, frame) and self._pure(node.stop, frame) \
+                and (node.step is None or self._pure(node.step, frame))
+        if t is A.Index and type(node.base) is A.Ident:
+            name = node.base.name
+            if frame.has(name):  # an element of a numeric variable: reading it changes nothing
+                return type(frame.get(name)) is np.ndarray and not self.index_overloads \
+                    and all(self._pure(a, frame) for a in node.args)
+            if name in _PURE_FUNCS and name not in frame.functions:
+                return all(self._pure(a, frame) for a in node.args)
         return False
 
     def _assign_inplace(self, target: A.Index, value: Any, frame: Frame) -> bool:
-        """``x(i) = scalar`` without copying x, when x is a plain unshared numeric array."""
+        """``x(i) = v`` and ``x(i, :) = v`` without copying x, when x is a plain unshared array.
+
+        A scalar stored at scalar indices is written directly. Other stores that fit inside x and keep
+        its class (rows, columns, blocks, masks) are written in place by ``ix.set_inplace``; when that
+        declines, the general path finishes the job with the indices already evaluated.
+        """
         name = target.base.name
         if name in frame.globals:
             return False
         arr = frame.vars.get(name)
-        if type(arr) is not np.ndarray or type(value) is not np.ndarray or value.size != 1:
-            return False
-        if not arr.flags.writeable or arr.dtype.kind not in "fb" or arr.dtype != value.dtype \
-                and not (arr.dtype.kind == "f" and value.dtype.kind in "b"):
+        if type(arr) is not np.ndarray or type(value) is not np.ndarray or not arr.flags.writeable:
             return False
         if arr.base is not None or sys.getrefcount(arr) > _RC_DICT_AND_LOCAL:  # shared: copy-on-write path
             return False
-        pos = self._scalar_positions(target.args, arr, frame)
-        if pos is None:
+        args = target.args
+        if not all(self._pure(a, frame) for a in args):
+            return False  # may have side effects: let the general path evaluate it exactly once
+        if value.size == 1 and arr.dtype.kind in "fb" and (arr.dtype == value.dtype
+                                                           or arr.dtype.kind == "f" and value.dtype.kind == "b"):
+            pos = self._scalar_positions(args, arr, frame, checked=True)
+            if pos is not None:
+                arr[pos] = value.item()
+                return True
+        if self.index_overloads or arr.size == 0 or value.size == 0 or arr.dtype.kind not in "fbiuU":
             return False
-        arr[pos] = value.item()
+        if value.dtype != arr.dtype:
+            if arr.dtype.kind == "f" and value.dtype.kind == "b":
+                value = value.astype(arr.dtype)  # as coerce_for_assignment converts it
+            else:
+                return False
+        idx = self.eval_index_args(args, arr, frame)
+        if ix.set_inplace(arr, idx, value):
+            return True
+        self.assign(target.base, self.assign_into(target, arr, value, frame, idx), frame)
         return True
 
     def lvalue_current(self, target: A.Node, frame: Frame) -> Any:
@@ -828,8 +861,12 @@ class Interpreter:
             return node.name
         return to_str(self.eval(node.expr, frame), "dynamic field name")
 
-    def assign_into(self, target: A.Node, current: Any, value: Any, frame: Frame) -> Any:
-        """Return the new value of ``target.base`` after assigning ``value``."""
+    def assign_into(self, target: A.Node, current: Any, value: Any, frame: Frame,
+                    index_args: list[Any] | None = None) -> Any:
+        """Return the new value of ``target.base`` after assigning ``value``.
+
+        ``index_args``: the evaluated indices of an ``x(...) = value`` target, when the caller has them.
+        """
         if getattr(value, "is_missing_value", False) and current is not None \
                 and isinstance(target, (A.Index, A.CellIndex)) and not getattr(current, "is_missing_value", False):
             value = value.as_like(current) if isinstance(target, A.Index) else value  # x(k) = missing
@@ -890,7 +927,8 @@ class Interpreter:
         if isinstance(target, A.Index):
             if isinstance(current, FunctionHandle):
                 raise MatlabError("Cannot index into a function handle.")
-            args = self.eval_index_args(target.args, current if current is not None else empty_double(), frame)
+            args = index_args if index_args is not None else \
+                self.eval_index_args(target.args, current if current is not None else empty_double(), frame)
             if args and getattr(args[0], "is_sym", False):  # f(x) = 1 with symbolic x: a symbolic function
                 from .builtins.symbolic import define_function
                 fun = define_function(args, value)
@@ -1179,6 +1217,14 @@ class Interpreter:
             if isinstance(arg, A.Colon):
                 out.append(ix.COLON)
                 continue
+            simple = arg.__dict__.get("_no_end")
+            if simple is None:
+                simple = arg._no_end = _without_end(arg)
+            if simple:  # no 'end' can be reached from it: no need to say what 'end' would mean
+                v = self.eval(arg, frame)
+                out.append(ix.COLON if isinstance(v, np.ndarray) and v.dtype.kind == "U" and v.size == 1
+                           and v.flat[0] == ":" else v)
+                continue
             self.end_stack.append((shape, i, count))
             try:
                 vals = self.eval_expanding(arg, frame)
@@ -1244,6 +1290,11 @@ class Interpreter:
                     if container.has_method(name):
                         args = [ix_colon_to_char(a) for a in self.eval_elements(node.args, frame)]
                         return container.call_method(self, name, [container, *args], nargout)
+                    index_field = getattr(container, "index_field", None)  # matfile: read only a part
+                    if index_field is not None:
+                        part = index_field(self, name, node.args, frame)
+                        if part is not None:
+                            return [part]
                     base_val = container.get_field(self, name)
                 else:
                     base_val = self.eval_multi(base, frame, 1)[0] if not isinstance(container, Struct) \
@@ -1275,7 +1326,16 @@ class Interpreter:
                 raise MatlabError("Brace indexing is not supported for variables of this type.",
                                   "MATLAB:cellRefFromNonCell")
             args = self.eval_index_args(node.args, base_val, frame)
-            return Cell(ix.get(base_val.data, args)).values_f()
+            data = base_val.data
+            if len(args) == 1 and data.ndim == 2:  # c{k}: one element, without building a 1x1 cell
+                v = args[0]
+                if type(v) is np.ndarray and v.size == 1 and v.dtype.kind in "fiu":
+                    x = v.item()
+                    if 1 <= x <= data.size and (type(x) is int or x.is_integer()):
+                        rows = data.shape[0]
+                        k = int(x) - 1
+                        return [data[k % rows, k // rows]]
+            return Cell(ix.get(data, args)).values_f()
         if t is A.Field or t is A.DynField:
             dotted = self.dotted_name(node, frame)
             if dotted is not None:
@@ -1291,6 +1351,10 @@ class Interpreter:
             if isinstance(base_val, MObject):
                 if hasattr(base_val, "field_list"):
                     return base_val.field_list(self, name)
+                if nargout == 0 and hasattr(base_val, "method_statement"):
+                    res = base_val.method_statement(self, name, 0)
+                    if res is not None:
+                        return res
                 return [base_val.get_field(self, name)]
             if isinstance(base_val, Struct):
                 if name not in base_val.fields:
@@ -1892,6 +1956,18 @@ def _wrap_cell(v: Any) -> Cell:
     return Cell(data)
 
 
+def _without_end(node: A.Node) -> bool:
+    """Whether an index expression is made only of names, numbers and operators (so has no 'end')."""
+    t = type(node)
+    if t is A.Ident or t is A.Number:
+        return True
+    if t is A.BinOp:
+        return _without_end(node.left) and _without_end(node.right)
+    if t is A.UnaryOp:
+        return _without_end(node.operand)
+    return False
+
+
 def _exact_literal(node: A.Node) -> int | None:
     """The exact value of a large integer literal (optionally negated), else None."""
     if type(node) is A.UnaryOp and node.op == "-":
@@ -1917,7 +1993,7 @@ def root_name(node: A.Node) -> str | None:
 def _scalar_index(arr: np.ndarray, args: list[Any]) -> tuple | None:
     """Positions for all-scalar, in-range numeric indices (fast element access), else None."""
     count = len(args)
-    if count == 0 or (count > 1 and count != arr.ndim):
+    if count == 0:
         return None
     pos = []
     for v in args:
@@ -1930,6 +2006,14 @@ def _scalar_index(arr: np.ndarray, args: list[Any]) -> tuple | None:
         pos.append(k - 1)
     if count == 1:
         return np.unravel_index(pos[0], arr.shape, order="F") if pos[0] < arr.size else None
+    if count != arr.ndim:  # A(i, j) of an N-d array (the trailing dimensions fold) or A(i, j, 1) of a matrix
+        eshape = ix._effective_shape(arr.shape, count)
+        if any(p >= d for p, d in zip(pos, eshape)):
+            return None
+        linear = 0
+        for p, d in zip(reversed(pos), reversed(eshape)):
+            linear = linear * d + p
+        return np.unravel_index(linear, arr.shape, order="F")
     if any(p >= d for p, d in zip(pos, arr.shape)):
         return None
     return tuple(pos)

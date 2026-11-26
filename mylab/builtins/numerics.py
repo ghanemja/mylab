@@ -543,8 +543,15 @@ def _interp2(interp, args, nargout):
             x = _grid_vector(fnum(rest[0]), True)
             y = _grid_vector(fnum(rest[1]), False)
             Xq, Yq = fnum(rest[3]), fnum(rest[4])
-        if (Xq.ndim == 2 and Yq.ndim == 2 and Xq.shape[0] == 1 and Yq.shape[1] == 1
-                and Xq.shape != Yq.shape):
+        def is_row(a):
+            return a.ndim == 2 and a.shape[0] == 1 and a.shape[1] > 1
+
+        def is_col(a):
+            return a.ndim == 2 and a.shape[1] == 1 and a.shape[0] > 1
+
+        if (is_row(Xq) and is_col(Yq)) or (is_col(Xq) and is_row(Yq)) \
+                or (Xq.ndim == 2 and Yq.ndim == 2 and Xq.shape[0] == 1 and Yq.shape[1] == 1 and Xq.shape != Yq.shape):
+            # vectors of different orientation are grid vectors: the result is length(Yq)-by-length(Xq)
             Xq, Yq = np.meshgrid(Xq.flatten(), Yq.flatten())
         elif Xq.shape != Yq.shape:
             Xq, Yq = np.broadcast_arrays(Xq, Yq)

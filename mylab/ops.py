@@ -527,6 +527,15 @@ def _to_cell(v: Any) -> Cell:
     return Cell(data)
 
 
+def _empty_operand(v: Any) -> bool:
+    """True for an empty array of any class and size ([], '', zeros(1,0), struct([]), ...)."""
+    if isinstance(v, np.ndarray):
+        return v.size == 0
+    if isinstance(v, (Struct, StringArray)):
+        return v.data.size == 0
+    return False
+
+
 def _concat_cells(items: list[Cell], axis: int) -> Cell:
     nonempty = [c.data for c in items if c.data.size > 0]
     if not nonempty:
@@ -582,7 +591,9 @@ def concat(items: list[Any], axis: int) -> Any:
             except MatlabError:
                 pass
         if any(isinstance(i, Cell) for i in items):
-            return _concat_cells([_to_cell(i) for i in items], axis)
+            # A non-cell operand goes into a cell of its own ([{1}, 2] is {1, 2}), but an empty one
+            # adds nothing: [[], {1}], [{1}, ''] and [zeros(1,0); {1}] are all the 1x1 cell {1}.
+            return _concat_cells([_to_cell(i) for i in items if isinstance(i, Cell) or not _empty_operand(i)], axis)
     if any(isinstance(i, Struct) for i in items):
         real = [i for i in items if not (isinstance(i, np.ndarray) and i.size == 0)]
         if not all(isinstance(i, Struct) for i in real):

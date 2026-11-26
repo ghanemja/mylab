@@ -188,7 +188,9 @@ HELP: dict = {
     "char": (["c = char(codes)", "c = char(str)", "c = char(C)", "c = char(a, b, ...)"],
              "Makes a char array. Numbers are taken as character codes. A cell array, a string array or "
              "several text inputs become rows of a char matrix, padded with spaces to equal length. "
-             "Example: char(72, 105) is a two-row char array; char([72 105]) is 'Hi'."),
+             "Example: char(72, 105) is a two-row char array; char([72 105]) is 'Hi'. For a datetime "
+             "array, char(t, fmt) and char(t, fmt, locale) write the dates in format fmt, with month and day "
+             "names in the language of locale (for example 'fr_FR'; [] for fmt keeps the array's format)."),
     "cast": (["y = cast(x, classname)", "y = cast(x, 'like', p)"],
              "Converts x to the named class: 'double', 'single', 'logical', 'char' or an integer class. "
              "cast(x, 'like', p) converts to the class of p."),
@@ -250,10 +252,15 @@ HELP: dict = {
     "floor": ("y = floor(x)", "Rounds each element down, toward -Inf. Example: floor(-2.5) is -3."),
     "ceil": ("y = ceil(x)", "Rounds each element up, toward +Inf. Example: ceil(2.1) is 3."),
     "fix": ("y = fix(x)", "Rounds each element toward zero, dropping the fractional part. Example: fix(-2.7) is -2."),
-    "round": (["y = round(x)", "y = round(x, n)"],
+    "round": (["y = round(x)", "y = round(x, n)", "y = round(x, n, 'decimals')", "y = round(x, n, 'significant')",
+               "y = round(..., 'TieBreaker', direction)"],
               "Rounds to the nearest integer, with halves going away from zero (round(2.5) is 3, "
               "round(-2.5) is -3). With n, rounds to n digits after the decimal point; negative n rounds "
-              "to tens, hundreds and so on. Integer-class input is returned unchanged."),
+              "to tens, hundreds and so on. With 'significant', n counts significant digits instead "
+              "(round(1234, 2, 'significant') is 1200). 'TieBreaker' says where a value exactly halfway "
+              "between two candidates goes: 'fromzero' (the default), 'tozero', 'even', 'odd', 'plusinf' "
+              "(up) or 'minusinf' (down); round(2.5, 'TieBreaker', 'even') is 2. Integer-class input keeps "
+              "its class and is unchanged unless n is negative. Complex values are rounded part by part."),
     "mod": ("r = mod(a, b)",
             "Remainder after division, defined as a - floor(a./b).*b, so a nonzero result has the sign of "
             "b. mod(a, 0) is a. Example: mod(-1, 3) is 2. See rem for the truncating version."),
@@ -303,7 +310,8 @@ HELP: dict = {
     "or": ("tf = or(A, B)", "Same as A | B (element-wise logical OR)."),
     "not": ("tf = not(A)", "Same as ~A (element-wise logical NOT)."),
     "xor": ("tf = xor(A, B)", "Element-wise exclusive OR: true where exactly one of A and B is nonzero."),
-    "transpose": ("B = transpose(A)", "Same as A.' : swaps rows and columns without conjugating."),
+    "transpose": ("B = transpose(A)", "Same as A.' : swaps rows and columns without conjugating. Works on "
+                  "arrays of every type, arrays of graphics objects included."),
     "ctranspose": ("B = ctranspose(A)", "Same as A' : swaps rows and columns and conjugates complex values."),
     # -- number theory and integers ---------------------------------------------------------
     "factorial": ("f = factorial(n)", "n! for each element of n, e.g. factorial(5) is 120. Returned as double."),
@@ -533,7 +541,9 @@ HELP: dict = {
                "Converts to string. A char row becomes a string scalar; a char matrix gives one string per "
                "row; a cell array of text gives a string array of the same size; numbers are converted "
                "element by element to their short text form, with NaN becoming <missing>. string() is the "
-               "empty string \"\". Example: string([1 2]) is [\"1\" \"2\"]."),
+               "empty string \"\". Example: string([1 2]) is [\"1\" \"2\"]. For a datetime array, "
+               "string(t, fmt, locale) writes the dates in format fmt with month and day names in the "
+               "language of locale."),
     "strlength": ("n = strlength(s)",
                   "Number of characters in a char vector or string scalar. For a string array or cell array "
                   "of text, an array of lengths of the same size (NaN for <missing>)."),
@@ -962,9 +972,15 @@ HELP: dict = {
                  "viridis), 'jet', 'hot', 'gray' or any matplotlib colormap; map is an m-by-3 matrix of RGB "
                  "values in [0, 1], e.g. jet(16). target may be an axes or figure handle. With an output, "
                  "returns the current map as a matrix (256 rows for named maps)."),
-    "view": (["view(az, el)", "view(2)"],
-             "Sets the viewing angle of the current 3-D axes: azimuth az and elevation el in degrees. view(2) "
-             "looks straight down. Has no effect on 2-D axes."),
+    "view": (["view(az, el)", "view([az el])", "view([x y z])", "view(2)", "view(3)", "[az, el] = view",
+              "v = view", "view(ax, ...)"],
+             "Sets or returns the direction the current axes are seen from: azimuth az (degrees, measured "
+             "counterclockwise from the negative y-axis) and elevation el (degrees above the x-y plane). "
+             "view([x y z]) looks at the origin from the point [x y z]. view(2) is the 2-D view from above "
+             "(az = 0, el = 90) and view(3) the default 3-D view (az = -37.5, el = 30). A 2-D plot seen from "
+             "elsewhere becomes a 3-D view of the same objects at z = 0 (lines, patches, scatter, text, images; "
+             "their handles stay valid), and view(2) brings it back to a 2-D axes while nothing 3-D has been "
+             "added. [az, el] = view returns the current angles; a 2-D axes reports 0 and 90."),
     # -- plotting: figures and axes ----------------------------------------------------------------
     "figure": (["figure", "figure(n)", "figure(f)", "f = figure(...)", "figure(..., Name, Value)"],
                "Opens a new figure, or makes figure n (or figure handle f) current, creating it if needed. "
@@ -1147,12 +1163,13 @@ HELP.update({
                    "T = readtable(..., 'ReadVariableNames', false)", "T = readtable(..., 'TextType', 'string')"],
                   "Reads a delimited text file (CSV, tab, semicolon...) into a table. The first row gives the "
                   "variable names; all-numeric columns become numbers (blank cells become NaN), other columns "
-                  "become cell arrays of text (or strings with 'TextType', 'string'). Excel files (.xlsx) "
-                  "are read too, with the options 'Sheet' and 'Range'."),
+                  "become cell arrays of text (or strings with 'TextType', 'string'). Spreadsheets (.xlsx, "
+                  ".xls and .ods) are read too, with the options 'Sheet' and 'Range'."),
     "writetable": (["writetable(T, file)", "writetable(T, file, 'Delimiter', d)",
                     "writetable(..., 'WriteVariableNames', false)"],
                    "Writes a table to a delimited text file with a header row of variable names. A file "
-                   "name ending in .xlsx writes an Excel workbook; 'Sheet' and 'Range' choose where."),
+                   "name ending in .xlsx writes an Excel workbook and one ending in .ods an OpenDocument "
+                   "spreadsheet; 'Sheet' and 'Range' choose where."),
 })
 HELP["summary"] = ("summary(T)",
                    "Prints a short description of each table variable: its size and type, plus the minimum, "
@@ -2124,8 +2141,8 @@ HELP.update({
                    "Reads delimited numeric text into a matrix. The delimiter (comma, tab, semicolon, bar "
                    "or whitespace) is detected when not given. Leading lines with only text, such as a "
                    "header row, are skipped automatically unless 'NumHeaderLines' says how many to skip. "
-                   "Empty or non-numeric fields become NaN, and short rows are padded with NaN. Excel "
-                   "files (.xlsx) are read too, with the options 'Sheet' and 'Range'."),
+                   "Empty or non-numeric fields become NaN, and short rows are padded with NaN. "
+                   "Spreadsheets (.xlsx, .xls and .ods) are read too, with the options 'Sheet' and 'Range'."),
     "csvread": (["A = csvread(filename)", "A = csvread(filename, r, c)"],
                 "Reads a comma-separated numeric file; empty fields become 0. r and c are zero-based row "
                 "and column offsets of the first value to read."),
@@ -2136,8 +2153,8 @@ HELP.update({
                     "Writes a matrix to a delimited text file with full precision, one row per line. The "
                     "delimiter may be 'comma' (default; tab for .tsv files), 'tab', 'space', 'semi', 'bar' "
                     "or any single character. Cell arrays, strings and char arrays are written as text, "
-                    "quoted when they contain the delimiter. A file name ending in .xlsx writes an Excel "
-                    "workbook; 'Sheet' and 'Range' choose where."),
+                    "quoted when they contain the delimiter. A file name ending in .xlsx (or .ods) writes an "
+                    "Excel workbook (or an OpenDocument spreadsheet); 'Sheet' and 'Range' choose where."),
     "csvwrite": (["csvwrite(filename, A)", "csvwrite(filename, A, r, c)"],
                  "Writes a numeric matrix as comma-separated values with five significant digits; r and c "
                  "shift the data down and right, padding with zeros."),
@@ -2148,12 +2165,13 @@ HELP.update({
                  "(default five significant digits)."),
     "writecell": (["writecell(C, filename)", "writecell(C, filename, 'Delimiter', d)"],
                   "Writes a cell array of numbers and text to a delimited text file, one row of the cell "
-                  "array per line. A file name ending in .xlsx writes an Excel workbook."),
+                  "array per line. A file name ending in .xlsx (or .ods) writes an Excel workbook (or an "
+                  "OpenDocument spreadsheet)."),
     "readcell": (["C = readcell(filename)", "C = readcell(filename, 'Delimiter', d)",
                   "C = readcell(filename, 'NumHeaderLines', n)"],
                  "Reads a delimited text file into a cell array: numeric fields become numbers, other "
-                 "fields char vectors and empty fields <missing>. Excel files (.xlsx) are read too, with "
-                 "the options 'Sheet' and 'Range'."),
+                 "fields char vectors and empty fields <missing>. Spreadsheets (.xlsx, .xls and .ods) are "
+                 "read too, with the options 'Sheet' and 'Range'."),
     "readlines": (["lines = readlines(filename)", "lines = readlines(filename, 'EmptyLineRule', 'skip')",
                    "lines = readlines(filename, 'WhitespaceRule', 'trim')"],
                   "Reads a text file into a string column, one element per line (a final line break does "

@@ -2,7 +2,10 @@
 // autocomplete, go to definition, the outline and renaming a name within a file.
 //
 // The help comes from the engine (mylab.help_data, fetched once when the engine is ready)
-// and from the project's own files (function lines and the comments under them).
+// and from the project's own files (function lines and the comments under them). Because the
+// engine sends its whole list, every built-in is known, new ones included, with nothing to update
+// here. Dotted names (RandStream.create, containers.Map) are looked up whole; after "x." the
+// suggestions are the properties and methods of the variable x (asked from the engine).
 
 import { $, el, toast, isMac, promptDialog } from "./ui.js";
 import { findFunctions, helpComments, KEYWORDS } from "./blocks.js";
@@ -13,6 +16,10 @@ import { fuzzy } from "./commands.js";
 
 const HOVER_DELAY = 380;
 const IDENT = /^[A-Za-z_]\w*$/;
+const DOTTED = /^[A-Za-z_]\w*(\.[A-Za-z_]\w*)+$/;
+// Classes whose dotted names are fields or indexing, not methods with help of their own.
+const PLAIN_CLASSES = new Set(["double", "single", "logical", "char", "string", "cell", "struct", "function_handle", "table", "timetable",
+  "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]);
 
 export function initIntel(app) {
   const { state } = app;
@@ -42,8 +49,14 @@ export function initIntel(app) {
     return cands.find((p) => app.dirName(p) === here) || cands.sort((a, b) => a.length - b.length)[0];
   }
 
+  const known = (name) => !!helpIndex && Object.prototype.hasOwnProperty.call(helpIndex, name);
+
   /** Everything known about a name: { kind, name, usage, text, path, line, col, variable }. */
   function lookup(name) {
+    if (DOTTED.test(name) && known(name)) {
+      const [usage, text] = helpIndex[name];
+      return { kind: "builtin", name, usage, text, variable: null };
+    }
     if (!IDENT.test(name)) return null;
     const variable = state.variables.find((v) => v.name === name) || null;
     if (state.active && state.active.endsWith(".m")) {
@@ -65,8 +78,30 @@ export function initIntel(app) {
     return variable ? { kind: "variable", name, variable } : null;
   }
 
-  /** The identifier at a position: { word, from, to, line } or null (also null in comments and strings). */
-  function wordAt(pos, { anywhere = false } = {}) {
+  /** Start of the dotted chain that ends at `from` ("a.b.c" -> where "a" starts). */
+  function chainStart(text, from) {
+    let start = from;
+    while (start >= 2 && text[start - 1] === "." && /\w/.test(text[start - 2])) {
+      let s2 = start - 1;
+      while (s2 > 0 && /\w/.test(text[s2 - 1])) s2--;
+      if (!/[A-Za-z_]/.test(text[s2])) break;
+      start = s2;
+    }
+    return start;
+  }
+
+  /** Is `name` a method of the object in workspace variable `base` (a fit, a map, ...)? */
+  function methodOf(base, name) {
+    const v = state.variables.find((x) => x.name === base);
+    return !!v && !PLAIN_CLASSES.has(v.class) && known(name);
+  }
+
+  /**
+   * The identifier at a position: { word, from, to, line, field } or null (also null in comments and strings).
+   * With dotted (the default), a name after a dot is taken whole when the help knows it
+   * (RandStream.create), or as a method name after an object variable (f.confint -> confint).
+   */
+  function wordAt(pos, { anywhere = false, dotted = true } = {}) {
     const text = cm.getLine(pos.line);
     if (text == null) return null;
     let from = pos.ch;
@@ -79,7 +114,15 @@ export function initIntel(app) {
       const type = cm.getTokenTypeAt(CodeMirror.Pos(pos.line, from + 1)) || "";
       if (/comment|string/.test(type)) return null;
     }
-    return { word, from, to, line: pos.line, field: text[from - 1] === "." };
+    const field = text[from - 1] === ".";
+    if (dotted && field) {
+      const start = chainStart(text, from);
+      const whole = text.slice(start, to);
+      if (start < from && known(whole)) return { word: whole, from: start, to, line: pos.line, field: false };
+      const base = text.slice(start, from - 1);
+      if (IDENT.test(base) && methodOf(base, word)) return { word, from, to, line: pos.line, field: false, method: base };
+    }
+    return { word, from, to, line: pos.line, field };
   }
 
   /* ================================================================ tooltips */
@@ -199,12 +242,19 @@ export function initIntel(app) {
           depth--;
           continue;
         }
-        const m = /([A-Za-z_]\w*)$/.exec(text.slice(0, i));
+        const m = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)$/.exec(text.slice(0, i));
         if (!m) return null;
         if (text[i - m[1].length - 1] === ".") return null;
         const type = cm.getTokenTypeAt(CodeMirror.Pos(cur.line, i)) || "";
         if (/comment|string/.test(type)) return null;
-        return { name: m[1], open: i, start: i - m[1].length };
+        let name = m[1];
+        if (name.includes(".") && !known(name)) {
+          const dot = name.lastIndexOf(".");
+          const base = name.slice(0, dot);
+          if (!(IDENT.test(base) && methodOf(base, name.slice(dot + 1)))) return null;
+          name = name.slice(dot + 1); // f.confint(...) shows the help of confint
+        }
+        return { name, open: i, start: i - name.length };
       } else if (c === "%") {
         const type = cm.getTokenTypeAt(CodeMirror.Pos(cur.line, i + 1)) || "";
         if (/comment/.test(type)) return null;
@@ -224,7 +274,7 @@ export function initIntel(app) {
     const info = call ? lookup(call.name) : null;
     if (!info || info.kind === "variable" || info.variable || !info.usage || !info.usage.length) return hideTip("sig");
     // A name that the file assigns to is a variable being indexed, not a call.
-    if (info.kind === "builtin" && new RegExp("(^|[^\\w.])" + call.name + "\\s*(\\([^=\\n]*\\))?\\s*=(?!=)", "m").test(cm.getValue())) return hideTip("sig");
+    if (info.kind === "builtin" && new RegExp("(^|[^\\w.])" + call.name.replace(/\./g, "\\.") + "\\s*(\\([^=\\n]*\\))?\\s*=(?!=)", "m").test(cm.getValue())) return hideTip("sig");
     tip.innerHTML = "";
     tip.append(el("div", { class: "tip-usage" }, info.usage.slice(0, 5).map((u) => el("code", {}, u))));
     if (info.text) tip.append(el("div", { class: "tip-text muted" }, info.text));
@@ -338,12 +388,13 @@ export function initIntel(app) {
 
   // RANK orders the list (names from your own code first); INFO picks the richer description
   // when a name is known in two ways (a built-in that the file already uses, for example).
-  const RANK = { variable: 0, function: 1, script: 1, word: 2, keyword: 3, builtin: 4 };
-  const INFO = { variable: 5, function: 4, script: 4, builtin: 3, keyword: 2, word: 1 };
-  const KIND_LABEL = { variable: "variable", function: "function", script: "script", word: "", builtin: "", keyword: "keyword" };
+  const RANK = { variable: 0, property: 0, method: 1, function: 1, script: 1, word: 2, keyword: 3, builtin: 4 };
+  const INFO = { variable: 5, function: 4, script: 4, property: 4, method: 4, builtin: 3, keyword: 2, word: 1 };
+  const KIND_LABEL = { variable: "variable", function: "function", script: "script", word: "", builtin: "", keyword: "keyword", property: "property", method: "method" };
+  const KIND_MARK = { variable: "x", keyword: "k", word: "·", property: "p" };
 
   function renderHint(elt, data, item) {
-    elt.append(el("span", { class: "hint-kind " + item.kind, "aria-hidden": "true" }, item.kind === "variable" ? "x" : item.kind === "keyword" ? "k" : item.kind === "word" ? "·" : "ƒ"));
+    elt.append(el("span", { class: "hint-kind " + item.kind, "aria-hidden": "true" }, KIND_MARK[item.kind] || "ƒ"));
     elt.append(el("span", { class: "hint-name" }, item.text));
     if (item.detail) elt.append(el("span", { class: "hint-detail" }, item.detail));
   }
@@ -381,12 +432,60 @@ export function initIntel(app) {
     return [...items.values()].sort((a, b) => b.exact - a.exact || a.rank - b.rank || a.text.length - b.text.length || a.text.localeCompare(b.text));
   }
 
+  // Members of workspace variables, asked from the engine once per variable and workspace.
+  const memberCache = new Map(); // name -> Promise<{ class, properties, methods } | null>
+  app.on("variables", () => memberCache.clear());
+  function membersOf(name) {
+    const engine = app.engine;
+    if (!engine || !engine.ready || !state.variables.some((v) => v.name === name)) return Promise.resolve(null);
+    if (!memberCache.has(name)) memberCache.set(name, engine.members(name).catch(() => null));
+    return memberCache.get(name);
+  }
+
+  /** Suggestions after "base.": parts of dotted built-in names (RandStream.create) and members of a variable. */
+  function dottedHint(editor, line, start, cur) {
+    const begin = chainStart(line, start);
+    const base = line.slice(begin, start - 1);
+    const prefix = line.slice(start, cur.ch);
+    if (!base || /^\d/.test(prefix)) return null;
+    const type = editor.getTokenTypeAt(CodeMirror.Pos(cur.line, start)) || "";
+    if (/comment|string/.test(type)) return null;
+    const from = CodeMirror.Pos(cur.line, start);
+    const to = CodeMirror.Pos(cur.line, cur.ch);
+    const items = new Map();
+    const lower = prefix.toLowerCase();
+    const add = (name, kind, detail) => {
+      if (!name.toLowerCase().startsWith(lower) || items.has(name)) return;
+      items.set(name, { text: name, kind, detail: detail || KIND_LABEL[kind], render: renderHint, rank: RANK[kind] });
+    };
+    if (helpIndex) {
+      const head = base + ".";
+      for (const name of Object.keys(helpIndex)) {
+        if (!name.startsWith(head)) continue;
+        const rest = name.slice(head.length);
+        const part = rest.split(".")[0];
+        add(part, "builtin", part === rest ? helpIndex[name][1] : "");
+      }
+    }
+    const finish = (m) => {
+      if (m) {
+        for (const p of m.properties || []) add(p, "property", m.class === "struct" ? "field" : `property of ${m.class}`);
+        for (const f of m.methods || []) add(f, "method", known(f) ? helpIndex[f][1] : `method of ${m.class}`);
+      }
+      const list = [...items.values()].filter((i) => i.text !== prefix);
+      list.sort((a, b) => a.rank - b.rank || a.text.localeCompare(b.text));
+      return list.length ? { list: list.slice(0, 80), from, to } : null;
+    };
+    return IDENT.test(base) && state.variables.some((v) => v.name === base) ? membersOf(base).then(finish, () => finish(null)) : finish(null);
+  }
+
   function hint(editor) {
     const cur = editor.getCursor();
     const line = editor.getLine(cur.line);
     let start = cur.ch;
     while (start > 0 && /\w/.test(line.charAt(start - 1))) start--;
     const prefix = line.slice(start, cur.ch);
+    if (line[start - 1] === "." && /\w/.test(line.charAt(start - 2))) return dottedHint(editor, line, start, cur);
     if (!prefix || /^\d/.test(prefix) || line[start - 1] === ".") return null;
     const type = editor.getTokenTypeAt(CodeMirror.Pos(cur.line, start + 1)) || "";
     if (/comment|string/.test(type)) return null;
@@ -469,7 +568,8 @@ export function initIntel(app) {
     const cur = editor.getCursor();
     const before = editor.getLine(cur.line).slice(0, cur.ch);
     const m = /[A-Za-z_]\w*$/.exec(before);
-    if (!m || m[0].length < 2) return;
+    const afterDot = /[A-Za-z_]\w*\.\w+$/.test(before); // RandStream.c, f.co: one letter is enough
+    if (!m || (m[0].length < 2 && !afterDot)) return;
     suggest(true);
   });
 
@@ -600,7 +700,7 @@ export function initIntel(app) {
 
   async function renameSymbol() {
     if (!state.active || cm.getOption("readOnly")) return;
-    const w = wordAt(cm.getCursor());
+    const w = wordAt(cm.getCursor(), { dotted: false });
     if (!w || KEYWORDS.includes(w.word) || w.field) {
       toast("Put the cursor on the name of a variable or function first.");
       return;

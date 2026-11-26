@@ -16,6 +16,11 @@ from ._registry import builtin
 from ._util import bool_scalar, fnum, is_text, nargs, num, text
 
 
+def char_row(s: str) -> np.ndarray:
+    """A character vector: like char(s), but the empty text is 1-by-0 rather than 0-by-0."""
+    return char(s) if s else np.zeros((1, 0), dtype="<U1")
+
+
 def _as_cell_if_strings(v):
     """Treat a string array like a cell array of char vectors (same shape)."""
     if isinstance(v, StringArray):
@@ -288,8 +293,8 @@ def matlab_sprintf(fmt: str, args) -> str:
 def _sprintf(interp, args, nargout):
     nargs(args, 1, None, "sprintf")
     s = matlab_sprintf(text(args[0], "format"), args[1:])
-    out = MString(s) if isinstance(args[0], MString) else char(s)
-    return (out, char("")) if nargout > 1 else out
+    out = MString(s) if isinstance(args[0], MString) else char_row(s)  # always a row, even when empty
+    return (out, char_row("")) if nargout > 1 else out
 
 
 @builtin("fprintf")
@@ -654,7 +659,7 @@ def _newline(interp, args, nargout):
 
 @builtin("blanks")
 def _blanks(interp, args, nargout):
-    return char(" " * to_int(args[0], "n"))
+    return char_row(" " * max(to_int(args[0], "n"), 0))
 
 
 # -- comparison and search -----------------------------------------------------------------
@@ -924,7 +929,7 @@ def _strjoin(interp, args, nargout):
     else:
         delim = process_escapes(text(dval)) if dval is not None else " "
         joined = delim.join(items)
-    return MString(joined) if isinstance(args[0], (StringArray, MString)) else char(joined)
+    return MString(joined) if isinstance(args[0], (StringArray, MString)) else char_row(joined)
 
 
 @builtin("strcat")
@@ -1587,7 +1592,13 @@ def _render_replacement(interp, parts, m) -> str:
             code = re.sub(r"\$<([A-Za-z]\w*)>", lambda g: quote(m.groupdict().get(g.group(1)) or ""), val)
             code = re.sub(r"\$(\d+)", lambda g: quote(_group_text(m, g.group(1))[0]) + _group_text(m, g.group(1))[1],
                           code)
-            res = interp.eval_expression(code)
+            # evaluated in the calling workspace, so the expression can use the caller's variables
+            from ..ast import ExprStmt
+            from ..parser import parse
+            program = parse(code)
+            if len(program.body) != 1 or not isinstance(program.body[0], ExprStmt):
+                raise MatlabError("regexprep: a ${...} expression must be a single expression.")
+            res = interp.eval(program.body[0].expr, interp.frame)
             if is_text(res):
                 out.append(text(res))
             elif isinstance(res, np.ndarray):

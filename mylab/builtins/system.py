@@ -398,6 +398,11 @@ def _whos(interp, args, nargout):
     return None
 
 
+def _is_model_file(name: str) -> bool:
+    """A Simulink model or library file, for which exist answers 4."""
+    return os.path.splitext(name)[1].lower() in (".slx", ".mdl")
+
+
 @builtin("exist")
 def _exist(interp, args, nargout):
     name = text(args[0])
@@ -411,11 +416,11 @@ def _exist(interp, args, nargout):
         if os.path.isdir(name):
             return 7.0
         if kind != "dir" and os.path.isfile(name):
-            return 2.0
+            return 4.0 if _is_model_file(name) else 2.0
     if kind in ("", "file") and name and not os.path.isabs(name):
         for d in interp._search_dirs():  # any file on the search path, data files included (MATLAB's 2)
             if os.path.isfile(os.path.join(d, name)):
-                return 2.0
+                return 4.0 if _is_model_file(name) else 2.0
     if kind in ("", "file", "builtin"):
         if interp.find_file_function(name) is not None:
             return 2.0
@@ -581,7 +586,12 @@ def _evalc(interp, args, nargout):
 @builtin("input")
 def _input(interp, args, nargout):
     prompt = text(args[0]) if args else ""
-    reply = interp.input_func(prompt)
+    try:
+        reply = interp.input_func(prompt)
+    except EOFError:
+        # nothing left to read (input redirected from an empty or finished file, or no keyboard)
+        raise MatlabError("input: no more input is available (end of input reached).",
+                          "MATLAB:input:EndOfInput") from None
     if len(args) > 1 and text(args[1]) == "s":
         return char(reply)
     if not reply.strip():
@@ -1133,7 +1143,7 @@ def _fopen(interp, args, nargout):
     if mode not in ("r", "w", "a", "r+", "w+", "a+"):
         raise MatlabError(f"Invalid permission '{perm}'.")
     endian = machine_format(args[2], _NATIVE) if len(args) > 2 else _NATIVE
-    encoding = text(args[3]) if len(args) > 3 else "UTF-8"
+    encoding = (text(args[3]) if len(args) > 3 else "") or "UTF-8"  # '' means the default encoding
     try:
         "".encode(encoding)
     except LookupError:

@@ -3,8 +3,10 @@
 _WAV = "Only WAV files are supported."
 _EXCEL = ("Works with .xlsx workbooks. With the openpyxl package installed (pip install mylab[excel]) it is "
           "used for reading and writing; otherwise a built-in reader and writer handles numbers, text and "
-          "logical values without formatting. Dates are read as Excel serial numbers. Old .xls files are "
-          "not supported.")
+          "logical values without formatting. OpenDocument spreadsheets (.ods) are read and written the same "
+          "way, and Excel 97-2003 workbooks (.xls) are read (cell values, including the stored results of "
+          "formulas; the xlrd package is used when it is installed). Dates are read as Excel serial "
+          "numbers. Binary .xlsb workbooks are not supported.")
 _CAT = "c = categorical({'red', 'blue', 'red'})"
 
 HELP = {
