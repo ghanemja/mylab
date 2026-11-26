@@ -647,8 +647,9 @@ HELP: dict = {
                "Creates a struct from field name/value pairs. A value that is a cell array creates a struct "
                "array the size of that cell, one element per cell; wrap a cell in another cell, e.g. "
                "{{1, 2}}, to store it as a single field value. Example: s = struct('x', 1, 'y', 'hi')."),
-    "fieldnames": ("names = fieldnames(s)",
-                   "Field names of a struct as a column cell array of char vectors, in creation order."),
+    "fieldnames": (["names = fieldnames(s)", "names = fieldnames(obj)"],
+                   "Field names of a struct as a column cell array of char vectors, in creation order. For an "
+                   "object, its public properties (the same list as properties(obj))."),
     "isfield": (["tf = isfield(s, name)", "tf = isfield(s, {name1, name2, ...})"],
                 "True if s is a struct with a field of that name; a cell array of names gives a logical "
                 "array. Non-struct input gives false."),
@@ -1747,7 +1748,9 @@ HELP.update({
                 "or its figure closed; for an array of graphics handles it returns one value per handle."),
     "properties": (["properties(obj)", "names = properties(obj)", "properties('ClassName')"],
                    "Lists the public properties of an object or class; with an output, returns them as a cell "
-                   "column."),
+                   "column. Built-in classes list their documented properties (a datetime has Format, TimeZone, "
+                   "Year, ..., a table its variable names, Properties and its two dimension names); a class "
+                   "without public properties gives an empty list."),
     "methods": (["methods(obj)", "names = methods(obj)", "methods('ClassName')"],
                 "Lists the public methods of an object or class; with an output, returns them as a cell column."),
     "isprop": ("tf = isprop(obj, name)", "True if obj has a public property called name."),

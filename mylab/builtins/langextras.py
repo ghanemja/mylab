@@ -40,6 +40,9 @@ class OnCleanup(MObject):
     def class_name(self) -> str:
         return "onCleanup"
 
+    def property_names(self) -> list[str]:
+        return ["task"]
+
     def run(self, interp) -> None:
         if self.done:
             return
@@ -93,6 +96,10 @@ class InputParser(MObject):
 
     def class_name(self) -> str:
         return "inputParser"
+
+    def property_names(self) -> list[str]:
+        return ["FunctionName", "CaseSensitive", "KeepUnmatched", "PartialMatching", "StructExpand",
+                "Parameters", "Results", "Unmatched", "UsingDefaults"]
 
     def has_method(self, name: str) -> bool:
         return name in self._METHODS
@@ -453,6 +460,10 @@ class RandStreamObject(MObject):
     def class_name(self) -> str:
         return "RandStream"
 
+    def property_names(self) -> list[str]:
+        return ["Type", "Seed", "NumStreams", "StreamIndex", "State", "Substream", "NormalTransform",
+                "Antithetic", "FullPrecision"]
+
     def has_method(self, name: str) -> bool:
         return name in self._METHODS
 
@@ -480,7 +491,7 @@ class RandStreamObject(MObject):
             return char(self.kind)
         if name == "Seed":
             return np.array([[self.seed or 0]], dtype=np.uint32)
-        if name == "NumStreams" or name == "StreamIndex":
+        if name in ("NumStreams", "StreamIndex", "Substream"):
             return fscalar(1)
         if name == "NormalTransform":
             return char("Ziggurat")
@@ -669,6 +680,9 @@ class TimerObject(MObject):
 
     def class_name(self) -> str:
         return "timer"
+
+    def property_names(self) -> list[str]:
+        return list(self.props)
 
     def has_method(self, name: str) -> bool:
         return name in self._METHODS

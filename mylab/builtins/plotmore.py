@@ -605,6 +605,8 @@ def _boxplot(interp, args, nargout):
         from .ndmath import group_index
         idx, names, _ = group_index(groups)
         flat = x.flatten(order="F")
+        if x.ndim == 2 and min(x.shape) > 1 and idx.size == x.shape[1] != flat.size:
+            idx = np.repeat(idx, x.shape[0])  # a matrix with one group value per column
         if idx.size != flat.size:
             raise MatlabError("boxplot: the grouping variable must have one entry per data value.")
         series = [flat[idx == k + 1] for k in range(len(names))]

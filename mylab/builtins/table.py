@@ -159,6 +159,10 @@ class TableObject(MObject):
     def class_name(self) -> str:
         return "table"
 
+    def property_names(self) -> list[str]:
+        """What dot indexing reaches: the variables, then Properties and the two dimension names."""
+        return list(self.names) + ["Properties"] + [d for d in self.dim_names if d not in self.names]
+
     def matlab_shape(self) -> tuple:
         return (self.nrows, len(self.names))
 

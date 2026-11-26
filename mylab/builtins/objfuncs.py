@@ -153,6 +153,52 @@ def public_method_names(cls) -> list[str]:
     return sorted(names, key=lambda n: (n.lower(), n))
 
 
+# Public properties of built-in classes, for properties('ClassName') when there is no object at hand.
+# The lists follow the classes' documented properties; an empty list means "no properties".
+_DATETIME_PROPS = ["Format", "TimeZone", "Year", "Month", "Day", "Hour", "Minute", "Second", "SystemTimeZone"]
+BUILTIN_CLASS_PROPERTIES: dict[str, list[str]] = {
+    "datetime": _DATETIME_PROPS,
+    "duration": ["Format"],
+    "calendarDuration": ["Format"],
+    "table": ["Properties", "Row", "Variables"],
+    "timetable": ["Properties", "Time", "Variables"],
+    "categorical": [],
+    "string": [],
+    "containers.Map": ["Count", "KeyType", "ValueType"],
+    "timeseries": ["Events", "Name", "UserData", "Data", "DataInfo", "Time", "TimeInfo", "Quality", "QualityInfo",
+                   "IsTimeFirst", "TreatNaNasMissing", "Length"],
+    "griddedInterpolant": ["GridVectors", "Values", "Method", "ExtrapolationMethod"],
+    "scatteredInterpolant": ["Points", "Values", "Method", "ExtrapolationMethod"],
+    "triangulation": ["Points", "ConnectivityList"],
+    "delaunayTriangulation": ["Points", "ConnectivityList", "Constraints"],
+    "polyshape": ["Vertices", "NumRegions", "NumHoles"],
+    "RandStream": ["Type", "Seed", "NumStreams", "StreamIndex", "State", "Substream", "NormalTransform",
+                   "Antithetic", "FullPrecision"],
+    "inputParser": ["FunctionName", "CaseSensitive", "KeepUnmatched", "PartialMatching", "StructExpand",
+                    "Parameters", "Results", "Unmatched", "UsingDefaults"],
+    "MException": ["identifier", "message", "cause", "stack", "Correction"],
+    "graph": ["Edges", "Nodes"],
+    "digraph": ["Edges", "Nodes"],
+    "strel": ["Neighborhood", "Dimensionality"],
+    "imref2d": ["XWorldLimits", "YWorldLimits", "ImageSize", "PixelExtentInWorldX", "PixelExtentInWorldY",
+                "ImageExtentInWorldX", "ImageExtentInWorldY", "XIntrinsicLimits", "YIntrinsicLimits"],
+    "onCleanup": ["task"],
+    "memmapfile": ["Filename", "Writable", "Offset", "Format", "Repeat", "Data"],
+}
+for _t in ("double", "single", "logical", "char", "cell", "struct", "function_handle", "int8", "uint8", "int16",
+           "uint16", "int32", "uint32", "int64", "uint64"):
+    BUILTIN_CLASS_PROPERTIES[_t] = []
+
+
+def builtin_property_names(v) -> list[str]:
+    """Public properties of an object implemented in Python (``properties``, ``fieldnames``, ``isprop``)."""
+    if hasattr(v, "property_names"):
+        return list(v.property_names())
+    if isinstance(v, (MString, StringArray)):
+        return []
+    return list(getattr(v, "FIELDS", []) or (v.array_props() if hasattr(v, "array_props") else []))
+
+
 def _member_lists(interp, v):
     cls = _class_of(v)
     if cls is None and is_text(v):
@@ -163,13 +209,22 @@ def _member_lists(interp, v):
     if cls is not None:
         return cls.full_name, public_property_names(interp, v), public_method_names(cls)
     if isinstance(v, MObject):
-        if hasattr(v, "property_names") and hasattr(v, "method_names"):  # built-in objects that list their members
-            return v.class_name(), list(v.property_names()), list(v.method_names())
-        methods = sorted(getattr(v, "_METHODS", []))
-        props = ["Count", "KeyType", "ValueType"] if v.class_name() == "containers.Map" else \
-            list(getattr(v, "FIELDS", []) or (v.array_props() if hasattr(v, "array_props") else []))
-        return v.class_name(), props, methods
+        methods = list(v.method_names()) if hasattr(v, "method_names") else sorted(getattr(v, "_METHODS", []))
+        return v.class_name(), builtin_property_names(v), methods
     raise MatlabError("Expected an object or a class name.")
+
+
+def object_property_names(interp, v) -> list[str] | None:
+    """The names ``fieldnames`` gives for an object, or None when v is not an object."""
+    if _class_of(v) is not None:
+        return public_property_names(interp, v)
+    if isinstance(v, MObject):
+        if v.has_method("properties"):  # graphics handles and others that list their own properties
+            res = v.call_method(interp, "properties", [v], 1)
+            if res and isinstance(res[0], Cell):
+                return [to_str(x) for x in res[0].values_f()]
+        return _member_lists(interp, v)[1]
+    return None
 
 
 @builtin("properties")
@@ -179,9 +234,12 @@ def _properties(interp, args, nargout):
     try:
         name, props, _ = _member_lists(interp, args[0])
     except MatlabError:
-        if is_text(args[0]):
+        if is_text(args[0]) and text(args[0]) in BUILTIN_CLASS_PROPERTIES:  # a built-in class by name
+            name, props = text(args[0]), list(BUILTIN_CLASS_PROPERTIES[text(args[0])])
+        elif is_text(args[0]):
             raise MatlabError(f"Class '{text(args[0])}' was not found.", "MATLAB:class:InvalidClass") from None
-        name, props = class_name(args[0]), []  # a built-in type has no properties
+        else:
+            name, props = class_name(args[0]), []  # a built-in type has no properties
     if nargout:
         return Cell.from_list([char(p) for p in props], column=True)
     if not props:

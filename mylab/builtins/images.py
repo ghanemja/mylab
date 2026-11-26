@@ -34,6 +34,9 @@ class StrelObject(MObject):
     def class_name(self) -> str:
         return "strel"
 
+    def property_names(self) -> list[str]:
+        return ["Neighborhood", "Dimensionality"]
+
     def has_method(self, name: str) -> bool:
         return name in self._METHODS
 

@@ -208,6 +208,9 @@ class OptimOptions(MObject):
     def isa_class(self, name: str) -> bool:
         return name in (self.class_name(), "optim.options.SolverOptions")
 
+    def property_names(self) -> list[str]:
+        return list(SOLVER_OPTIONS[self.solver])
+
     def name_of(self, name: str) -> str:
         key = canonical(name, self.solver)
         if key == "SolverName":

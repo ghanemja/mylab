@@ -26,6 +26,9 @@ class EventData(MObject):
     def class_name(self) -> str:
         return "event.PropertyEvent" if "AffectedObject" in self.fields else "event.EventData"
 
+    def property_names(self) -> list[str]:
+        return list(self.fields)
+
     def isa_class(self, name: str) -> bool:
         return name in ("event.EventData", "handle", self.class_name())
 

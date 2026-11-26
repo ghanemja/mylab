@@ -2286,6 +2286,13 @@ class GeoTform(MObject):
     def class_name(self) -> str:
         return self.kind
 
+    def property_names(self) -> list[str]:
+        if self.kind in _OLD_KINDS:
+            return ["T", "Dimensionality"]
+        return {"rigidtform2d": ["Dimensionality", "RotationAngle", "Translation", "R", "A"],
+                "simtform2d": ["Dimensionality", "Scale", "RotationAngle", "Translation", "R", "A"],
+                "transltform2d": ["Dimensionality", "Translation", "A"]}.get(self.kind, ["Dimensionality", "A"])
+
     def has_method(self, name: str) -> bool:
         return name in self._METHODS
 
@@ -2646,6 +2653,9 @@ class ImRef2d(MObject):
 
     def class_name(self) -> str:
         return "imref2d"
+
+    def property_names(self) -> list[str]:
+        return list(self._props())
 
     def has_method(self, name: str) -> bool:
         return name in self._METHODS

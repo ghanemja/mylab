@@ -976,6 +976,9 @@ class MemoryMap(MObject):
     def class_name(self) -> str:
         return "memmapfile"
 
+    def property_names(self) -> list[str]:
+        return ["Filename", "Writable", "Offset", "Format", "Repeat", "Data"]
+
     def isa_class(self, name: str) -> bool:
         return name == "memmapfile"
 

@@ -3471,8 +3471,10 @@ def _resolve(interp, v) -> list[GraphicsHandle]:
 def _set_b(interp, args, nargout):
     if not args:
         raise MatlabError("Not enough input arguments for set.")
-    hs = _resolve(interp, args[0])
     rest = list(args[1:])
+    if isinstance(args[0], np.ndarray) and args[0].size == 0 and not is_char(args[0]) and len(rest) >= 2:
+        return None  # no objects (say, an empty findobj result): nothing to set
+    hs = _resolve(interp, args[0])
     if not rest or (len(rest) == 1 and is_text(rest[0])):  # set(h) / set(h, 'Prop'): what can be set
         if len(hs) != 1:
             raise MatlabError("set(h) and set(h, name) need a single graphics object.")
@@ -6928,7 +6930,7 @@ def _print(interp, args, nargout):
             elif low in ("-bestfit", "-fillpage"):
                 fit = low[1:]
             elif low in ("-painters", "-opengl", "-vector", "-image", "-zbuffer", "-noui", "-loose", "-tight",
-                         "-cmyk", "-rgb", "-append"):
+                         "-cmyk", "-rgb", "-append", "-tiff"):
                 if low == "-append":
                     raise MatlabError("print: -append (adding pages to a PostScript file) is not supported. "
                                       "Use exportgraphics(..., 'Append', true) with a PDF file.")
@@ -6936,7 +6938,8 @@ def _print(interp, args, nargout):
                     raise MatlabError("print: CMYK output is not supported.")
                 # -painters/-opengl/-vector/-image: vector files are always vector, images always images.
                 # -noui: figures have no user-interface controls to leave out. -loose/-tight: the bounding
-                # box of an EPS file is the figure in both cases.
+                # box of an EPS file is the figure in both cases. -tiff (a preview image inside an EPS file):
+                # the file is written without the preview.
             elif low.startswith("-p") or low.startswith("-v") or low.startswith("-s"):
                 raise MatlabError(f"print: option '{s}' needs a printer or a Simulink model, which mylab does "
                                   "not have. Print to a file instead.")

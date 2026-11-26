@@ -944,6 +944,9 @@ class DecompositionObject(MObject):
     def class_name(self) -> str:
         return "decomposition"
 
+    def property_names(self) -> list[str]:
+        return list(self._props())
+
     def isa_class(self, name: str) -> bool:
         return name == "decomposition"
 

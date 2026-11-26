@@ -128,7 +128,7 @@ def _object_preview(v, name="ans", limit=60):
         if n > 12:
             return ""
         if _HEADER is None:
-            _HEADER = _re.compile(r"^(\\d+(×\\d+)+ \\S+( array)?|\\S+ with properties:|datetime|duration|calendarDuration|categorical)$")
+            _HEADER = _re.compile(r"^(\\d+(×\\d+)+ \\S+( array)?|\\S+ with properties:|datetime|duration|calendarDuration|categorical|timeseries|Common Properties:)$")
         lines = [s.strip() for s in format_display(name, v).splitlines() if s.strip()]
         lines = [s for s in lines[1:] if not _HEADER.match(s)]
         if not lines:
