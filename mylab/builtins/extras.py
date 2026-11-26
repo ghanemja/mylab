@@ -1212,6 +1212,8 @@ def _bessel(name, plain, scaled, needs_complex):
     def f(interp, args, nargout):
         nargs(args, 2, 3, name)
         nu, z = _bcast(name, args[0], args[1])
+        if len(args) > 2 and _scalar(args[2]) not in (0, 1):
+            raise MatlabError(f"{name}: the scale argument must be 0 or 1.")
         scale = len(args) > 2 and _scalar(args[2]) == 1
         fn = scaled if scale else plain
         zc = z
@@ -1246,6 +1248,8 @@ def _airy(interp, args, nargout):
         k, z = to_int(args[0], "k"), fnum(args[1])
     if k not in (0, 1, 2, 3):
         raise MatlabError("airy: k must be 0, 1, 2 or 3.")
+    if len(args) > 2 and _scalar(args[2]) not in (0, 1):
+        raise MatlabError("airy: the scale argument must be 0 or 1.")
     scaled = len(args) > 2 and _scalar(args[2]) == 1
     fn = sp.airye if scaled else sp.airy
     return simplify(np.asarray(fn(z)[k]))

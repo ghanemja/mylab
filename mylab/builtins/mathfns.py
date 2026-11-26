@@ -776,7 +776,9 @@ def _float_out(a, flags):
 @builtin("mean")
 def _mean(interp, args, nargout):
     nargs(args, 1, 5, "mean")
-    rest, flags = flag_present(args, "omitnan", "includenan", "all", "double", "native", "default")
+    rest, flags = flag_present(args, "omitnan", "includenan", "omitmissing", "includemissing", "all",
+                               "double", "native", "default")
+    flags = _nan_flags(flags)
     if len(rest) > 2:
         raise MatlabError("Too many input arguments for mean.")
     src = rest[0]
@@ -808,7 +810,8 @@ def _mean(interp, args, nargout):
 @builtin("median")
 def _median(interp, args, nargout):
     nargs(args, 1, 4, "median")
-    rest, flags = flag_present(args, "omitnan", "includenan", "all")
+    rest, flags = flag_present(args, "omitnan", "includenan", "omitmissing", "includemissing", "all")
+    flags = _nan_flags(flags)
     if len(rest) > 2:
         raise MatlabError("Too many input arguments for median.")
     a = num(rest[0])
@@ -865,7 +868,8 @@ builtin("all")(_anyall(np.all, "all"))
 def _std_var(power, name):
     def f(interp, args, nargout):
         nargs(args, 1, 4, name)
-        rest, flags = flag_present(args, "omitnan", "includenan", "all")
+        rest, flags = flag_present(args, "omitnan", "includenan", "omitmissing", "includemissing", "all")
+        flags = _nan_flags(flags)
         if len(rest) > 3:
             raise MatlabError(f"Too many input arguments for {name}.")
         a = fnum(rest[0])
@@ -966,7 +970,11 @@ def _running_int(a, axis, op, cls):
 def _cumulative(name, np_fn, identity=None, nan_fn=None, op=None):
     def f(interp, args, nargout):
         nargs(args, 1, 4, name)
-        rest, flags = flag_present(args, "reverse", "forward", "omitnan", "includenan")
+        rest, flags = flag_present(args, "reverse", "forward", "omitnan", "includenan", "omitmissing",
+                                   "includemissing")
+        flags = _nan_flags(flags)
+        if "reverse" in flags and "forward" in flags:
+            raise MatlabError(f"{name}: specify only one of 'forward' and 'reverse'.")
         if len(rest) > 2:
             raise MatlabError(f"Too many input arguments for {name}.")
         a = num(rest[0])
