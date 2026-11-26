@@ -332,9 +332,10 @@ class RandStreamObject(MObject):
     _METHODS = {"rand", "randn", "randi", "randperm", "reset"}
 
     def __init__(self, kind: str, seed: int | None):
+        from .core import new_generator
         self.kind = kind
         self.seed = seed
-        self.gen = np.random.default_rng(seed)
+        self.gen = new_generator(seed)
 
     def class_name(self) -> str:
         return "RandStream"
@@ -347,7 +348,8 @@ class RandStreamObject(MObject):
         if name == "reset":
             if rest:
                 self.seed = _seed_value(rest[0])
-            fresh = np.random.default_rng(self.seed)
+            from .core import new_generator
+            fresh = new_generator(self.seed)
             self.gen.bit_generator.state = fresh.bit_generator.state  # keeps the global stream linked
             return []
         saved = interp.state.get("rng")
@@ -393,23 +395,35 @@ class RandStreamObject(MObject):
 
 
 def _encode_state(gen: np.random.Generator) -> np.ndarray:
-    """The generator state as a column of uint32 words (what rng().State and s.State hold)."""
+    """The generator state as a column of uint32 words (what rng().State and s.State hold).
+
+    For the twister these are its 624 state words followed by the position, as in MATLAB.
+    """
     st = gen.bit_generator.state
-    words = []
-    for value in (st["state"]["state"], st["state"]["inc"]):
-        words += [(value >> (32 * k)) & 0xFFFFFFFF for k in range(4)]
-    words += [int(st["has_uint32"]), int(st["uinteger"])]
+    if st.get("bit_generator") == "MT19937":
+        words = [int(x) for x in st["state"]["key"]] + [int(st["state"]["pos"])]
+    else:
+        words = []
+        for value in (st["state"]["state"], st["state"]["inc"]):
+            words += [(value >> (32 * k)) & 0xFFFFFFFF for k in range(4)]
+        words += [int(st["has_uint32"]), int(st["uinteger"])]
     return np.array(words, dtype=np.uint32).reshape(-1, 1)
 
 
 def _decode_state(gen: np.random.Generator, value: Any) -> None:
     w = [int(x) for x in np.asarray(value).flatten()]
-    if len(w) != 10:
-        raise MatlabError("This is not a generator state saved by rng or RandStream in mylab.")
     st = gen.bit_generator.state
-    st["state"]["state"] = sum(w[k] << (32 * k) for k in range(4))
-    st["state"]["inc"] = sum(w[4 + k] << (32 * k) for k in range(4))
-    st["has_uint32"], st["uinteger"] = w[8], w[9]
+    if st.get("bit_generator") == "MT19937":
+        if len(w) != 625 or not 0 <= w[624] <= 624:
+            raise MatlabError("This is not a generator state saved by rng or RandStream (625 values expected).")
+        st["state"]["key"] = np.array(w[:624], dtype=np.uint32)
+        st["state"]["pos"] = w[624]
+    else:
+        if len(w) != 10:
+            raise MatlabError("This is not a generator state saved by rng or RandStream in mylab.")
+        st["state"]["state"] = sum(w[k] << (32 * k) for k in range(4))
+        st["state"]["inc"] = sum(w[4 + k] << (32 * k) for k in range(4))
+        st["has_uint32"], st["uinteger"] = w[8], w[9]
     gen.bit_generator.state = st
 
 
@@ -488,7 +502,8 @@ def _rng_control(interp, args, nargout):
             s = a.data.flat[0]
             if "State" not in s:
                 raise MatlabError("rng(s) needs the settings structure returned by s = rng.")
-            gen = np.random.default_rng(0)
+            from .core import new_generator
+            gen = new_generator(0)
             _decode_state(gen, s["State"])
             interp.state["rng"] = gen
             interp.state["rng_seed"] = int(np.asarray(s.get("Seed", 0)).flat[0])
@@ -500,11 +515,15 @@ def _rng_control(interp, args, nargout):
                 seed = int(np.random.SeedSequence().entropy % (2 ** 32))
             else:
                 raise MatlabError(f"rng: unknown option '{text(a)}'. Use a seed number, 'default' or 'shuffle'.")
-            interp.state["rng"] = np.random.default_rng(seed)
+            from .core import new_generator
+            interp.state["rng"] = new_generator(seed)
             interp.state["rng_seed"] = seed
         else:
+            from .core import new_generator
             seed = _seed_value(a)
-            interp.state["rng"] = np.random.default_rng(seed)
+            if seed is None:
+                seed = int(np.random.SeedSequence().entropy % (2 ** 32))
+            interp.state["rng"] = new_generator(seed)
             interp.state["rng_seed"] = seed
         if len(args) > 1 and is_text(args[1]):
             kind = text(args[1])

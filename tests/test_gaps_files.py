@@ -79,8 +79,8 @@ def test_audio_stereo_bits_and_errors(d):
     assert "clipped" in out
     with pytest.raises(MatlabError, match="not found"):
         m.run("audioread('missing.wav')")
-    with pytest.raises(MatlabError, match="Only WAV"):
-        m.run("audiowrite('x.mp3', [0; 0], 8000)")
+    with pytest.raises(MatlabError, match="Supported files are WAV and FLAC"):
+        m.run("audiowrite('x.m4a', [0; 0], 8000)")
 
 
 def test_sound_is_a_no_op_with_one_note(m):

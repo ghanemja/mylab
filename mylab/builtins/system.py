@@ -13,7 +13,7 @@ from .. import __version__
 from ..display import FORMAT, display_lines, format_display, function_handle_text
 from ..errors import MatlabError
 from ..values import (
-    Cell, FunctionHandle, MString, Struct, char, class_name, is_char, shape_of, to_int, to_str,
+    Cell, FunctionHandle, MString, Struct, char, is_char, to_int, to_str,
 )
 from ._registry import BUILTINS, builtin
 from ._util import bool_scalar, is_text, nargs, num, text
@@ -80,33 +80,131 @@ def _mexception(interp, args, nargout):
     return MExceptionObject(ident, msg)
 
 
+_WARNING_MODES = ("backtrace", "verbose")
+
+
+def _warning_state(interp, ident: str) -> str:
+    """'on', 'off' or 'error' for one warning identifier ('all' for the default state)."""
+    if ident in _WARNING_MODES:
+        return interp.state.get("warning_modes", {}).get(ident, "on" if ident == "backtrace" else "off")
+    if ident != "all":
+        if ident in interp.state.get("warning_errors", ()):
+            return "error"
+        if ident in interp.disabled_warnings:
+            return "off"
+        if ident in interp.state.get("warnings_on", ()):
+            return "on"
+    return "on" if interp.warnings_enabled else "off"
+
+
+def _state_struct(rows: list) -> Struct:
+    data = np.empty((len(rows), 1), dtype=object)
+    for k, (ident, state) in enumerate(rows):
+        data[k, 0] = {"identifier": char(ident), "state": char(state)}
+    return Struct(data, ["identifier", "state"])
+
+
+def _all_warning_states(interp) -> Struct:
+    idents = sorted(set(interp.disabled_warnings) | set(interp.state.get("warnings_on", ()))
+                    | set(interp.state.get("warning_errors", ())))
+    return _state_struct([("all", _warning_state(interp, "all"))] + [(i, _warning_state(interp, i)) for i in idents])
+
+
+def _set_warning_state(interp, state: str, ident: str) -> None:
+    on_set = interp.state.setdefault("warnings_on", set())
+    errors = interp.state.setdefault("warning_errors", set())
+    if ident in _WARNING_MODES:
+        if state == "error":
+            raise MatlabError(f"warning: '{ident}' can only be turned 'on' or 'off'.")
+        interp.state.setdefault("warning_modes", {})[ident] = state
+        return
+    if ident == "all":
+        interp.disabled_warnings.clear()
+        on_set.clear()
+        errors.clear()
+        if state == "error":
+            raise MatlabError("warning: turning every warning into an error with warning('error', 'all') is "
+                              "not supported; name the warning identifier.")
+        interp.warnings_enabled = state == "on"
+        return
+    interp.disabled_warnings.discard(ident)
+    on_set.discard(ident)
+    errors.discard(ident)
+    if state == "off":
+        interp.disabled_warnings.add(ident)
+    elif state == "error":
+        errors.add(ident)
+    elif not interp.warnings_enabled:
+        on_set.add(ident)  # on although the default is off
+
+
+def _issue_warning(interp, msg: str, ident: str) -> None:
+    state = _warning_state(interp, ident) if ident else _warning_state(interp, "all")
+    if state == "error":
+        raise MatlabError(msg, ident)
+    interp.last_warning = msg
+    interp.last_warning_id = ident
+    if state == "on":
+        interp.out(f"Warning: {msg}\n")
+
+
 @builtin("warning")
 def _warning(interp, args, nargout):
+    """Issue a warning, or query and change which warnings are shown (returning the old state)."""
     if not args:
+        states = _all_warning_states(interp)
+        if nargout:
+            return states
+        interp.out(f"By default, warnings are {_warning_state(interp, 'all')}.\n")
+        for d in states.data.flat[1:]:
+            interp.out(f"  {to_str(d['state']):>5}  {to_str(d['identifier'])}\n")
         return None
-    first = text(args[0])
-    if first.lower() in ("off", "on") and len(args) <= 2:
-        enable = first.lower() == "on"
-        if len(args) == 1 or text(args[1]).lower() == "all":
-            interp.warnings_enabled = enable
-            if enable:
-                interp.disabled_warnings.clear()
-        elif enable:
-            interp.disabled_warnings.discard(text(args[1]))
-        else:
-            interp.disabled_warnings.add(text(args[1]))
+    if isinstance(args[0], Struct):
+        s = args[0]
+        if "state" in s.fields and "identifier" in s.fields:  # warning(w): restore saved states
+            before = _all_warning_states(interp)
+            for d in s.data.flatten(order="F"):
+                state = to_str(d["state"]).lower()
+                if state not in ("on", "off", "error"):
+                    raise MatlabError("warning: the state in the structure must be 'on', 'off' or 'error'.")
+                _set_warning_state(interp, state, to_str(d["identifier"]))
+            return before if nargout else None
+        if "message" in s.fields and s.data.size == 1:  # warning(struct with message and identifier)
+            d = s.data.flat[0]
+            _issue_warning(interp, to_str(d["message"]), to_str(d["identifier"]) if "identifier" in d else "")
+            return None
+        raise MatlabError("warning: the structure must have the fields 'identifier' and 'state' (as returned "
+                          "by warning) or 'message'.")
+    if getattr(args[0], "is_message", False):  # warning(message('pkg:id', ...))
+        _issue_warning(interp, args[0].text(), args[0].identifier)
         return None
-    if first.lower() == "query":
-        ident = text(args[1]) if len(args) > 1 else "all"
-        on = interp.warnings_enabled and ident not in interp.disabled_warnings
-        return Struct.scalar({"identifier": char(ident), "state": char("on" if on else "off")}) if nargout else None
+    first = text(args[0], "the warning message")
+    low = first.lower()
+    if low in ("on", "off", "error", "query") and len(args) <= 2:
+        ident = text(args[1], "the warning identifier") if len(args) > 1 else "all"
+        if ident == "last":
+            ident = getattr(interp, "last_warning_id", "") or "all"
+        if low == "query":
+            if nargout:
+                return _all_warning_states(interp) if ident == "all" else \
+                    _state_struct([(ident, _warning_state(interp, ident))])
+            if ident == "all":
+                return _warning(interp, [], 0)
+            interp.out(f"The state of warning '{ident}' is '{_warning_state(interp, ident)}'.\n")
+            return None
+        before = _all_warning_states(interp) if ident == "all" else \
+            _state_struct([(ident, _warning_state(interp, ident))])
+        _set_warning_state(interp, low, ident)
+        return before if nargout else None
     rest = list(args[1:])
     ident = ""
-    if rest and ":" in first and " " not in first:
+    if rest and ":" in first and " " not in first and not first.endswith(":"):
         ident = first
-        first = text(rest[0])
+        first = text(rest[0], "the warning message")
         rest = rest[1:]
-    interp.warn(matlab_sprintf(first, rest) if (rest or ident) else first, ident)
+    if first == "" and not ident:
+        return None  # warning('') does nothing
+    _issue_warning(interp, matlab_sprintf(first, rest) if (rest or ident) else first, ident)
     return None
 
 
@@ -259,8 +357,9 @@ def _clear(interp, args, nargout):
 
 @builtin("who")
 def _who(interp, args, nargout):
-    frame = interp.frame
-    names = sorted(set(frame.vars) | {n for n, store in frame.globals.items() if n in store})
+    """who, who a* b, who -regexp pat, who global, who -file name: the variable names."""
+    from .fileformats import listing_rows
+    names = [r["name"] for r in listing_rows(interp, args, "who")]
     if nargout > 0:
         return Cell.from_list([char(n) for n in names], column=True)
     if names:
@@ -270,20 +369,12 @@ def _who(interp, args, nargout):
 
 @builtin("whos")
 def _whos(interp, args, nargout):
-    frame = interp.frame
-    rows = []
-    for n in sorted(frame.vars):
-        v = frame.vars[n]
-        r, c = shape_of(v)
-        nbytes = v.nbytes if isinstance(v, np.ndarray) else 0
-        rows.append((n, f"{r}x{c}", nbytes, class_name(v)))
-    if not rows:
-        return None
-    w = max(4, max(len(r[0]) for r in rows))
-    lines = [f"  {'Name':<{w}}      Size            Bytes  Class", ""]
-    for n, size, nbytes, cls in rows:
-        lines.append(f"  {n:<{w}}      {size:<12}{nbytes:>9}  {cls}")
-    interp.out("\n".join(lines) + "\n\n")
+    """whos with the same selections as who; s = whos(...) returns a struct array instead of printing."""
+    from .fileformats import listing_rows, whos_struct, whos_text
+    rows = listing_rows(interp, args, "whos")
+    if nargout > 0:
+        return whos_struct(rows)
+    interp.out(whos_text(rows))
     return None
 
 
@@ -494,7 +585,7 @@ def _format(interp, args, nargout):
     return None
 
 
-@builtin("more", "beep", "commandwindow", "pack", "dbstop", "profile")
+@builtin("more", "beep", "commandwindow", "pack", "dbstop")
 def _noop(interp, args, nargout):
     return None
 
@@ -573,9 +664,29 @@ def _isunix(interp, args, nargout):
     return bool_scalar(os.name == "posix")
 
 
+def _architecture() -> str:
+    import platform
+    machine = platform.machine().lower()
+    if sys.platform.startswith("win"):
+        return "win64"
+    if sys.platform == "darwin":
+        return "maca64" if machine in ("arm64", "aarch64") else "maci64"
+    if sys.platform == "emscripten":
+        return "wasm32"
+    return "glnxa64" if machine in ("x86_64", "amd64", "") else f"glnx{machine}"
+
+
 @builtin("computer")
 def _computer(interp, args, nargout):
-    return char(sys.platform)
+    """computer, computer('arch'), [name, maxsize, endian] = computer."""
+    arch = _architecture()
+    if args:
+        if text(args[0]).lower() != "arch":
+            raise MatlabError("computer: the only option is 'arch'.")
+        return char(arch)
+    name = {"win64": "PCWIN64", "maci64": "MACI64", "maca64": "MACA64", "glnxa64": "GLNXA64"}.get(arch, arch.upper())
+    outs = (char(name), float(2 ** 48 - 1), char("L" if sys.byteorder == "little" else "B"))
+    return outs[:nargout] if nargout > 1 else outs[0]
 
 
 @builtin("getenv")
@@ -720,6 +831,72 @@ class MFile:
         self.endian = endian  # '<' or '>'
         self.encoding = encoding
         self.hit_eof = False
+        self.wbits = [0, 0]  # bits written with a bit precision that do not fill a byte yet: value, count
+        self.rbits = [0, 0]  # bits read from the file but not yet handed out
+        self.bit_order = endian
+
+    def sync(self) -> None:
+        """Finish bit-field I/O before anything else touches the file: pad the last byte with zeros."""
+        if self.wbits[1]:
+            value, count = self.wbits
+            self.wbits = [0, 0]
+            byte = value & 0xFF if self.bit_order == "<" else (value << (8 - count)) & 0xFF
+            self.raw.write(bytes([byte]))
+        self.rbits = [0, 0]
+
+    def write_bits(self, values: list[int], width: int, order: str) -> None:
+        if self.rbits[1] or (self.wbits[1] and order != self.bit_order):
+            self.sync()
+        self._switch()
+        self.bit_order = order
+        acc, count = self.wbits
+        out = bytearray()
+        mask = (1 << width) - 1
+        for v in values:
+            v &= mask
+            if order == "<":  # the first value sits in the low bits of the first byte
+                acc |= v << count
+                count += width
+                while count >= 8:
+                    out.append(acc & 0xFF)
+                    acc >>= 8
+                    count -= 8
+            else:
+                acc = (acc << width) | v
+                count += width
+                while count >= 8:
+                    out.append((acc >> (count - 8)) & 0xFF)
+                    count -= 8
+                    acc &= (1 << count) - 1
+        self.wbits = [acc, count]
+        if out:
+            self.raw.write(bytes(out))
+
+    def read_bits(self, width: int, order: str, skip: int = 0) -> int | None:
+        """The next ``width`` bits as an unsigned number, or None at the end of the file."""
+        if self.wbits[1] or (self.rbits[1] and order != self.bit_order):
+            self.sync()
+        self.bit_order = order
+        acc, count = self.rbits
+        need = width + skip
+        while count < need:
+            b = self.raw.read(1)
+            if not b:
+                self.rbits = [acc, count]
+                return None
+            if order == "<":
+                acc |= b[0] << count
+            else:
+                acc = (acc << 8) | b[0]
+            count += 8
+        if order == "<":
+            value = acc & ((1 << width) - 1)
+            acc >>= need
+        else:
+            value = (acc >> (count - width)) & ((1 << width) - 1)
+            acc &= (1 << (count - need)) - 1
+        self.rbits = [acc, count - need]
+        return value
 
     def decode(self, data: bytes) -> str:
         try:
@@ -734,6 +911,7 @@ class MFile:
             return s.encode("utf-8")
 
     def read(self, n: int = -1) -> str:
+        self.sync()
         if n is None or n < 0:
             return self.decode(self.raw.read())
         out = self.raw.read(n)
@@ -753,15 +931,18 @@ class MFile:
         return self.decode(out)
 
     def readline(self) -> str:
+        self.sync()
         return self.decode(self.raw.readline())
 
     def write(self, s: str) -> int:
+        self.sync()
         self._switch()
         data = self.encode(s)
         self.raw.write(data)
         return len(data)
 
     def write_bytes(self, data: bytes) -> None:
+        self.sync()
         self._switch()
         self.raw.write(data)
 
@@ -774,9 +955,12 @@ class MFile:
         return self.raw.tell()
 
     def seek(self, pos: int, whence: int = 0) -> int:
+        self.sync()
         return self.raw.seek(pos, whence)
 
     def size(self) -> int:
+        if self.wbits[1]:
+            self.sync()
         pos = self.raw.tell()
         end = self.raw.seek(0, 2)
         self.raw.seek(pos)
@@ -791,9 +975,13 @@ class MFile:
         return end
 
     def flush(self) -> None:
+        if self.wbits[1]:
+            self.sync()
         self.raw.flush()
 
     def close(self) -> None:
+        if self.wbits[1]:
+            self.sync()
         self.raw.close()
 
 
@@ -961,12 +1149,23 @@ _CHAR_NAMES = {"char", "uchar", "schar", "char*1", "unsignedchar", "signedchar"}
 
 
 def _precision_code(name: str) -> str:
+    """NumPy type code for a precision name; bit fields give 'ubitN' or 'bitN' (1 to 64 bits)."""
     key = name.lower().replace(" ", "")
     if key not in _PRECISIONS:
-        if re.fullmatch(r"u?bit\d+", key):
-            raise MatlabError(f"Bit-field precisions such as '{name}' are not supported.")
+        m = re.fullmatch(r"(u?)bit(\d+)", key)
+        if m:
+            if not 1 <= int(m.group(2)) <= 64:
+                raise MatlabError(f"The bit-field precision '{name}' must have between 1 and 64 bits.")
+            return key
         raise MatlabError(f"Unknown precision '{name}'.")
     return _PRECISIONS[key]
+
+
+def _bit_width(code: str) -> tuple[int, bool] | None:
+    """(number of bits, signed) for a bit-field code, None for an ordinary type code."""
+    if "bit" not in code:
+        return None
+    return int(code.split("bit")[1]), not code.startswith("u")
 
 
 def parse_precision(spec: str) -> tuple[str, str, int]:
@@ -985,8 +1184,13 @@ def parse_precision(spec: str) -> tuple[str, str, int]:
     else:
         src, dst = s, None
     code = _precision_code(src)
+    bits = _bit_width(code)
     if dst is None:
-        if same:
+        if same and bits is not None:
+            # the smallest integer class that holds the field
+            size = next(n for n in (8, 16, 32, 64) if n >= bits[0])
+            out = f"{'int' if bits[1] else 'uint'}{size}"
+        elif same:
             out = "char" if src.lower().replace(" ", "") in ("char", "char*1") else _CLASS_OF[code]
         else:
             out = "double"
@@ -997,7 +1201,10 @@ def parse_precision(spec: str) -> tuple[str, str, int]:
         elif low == "logical":
             out = "logical"
         else:
-            out = _CLASS_OF[_precision_code(dst)]
+            dcode = _precision_code(dst)
+            if _bit_width(dcode) is not None:
+                raise MatlabError(f"The output class in '{spec}' must be a class name such as 'double' or 'uint8'.")
+            out = _CLASS_OF[dcode]
     return code, out, block
 
 
@@ -1027,6 +1234,23 @@ def _read_values(fh, dtype, want, block: int, skip: int) -> np.ndarray:
     return np.concatenate(chunks) if chunks else np.zeros(0, dtype=dtype)
 
 
+def _read_bit_fields(fh, bits: tuple[int, bool], want, block: int, skip: int, order: str) -> np.ndarray:
+    """Values of a bit-field precision; ``skip`` bits are passed over after every ``block`` values."""
+    width, signed = bits
+    out: list[int] = []
+    while want is None or len(out) < want:
+        v = fh.read_bits(width, order)
+        if v is None:
+            break
+        if signed and v >= 1 << (width - 1):
+            v -= 1 << width
+        out.append(v)
+        if skip and len(out) % block == 0:
+            if fh.read_bits(0, order, skip) is None:
+                break
+    return np.array(out, dtype=np.int64 if signed else np.uint64)
+
+
 @builtin("fread")
 def _fread(interp, args, nargout):
     nargs(args, 1, 5, "fread")
@@ -1041,7 +1265,8 @@ def _fread(interp, args, nargout):
         skip = to_int(rest.pop(0), "skip")
     endian = machine_format(rest.pop(0), fh.endian) if rest else fh.endian
     code, out_class, block = parse_precision(spec)
-    dtype = np.dtype(endian + code)
+    bits = _bit_width(code)
+    dtype = np.dtype(endian + code) if bits is None else np.dtype(np.int64 if bits[1] else np.uint64)
     shape = None
     if size is None or size.size == 0:
         want = None
@@ -1055,7 +1280,11 @@ def _fread(interp, args, nargout):
         raise MatlabError("fread: size must be n, Inf or [m n].")
     if want is not None and want < 0:
         raise MatlabError("fread: size must not be negative.")
-    values = _read_values(fh, dtype, want, block, skip)
+    if bits is None:
+        fh.sync()
+        values = _read_values(fh, dtype, want, block, skip)
+    else:
+        values = _read_bit_fields(fh, bits, want, block, skip, endian)
     count = values.size
     if want is None or count < want:
         fh.hit_eof = True
@@ -1123,6 +1352,18 @@ def _fwrite(interp, args, nargout):
     fh = file_handle(interp, fid)
     endian = machine_format(rest.pop(0), fh.endian) if rest else fh.endian
     code, _out, _block = parse_precision(spec)
+    bits = _bit_width(code)
+    if bits is not None:
+        width, signed = bits
+        lo, hi = (-(1 << (width - 1)), (1 << (width - 1)) - 1) if signed else (0, (1 << width) - 1)
+        vals = np.real(num(flat)).astype(float)
+        vals = np.where(np.isnan(vals), 0, np.round(vals))
+        ints = [int(min(max(v, lo), hi)) for v in vals]
+        for v in ints:
+            if skip:
+                fh.write_bits([0] * skip, 1, endian)  # skipped bits are written as zeros
+            fh.write_bits([v], width, endian)
+        return float(count) if nargout else None
     dtype = np.dtype(endian + code)
     if was_text and spec.lower().replace(" ", "").lstrip("*") in ("char", "char*1") and skip == 0:
         fh.write("".join(flat) if count else "")
@@ -1222,49 +1463,7 @@ def _fflush(interp, args, nargout):
     return None
 
 
-@builtin("save")
-def _save(interp, args, nargout):
-    fname = text(args[0]) if args else "matlab.mat"
-    names = [text(a) for a in args[1:] if not text(a).startswith("-")]
-    frame = interp.frame
-    from scipy.io import savemat
-    if not fname.endswith(".mat"):
-        fname += ".mat"
-    data = {}
-    for n in names or list(frame.vars):
-        v = frame.vars.get(n)
-        if isinstance(v, np.ndarray):
-            data[n] = v if not is_char(v) else to_str(v)
-        elif isinstance(v, MString):
-            data[n] = str(v)
-    savemat(fname, data)
-    return None
-
-
-@builtin("load")
-def _load(interp, args, nargout):
-    fname = text(args[0])
-    from scipy.io import loadmat
-    if fname.endswith((".csv", ".txt", ".dat")):
-        data = np.atleast_2d(np.loadtxt(fname, delimiter="," if fname.endswith(".csv") else None))
-        if nargout:
-            return data
-        interp.frame.set(os.path.splitext(os.path.basename(fname))[0], data)
-        return None
-    raw = loadmat(fname if fname.endswith(".mat") else fname + ".mat")
-    loaded = {}
-    for k, v in raw.items():
-        if k.startswith("__"):
-            continue
-        if isinstance(v, np.ndarray) and v.dtype.kind == "U":
-            loaded[k] = char(str(v[0]) if v.size else "")
-        elif isinstance(v, np.ndarray) and v.dtype.kind in "biufc":
-            loaded[k] = np.atleast_2d(v).astype(float) if v.dtype.kind != "c" else np.atleast_2d(v)
-    if nargout:
-        return Struct.scalar(loaded)
-    for k, v in loaded.items():
-        interp.frame.set(k, v)
-    return None
+# save and load live in fileformats.py (MAT-files) with the rest of the data file formats.
 
 
 @builtin("run")

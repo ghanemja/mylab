@@ -20,7 +20,7 @@ from ..values import (
     Cell, MString, StringArray, Struct, char, is_char, string_result, to_int, to_str,
 )
 from ._registry import builtin
-from ._util import bool_scalar, fnum, is_text, nargs, num, text
+from ._util import bool_scalar, is_text, nargs, num, text
 from .system import file_handle
 
 _DELIM_NAMES = {"tab": "\t", "\\t": "\t", "space": " ", "comma": ",", "semi": ";", "bar": "|"}
@@ -125,18 +125,8 @@ def _numeric_table(lines: list[str], delim: str | None, header: int | None) -> t
 @builtin("readmatrix")
 def _readmatrix(interp, args, nargout):
     nargs(args, 1, None, "readmatrix")
-    fname = text(args[0])
-    _, opts = _name_value(list(args[1:]), {"NumHeaderLines", "Delimiter", "Range", "FileType",
-                                           "OutputType", "ExpectedNumVariables"})
-    lines = _lines_of(_read_text(fname))
-    delim = _delimiter(opts["delimiter"]) if "delimiter" in opts else _sniff_delimiter(lines)
-    header = to_int(opts["numheaderlines"], "NumHeaderLines") if "numheaderlines" in opts else None
-    data, _, _ = _numeric_table(lines, delim, header)
-    if "range" in opts and not is_text(opts["range"]):
-        r = num(opts["range"]).flatten().astype(int)
-        if r.size >= 2:
-            data = data[r[0] - 1:, r[1] - 1:] if r.size == 2 else data[r[0] - 1:r[2], r[1] - 1:r[3]]
-    return data
+    from . import _textimport
+    return _textimport.read_matrix(interp, list(args))
 
 
 @builtin("csvread")
@@ -325,32 +315,11 @@ def _writecell(interp, args, nargout):
     return None
 
 
-def _missing_value():
-    d = np.empty((1, 1), dtype=object)
-    d[0, 0] = None
-    return StringArray(d)
-
-
 @builtin("readcell")
 def _readcell(interp, args, nargout):
     nargs(args, 1, None, "readcell")
-    fname = text(args[0])
-    _, opts = _name_value(list(args[1:]), {"Delimiter", "NumHeaderLines", "FileType"})
-    lines = _lines_of(_read_text(fname))
-    delim = _delimiter(opts["delimiter"]) if "delimiter" in opts else _sniff_delimiter(lines)
-    skip = to_int(opts["numheaderlines"], "NumHeaderLines") if "numheaderlines" in opts else 0
-    rows = [_split_fields(ln, delim) for ln in lines[skip:] if ln.strip()]
-    width = max((len(r) for r in rows), default=0)
-    data = np.empty((len(rows), width), dtype=object)
-    for i, r in enumerate(rows):
-        for j in range(width):
-            f = r[j].strip() if j < len(r) else ""
-            if f == "":
-                data[i, j] = _missing_value()
-                continue
-            v = _parse_number(f)
-            data[i, j] = np.array([[v]]) if v is not None else char(f)
-    return Cell(data)
+    from . import _textimport
+    return _textimport.read_cell(interp, list(args))
 
 
 @builtin("readlines")
@@ -467,156 +436,12 @@ def _fscanf(interp, args, nargout):
     return res
 
 
-_TS_SPEC = re.compile(r"%(\*?)(\d*)(?:\.(\d+))?(f|d|u|n|s|q|c|\[[^\]]*\])(8|16|32|64)?")
-
-
-def _parse_ts_format(fmt: str) -> list[tuple[str, bool, str, str]]:
-    """List of (kind, skip, bits, literal-prefix) for each conversion in a textscan format."""
-    specs = []
-    pos = 0
-    for m in _TS_SPEC.finditer(fmt):
-        literal = fmt[pos:m.start()].strip()
-        specs.append((m.group(4), bool(m.group(1)), m.group(5) or "", literal))
-        pos = m.end()
-    if not specs:
-        raise MatlabError("textscan: the format must contain at least one conversion such as %f or %s.")
-    return specs
-
-
 @builtin("textscan")
 def _textscan(interp, args, nargout):
+    """Read formatted text from a file or a string (the scanner is in _textimport)."""
     nargs(args, 1, None, "textscan")
-    src = args[0]
-    rest = list(args[1:])
-    fmt = text(rest.pop(0)) if rest and is_text(rest[0]) and text(rest[0]).lower() not in (
-        "delimiter", "headerlines") else "%f"
-    from .strings import process_escapes
-    fmt = process_escapes(fmt)
-    repeat = None
-    if rest and not is_text(rest[0]):
-        r = float(fnum(rest.pop(0)).flat[0])
-        repeat = None if np.isinf(r) else int(r)
-    _, opts = _name_value(rest, {"Delimiter", "HeaderLines", "EndOfLine", "MultipleDelimsAsOne",
-                                 "CollectOutput", "Whitespace", "CommentStyle", "ReturnOnError",
-                                 "EmptyValue", "TextType"})
-    fh = None
-    if is_text(src):
-        content = text(src)
-    else:
-        fh = file_handle(interp, to_int(src, "file identifier"))
-        content = fh.read()
-    lines = _lines_of(content)
-    skip = to_int(opts["headerlines"], "HeaderLines") if "headerlines" in opts else 0
-    lines = lines[skip:]
-    if "commentstyle" in opts:
-        cs = text(opts["commentstyle"])
-        lines = [ln.split(cs, 1)[0] for ln in lines]
-    delims: list[str] | None = None
-    if "delimiter" in opts:
-        d = opts["delimiter"]
-        items = [to_str(x) for x in d.values_f()] if isinstance(d, Cell) else [text(d)]
-        delims = [process_escapes(x) for x in items]
-    collapse = "multipledelimsasone" in opts and bool(num(opts["multipledelimsasone"]).flat[0])
-    empty_value = float(fnum(opts["emptyvalue"]).flat[0]) if "emptyvalue" in opts else np.nan
-    as_string = "texttype" in opts and text(opts["texttype"]).lower() == "string"
-    specs = _parse_ts_format(fmt)
-    tokens: list[str] = []
-    for ln in lines:
-        if not ln.strip():
-            continue
-        if delims is None:
-            tokens.extend(_ts_split_ws(ln))
-        else:
-            pattern = "|".join(re.escape(x) for x in sorted(delims, key=len, reverse=True))
-            if collapse:
-                pattern = f"(?:{pattern})+"
-            parts = re.split(pattern, ln)
-            tokens.extend(p.strip(" \t") for p in parts)
-    columns: list[list] = [[] for _ in specs]
-    k = 0
-    records = 0
-    stop = False
-    while k < len(tokens) and not stop:
-        if repeat is not None and records >= repeat:
-            break
-        for j, (kind, skip_it, _bits, literal) in enumerate(specs):
-            if k >= len(tokens):
-                break
-            tok = tokens[k]
-            if literal and tok.startswith(literal):
-                tok = tok[len(literal):]
-            if kind in ("f", "d", "u", "n"):
-                v = _parse_number(tok)
-                if v is None:
-                    stop = True
-                    break
-                if tok.strip() == "":
-                    v = empty_value
-                if not skip_it:
-                    columns[j].append(v)
-            elif kind == "q":
-                t = tok.strip()
-                if len(t) >= 2 and t[0] == t[-1] == '"':
-                    t = t[1:-1].replace('""', '"')
-                if not skip_it:
-                    columns[j].append(t)
-            else:
-                if not skip_it:
-                    columns[j].append(tok)
-            k += 1
-        else:
-            records += 1
-            continue
-        break
-    out = []
-    for (kind, skip_it, bits, _lit), col in zip(specs, columns):
-        if skip_it:
-            continue
-        if kind in ("f", "n"):
-            arr = np.array(col, dtype=np.float32 if bits == "32" and kind == "f" else float).reshape(-1, 1)
-            out.append(arr)
-        elif kind in ("d", "u"):
-            dtype = {"8": np.int8, "16": np.int16, "32": np.int32, "64": np.int64}.get(bits, np.int32)
-            if kind == "u":
-                dtype = {"8": np.uint8, "16": np.uint16, "32": np.uint32, "64": np.uint64}.get(bits, np.uint32)
-            vals = np.array(col, dtype=float)
-            info = np.iinfo(dtype)
-            vals = np.clip(np.where(np.isnan(vals), 0, np.round(vals)), info.min, info.max)
-            out.append(vals.astype(dtype).reshape(-1, 1))
-        elif kind == "c":
-            out.append(np.array([[c[0] if c else " "] for c in col], dtype="<U1").reshape(-1, 1))
-        else:
-            if as_string:
-                d = np.empty((len(col), 1), dtype=object)
-                for i, x in enumerate(col):
-                    d[i, 0] = x
-                out.append(StringArray(d))
-            else:
-                out.append(Cell.from_list([char(x) for x in col], column=True))
-    if "collectoutput" in opts and bool(num(opts["collectoutput"]).flat[0]):
-        merged: list = []
-        for v in out:
-            if merged and isinstance(v, np.ndarray) and isinstance(merged[-1], np.ndarray) and \
-                    v.dtype == merged[-1].dtype and v.shape[0] == merged[-1].shape[0]:
-                merged[-1] = np.hstack([merged[-1], v])
-            elif merged and isinstance(v, Cell) and isinstance(merged[-1], Cell) and \
-                    v.data.shape[0] == merged[-1].data.shape[0]:
-                merged[-1] = Cell(np.hstack([merged[-1].data, v.data]))
-            else:
-                merged.append(v)
-        out = merged
-    result = Cell.from_list(out)
-    if nargout > 1:
-        return result, float(len(content))
-    return result
-
-
-def _ts_split_ws(line: str) -> list[str]:
-    """Whitespace-separated tokens, keeping "double quoted" text together."""
-    out = []
-    for m in re.finditer(r'"(?:[^"]|"")*"|\S+', line):
-        out.append(m.group(0))
-    return out
+    from . import _textimport
+    return _textimport.textscan(interp, list(args), nargout)
 
 
 # -- folders --------------------------------------------------------------------------------------

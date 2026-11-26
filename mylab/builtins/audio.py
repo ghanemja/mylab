@@ -18,17 +18,79 @@ from ..values import Struct, char
 from ._registry import builtin
 from ._util import bool_scalar, fnum, fscalar, is_text, nargs, text, to_int
 
-_WAV_ONLY = ("Only WAV files (.wav) are supported. Convert other formats first, for example with "
-             "ffmpeg -i input.mp3 output.wav.")
+# other formats: FLAC is coded here; the rest (and faster FLAC) come from the optional soundfile package
+_FORMATS = {".flac": "FLAC", ".ogg": "OGG", ".oga": "OGG", ".opus": "OGG", ".mp3": "MP3", ".aiff": "AIFF",
+            ".aif": "AIFF", ".aifc": "AIFF", ".au": "AU", ".snd": "AU"}
+_METHODS = {"FLAC": "FLAC", "OGG": "Vorbis", "MP3": "MP3", "AIFF": "Uncompressed", "AU": "Uncompressed"}
+
+
+def _soundfile():
+    """The soundfile module, or None when it (or its sound library) is not installed."""
+    try:
+        import soundfile
+    except (ImportError, OSError):
+        return None
+    return soundfile
+
+
+def _needs_soundfile(what: str, name: str) -> MatlabError:
+    ext = os.path.splitext(name)[1].lower()
+    return MatlabError(f"{what}: '{ext}' files need the optional Python package 'soundfile', which is not "
+                       "installed (pip install soundfile). WAV and FLAC files work without it.",
+                       "mylab:audio:soundfileMissing")
 
 
 def _check_file(name: str, what: str) -> str:
     if not os.path.isfile(name):
         raise MatlabError(f"{what}: the file '{name}' was not found.", "MATLAB:audiovideo:audioread:fileNotFound")
     ext = os.path.splitext(name)[1].lower()
-    if ext not in (".wav", ".wave"):
-        raise MatlabError(f"{what}: cannot read '{name}'. {_WAV_ONLY}")
+    if ext not in (".wav", ".wave") and ext not in _FORMATS:
+        raise MatlabError(f"{what}: cannot read '{name}'. Supported files are WAV and FLAC, and with the "
+                          "optional Python package 'soundfile' also OGG, MP3, AIFF and AU. Convert other "
+                          "formats first, for example with ffmpeg -i input.m4a output.wav.")
     return name
+
+
+def _read_other(name: str, what: str) -> tuple[int, np.ndarray, int, str]:
+    """Sample rate, samples (frames-by-channels), bits per sample (0 for lossy formats) and format."""
+    kind = _FORMATS[os.path.splitext(name)[1].lower()]
+    sf = _soundfile()
+    if sf is not None:
+        try:
+            with sf.SoundFile(name) as f:
+                subtype = f.subtype
+                bits = {"PCM_S8": 8, "PCM_U8": 8, "PCM_16": 16, "PCM_24": 24, "PCM_32": 32}.get(subtype, 0)
+                if bits:
+                    data = f.read(dtype="int32", always_2d=True) >> (32 - bits)
+                    if bits == 8:
+                        data = (data + 128).astype(np.uint8)
+                    elif bits == 16:
+                        data = data.astype(np.int16)
+                    elif bits == 24:
+                        data = (data << 8).astype(np.int32)  # left-justified, as for 24-bit WAV files
+                else:
+                    data = f.read(dtype="float64", always_2d=True)
+                return int(f.samplerate), data, bits, kind
+        except (RuntimeError, OSError) as e:
+            raise MatlabError(f"{what}: '{name}' cannot be read ({e}).") from None
+    if kind != "FLAC":
+        raise _needs_soundfile(what, name)
+    from . import _flac
+    with open(name, "rb") as fh:
+        samples, rate, bits = _flac.decode(fh.read())
+    if bits <= 8:
+        return rate, (samples + 128).astype(np.uint8), 8, kind
+    if bits <= 16:
+        return rate, (samples << (16 - bits)).astype(np.int16), 16, kind
+    if bits <= 24:
+        return rate, (samples << (32 - bits)).astype(np.int32), 24, kind
+    return rate, samples.astype(np.int32), 32, kind
+
+
+def _read_audio(name: str, what: str) -> tuple[int, np.ndarray, int]:
+    if os.path.splitext(name)[1].lower() in _FORMATS:
+        return _read_other(name, what)[:3]
+    return _read_wav(name, what)
 
 
 def _read_wav(name: str, what: str) -> tuple[int, np.ndarray, int]:
@@ -65,7 +127,7 @@ def _to_double(data: np.ndarray) -> np.ndarray:
 def _audioread(interp, args, nargout):
     nargs(args, 1, 3, "audioread")
     name = _check_file(text(args[0], "file name"), "audioread")
-    rate, data, bits = _read_wav(name, "audioread")
+    rate, data, bits = _read_audio(name, "audioread")
     native = False
     for a in args[1:]:
         if is_text(a):
@@ -107,18 +169,30 @@ def _wavread(interp, args, nargout):
 def _audioinfo(interp, args, nargout):
     nargs(args, 1, 1, "audioinfo")
     name = _check_file(text(args[0], "file name"), "audioinfo")
-    rate, data, bits = _read_wav(name, "audioinfo")
+    method = "Uncompressed"
+    if os.path.splitext(name)[1].lower() in _FORMATS:
+        rate, data, bits, kind = _read_other(name, "audioinfo")
+        method = _METHODS[kind]
+    else:
+        rate, data, bits = _read_wav(name, "audioinfo")
     empty = np.zeros((0, 0))
-    return Struct.scalar({
-        "Filename": char(os.path.abspath(name)), "CompressionMethod": char("Uncompressed"),
+    fields = {
+        "Filename": char(os.path.abspath(name)), "CompressionMethod": char(method),
         "NumChannels": fscalar(data.shape[1]), "SampleRate": fscalar(rate),
         "TotalSamples": fscalar(data.shape[0]), "Duration": fscalar(data.shape[0] / rate if rate else 0.0),
-        "Title": empty, "Comment": empty, "Artist": empty, "BitsPerSample": fscalar(bits)})
+        "Title": empty, "Comment": empty, "Artist": empty}
+    if bits:
+        fields["BitsPerSample"] = fscalar(bits)
+    else:  # lossy formats have a bit rate instead of a sample size
+        seconds = data.shape[0] / rate if rate else 0.0
+        fields["BitRate"] = fscalar(round(os.path.getsize(name) * 8 / seconds / 1000) if seconds else 0.0)
+    return Struct.scalar(fields)
 
 
 def _write_wav(interp, name: str, y: Any, rate: float, bits: int | None, what: str) -> None:
     if os.path.splitext(name)[1].lower() not in (".wav", ".wave"):
-        raise MatlabError(f"{what}: cannot write '{name}'. {_WAV_ONLY}")
+        raise MatlabError(f"{what}: cannot write '{name}'. Supported files are WAV and FLAC, and with the "
+                          "optional Python package 'soundfile' also OGG, MP3, AIFF and AU.")
     if not isinstance(y, np.ndarray) or y.dtype.kind not in "fiu" or y.ndim > 2:
         raise MatlabError(f"{what}: the audio data must be a numeric matrix with one column per channel.")
     if rate <= 0 or rate != int(rate):
@@ -167,12 +241,78 @@ def _write_wav(interp, name: str, y: Any, rate: float, bits: int | None, what: s
         w.writeframes(raw)
 
 
+def _write_other(interp, name: str, y: Any, rate: float, bits: int | None, opts: dict) -> None:
+    """Write FLAC (here or with soundfile) or, with soundfile, OGG, MP3, AIFF and AU."""
+    kind = _FORMATS[os.path.splitext(name)[1].lower()]
+    if not isinstance(y, np.ndarray) or y.dtype.kind not in "fiu" or y.ndim > 2:
+        raise MatlabError("audiowrite: the audio data must be a numeric matrix with one column per channel.")
+    if rate <= 0 or rate != int(rate):
+        raise MatlabError(f"audiowrite: the sample rate must be a positive integer (it is {rate:g}).")
+    data = y.reshape(1, -1).T if y.shape[0] == 1 and y.shape[1] > 2 else y
+    lossy = kind in ("OGG", "MP3")
+    if lossy and bits is not None:
+        raise MatlabError(f"audiowrite: BitsPerSample does not apply to {kind} files; use 'Quality' or 'BitRate'.")
+    if not lossy and ("quality" in opts or "bitrate" in opts):
+        raise MatlabError(f"audiowrite: 'Quality' and 'BitRate' do not apply to {kind} files.")
+    if data.dtype.kind == "f":
+        if data.size and float(np.max(np.abs(data))) > 1.0:
+            interp.warn("Data clipped when writing file: sample values must be between -1 and 1.",
+                        "MATLAB:audiovideo:audiowrite:dataClipped")
+        x = np.clip(data.astype(float), -1.0, 1.0)
+        bits = bits or 16
+    else:
+        need = {"uint8": 8, "int16": 16, "int32": 24 if bits == 24 else 32}.get(data.dtype.name)
+        if need is None:
+            raise MatlabError("audiowrite: integer audio data must be uint8, int16 or int32.")
+        bits = bits or (24 if need == 32 and kind == "FLAC" else need)
+        full = {8: 128.0, 16: 32768.0, 32: 2147483648.0, 24: 2147483648.0}[need]
+        x = (data.astype(float) - (128.0 if need == 8 else 0.0)) / full
+    sf = _soundfile()
+    if sf is not None:
+        kw: dict = {"format": kind}
+        if lossy:
+            kw["subtype"] = "VORBIS" if kind == "OGG" else "MPEG_LAYER_III"
+            if "quality" in opts:
+                q = float(fnum(opts["quality"]).flat[0])
+                if not 0 <= q <= 100:
+                    raise MatlabError("audiowrite: Quality must be between 0 and 100.")
+                kw["compression_level"] = 1.0 - q / 100.0
+            elif "bitrate" in opts:
+                rate_k = float(fnum(opts["bitrate"]).flat[0])
+                kw["compression_level"] = float(np.clip(1.0 - (rate_k - 32.0) / (320.0 - 32.0), 0.0, 1.0))
+        else:
+            if bits not in (8, 16, 24) and not (kind != "FLAC" and bits == 32):
+                raise MatlabError(f"audiowrite: BitsPerSample must be 8, 16 or 24 for {kind} files.")
+            kw["subtype"] = {8: "PCM_S8", 16: "PCM_16", 24: "PCM_24", 32: "PCM_32"}[bits]
+        try:
+            sf.write(name, x, int(rate), **kw)
+        except TypeError:
+            kw.pop("compression_level", None)  # older soundfile versions have no quality setting
+            sf.write(name, x, int(rate), **kw)
+        except (RuntimeError, OSError, ValueError) as e:
+            raise MatlabError(f"audiowrite: cannot write '{name}' ({e}).") from None
+        return
+    if kind != "FLAC":
+        raise _needs_soundfile("audiowrite", name)
+    if bits not in (8, 16, 24):
+        raise MatlabError("audiowrite: BitsPerSample must be 8, 16 or 24 for FLAC files.")
+    from . import _flac
+    full = float(2 ** (bits - 1))
+    ints = np.clip(np.round(x * full), -full, full - 1).astype(np.int64)
+    try:
+        with open(name, "wb") as fh:
+            fh.write(_flac.encode(ints, int(rate), bits))
+    except OSError as e:
+        raise MatlabError(f"audiowrite: cannot write '{name}': {e.strerror or e}.") from None
+
+
 @builtin("audiowrite")
 def _audiowrite(interp, args, nargout):
     if len(args) < 3:
         raise MatlabError("audiowrite needs a file name, the samples and the sample rate: "
                           "audiowrite('tone.wav', y, 44100).")
     bits = None
+    opts: dict = {}
     k = 3
     while k < len(args):
         key = text(args[k], "option name").lower()
@@ -182,8 +322,16 @@ def _audiowrite(interp, args, nargout):
             bits = to_int(args[k + 1], "BitsPerSample")
         elif key not in ("bitrate", "quality", "title", "artist", "comment"):
             raise MatlabError(f"audiowrite: unknown option '{text(args[k])}'.")
+        opts[key] = args[k + 1]
         k += 2
-    _write_wav(interp, text(args[0], "file name"), args[1], float(fnum(args[2]).flat[0]), bits, "audiowrite")
+    name = text(args[0], "file name")
+    if os.path.splitext(name)[1].lower() in _FORMATS:
+        _write_other(interp, name, args[1], float(fnum(args[2]).flat[0]), bits, opts)
+        return None
+    for key, shown in (("bitrate", "BitRate"), ("quality", "Quality")):
+        if key in opts:
+            raise MatlabError(f"audiowrite: '{shown}' applies to compressed formats (OGG, MP3), not to WAV files.")
+    _write_wav(interp, name, args[1], float(fnum(args[2]).flat[0]), bits, "audiowrite")
     return None
 
 

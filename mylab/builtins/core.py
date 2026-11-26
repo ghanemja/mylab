@@ -52,11 +52,26 @@ def _eye(interp, args, nargout):
     return cast_class(np.eye(shape[0], shape[1]), cls)
 
 
+def new_generator(seed: int | None) -> np.random.Generator:
+    """A Mersenne Twister stream seeded the way MATLAB's rng(seed) seeds its default generator.
+
+    Seed 0 (rng default) stands for the twister's own default seed 5489, so the numbers that
+    rand, randi and randn return after rng(seed) are the ones MATLAB returns.
+    """
+    if seed is None:
+        seed = int(np.random.SeedSequence().entropy % (2 ** 32))
+    legacy = np.random.RandomState(5489 if seed == 0 else seed)
+    bits = np.random.MT19937()
+    bits.state = legacy.get_state(legacy=False)
+    return np.random.Generator(bits)
+
+
 def _rng(interp):
     rng = interp.state.get("rng")
     if rng is None:
-        rng = np.random.default_rng()
+        rng = new_generator(0)  # like MATLAB, every session starts from the same state
         interp.state["rng"] = rng
+        interp.state["rng_seed"] = 0
     return rng
 
 
@@ -64,10 +79,22 @@ def _legacy_seed(interp, args) -> bool:
     """rand('seed', n), rand('state', n), randn('twister', n): the old way to seed the generator."""
     if args and is_text(args[0]) and text(args[0]).lower() in ("seed", "state", "twister"):
         seed = int(abs(float(np.real(num(args[1]).flat[0])))) % (2 ** 32) if len(args) > 1 else 0
-        interp.state["rng"] = np.random.default_rng(seed)
+        interp.state["rng"] = new_generator(seed)
         interp.state["rng_seed"] = seed
         return True
     return False
+
+
+def _float_class(cls, name: str):
+    if cls is not None and str(cls) not in ("double", "single"):
+        raise MatlabError(f"{name}: the class must be 'double' or 'single', not '{cls}'.")
+    return cls
+
+
+def uniform(interp, shape: tuple) -> np.ndarray:
+    """Uniform numbers in column-major order, the order in which MATLAB fills an array."""
+    count = int(np.prod(shape, dtype=np.int64))
+    return _rng(interp).random(count).reshape(shape, order="F")
 
 
 @builtin("rand")
@@ -75,7 +102,142 @@ def _rand(interp, args, nargout):
     if _legacy_seed(interp, args):
         return None
     shape, cls = dims_from_args(args, "rand")
-    return cast_class(_rng(interp).random(shape), cls)
+    return cast_class(uniform(interp, shape), _float_class(cls, "rand"))
+
+
+_ZIGGURAT: tuple | None = None
+
+
+def _ziggurat() -> tuple:
+    """Layer edges of a 256-layer ziggurat for the normal density (Marsaglia and Tsang's construction)."""
+    global _ZIGGURAT
+    if _ZIGGURAT is None:
+        import math
+        r = 3.6541528853610088
+        f = lambda t: math.exp(-0.5 * t * t)
+        v = r * f(r) + math.sqrt(math.pi / 2) * math.erfc(r / math.sqrt(2))
+        x = [v / f(r), r]
+        for _ in range(254):
+            x.append(math.sqrt(-2.0 * math.log(v / x[-1] + f(x[-1]))))
+        x.append(0.0)
+        edges = np.array(x)
+        heights = [math.exp(-0.5 * e * e) for e in x]
+        _ZIGGURAT = (edges, r, x, heights)
+    return _ZIGGURAT
+
+
+def _pairs(words: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(53-bit uniforms, layer numbers) from consecutive pairs of 32-bit twister outputs.
+
+    Of the 64 bits, the top 29 of the first word and the low 24 of the second make the uniform
+    and the top 8 of the second pick the layer.
+    """
+    hi = words[0::2] >> np.uint64(3)
+    lo = words[1::2]
+    u = (hi.astype(np.float64) * 16777216.0 + (lo & np.uint64(0xFFFFFF)).astype(np.float64)) / 9007199254740992.0
+    return u, (255 - (lo >> np.uint64(24))).astype(np.intp)
+
+
+def _uniform53(raw) -> float:
+    a, b = raw(2).tolist()
+    return ((a >> 3) * 16777216 + (b & 0xFFFFFF)) / 9007199254740992.0
+
+
+def _normal_one(raw, edge: list, height: list, r: float) -> float:
+    """One normal number, drawing pairs of twister outputs as needed (the same steps as the block code)."""
+    import math
+    while True:
+        a, b = raw(2).tolist()
+        layer = 255 - (b >> 24)
+        x = (2.0 * (((a >> 3) * 16777216 + (b & 0xFFFFFF)) / 9007199254740992.0) - 1.0) * edge[layer]
+        if abs(x) < edge[layer + 1]:
+            return x
+        if layer == 0:  # beyond the last edge: sample the tail
+            while True:
+                tx = -math.log(_uniform53(raw) or 2.0 ** -53) / r
+                ty = -math.log(_uniform53(raw) or 2.0 ** -53)
+                if ty + ty >= tx * tx:
+                    return (r + tx) if x > 0 else -(r + tx)
+        y = height[layer] + _uniform53(raw) * (height[layer + 1] - height[layer])
+        if y < math.exp(-0.5 * x * x):  # the wedge between two layers
+            return x
+
+
+def normal(interp, count: int) -> np.ndarray:
+    """Standard normal numbers from the twister by the ziggurat method.
+
+    Each number is a 53-bit uniform scaled to (-1, 1) times the edge of a layer (see _pairs for
+    how the bits are used). A candidate outside the layer's inner rectangle draws one more
+    uniform for the wedge (or two per attempt for the tail). Checked against the values MATLAB
+    prints for randn after rng default.
+    """
+    import math
+    gen = _rng(interp)
+    bits = gen.bit_generator
+    if not isinstance(bits, np.random.MT19937):
+        return gen.standard_normal(count)
+    edges, r, edge_list, height_list = _ziggurat()
+    if count <= 64:  # a few numbers: one at a time is quicker than saving and restoring the state
+        raw = bits.random_raw
+        return np.array([_normal_one(raw, edge_list, height_list, r) for _ in range(count)])
+    out = np.empty(count)
+    filled = 0
+    extra = 32
+    while filled < count:
+        need = count - filled
+        m = need + max(extra, need // 16)
+        saved = bits.state
+        u01, layer = _pairs(bits.random_raw(2 * m))
+        x = (2.0 * u01 - 1.0) * edges[layer]
+        slow = np.flatnonzero(np.abs(x) >= edges[layer + 1])
+        keep = np.ones(m, dtype=bool)
+        ends: dict[int, int] = {}  # slow candidate -> last pair it consumed
+        busy = -1
+        for j in slow.tolist():
+            if j <= busy:
+                continue  # this pair was consumed as an extra uniform
+            k = j + 1
+            xj = float(x[j])
+            if layer[j] == 0:  # beyond the last edge: sample the tail
+                done = False
+                while k + 1 < m:
+                    tx = -math.log(float(u01[k]) or 2.0 ** -53) / r
+                    ty = -math.log(float(u01[k + 1]) or 2.0 ** -53)
+                    k += 2
+                    if ty + ty >= tx * tx:
+                        x[j] = (r + tx) if xj > 0 else -(r + tx)
+                        done = True
+                        break
+                if not done:
+                    m = j  # the block ended in the middle of this candidate: redo from it
+                    break
+                keep[j + 1:k] = False
+                busy = k - 1
+            else:  # the wedge between two layers: one more uniform decides
+                if k >= m:
+                    m = j
+                    break
+                i = int(layer[j])
+                y = height_list[i] + float(u01[k]) * (height_list[i + 1] - height_list[i])
+                keep[j] = y < math.exp(-0.5 * xj * xj)
+                keep[k] = False
+                busy = k
+            ends[j] = busy
+        good = np.flatnonzero(keep[:m])
+        if good.size >= need:
+            last = int(good[need - 1])
+            used = ends.get(last, last) + 1
+            good = good[:need]
+        else:
+            used = m
+        bits.state = saved  # only part of the block may be needed: consume exactly the pairs used
+        if used:
+            bits.random_raw(2 * used)
+        else:
+            extra *= 4
+        out[filled:filled + good.size] = x[good]
+        filled += good.size
+    return out
 
 
 @builtin("randn")
@@ -83,25 +245,35 @@ def _randn(interp, args, nargout):
     if _legacy_seed(interp, args):
         return None
     shape, cls = dims_from_args(args, "randn")
-    return cast_class(_rng(interp).standard_normal(shape), cls)
+    count = int(np.prod(shape, dtype=np.int64))
+    return cast_class(normal(interp, count).reshape(shape, order="F"), _float_class(cls, "randn"))
 
 
 @builtin("randi")
 def _randi(interp, args, nargout):
     nargs(args, 1, None, "randi")
     lim = num(args[0]).flatten()
+    if lim.size not in (1, 2) or np.any(lim != np.floor(lim)):
+        raise MatlabError("randi: the range must be an integer imax or a pair [imin imax].")
     lo, hi = (1, int(lim[0])) if lim.size == 1 else (int(lim[0]), int(lim[1]))
-    shape, _ = dims_from_args(args[1:], "randi")
-    return _rng(interp).integers(lo, hi + 1, size=shape).astype(float)
+    if hi < lo:
+        raise MatlabError("randi: the upper limit must not be less than the lower limit.")
+    shape, cls = dims_from_args(args[1:], "randi")
+    vals = lo + np.floor(uniform(interp, shape) * (hi - lo + 1))
+    if cls == "logical":
+        raise MatlabError("randi: the class must be numeric.")
+    return cast_class(vals, cls)
 
 
 @builtin("randperm")
 def _randperm(interp, args, nargout):
     n = to_int(args[0], "n")
-    p = _rng(interp).permutation(n) + 1.0
-    if len(args) > 1:
-        p = p[: to_int(args[1], "k")]
-    return p.reshape(1, -1)
+    k = to_int(args[1], "k") if len(args) > 1 else n
+    if n < 0 or k < 0 or k > n:
+        raise MatlabError("randperm: K must be between 0 and N.")
+    # the order that sorts n uniform numbers
+    p = np.argsort(_rng(interp).random(n), kind="stable") + 1.0
+    return p[:k].reshape(1, -1)
 
 
 @builtin("linspace")

@@ -1553,51 +1553,11 @@ def _parse_cell(s: str):
 
 @builtin("readtable")
 def _readtable(interp, args, nargout):
-    fname = text(args[0])
-    _, opts = _split_opts(list(args[1:]), {"Delimiter", "ReadVariableNames", "TextType"})
-    delim = text(opts["Delimiter"]) if "Delimiter" in opts else None
-    with open(fname, newline="", encoding="utf-8-sig") as fh:
-        sample = fh.read(4096)
-        fh.seek(0)
-        if delim is None:
-            try:
-                delim = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
-            except csv.Error:
-                delim = ","
-        rows = [r for r in csv.reader(fh, delimiter=delim)]
-    rows = [r for r in rows if any(c.strip() for c in r)]
-    read_names = not ("ReadVariableNames" in opts and not bool(num(opts["ReadVariableNames"]).flat[0]))
-    if read_names and rows:
-        header, body = rows[0], rows[1:]
-    else:
-        header, body = [f"Var{k + 1}" for k in range(len(rows[0]) if rows else 0)], rows
-    import re
-    names = []
-    for k, h in enumerate(header):
-        clean = re.sub(r"\W", "_", h.strip()) or f"Var{k + 1}"
-        if clean[0].isdigit():
-            clean = "x" + clean
-        while clean in names:
-            clean += "_1"
-        names.append(clean)
-    as_string = "TextType" in opts and text(opts["TextType"]) == "string"
-    cols = []
-    for k in range(len(names)):
-        raw = [r[k] if k < len(r) else "" for r in body]
-        parsed = [_parse_cell(x) for x in raw]
-        if all(p is not None for p in parsed):
-            cols.append(np.array(parsed, dtype=float).reshape(-1, 1))
-        elif as_string:
-            d = np.empty((len(raw), 1), dtype=object)
-            for i, x in enumerate(raw):
-                d[i, 0] = x
-            cols.append(StringArray(d))
-        else:
-            d = np.empty((len(raw), 1), dtype=object)
-            for i, x in enumerate(raw):
-                d[i, 0] = char(x)
-            cols.append(Cell(d))
-    return TableObject(names, cols)
+    """Read a delimited text file into a table (see _textimport for the options)."""
+    if not args:
+        raise MatlabError("readtable needs a file name.")
+    from . import _textimport
+    return _textimport.read_table(interp, list(args))
 
 
 @builtin("writetable")

@@ -371,6 +371,10 @@ def _mat2str(interp, args, nargout):
     if isinstance(v, MString):
         return char('"' + str(v).replace('"', '""') + '"')
     if is_char(v):
+        if v.ndim > 2:
+            raise MatlabError("mat2str: the input must be a 2-D array.")
+        if v.size == 0:
+            return char("''" if v.shape == (0, 0) else f"zeros({v.shape[0]},{v.shape[1]})")
         rows = ["'" + "".join(r).replace("'", "''") + "'" for r in v] if v.shape[0] != 1 else \
             ["'" + to_str(v).replace("'", "''") + "'"]
         return char(rows[0] if len(rows) == 1 else "[" + ";".join(rows) + "]")

@@ -5002,6 +5002,16 @@ class VideoWriterObject(MObject):
         ext = os.path.splitext(self.path)[1].lower()
         fps = float(self.props["FrameRate"])
         target = self.path
+        if ext == ".avi":  # Motion JPEG and uncompressed AVI files need no external program
+            from . import _avi
+            mode = {"uncompressed avi": "raw", "grayscale avi": "gray", "indexed avi": "raw"}.get(
+                self.profile.lower(), "mjpeg")
+            try:
+                _avi.write(self.path, self._frames(), self.shape, fps, float(self.props["Quality"]), mode)
+            except OSError as e:
+                raise MatlabError(f"Cannot write '{target}': {e.strerror or e}") from e
+            self.written = target
+            return
         if ext != ".gif":
             exe = _find_ffmpeg()
             if exe is not None and self._ffmpeg(exe, ext, fps):

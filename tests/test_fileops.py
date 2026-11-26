@@ -96,8 +96,10 @@ def test_fread_precision_conversions(f):
     assert f.num("z").dtype == bool and f.num("z").tolist() == [[True, True, False, True, True]]
     with pytest.raises(MatlabError, match="precision"):
         f.run("fid = fopen(p); fread(fid, 1, 'uint7');")
-    with pytest.raises(MatlabError, match="not supported"):
-        f.run("fread(fid, 1, 'ubit3');")
+    with pytest.raises(MatlabError, match="between 1 and 64"):
+        f.run("fread(fid, 1, 'ubit99');")
+    f.run("frewind(fid); b = fread(fid, 1, 'ubit3');")  # bit fields are supported (65 = 0b01000001)
+    assert scalar(f, "b") == 1
     f.run("fclose('all');")
 
 

@@ -698,15 +698,31 @@ def _verlessthan(interp, args, nargout):
     return bool_scalar(pad(mine) < pad(wanted))
 
 
+_RELEASE_STAGES = {"prerelease": 0, "release": 1}
+
+
 @builtin("isMATLABReleaseOlderThan")
 def _is_release_older(interp, args, nargout):
-    nargs(args, 1, None, "isMATLABReleaseOlderThan")
+    """isMATLABReleaseOlderThan(release), (release, stage), (release, stage, update)."""
+    nargs(args, 1, 3, "isMATLABReleaseOlderThan")
+    import re
+
     from .system import MATLAB_RELEASE
-    key = lambda r: (int(r[1:5]), r[5:6].lower())
     want = text(args[0], "release")
-    if len(want) < 6 or not want[1:5].isdigit():
+    if not re.fullmatch(r"R\d{4}[abAB]", want):
         raise MatlabError("isMATLABReleaseOlderThan: the release must look like 'R2021b'.")
-    return bool_scalar(key(MATLAB_RELEASE) < key(want))
+    stage = "release"
+    if len(args) > 1:
+        stage = text(args[1], "release stage").lower()
+        if stage not in _RELEASE_STAGES:
+            raise MatlabError("isMATLABReleaseOlderThan: the stage must be 'release' or 'prerelease'.")
+    update = to_int(args[2], "update number") if len(args) > 2 else 0
+    if update < 0:
+        raise MatlabError("isMATLABReleaseOlderThan: the update number must not be negative.")
+    # mylab reports itself as the general release of MATLAB_RELEASE, update 0
+    mine = (int(MATLAB_RELEASE[1:5]), MATLAB_RELEASE[5:6].lower(), _RELEASE_STAGES["release"], 0)
+    theirs = (int(want[1:5]), want[5:6].lower(), _RELEASE_STAGES[stage], update)
+    return bool_scalar(mine < theirs)
 
 
 @builtin("usejava")
@@ -921,7 +937,21 @@ def _evalin(interp, args, nargout):
 
 @builtin("inputname")
 def _inputname(interp, args, nargout):
-    return char("")
+    """inputname(k): the caller's variable name of the k-th argument of the running function."""
+    nargs(args, 1, 2, "inputname")
+    k = to_int(args[0], "argument number")
+    frame = interp.frame
+    if frame is interp.base:
+        return char("")  # there is no calling function at the prompt
+    if k < 1 or k > frame.nargin:
+        raise MatlabError(f"inputname: argument number {k} is not one of the {frame.nargin} inputs passed "
+                          "to the function.", "MATLAB:inputname:argNumberNotValid")
+    names = getattr(frame, "arg_names", None) or []
+    name = names[k - 1] if k <= len(names) and names[k - 1] else ""
+    if name == "" and len(args) > 1 and bool(np.asarray(args[1]).any()):
+        raise MatlabError(f"inputname: argument number {k} is not a plain variable in the calling code.",
+                          "MATLAB:inputname:noVariableName")
+    return char(name)
 
 
 class _Diary:
