@@ -30,3 +30,9 @@ Made after the first merge:
 - `system/held_out#01`: `a = tic; b = tic; toc(a) >= toc(b)` is not always
   true, because the second `toc` is measured later. Replaced by a check that
   `toc` is not negative.
+- test_one_argument_functions (again, Windows runner, Python 3.14):
+  `sum([-Inf 3 Inf 1 -1 3 NaN])` gave NaN on one path and -NaN on the other.
+  `Inf + -Inf` makes a NaN of its own (negative on x86), so the sum meets two
+  NaNs and IEEE 754 does not say which one comes out. A NaN made inside a
+  reduction (`Inf + -Inf`, `0 * Inf`) now counts towards the "two or more
+  NaNs" rule; with one NaN source the sign is still compared bit for bit.

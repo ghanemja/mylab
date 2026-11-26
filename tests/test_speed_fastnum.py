@@ -106,6 +106,7 @@ ONE_ARG = ["sum", "prod", "cumsum", "max", "min", "any", "all", "abs", "round", 
 # Reductions over two or more NaNs: IEEE 754 makes the result one of the input NaNs without saying which, and
 # the order of summation (NumPy's vector loops, which depend on the CPU) decides it: sum([NaN -NaN ...]) gave
 # NaN on one path and -NaN on the other on GitHub's runners. There the result must be NaN, of either sign.
+# A NaN made inside the reduction (Inf + -Inf) counts as one of the two.
 _REDUCTIONS = {"sum", "prod", "mean", "cumsum", "cumprod", "max", "min", "median", "std", "var", "norm", "dot"}
 
 
@@ -115,13 +116,23 @@ def _nan_blind(v):
     return v
 
 
+def _nan_sources(v):
+    """How many NaNs a reduction over v can meet: the NaNs in v, plus one made along the way by Inf + -Inf
+    (sums) or 0 * Inf (products). sum([-Inf Inf NaN]) is one of two NaNs, the made one (negative on x86)
+    or the given one, depending on the order of the additions (Windows runner, Python 3.14)."""
+    re = v.real if v.dtype.kind == "c" else v
+    made = int(bool(np.any(re == np.inf) and np.any(re == -np.inf)))
+    made += int(bool(np.any(np.isinf(re)) and np.any(re == 0)))
+    return np.count_nonzero(np.isnan(v)) + made
+
+
 @pytest.mark.parametrize("name", ONE_ARG)
 def test_one_argument_functions(name):
     rng = np.random.default_rng(abs(hash(name)) % 1000)
     interp = Interpreter()
     for v in vectors(rng) + other_inputs() + [np.array([[x]]) for x in edge_values()]:
         if name in _REDUCTIONS and isinstance(v, np.ndarray) and v.dtype.kind in "fc" \
-                and np.count_nonzero(np.isnan(v)) > 1:
+                and _nan_sources(v) > 1:
             fast, slow = on_and_off(lambda: _nan_blind(call(interp, name, [v], 1)))
             assert describe(fast) == describe(slow), f"{name}({v!r}): fast {fast!r} != general {slow!r}"
             continue
