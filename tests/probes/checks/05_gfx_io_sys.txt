@@ -1,0 +1,164 @@
+### graphics/export *
+f = figure('Visible', 'off'); h = plot(1:10); print(f, '-dpng', 'p.png'); d = dir('p.png'); assert(numel(d) == 1 && d.bytes > 500);
+f = figure('Visible', 'off'); plot(1:3); saveas(f, 's.png'); assert(exist('s.png', 'file') == 2);
+f = figure('Visible', 'off'); plot(1:3); exportgraphics(f, 'e.png'); assert(exist('e.png', 'file') == 2);
+f = figure('Visible', 'off'); plot(1:3); exportgraphics(gca, 'e.pdf'); assert(exist('e.pdf', 'file') == 2);
+f = figure('Visible', 'off'); plot(1:3); print(f, '-dpdf', 'q.pdf'); assert(exist('q.pdf', 'file') == 2);
+f = figure('Visible', 'off'); plot(1:3); print(f, '-dsvg', 'q.svg'); assert(exist('q.svg', 'file') == 2);
+f = figure('Visible', 'off'); plot(1:3); print(f, '-depsc', 'q.eps'); assert(exist('q.eps', 'file') == 2);
+f = figure('Visible', 'off'); plot(1:3); savefig(f, 'q.fig'); close(f); g = openfig('q.fig', 'invisible'); assert(isgraphics(g));
+f = figure('Visible', 'off'); plot(1:3); F = getframe(f); assert(size(F.cdata, 3) == 3);
+f = figure('Visible', 'off'); plot(1:3); print(f, '-dpng', '-r300', 'hi.png'); a = imfinfo('hi.png'); assert(a.Width > 1000);
+
+### graphics/handles_and_properties *
+figure('Visible', 'off'); h = plot(1:10); set(h, 'LineWidth', 2); assert(get(h, 'LineWidth') == 2);
+figure('Visible', 'off'); h = plot([1 2 3], [4 5 6], 'r--o'); assert(isequal(h.YData, [4 5 6]) && strcmp(h.LineStyle, '--') && strcmp(h.Marker, 'o') && isequal(h.Color, [1 0 0]));
+figure('Visible', 'off'); plot(1:3); ax = gca; ax.XLim = [0 5]; assert(isequal(xlim, [0 5])); ylim([0 10]); assert(isequal(ax.YLim, [0 10]));
+figure('Visible', 'off'); plot(1:3); xlabel('x'); ylabel('y'); title('t'); ax = gca; assert(strcmp(ax.XLabel.String, 'x') && strcmp(ax.Title.String, 't'));
+figure('Visible', 'off'); plot(1:3); hold on; plot(3:-1:1); l = legend('a', 'b'); assert(numel(l.String) == 2 && numel(get(gca, 'Children')) == 2);
+figure('Visible', 'off'); h = plot(1:3, [1 2 3; 4 5 6]'); assert(numel(h) == 2);
+figure('Visible', 'off'); subplot(2, 1, 1); plot(1:3); subplot(2, 1, 2); plot(1:3); assert(numel(findobj(gcf, 'Type', 'axes')) == 2);
+f = figure('Visible', 'off'); assert(isgraphics(f) && ishandle(f)); close(f); assert(~ishandle(f));
+f2 = figure('Visible', 'off', 'Position', [10 10 300 200]); p = f2.Position; assert(isequal(p(3:4), [300 200]));
+figure('Visible', 'off'); h = plot(1:3); delete(h); assert(isempty(get(gca, 'Children'))); cla; clf;
+figure('Visible', 'off'); ax1 = subplot(1, 2, 1); ax2 = subplot(1, 2, 2); linkaxes([ax1 ax2], 'x'); xlim(ax1, [0 9]); assert(isequal(xlim(ax2), [0 9]));
+figure('Visible', 'off'); plot(1:3); set(gca, 'XTick', [1 2 3], 'XTickLabel', {'a', 'b', 'c'}, 'FontSize', 14); assert(get(gca, 'FontSize') == 14);
+figure('Visible', 'off'); plot(1:3); xticks([1 3]); assert(isequal(xticks, [1 3])); xtickangle(45);
+figure('Visible', 'off'); semilogy(1:3, [1 10 100]); ax = gca; assert(strcmp(ax.YScale, 'log'));
+figure('Visible', 'off'); plot(1:3); grid on; box on; axis tight; axis equal; axis([0 4 0 4]); a = axis; assert(isequal(a, [0 4 0 4]));
+figure('Visible', 'off'); h = plot(1:3); h.XData = [2 3 4]; h.Color = 'b'; h.DisplayName = 'q'; assert(isequal(h.XData, [2 3 4]) && isequal(h.Color, [0 0 1]));
+figure('Visible', 'off'); ax = axes('Position', [0.1 0.1 0.5 0.5]); assert(isequal(ax.Position, [0.1 0.1 0.5 0.5]));
+figure('Visible', 'off'); h = text(0.5, 0.5, 'hi'); assert(strcmp(h.String, 'hi')); h.FontSize = 20; assert(h.FontSize == 20);
+figure('Visible', 'off'); plot(1:3); t = title('a'); t.String = 'b'; t.Color = 'r'; ax = gca; assert(strcmp(ax.Title.String, 'b'));
+figure('Visible', 'off'); plot(1:3); c = colorbar; colormap(jet(16)); m = colormap; assert(isequal(size(m), [16 3]));
+
+### graphics/plot_types *
+figure('Visible', 'off'); t = tiledlayout(2, 2); nexttile; plot(1:3); nexttile; plot(1:3); assert(numel(findobj(gcf, 'Type', 'axes')) == 2);
+figure('Visible', 'off'); b = bar([1 2 3]); assert(isequal(b.YData, [1 2 3]));
+figure('Visible', 'off'); h = histogram([1 2 2 3 3 3], 3); assert(isequal(h.Values, [1 2 3]));
+figure('Visible', 'off'); s = scatter([1 2], [3 4], 20, 'filled'); assert(isequal(s.XData, [1 2]));
+figure('Visible', 'off'); [X, Y] = meshgrid(1:3); s = surf(X, Y, X + Y); assert(isequal(size(s.ZData), [3 3])); view(2);
+figure('Visible', 'off'); [C, h] = contour(peaks(10)); assert(~isempty(C)); contourf(peaks(10)); mesh(peaks(10));
+figure('Visible', 'off'); h = imagesc(magic(4)); assert(isequal(size(h.CData), [4 4])); axis image; axis off;
+figure('Visible', 'off'); errorbar(1:3, [1 2 3], [0.1 0.1 0.1]); stairs(1:3); stem(1:3); area(1:3); pie([1 2 3]);
+figure('Visible', 'off'); loglog(1:3, 1:3); semilogx(1:3, 1:3); plot3(1:3, 1:3, 1:3); quiver(1, 1, 1, 1);
+figure('Visible', 'off'); fill([0 1 1], [0 0 1], 'r'); patch([0 1 1], [0 0 1], 'b'); line([0 1], [0 1]); rectangle('Position', [0 0 1 1]);
+figure('Visible', 'off'); h = polarplot(0:0.1:1, 0:0.1:1); assert(~isempty(h));
+figure('Visible', 'off'); yyaxis left; plot(1:3); yyaxis right; plot(3:-1:1);
+figure('Visible', 'off'); plot(1:3); xline(2); yline(2); sgtitle('all');
+figure('Visible', 'off'); h = fplot(@sin, [0 pi]); assert(~isempty(h));
+figure('Visible', 'off'); fsurf(@(x, y) x + y); fimplicit(@(x, y) x.^2 + y.^2 - 1);
+figure('Visible', 'off'); boxplot([1 2 3 4 10]);
+figure('Visible', 'off'); h = heatmap([1 2; 3 4]); assert(~isempty(h));
+figure('Visible', 'off'); h = animatedline; addpoints(h, 1, 1); addpoints(h, 2, 2); [x, y] = getpoints(h); assert(isequal(x, [1 2])); drawnow;
+figure('Visible', 'off'); plot(datetime(2024, 1, 1:3), [1 2 3]); ax = gca; assert(isa(ax.XLim, 'datetime'));
+figure('Visible', 'off'); histogram2(randn(100, 1), randn(100, 1));
+figure('Visible', 'off'); scatter3(1:3, 1:3, 1:3); bar3(magic(3)); barh([1 2 3]); surfc(peaks(10)); waterfall(peaks(10));
+figure('Visible', 'off'); h = annotation('textbox', [0.1 0.1 0.2 0.2], 'String', 'hi'); assert(~isempty(h));
+figure('Visible', 'off'); surf(peaks(10)); lighting gouraud; camlight; material shiny; shading interp; daspect([1 1 1]); view(3);
+figure('Visible', 'off'); geoplot([40 41], [-74 -73]);
+figure('Visible', 'off'); swarmchart([1 1 1 2 2 2], [1 2 3 1 2 3]); bubblechart([1 2], [1 2], [1 2]);
+figure('Visible', 'off'); p = plot(graph([1 2], [2 3])); assert(~isempty(p));
+figure('Visible', 'off'); image(uint8(magic(4))); imshow(uint8(magic(8) * 3));
+figure('Visible', 'off'); stackedplot(table([1; 2; 3], [4; 5; 6]));
+figure('Visible', 'off'); [x, y, z] = sphere(8); surf(x, y, z); isosurface(rand(4, 4, 4), 0.5);
+figure('Visible', 'off'); pcolor(magic(4)); streamline(1:3, 1:3, ones(3), ones(3), 1, 1); comet(1:3);
+figure('Visible', 'off'); pareto([3 2 1]); scatterhistogram(table([1; 2; 3], [3; 1; 2])); parallelplot(magic(4));
+figure('Visible', 'off'); plotmatrix(rand(10, 3)); spy(speye(3)); compass(1, 1); feather(1, 1); rose([1 2 3]);
+
+### io/text_files *
+fid = fopen('t.txt', 'w'); fprintf(fid, 'a %d\nb %d\n', 1, 2); fclose(fid); assert(strcmp(fileread('t.txt'), sprintf('a 1\nb 2\n')));
+fid = fopen('t.txt', 'w'); fprintf(fid, 'l1\nl2\n'); fclose(fid); fid = fopen('t.txt'); a = fgetl(fid); b = fgets(fid); c = fgetl(fid); fclose(fid); assert(strcmp(a, 'l1') && strcmp(b, sprintf('l2\n')) && isequal(c, -1));
+fid = fopen('t.txt', 'w'); fprintf(fid, '1 2\n3 4\n'); fclose(fid); fid = fopen('t.txt'); A = fscanf(fid, '%d', [2 Inf]); fclose(fid); assert(isequal(A, [1 3; 2 4]));
+fid = fopen('t.txt', 'w'); fprintf(fid, 'x,1\ny,2\n'); fclose(fid); fid = fopen('t.txt'); C = textscan(fid, '%s %f', 'Delimiter', ','); fclose(fid); assert(isequal(C{1}, {'x'; 'y'}) && isequal(C{2}, [1; 2]));
+C = textscan('1,2;3,4', '%f %f', 'Delimiter', ',', 'EndOfLine', ';'); assert(isequal([C{:}], [1 2; 3 4]));
+C = textscan(sprintf('h1 h2\n1 2\n3 4'), '%f %f', 'HeaderLines', 1); assert(isequal(C{2}, [2; 4]));
+assert(isequal(sscanf('3 4 5', '%d')', [3 4 5]) && isequal(sscanf('1,2', '%d,%d')', [1 2]) && sscanf('x=12', 'x=%d') == 12);
+[a, n] = sscanf('1.5 abc', '%f'); assert(a == 1.5 && n == 1); s = sscanf('hello world', '%s'); assert(strcmp(s, 'helloworld'));
+writematrix([1 2; 3 4], 'm.txt', 'Delimiter', '\t'); assert(isequal(readmatrix('m.txt'), [1 2; 3 4]));
+writematrix([1 2; 3 4], 'm.csv'); assert(isequal(readmatrix('m.csv'), [1 2; 3 4]));
+dlmwrite('d.txt', [1 2; 3 4]); assert(isequal(dlmread('d.txt'), [1 2; 3 4])); csvwrite('c.csv', [5 6]); assert(isequal(csvread('c.csv'), [5 6]));
+writelines(["a", "b"], 'w.txt'); L = readlines('w.txt'); assert(L(1) == "a" && L(2) == "b");
+writecell({1, 'a'; 2, 'b'}, 'wc.csv'); C = readcell('wc.csv'); assert(isequal(C, {1, 'a'; 2, 'b'}));
+fid = fopen('h.txt', 'w'); fprintf(fid, 'a b\n1 2\n3 4\n'); fclose(fid); S = importdata('h.txt'); assert(isequal(S.data, [1 2; 3 4]) && isequal(S.colheaders, {'a', 'b'}));
+[p, n, e] = fileparts('/a/b/c.txt'); assert(strcmp(p, '/a/b') && strcmp(n, 'c') && strcmp(e, '.txt')); assert(strcmp(fullfile('a', 'b', 'c.m'), ['a' filesep 'b' filesep 'c.m']));
+mkdir('sub'); assert(isfolder('sub') && exist('sub', 'dir') == 7); fclose(fopen(fullfile('sub', 'f.txt'), 'w')); d = dir(fullfile('sub', '*.txt')); assert(numel(d) == 1 && strcmp(d(1).name, 'f.txt')); copyfile(fullfile('sub', 'f.txt'), 'g.txt'); assert(isfile('g.txt')); movefile('g.txt', 'h2.txt'); delete('h2.txt'); assert(~isfile('h2.txt')); rmdir('sub', 's'); assert(~isfolder('sub'));
+t = tempname; assert(ischar(t)); assert(ischar(tempdir) && ischar(pwd)); old = cd; cd(old);
+fid = fopen('nonexistent_file.txt'); assert(fid == -1); [fid, msg] = fopen('nonexistent_file.txt'); assert(~isempty(msg));
+fid = fopen('o.csv', 'w'); fprintf(fid, 'a,b\n1,x\n2,y\n'); fclose(fid); opts = detectImportOptions('o.csv'); assert(isequal(opts.VariableNames, {'a', 'b'})); T = readtable('o.csv', opts); assert(height(T) == 2);
+fid = fopen('o.csv', 'w'); fprintf(fid, 'a;b\n1,5;x\n'); fclose(fid); T = readtable('o.csv', 'Delimiter', ';', 'DecimalSeparator', ','); assert(T.a == 1.5);
+fid = fopen('d.csv', 'w'); fprintf(fid, 'when,v\n2024-01-02,1\n2024-01-03,2\n'); fclose(fid); T = readtable('d.csv'); assert(isdatetime(T.when) && T.when(2) == datetime(2024, 1, 3));
+fid = fopen('ds.csv', 'w'); fprintf(fid, 'a,b\n1,2\n3,4\n'); fclose(fid); ds = tabularTextDatastore('ds.csv'); T = readall(ds); assert(height(T) == 2);
+fid = fopen('ty.txt', 'w'); fprintf(fid, 'hey'); fclose(fid); s = evalc('type ty.txt'); assert(~isempty(strfind(s, 'hey')));
+diary('dl.txt'); disp('logged'); diary off; assert(~isempty(strfind(fileread('dl.txt'), 'logged')));
+fid = fopen('u.txt', 'w', 'n', 'UTF-8'); fprintf(fid, '%s', 'héllo €'); fclose(fid); t = fileread('u.txt'); assert(strcmp(t, 'héllo €'));
+n = fprintf('%s', ''); assert(n == 0); n = fprintf('abc\n'); assert(n == 4); fprintf(2, 'to stderr\n');
+
+### io/binary_and_mat_files *
+fid = fopen('b.bin', 'w'); fwrite(fid, [1 2 3], 'uint16'); fclose(fid); fid = fopen('b.bin'); a = fread(fid, [1 3], 'uint16'); fclose(fid); assert(isequal(a, [1 2 3])); d = dir('b.bin'); assert(d.bytes == 6);
+fid = fopen('b.bin', 'w', 'ieee-be'); fwrite(fid, 258, 'uint16'); fclose(fid); fid = fopen('b.bin'); a = fread(fid, 2, 'uint8=>uint8'); fclose(fid); assert(isequal(a', uint8([1 2])));
+fid = fopen('b.bin', 'w'); fwrite(fid, 1:10, 'double'); fclose(fid); fid = fopen('b.bin'); fseek(fid, 16, 'bof'); a = fread(fid, 1, 'double'); p = ftell(fid); frewind(fid); assert(a == 3 && p == 24 && ftell(fid) == 0); fclose(fid);
+fid = fopen('b.bin', 'w'); fwrite(fid, 5, 'ubit3'); fwrite(fid, 2, 'ubit5'); fclose(fid); fid = fopen('b.bin'); a = fread(fid, 1, 'ubit3'); fclose(fid); assert(a == 5);
+x = 1:3; s.a = 'q'; c = {1, 'two'}; save('d.mat', 'x', 's', 'c'); clear x s c; load('d.mat'); assert(isequal(x, 1:3) && strcmp(s.a, 'q') && strcmp(c{2}, 'two'));
+x = int8([1 2]); y = sparse([1 0 2]); z = true; w = 'txt'; v = single(1.5); u = 3 + 4i; save('e.mat', 'x', 'y', 'z', 'w', 'v', 'u'); S = load('e.mat'); assert(isa(S.x, 'int8') && issparse(S.y) && islogical(S.z) && ischar(S.w) && isa(S.v, 'single') && S.u == 3 + 4i);
+x = magic(4); save('f.mat', 'x', '-v7.3'); S = load('f.mat'); assert(isequal(S.x, magic(4)));
+x = 1; save('g.mat', 'x'); y = 2; save('g.mat', 'y', '-append'); S = load('g.mat'); assert(S.x == 1 && S.y == 2); w = whos('-file', 'g.mat'); assert(numel(w) == 2);
+x = magic(4); save('h.mat', 'x'); m = matfile('h.mat'); assert(isequal(m.x(2, :), [5 11 10 8]));
+s = "str"; t = table([1; 2]); d = datetime(2024, 1, 1); save('i.mat', 's', 't', 'd'); S = load('i.mat'); assert(S.s == "str" && istable(S.t) && S.d == datetime(2024, 1, 1));
+x = [1.5 2.5]; save('a.txt', 'x', '-ascii'); y = load('a.txt'); assert(isequal(y, x));
+fid = fopen('mm.bin', 'w'); fwrite(fid, 1:4, 'double'); fclose(fid); m = memmapfile('mm.bin', 'Format', 'double'); assert(isequal(m.Data', 1:4));
+fclose(fopen('zf.txt', 'w')); zip('z.zip', 'zf.txt'); delete('zf.txt'); unzip('z.zip'); assert(isfile('zf.txt'));
+assert(isequal(typecast(uint8([1 0 0 0]), 'uint32'), uint32(1)) && swapbytes(uint16(1)) == 256);
+
+### io/data_formats *
+s = jsonencode(struct('a', 1, 'b', {{1, 'x'}})); assert(strcmp(s, '{"a":1,"b":[1,"x"]}'));
+d = jsondecode('{"p":[1,2,3],"q":{"r":"s"}}'); assert(isequal(d.p, [1; 2; 3]) && strcmp(d.q.r, 's'));
+M = [1 2 3; 4 5 6]; h5create('a.h5', '/d', [2 3]); h5write('a.h5', '/d', M); assert(isequal(h5read('a.h5', '/d'), M));
+s.a = 1; s.b = 'x'; writestruct(s, 's.xml'); r = readstruct('s.xml'); assert(r.a == 1);
+fid = fopen('x.xml', 'w'); fprintf(fid, '<r><i v="1">t</i></r>'); fclose(fid); d = xmlread('x.xml'); n = d.getElementsByTagName('i'); assert(n.getLength() == 1);
+nccreate('a.nc', 'v', 'Dimensions', {'x', 3}); ncwrite('a.nc', 'v', [1 2 3]); assert(isequal(ncread('a.nc', 'v'), [1; 2; 3]));
+writematrix([1 2; 3 4], 'a.xlsx'); assert(isequal(readmatrix('a.xlsx'), [1 2; 3 4]));
+T = table([1; 2], {'a'; 'b'}, 'VariableNames', {'n', 's'}); writetable(T, 'b.xlsx'); R = readtable('b.xlsx'); assert(isequal(R.n, [1; 2]) && isequal(R.s, {'a'; 'b'}));
+xlswrite('c.xlsx', [1 2; 3 4]); assert(isequal(xlsread('c.xlsx'), [1 2; 3 4]));
+y = sin(2 * pi * 440 * (0:799)' / 8000); audiowrite('a.wav', y, 8000); [z, fs] = audioread('a.wav'); assert(fs == 8000 && numel(z) == 800 && max(abs(z - y)) < 1e-3);
+audiowrite('a.flac', zeros(100, 1), 8000); [z, fs] = audioread('a.flac'); assert(fs == 8000);
+v = VideoWriter('v.avi'); open(v); writeVideo(v, uint8(zeros(32, 32, 3))); writeVideo(v, uint8(255 * ones(32, 32, 3))); close(v); assert(exist('v.avi', 'file') == 2);
+v = VideoWriter('v.avi'); open(v); writeVideo(v, uint8(zeros(32, 32, 3))); close(v); r = VideoReader('v.avi'); f = readFrame(r); assert(isequal(size(f), [32 32 3]));
+
+### system/environment *
+t = tic; pause(0.01); e = toc(t); assert(e >= 0.005);
+f = @() sum(1:1000); t = timeit(f); assert(t > 0 && t < 1);
+assert(ischar(computer) && (ispc + isunix + ismac >= 1) && ischar(version));
+v = ver; assert(isstruct(v)); assert(~verLessThan('matlab', '7.0'));
+setenv('MYLAB_PROBE', 'yes'); assert(strcmp(getenv('MYLAB_PROBE'), 'yes'));
+[st, out] = system('echo hi'); assert(st == 0 && strcmp(strtrim(out), 'hi'));
+addpath(pwd); p = path; assert(~isempty(strfind(p, pwd))); rmpath(pwd);
+assert(any(exist('sin') == [2 5])); assert(exist('nonexistent_thing_xyz') == 0); assert(~isempty(which('sin')));
+assert(~isMATLABReleaseOlderThan('R2016a'));
+assert(~isdeployed && islogical(usejava('jvm')));
+s = evalc('help sin'); assert(numel(s) > 20);
+x = 5; s = whos('x'); assert(strcmp(s.class, 'double') && s.bytes == 8);
+m = memoize(@(x) x^2); assert(m(3) == 9 && m(3) == 9);
+y = zeros(1, 4); parfor i = 1:4, y(i) = i^2; end; assert(isequal(y, [1 4 9 16]));
+f = parfeval(@max, 1, [1 5 2]); assert(fetchOutputs(f) == 5);
+g = gpuArray([1 2 3]); assert(gather(sum(g)) == 6);
+t = timer('TimerFcn', @(~, ~) disp('tick'), 'StartDelay', 0.01); start(t); wait(t); delete(t);
+a = py.math.sqrt(16); assert(double(a) == 4);
+s = java.lang.String('abc'); assert(s.length() == 3);
+al = javaObject('java.util.ArrayList'); al.add(5); assert(al.size() == 1);
+fid = fopen('addone.c', 'w'); fprintf(fid, '#include "mex.h"\nvoid mexFunction(int nl, mxArray *pl[], int nr, const mxArray *pr[]) { pl[0] = mxCreateDoubleScalar(mxGetScalar(pr[0]) + 1); }\n'); fclose(fid); mex('addone.c'); assert(addone(1) == 2);
+u = matlab.lang.makeValidName('1 bad name'); assert(strcmp(u, 'x1BadName'));
+assert(isvarname('a1') && ~isvarname('1a') && iskeyword('for'));
+h = str2func('sin'); f = functions(h); assert(strcmp(f.function, 'sin'));
+profile on; x = sum(1:10); profile off; p = profile('info'); assert(isstruct(p));
+c = computer('arch'); assert(ischar(c)); n = maxNumCompThreads; assert(n >= 1);
+w = warning('query', 'MATLAB:singularMatrix'); assert(isfield(w, 'state')); s = lasterr; assert(ischar(s));
+b = dbstack; assert(isstruct(b));
+
+### system/random_streams *
+r = rand(3); assert(all(r(:) >= 0 & r(:) < 1)); rng(42); a = rand; rng(42); b = rand; assert(a == b); s = rng; assert(isstruct(s));
+rng(0, 'twister'); r = rand; assert(abs(r - 0.814723686393179) < 1e-12, sprintf('%.15f', r));
+rng(0, 'twister'); r = randn; assert(abs(r - 0.537667139546100) < 1e-12, sprintf('%.15f', r));
+rng(0, 'twister'); r = randi(10, 1, 5); assert(isequal(r, [9 10 2 10 7]), mat2str(r));
+rng('default'); r = rand(1, 2); assert(abs(r(2) - 0.905791937075619) < 1e-12);
+rng(1); x = randperm(10); assert(isequal(sort(x), 1:10)); y = randi([5 7], 1, 20); assert(all(y >= 5 & y <= 7)); z = randn(2, 3); assert(isequal(size(z), [2 3]));

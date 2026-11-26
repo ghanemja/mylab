@@ -1,0 +1,307 @@
+### oop/held_out_value_and_handle
+@file Stack.m
+classdef Stack < handle
+    properties (SetAccess = private)
+        items = {}
+    end
+    properties (Dependent)
+        Count
+    end
+    methods
+        function push(obj, x)
+            obj.items{end+1} = x;
+        end
+        function x = pop(obj)
+            if isempty(obj.items), error('Stack:empty', 'stack is empty'); end
+            x = obj.items{end}; obj.items(end) = [];
+        end
+        function n = get.Count(obj)
+            n = numel(obj.items);
+        end
+    end
+end
+@file Temp.m
+classdef Temp
+    properties
+        C = 0
+    end
+    properties (Dependent)
+        F
+    end
+    methods
+        function obj = Temp(c)
+            if nargin, obj.C = c; end
+        end
+        function f = get.F(obj)
+            f = obj.C * 9 / 5 + 32;
+        end
+        function obj = set.F(obj, f)
+            obj.C = (f - 32) * 5 / 9;
+        end
+        function obj = warm(obj, d)
+            obj.C = obj.C + d;
+        end
+        function r = plus(a, b)
+            r = Temp(a.C + b.C);
+        end
+        function tf = lt(a, b)
+            tf = a.C < b.C;
+        end
+        function s = char(obj)
+            s = sprintf('%.1f C', obj.C);
+        end
+    end
+    methods (Static)
+        function t = boiling()
+            t = Temp(100);
+        end
+    end
+end
+@main
+s = Stack(); s.push(1); s.push('two'); assert(s.Count == 2); assert(strcmp(s.pop(), 'two')); assert(s.Count == 1);
+t = s; t.push(5); assert(s.Count == 2); ok = false; try, s.items = {}; catch, ok = true; end; assert(ok);
+s.pop(); s.pop(); id = ''; try, s.pop(); catch e, id = e.identifier; end; assert(strcmp(id, 'Stack:empty'));
+a = Temp(100); assert(a.F == 212); a.F = 32; assert(abs(a.C) < 1e-12); b = a.warm(10); assert(a.C == 0 && b.C == 10);
+c = Temp(1) + Temp(2); assert(c.C == 3); assert(Temp(1) < Temp(2)); assert(strcmp(char(Temp(21.55)), '21.6 C') || strcmp(char(Temp(21.55)), '21.5 C'));
+assert(Temp.boiling().C == 100); x = Temp.boiling(); assert(isa(x, 'Temp') && ~isa(x, 'handle')); assert(isequal(Temp(5), Temp(5)) && ~isequal(Temp(5), Temp(6)));
+
+### oop/held_out_inheritance_chain
+@file Vehicle.m
+classdef Vehicle < handle
+    properties
+        wheels = 4
+        log = {}
+    end
+    properties (Constant)
+        Kind = 'vehicle'
+    end
+    methods
+        function obj = Vehicle(w)
+            if nargin, obj.wheels = w; end
+            obj.log{end+1} = 'Vehicle';
+        end
+        function d = describe(obj)
+            d = sprintf('%d wheels', obj.wheels);
+        end
+        function n = horn(~)
+            n = 'beep';
+        end
+    end
+    methods (Access = protected)
+        function v = secret(~)
+            v = 42;
+        end
+    end
+end
+@file Truck.m
+classdef Truck < Vehicle
+    properties
+        load = 0
+    end
+    methods
+        function obj = Truck(l)
+            obj@Vehicle(6);
+            obj.load = l;
+            obj.log{end+1} = 'Truck';
+        end
+        function d = describe(obj)
+            d = [describe@Vehicle(obj) sprintf(', load %d', obj.load)];
+        end
+        function v = reveal(obj)
+            v = obj.secret() + 1;
+        end
+    end
+end
+@file BigTruck.m
+classdef BigTruck < Truck
+    methods
+        function obj = BigTruck()
+            obj@Truck(99);
+        end
+        function n = horn(~)
+            n = 'HONK';
+        end
+    end
+end
+@main
+b = BigTruck(); assert(strcmp(b.describe(), '6 wheels, load 99')); assert(strcmp(b.horn(), 'HONK')); assert(isequal(b.log, {'Vehicle', 'Truck'}));
+assert(isa(b, 'Vehicle') && isa(b, 'Truck') && isa(b, 'handle')); assert(b.reveal() == 43); assert(strcmp(BigTruck.Kind, 'vehicle') && strcmp(b.Kind, 'vehicle'));
+ok = false; try, b.secret(); catch, ok = true; end; assert(ok); v = Vehicle(); assert(v.wheels == 4 && strcmp(horn(v), 'beep'));
+list = {Vehicle(2), Truck(1), BigTruck()}; w = cellfun(@(o) o.wheels, list); assert(isequal(w, [2 6 6])); assert(strcmp(class(list{3}), 'BigTruck'));
+assert(ismethod(b, 'reveal') && isprop(b, 'load') && ~isprop(b, 'nothing')); assert(isvalid(b)); delete(b); assert(~isvalid(b));
+
+### oop/held_out_enum_and_events
+@file Level.m
+classdef Level < uint8
+    enumeration
+        Low (1)
+        Mid (5)
+        High (9)
+    end
+end
+@file Sensor.m
+classdef Sensor < handle
+    properties
+        value = 0
+    end
+    events
+        Changed
+    end
+    methods
+        function update(obj, v)
+            obj.value = v;
+            notify(obj, 'Changed');
+        end
+    end
+end
+@file Recorder.m
+classdef Recorder < handle
+    properties
+        seen = []
+    end
+    methods
+        function obj = Recorder(s)
+            addlistener(s, 'Changed', @(src, evt) obj.record(src));
+        end
+        function record(obj, src)
+            obj.seen(end+1) = src.value;
+        end
+    end
+end
+@main
+l = Level.Mid; assert(double(l) == 5); assert(l == Level.Mid && l ~= Level.High); assert(uint8(Level.High) == 9); assert(strcmp(char(Level.Low), 'Low'));
+m = enumeration('Level'); assert(numel(m) == 3); switch l, case Level.Low, r = 'l'; case Level.Mid, r = 'm'; otherwise, r = '?'; end; assert(r == 'm');
+assert(Level.High > Level.Low); assert(isa(l, 'Level') && isa(l, 'uint8'));
+s = Sensor(); r = Recorder(s); s.update(3); s.update(7); assert(isequal(r.seen, [3 7])); assert(s.value == 7);
+
+### oop/held_out_object_containers
+@file Item.m
+classdef Item
+    properties
+        name = ''
+        price = 0
+    end
+    methods
+        function obj = Item(n, p)
+            if nargin, obj.name = n; obj.price = p; end
+        end
+        function t = total(objs)
+            t = sum([objs.price]);
+        end
+        function disp(obj)
+            fprintf('Item<%s>\n', obj.name);
+        end
+    end
+end
+@main
+a = [Item('x', 1), Item('y', 2), Item('z', 3)]; assert(numel(a) == 3 && total(a) == 6); assert(strcmp(a(2).name, 'y')); assert(isequal({a.name}, {'x', 'y', 'z'}));
+b = a([a.price] > 1); assert(numel(b) == 2 && strcmp(b(1).name, 'y')); a(2).price = 20; assert(a.total() == 24); c = a(end:-1:1); assert(strcmp(c(1).name, 'z'));
+m = containers.Map(); m('k') = Item('q', 9); v = m('k'); assert(v.price == 9); s.it = Item('w', 4); assert(s.it.price == 4); cl = {Item('c', 1)}; assert(cl{1}.price == 1);
+out = evalc('disp(Item(''zz'', 0))'); assert(strcmp(strtrim(out), 'Item<zz>')); e = Item.empty(0, 3); assert(isequal(size(e), [0 3]) && isempty(e));
+assert(isobject(a) && strcmp(class(a), 'Item')); [~, i] = sort([a.price], 'descend'); a = a(i); assert(strcmp(a(1).name, 'y'));
+
+### linalg/held_out *
+A = [2 1; 1 3]; assert(norm(inv(A) * A - eye(2)) < 1e-12); assert(abs(det(A) - 5) < 1e-12); e = eig(A); assert(norm(e - [(5 - sqrt(5)) / 2; (5 + sqrt(5)) / 2]) < 1e-12);
+A = [2 1; 1 3]; assert(isequal(A^2, [5 5; 5 10])); assert(isequal(A.^2, [4 1; 1 9])); assert(norm(A^-1 - inv(A)) < 1e-12); B = A^0.5; assert(norm(B * B - A) < 1e-10);
+A = [2 1; 1 3]; assert(norm(expm(logm(A)) - A) < 1e-10); assert(abs(norm(A) - (5 + sqrt(5)) / 2) < 1e-12); x = A \ [1; 2]; assert(norm(x - [0.2; 0.6]) < 1e-12);
+A = [2 1; 1 3]; [V, D] = eig(A); assert(norm(V' * V - eye(2)) < 1e-12 && norm(A * V - V * D) < 1e-12); assert(issymmetric(A)); [L, U] = lu(A); assert(norm(L * U - A) < 1e-12);
+ok = false; try, chol([1 2; 2 1]); catch, ok = true; end; assert(ok); [R, p] = chol([1 2; 2 1]); assert(p > 0); [R2, p2] = chol([4 2; 2 3]); assert(p2 == 0);
+A = [1 2; 3 4; 5 6]; b = [1; 2; 3]; assert(norm(pinv(A) * b - A \ b) < 1e-10); assert(isequal(size(pinv(A)), [2 3])); assert(rank(A) == 2);
+assert(rank(magic(4)) == 3); assert(abs(det(magic(4))) < 1e-9); assert(det([2 0; 5 3]) == 6); assert(abs(trace([1 2; 3 4] * [5 6; 7 8]) - trace([5 6; 7 8] * [1 2; 3 4])) < 1e-12);
+assert(isequal(eye(2, 3), [1 0 0; 0 1 0])); assert(isequal(diag([1 2; 3 4]), [1; 4])); assert(isequal(diag([1 2; 3 4], 1), 2)); assert(isequal(triu([1 2; 3 4]), [1 2; 0 4]));
+ok = false; try, [1 2 3] * [4 5 6]; catch, ok = true; end; assert(ok); a = [1 2 3]; assert(a * a' == 14); assert(isequal(a' * a, [1 2 3; 2 4 6; 3 6 9]));
+A = magic(3); assert(abs(norm(A, 'fro')^2 - sum(A(:).^2)) < 1e-9); assert(isequal(vecnorm([3 4; 0 0]'), [5 0])); assert(norm([1 1 1 1]) == 2);
+assert(norm(expm(diag([1 2])) - diag([exp(1) exp(2)])) < 1e-12); assert(norm(sqrtm([1 0; 0 4]) - [1 0; 0 2]) < 1e-12); N = null([1 2; 2 4]); assert(norm([1 2; 2 4] * N) < 1e-12);
+[Q, R] = qr([1 2; 3 4; 5 6], 0); assert(isequal(size(R), [2 2]) && norm(Q * R - [1 2; 3 4; 5 6]) < 1e-12); s = svd([2 0; 0 -3]); assert(norm(s' - [3 2]) < 1e-12);
+x = [4 0; 0 2] \ [8; 2]; assert(isequal(x, [2; 1])); y = [8 2] / [4 0; 0 2]; assert(isequal(y, [2 1])); assert(isequal(kron(eye(2), [1 2]), [1 2 0 0; 0 0 1 2]));
+assert(isequal(cross([0 0 1], [1 0 0]), [0 1 0])); assert(dot([1 2; 3 4], [1 2; 3 4]) * [1; 1] == 30); assert(isequal(tril(ones(3), -1), [0 0 0; 1 0 0; 1 1 0]));
+A = [4 -2; 1 1]; [V, D] = eig(A); d = sort(diag(D)); assert(norm(d - [2; 3]) < 1e-10); assert(abs(cond(eye(3)) - 1) < 1e-12); assert(isequal(inv(diag([2 4])), diag([0.5 0.25])));
+A = rand(4); assert(norm(A * inv(A) - eye(4)) < 1e-8); [U, S, V] = svd(A); assert(norm(U * S * V' - A) < 1e-10); assert(norm(A' - A.') == 0); assert(abs(det(A') - det(A)) < 1e-10);
+
+### arrays/held_out_reductions *
+assert(isequal(cumsum([1 2; 3 4]), [1 2; 4 6])); assert(isequal(cumsum([1 2; 3 4], 2), [1 3; 3 7])); assert(isequal(cumprod([1 2 3 4]), [1 2 6 24])); assert(isequal(diff([1 4 9 16], 2), [2 2]));
+assert(isequal(diff([1 2; 4 8], 1, 2), [1; 4])); assert(isequal(prod([1 2; 3 4]), [3 8])); assert(median([1 3 2 4]) == 2.5); assert(mode([3 1 1 3 2]) == 1);
+[m, i] = max([3 9 9 1]); assert(m == 9 && i == 2); [m, i] = min([4 2; 1 9], [], 2); assert(isequal(m, [2; 1]) && isequal(i, [2; 1])); assert(isequal(max([1 5; 7 2]), [7 5]));
+[s, i] = sort([2 1 2 1]); assert(isequal(i, [2 4 1 3])); [s, i] = sort([3 1; 2 5], 1, 'descend'); assert(isequal(s, [3 5; 2 1]) && isequal(i, [1 2; 2 1]));
+assert(isequal(mean([1 2; 3 4]), [2 3])); assert(isequal(mean([1 2; 3 4], 2), [1.5; 3.5])); assert(var([2 4 4 4 5 5 7 9]) == 32 / 7); assert(isequal(std([1 1 1]), 0));
+assert(isequal(round([1.234 5.678], 1), [1.2 5.7])); assert(isequal(sign([-3 0 2]), [-1 0 1])); assert(isequal(floor([-1.5 1.5]), [-2 1])); assert(isequal(rem(5.5, 2), 1.5));
+assert(isequal(gcd([12 18], 6), [6 6])); assert(lcm(6, 8) == 24); assert(isequal(isprime([2 4 7 9]), [true false true false])); assert(isequal(factorial([0 3 5]), [1 6 120]));
+[u, ~, j] = unique([5 3 5 7]); counts = accumarray(j(:), 1)'; assert(isequal(u, [3 5 7]) && isequal(counts, [1 2 1])); assert(trapz([1 2 3]) == 4);
+[X, Y] = meshgrid(1:3, 1:2); assert(isequal(X, [1 2 3; 1 2 3]) && isequal(Y, [1 1 1; 2 2 2])); assert(isequal(linspace(1, 2, 3), [1 1.5 2])); assert(numel(linspace(0, 1)) == 100);
+assert(isequal(repmat([1; 2], 1, 2), [1 1; 2 2])); assert(isequal(circshift([1 2 3 4], -1), [2 3 4 1])); assert(isequal(flipud([1; 2]), [2; 1])); assert(isequal(rot90([1 2; 3 4], 2), [4 3; 2 1]));
+assert(isequal(reshape(1:6, 3, 2), [1 4; 2 5; 3 6])); assert(isequal(size(permute(ones(2, 3), [2 1])), [3 2])); assert(isequal(cat(1, [1 2], [3 4]), [1 2; 3 4]));
+ok = false; try, [1 2; 3]; catch, ok = true; end; assert(ok); assert(isequal(1, int8(1))); assert(isequal('a', 'a') && ~isequal('a', 'b')); assert(isequal([], zeros(0, 0)));
+assert(isequal(any([0 0 1]), true) && isequal(all([]), true)); assert(isequal(find([0 3 0 5] > 2), [2 4])); assert(numel(find([1 1 1], 2)) == 2); assert(isempty(find([0 0])));
+assert(isequal(cummax([2 1 3 2]), [2 2 3 3])); assert(isequal(cummin([2 1 3 0]), [2 1 1 0])); [a, b] = bounds([5 2 9]); assert(a == 2 && b == 9); assert(isequal(maxk([1 9 5], 2), [9 5]));
+assert(isequal(quantile(1:9, [0.25 0.5 0.75]), [2.75 5 7.25])); assert(prctile([1 2 3 4 5], 100) == 5); assert(isequal(movsum([1 2 3], 2), [1 3 5])); assert(isequal(normalize([2 4 6], 'range'), [0 0.5 1]));
+assert(isequal(histcounts([1 2 2 3 3 3], [1 2 3 4]), [1 2 3])); assert(isequal(histc([1 1 2], [1 2]), [2 1])); assert(isequal(accumarray([1; 1; 3], 5), [10; 0; 5])); assert(nnz(eye(3)) == 3);
+assert(isequal(sum([1 2; 3 4], 1), [4 6])); assert(sum(sum(magic(4))) == 136); assert(isequal(mean(magic(4)), [8.5 8.5 8.5 8.5])); assert(max(max(magic(4))) == 16 && min(magic(4), [], 'all') == 1);
+assert(isequal(sortrows([3 1; 1 2; 2 0]), [1 2; 2 0; 3 1])); assert(isequal(sortrows([1 2; 1 1], 2), [1 1; 1 2])); assert(isequal(fliplr(sort([3 1 2])), [3 2 1])); assert(issorted([1 2 3]) && ~issorted([2 1]));
+assert(isequal(ismember(3, [1 2 3]), true)); assert(isequal(setdiff([1 2 3], [2]), [1 3])); assert(isequal(union([1 3], [2 3]), [1 2 3])); assert(isequal(intersect([1 2 3], [2 3 4]), [2 3])); assert(isequal(unique([2 1 2]), [1 2]));
+assert(isequal(colon(1, 2, 7), [1 3 5 7])); assert(isequal(numel(0:0.25:1), 5)); assert(isequal(logical([2 0 -1]), [true false true])); assert(isequal(double(~[1 0]), [0 1])); assert(isequal(nchoosek(5, 3), 10));
+
+### sparse/held_out *
+S = sparse(eye(3)); S(2, 2) = 0; assert(nnz(S) == 2); assert(isequal(full(S .* 2), [2 0 0; 0 0 0; 0 0 2])); assert(issparse(S .* 2) && issparse(S'));
+S = sparse([1 1], [1 1], [2 3]); assert(full(S) == 5); T = sparse([1 2], [2 1], [7 8], 2, 2); assert(isequal(full(T), [0 7; 8 0])); assert(isequal(nonzeros(T)', [8 7]));
+S = sparse([4 0; 0 2]); assert(isequal(full(S \ [8; 2]), [2; 1])); assert(isequal(full(sum(S, 2)), [4; 2])); assert(isequal(full(S * [1; 1]), [4; 2])); assert(isequal(size(S), [2 2]));
+A = sparse(1000, 1000); A(5, 5) = 1; assert(nnz(A) == 1 && numel(A) == 1e6); B = speye(3) * 2; assert(isequal(full(diag(B))', [2 2 2])); assert(issparse(speye(2, 3)) && isequal(size(speye(2, 3)), [2 3]));
+S = sparse([1 0 2; 0 0 3]); [i, j] = find(S); assert(isequal([i j], [1 1; 1 3; 2 3])); assert(issparse(S > 1) && nnz(S > 1) == 2); assert(isequal(full(S(:, 3))', [2 3]));
+S = sprandn(20, 20, 0.2); assert(issparse(S) && nnz(S) > 0 && nnz(S) < 400); assert(issparse(S + S') && ~issparse(S + 1)); assert(abs(nnz(spones(S)) - nnz(S)) == 0);
+S = spdiags([1 2 3]', 0, 3, 3); assert(isequal(full(S), diag([1 2 3]))); d = spdiags(S); assert(isequal(full(d)', [1 2 3])); assert(isequal(full(kron(speye(2), sparse([1 2]))), [1 2 0 0; 0 0 1 2]));
+A = sparse([2 -1 0; -1 2 -1; 0 -1 2]); b = [1; 0; 1]; x = A \ b; assert(norm(full(A * x) - b) < 1e-12); e = eigs(A, 1); assert(abs(e - (2 + sqrt(2))) < 1e-8); assert(abs(normest(A) - (2 + sqrt(2))) < 1e-4);
+
+### ode/held_out *
+[t, y] = ode45(@(t, y) y * (1 - y), [0 5], 0.1); assert(abs(y(end) - 1 / (1 + 9 * exp(-5))) < 1e-3);
+[t, y] = ode45(@(t, y) [y(2); -y(1)], linspace(0, 2 * pi, 11), [1; 0]); assert(isequal(size(y), [11 2]) && norm(y(end, :) - [1 0]) < 1e-2);
+opts = odeset('RelTol', 1e-8, 'AbsTol', 1e-10); [t, y] = ode45(@(t, y) [y(2); -y(1)], [0 2 * pi], [1; 0], opts); assert(norm(y(end, :) - [1 0]) < 1e-6); E = y(:, 1).^2 + y(:, 2).^2; assert(max(abs(E - 1)) < 1e-6);
+[t, y] = ode23(@(t, y) -2 * t * y, [0 1], 1); assert(abs(y(end) - exp(-1)) < 1e-2); [t2, y2] = ode113(@(t, y) cos(t), [0 pi / 2], 0); assert(abs(y2(end) - 1) < 1e-3);
+[t, y] = ode15s(@(t, y) [-0.04 * y(1) + 1e4 * y(2) * y(3); 0.04 * y(1) - 1e4 * y(2) * y(3) - 3e7 * y(2)^2; 3e7 * y(2)^2], [0 40], [1; 0; 0]); assert(abs(sum(y(end, :)) - 1) < 1e-4 && abs(y(end, 1) - 0.7158) < 5e-3);
+f = @(t, y, a) -a * y; [t, y] = ode45(@(t, y) f(t, y, 2), [0 1], 3); assert(abs(y(end) - 3 * exp(-2)) < 1e-3); assert(t(1) == 0 && all(diff(t) > 0));
+sol = ode45(@(t, y) -y, [0 2], 1); assert(isstruct(sol) && isfield(sol, 'x') && isfield(sol, 'y')); v = deval(sol, [0.5 1.5]); assert(norm(v - exp(-[0.5 1.5])) < 1e-3);
+[t, y] = ode45(@(t, y) 2 * t, [1 3], 1); assert(abs(y(end) - 9) < 1e-6); [t, y] = ode45(@(t, y) [1; 2], [0 1], [0 0]); assert(norm(y(end, :) - [1 2]) < 1e-9);
+
+### quadrature/held_out *
+assert(abs(integral(@sin, 0, pi) - 2) < 1e-10); assert(abs(integral(@(x) 1 ./ x, 1, exp(1)) - 1) < 1e-10); assert(abs(integral(@(x) x .* exp(-x), 0, Inf) - 1) < 1e-8);
+assert(abs(quadgk(@(x) exp(-x.^2), 0, Inf) - sqrt(pi) / 2) < 1e-8); assert(abs(integral2(@(x, y) x.^2 + y.^2, 0, 1, 0, 1) - 2 / 3) < 1e-8);
+assert(trapz([0 1 3], [0 2 2]) == 5); c = cumtrapz([1 3 5]); assert(c(end) == trapz([1 3 5]) && c(1) == 0); assert(abs(integral(@(x) abs(x), -1, 2) - 2.5) < 1e-8);
+assert(abs(integral(@(x) sqrt(x), 0, 4) - 16 / 3) < 1e-7); assert(abs(integral(@(x) cos(x).^2, 0, 2 * pi) - pi) < 1e-9); assert(abs(integral(@(x) 1 ./ (1 + x.^2), -Inf, Inf) - pi) < 1e-8);
+q = integral(@(x) x.^(0:2), 0, 1, 'ArrayValued', true); assert(norm(q - [1 1/2 1/3]) < 1e-10); assert(abs(integral2(@(x, y) ones(size(x)), 0, 1, @(x) 0 * x, @(x) x) - 0.5) < 1e-8);
+
+### optim/held_out *
+x = fzero(@(x) x^3 - 2 * x - 5, 2); assert(abs(x - 2.0945514815423265) < 1e-9); x = fzero(@(x) exp(x) - 2, [0 1]); assert(abs(x - log(2)) < 1e-10);
+x = fminbnd(@sin, 0, 2 * pi); assert(abs(x - 3 * pi / 2) < 1e-4); [x, fv] = fminbnd(@(x) x^2 - 4 * x, 0, 10); assert(abs(x - 2) < 1e-4 && abs(fv + 4) < 1e-6);
+x = fminsearch(@(x) 100 * (x(2) - x(1)^2)^2 + (1 - x(1))^2, [-1.2 1]); assert(norm(x - [1 1]) < 1e-3); [x, fv, flag] = fminsearch(@(x) (x - 5)^2, 0); assert(flag == 1 && abs(x - 5) < 1e-3);
+x = fminunc(@(x) (x(1) - 3)^2 + 2 * (x(2) + 1)^2, [0; 0], optimset('Display', 'off')); assert(norm(x - [3; -1]) < 1e-4);
+x = fmincon(@(x) (x - 3)^2, 0, 1, 2, [], [], [], [], [], optimset('Display', 'off')); assert(abs(x - 2) < 1e-4); x = fmincon(@(x) sum(x.^2), [1; 1], [], [], [], [], [0.5; -1], [2; 2], [], optimset('Display', 'off')); assert(norm(x - [0.5; 0]) < 1e-4);
+x = linprog([1; 2], [-1 -1], -1, [], [], [0; 0], [], optimset('Display', 'off')); assert(norm(x - [1; 0]) < 1e-6); [x, fv] = linprog([-1; 0], [1 1], 3, [1 -1], 1, [], [], optimset('Display', 'off')); assert(norm(x - [2; 1]) < 1e-6 && abs(fv + 2) < 1e-6);
+x = quadprog([2 0; 0 4], [-4; -8], [], [], [], [], [], [], [], optimset('Display', 'off')); assert(norm(x - [2; 2]) < 1e-6); x = quadprog(1, -3, [], [], [], [], 0, 2, [], optimset('Display', 'off')); assert(abs(x - 2) < 1e-6);
+x = fsolve(@(x) [x(1)^2 + x(2)^2 - 1; x(1) - x(2)], [1; 0.5], optimset('Display', 'off')); assert(norm(x - [1; 1] / sqrt(2)) < 1e-6); x = fsolve(@(x) x^2 - 9, 1, optimset('Display', 'off')); assert(abs(x - 3) < 1e-6);
+p = lsqcurvefit(@(p, t) p(1) * exp(p(2) * t), [1 -1], 0:4, 3 * exp(-0.3 * (0:4)), [], [], optimset('Display', 'off')); assert(norm(p - [3 -0.3]) < 1e-4);
+x = lsqnonlin(@(x) [x(1) - 1; x(2) - 2; x(1) + x(2) - 3], [0 0], [], [], optimset('Display', 'off')); assert(norm(x - [1 2]) < 1e-5); x = lsqnonneg([1 2; 3 4], [5; 11]); assert(norm(x - [1; 2]) < 1e-8);
+
+### interp/held_out *
+assert(isequal(interp1([0 10], [0 100], [2.5 7.5]), [25 75])); v = interp1([1 2 3], [1 4 9], [1.5; 2.5]); assert(isequal(size(v), [2 1]) && isequal(v', [2.5 6.5]));
+[X, Y] = meshgrid(0:1, 0:1); Z = X + 2 * Y + X .* Y; assert(abs(interp2(X, Y, Z, 0.5, 0.5) - 1.75) < 1e-12); assert(interp2([1 2; 3 4], 1.5, 1) == 1.5);
+x = 0:pi / 4:2 * pi; y = sin(x); assert(abs(spline(x, y, 1) - sin(1)) < 5e-3); assert(abs(interp1(x, y, 1, 'spline') - sin(1)) < 5e-3); p = pchip([0 1 2], [0 1 1], 0.5); assert(p > 0 && p < 1);
+v = griddata([0 1 0 1], [0 0 1 1], [1 2 3 4], 0.25, 0.75); assert(abs(v - 2.75) < 1e-9); assert(isequal(interp1([1 2 3], [5 6 7], [1 3]), [5 7])); assert(isnan(interp1([1 2], [1 2], 0)));
+p = polyfit([-1 0 1 2], [3 1 3 9], 2); assert(norm(p - [2 0 1]) < 1e-10); assert(isequal(interp1([1 2 3], [10 20 30], 2.5, 'previous'), 20)); assert(interp1([1 2 3], [10 20 30], 0, 'nearest', 'extrap') == 10);
+assert(isequal(interp2(magic(3), 2, 2), 5)); assert(abs(interp1([0 1 2], [0 1 4], 1.5, 'linear') - 2.5) < 1e-12); yq = interp1([0 1], [0 1; 10 20], 0.5); assert(isequal(yq, [5 10.5]));
+pp = spline(0:3, [0 1 0 1]); assert(isstruct(pp) && pp.pieces == 3 && pp.order == 4); assert(norm(ppval(pp, 0:3) - [0 1 0 1]) < 1e-12); assert(abs(interp1(1:5, (1:5).^3, 2.5, 'makima') - 15.625) < 2);
+
+### fft/held_out *
+N = 16; x = cos(2 * pi * 3 * (0:N - 1) / N); X = abs(fft(x)); assert(abs(X(4) - 8) < 1e-9 && abs(X(14) - 8) < 1e-9 && sum(X) - 16 < 1e-8);
+assert(isequal(abs(fft(ones(1, 8))), [8 0 0 0 0 0 0 0])); assert(isequal(fft2([1 0; 0 0]), ones(2))); z = [1+2i 3-1i]; assert(norm(ifft(fft(z)) - z) < 1e-12);
+a = [1 2 3]; b = [4 5]; c = real(ifft(fft(a, 4) .* fft(b, 4))); assert(norm(c - conv(a, b)) < 1e-12); assert(isequal(fftshift([1 2; 3 4]), [4 3; 2 1]));
+A = [1 2; 3 4]; F = fft(A); assert(isequal(F, [4 6; -2 -2])); assert(isequal(fft(A, [], 2), [3 -1; 7 -1])); assert(isequal(ifft([4 0 0 0]), [1 1 1 1]));
+y = filter([1 1 1] / 3, 1, [3 6 9 12]); assert(isequal(y, [1 3 6 9])); assert(isequal(conv([1 2 3 4], [1 1 1] / 3, 'valid'), [2 3])); assert(isequal(conv([1 2], [1 2]), [1 4 4]));
+y = filter(1, [1 -1], [1 1 1]); assert(isequal(y, [1 2 3])); y = filter([1 -1], 1, [1 4 9]); assert(isequal(y, [1 3 5])); assert(isequal(conv2([1 2; 3 4], [1; 1], 'valid'), [4 6]));
+
+### poly_special/held_out *
+assert(isequal(polyval([1 0 -1], [1 2; 3 4]), [0 3; 8 15])); r = roots([1 0 1]); assert(norm(sort(imag(r)) - [-1; 1]) < 1e-12 && norm(real(r)) < 1e-12); assert(norm(poly(roots([1 -6 11 -6])) - [1 -6 11 -6]) < 1e-9);
+assert(isequal(polyder([1 2], [1 3]), [2 5])); assert(isequal(polyint([6 2], 5), [3 2 5])); assert(isequal(conv(conv([1 1], [1 1]), [1 1]), [1 3 3 1])); [q, r] = deconv([1 5 7], [1 2]); assert(isequal(q, [1 3]) && isequal(r, [0 0 1]));
+assert(abs(gamma(0.5)^2 - pi) < 1e-12); assert(beta(1, 1) == 1); assert(erf(Inf) == 1 && erfc(0) == 1); assert(gammaln(1) == 0); assert(besselj(0, 0) == 1); assert(factorial(0) == 1 && nchoosek(10, 0) == 1);
+assert(log2(1024) == 10); assert(nextpow2(1025) == 11); assert(abs(sinh(1)^2 - cosh(1)^2 + 1) < 1e-12); assert(abs(atan2(1, -1) - 3 * pi / 4) < 1e-15); assert(abs(asin(1) - pi / 2) < 1e-15);
+assert(abs(cot(pi / 4) - 1) < 1e-12 && abs(csc(pi / 2) - 1) < 1e-12); assert(sqrt(-9) == 3i); assert(abs(exp(log(5)) - 5) < 1e-12); assert(isequal(fix([-2.9 2.9]), [-2 2])); assert(mod(-7, 3) == 2 && rem(-7, 3) == -1);
+[f, e] = log2(8); assert(f == 0.5 && e == 4); assert(abs(erfinv(0)) == 0); assert(abs(gammainc(1, 1) - (1 - exp(-1))) < 1e-12); assert(abs(besselk(0.5, 1) - sqrt(pi / 2) * exp(-1)) < 1e-12);
+assert(isequal(primes(2), 2)); assert(isequal(factor(97), 97)); assert(isequal(perms([1 2]), [2 1; 1 2])); assert(isequal(nchoosek([1 2 3], 2), [1 2; 1 3; 2 3])); assert(cumsum(primes(10)) * [0; 0; 0; 1] == 17);
+assert(abs(cosd(60) - 0.5) < 1e-15 && sind(30) == 0.5 || abs(sind(30) - 0.5) < 1e-15); assert(abs(acosd(0.5) - 60) < 1e-12); assert(abs(log10(0.001) + 3) < 1e-15); assert(abs(realsqrt(2)^2 - 2) < 1e-15); assert(isequal(pow2(3), 8));

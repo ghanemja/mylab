@@ -1,0 +1,557 @@
+### oop/value_class
+@file Pt.m
+classdef Pt
+    properties
+        x = 0
+        y = 0
+    end
+    methods
+        function obj = Pt(x, y)
+            if nargin > 0, obj.x = x; obj.y = y; end
+        end
+        function d = dist(obj, other)
+            d = hypot(obj.x - other.x, obj.y - other.y);
+        end
+        function obj = shift(obj, dx)
+            obj.x = obj.x + dx;
+        end
+    end
+end
+@main
+p = Pt(3, 4); q = Pt(); assert(p.dist(q) == 5); assert(dist(p, q) == 5);
+r = p.shift(1); assert(p.x == 3 && r.x == 4); assert(isa(p, 'Pt') && isobject(p)); assert(strcmp(class(p), 'Pt'));
+p2 = p; p2.x = 100; assert(p.x == 3); assert(isequal(Pt(1, 2), Pt(1, 2))); assert(isprop(p, 'x') && ismethod(p, 'dist'));
+assert(isequal(properties(p), {'x'; 'y'}));
+
+### oop/handle_class
+@file Acct.m
+classdef Acct < handle
+    properties
+        bal = 0
+    end
+    methods
+        function add(obj, v)
+            obj.bal = obj.bal + v;
+        end
+    end
+end
+@main
+a = Acct(); b = a; b.add(5); assert(a.bal == 5); assert(a == b); c = Acct(); assert(a ~= c); assert(isvalid(a));
+delete(a); assert(~isvalid(b)); assert(isa(c, 'handle')); L = {c, c}; L{1}.add(2); assert(L{2}.bal == 2);
+
+### oop/inheritance
+@file Animal.m
+classdef Animal
+    properties
+        name
+    end
+    methods
+        function obj = Animal(n)
+            if nargin > 0, obj.name = n; end
+        end
+        function s = speak(obj)
+            s = [obj.name ' makes a sound'];
+        end
+        function s = kind(~)
+            s = 'animal';
+        end
+    end
+end
+@file Dog.m
+classdef Dog < Animal
+    properties
+        tricks = {}
+    end
+    methods
+        function obj = Dog(n)
+            obj@Animal(n);
+        end
+        function s = speak(obj)
+            s = [speak@Animal(obj) ': woof'];
+        end
+    end
+end
+@main
+d = Dog('Rex'); assert(strcmp(d.speak(), 'Rex makes a sound: woof')); assert(strcmp(d.kind(), 'animal'));
+assert(isa(d, 'Animal') && isa(d, 'Dog')); assert(isequal(superclasses('Dog'), {'Animal'}));
+
+### oop/static_constant_dependent
+@file Circ.m
+classdef Circ
+    properties (Constant)
+        UnitArea = pi
+    end
+    properties
+        r = 1
+    end
+    properties (Dependent)
+        area
+    end
+    methods
+        function a = get.area(obj)
+            a = pi * obj.r^2;
+        end
+        function obj = set.area(obj, a)
+            obj.r = sqrt(a / pi);
+        end
+        function obj = set.r(obj, v)
+            if v < 0, error('Circ:neg', 'negative'); end
+            obj.r = v;
+        end
+    end
+    methods (Static)
+        function c = unit()
+            c = Circ();
+        end
+        function v = twice(x)
+            v = 2 * x;
+        end
+    end
+end
+@main
+assert(Circ.UnitArea == pi); c = Circ.unit(); assert(abs(c.area - pi) < 1e-12); c.area = 4 * pi; assert(abs(c.r - 2) < 1e-12);
+assert(Circ.twice(4) == 8); assert(c.twice(1) == 2); threw = false; try, c.r = -1; catch e, threw = strcmp(e.identifier, 'Circ:neg'); end; assert(threw);
+
+### oop/property_validation
+@file Cfg.m
+classdef Cfg
+    properties
+        n (1,1) double {mustBePositive, mustBeInteger} = 1
+        name (1,:) char = 'x'
+        mode {mustBeMember(mode, {'a', 'b'})} = 'a'
+    end
+end
+@main
+c = Cfg(); c.n = 5; threw = false; try, c.n = -1; catch, threw = true; end; assert(threw, 'mustBePositive');
+threw = false; try, c.n = [1 2]; catch, threw = true; end; assert(threw, 'size');
+c.n = int8(3); assert(isa(c.n, 'double'));
+threw = false; try, c.mode = 'z'; catch, threw = true; end; assert(threw, 'mustBeMember');
+
+### oop/access_control
+@file Safe.m
+classdef Safe
+    properties (SetAccess = private)
+        code = 1
+    end
+    properties (Access = private)
+        secret = 2
+    end
+    methods
+        function v = reveal(obj)
+            v = obj.secret + obj.hidden();
+        end
+    end
+    methods (Access = private)
+        function v = hidden(~)
+            v = 10;
+        end
+    end
+end
+@main
+s = Safe(); assert(s.code == 1); assert(s.reveal() == 12);
+t1 = false; try, s.code = 5; catch, t1 = true; end; assert(t1, 'SetAccess private');
+t2 = false; try, x = s.secret; catch, t2 = true; end; assert(t2, 'private property');
+t3 = false; try, s.hidden(); catch, t3 = true; end; assert(t3, 'private method');
+
+### oop/abstract_classes
+@file Shape.m
+classdef (Abstract) Shape
+    methods (Abstract)
+        a = area(obj)
+    end
+    methods
+        function s = describe(obj)
+            s = sprintf('area %.1f', obj.area());
+        end
+    end
+end
+@file Sq.m
+classdef Sq < Shape
+    properties
+        side = 2
+    end
+    methods
+        function a = area(obj)
+            a = obj.side^2;
+        end
+    end
+end
+@main
+s = Sq(); assert(strcmp(s.describe(), 'area 4.0')); t = false; try, Shape(); catch, t = true; end; assert(t);
+
+### oop/operator_overloading
+@file V2.m
+classdef V2
+    properties
+        a = 0
+        b = 0
+    end
+    methods
+        function o = V2(a, b)
+            if nargin, o.a = a; o.b = b; end
+        end
+        function r = plus(p, q)
+            r = V2(p.a + q.a, p.b + q.b);
+        end
+        function r = minus(p, q)
+            r = V2(p.a - q.a, p.b - q.b);
+        end
+        function r = mtimes(p, k)
+            if isa(p, 'double'), t = p; p = k; k = t; end
+            r = V2(p.a * k, p.b * k);
+        end
+        function r = eq(p, q)
+            r = p.a == q.a && p.b == q.b;
+        end
+        function r = uminus(p)
+            r = V2(-p.a, -p.b);
+        end
+        function r = lt(p, q)
+            r = norm([p.a p.b]) < norm([q.a q.b]);
+        end
+        function disp(p)
+            fprintf('V2(%d,%d)\n', p.a, p.b);
+        end
+    end
+end
+@main
+p = V2(1, 2) + V2(3, 4); assert(p == V2(4, 6)); q = 2 * p; assert(q.a == 8); assert((p - p) == V2(0, 0)); assert(-p == V2(-4, -6));
+assert(V2(1, 0) < V2(5, 5)); s = evalc('disp(p)'); assert(strcmp(strtrim(s), 'V2(4,6)'));
+
+### oop/subsref_subsasgn_overload
+@file Wrap.m
+classdef Wrap
+    properties
+        data = [10 20 30]
+    end
+    methods
+        function varargout = subsref(obj, s)
+            if strcmp(s(1).type, '()')
+                varargout{1} = obj.data(s(1).subs{:}) * 2;
+            else
+                [varargout{1:nargout}] = builtin('subsref', obj, s);
+            end
+        end
+        function obj = subsasgn(obj, s, v)
+            if strcmp(s(1).type, '()')
+                obj.data(s(1).subs{:}) = v + 1;
+            else
+                obj = builtin('subsasgn', obj, s, v);
+            end
+        end
+    end
+end
+@main
+w = Wrap(); assert(w(2) == 40); assert(isequal(w.data, [10 20 30])); w(1) = 5; assert(w.data(1) == 6);
+
+### oop/enumerations
+@file Color.m
+classdef Color
+    enumeration
+        Red, Green, Blue
+    end
+end
+@file Planet.m
+classdef Planet
+    properties
+        mass
+    end
+    methods
+        function p = Planet(m)
+            p.mass = m;
+        end
+    end
+    enumeration
+        Earth (5.97)
+        Mars (0.642)
+    end
+end
+@main
+c = Color.Green; assert(c == Color.Green && c ~= Color.Red); assert(strcmp(char(c), 'Green'));
+switch c, case Color.Red, r = 1; case Color.Green, r = 2; end; assert(r == 2);
+[m, names] = enumeration('Color'); assert(numel(m) == 3 && isequal(names, {'Red'; 'Green'; 'Blue'}));
+assert(Planet.Mars.mass == 0.642); assert(isenum(c));
+
+### oop/events_listeners
+@file Btn.m
+classdef Btn < handle
+    properties (SetObservable)
+        val = 0
+    end
+    events
+        Pressed
+    end
+    methods
+        function press(o)
+            notify(o, 'Pressed');
+        end
+    end
+end
+@file bump_count.m
+function bump_count(m)
+m('n') = m('n') + 1;
+end
+@main
+b = Btn(); hits = containers.Map('KeyType', 'char', 'ValueType', 'double'); hits('n') = 0;
+L = addlistener(b, 'Pressed', @(src, evt) bump_count(hits)); b.press(); b.press(); assert(hits('n') == 2);
+delete(L); b.press(); assert(hits('n') == 2);
+P = addlistener(b, 'val', 'PostSet', @(src, evt) bump_count(hits)); b.val = 3; assert(hits('n') == 3);
+
+### oop/object_arrays
+@file Pt.m
+classdef Pt
+    properties
+        x = 0
+        y = 0
+    end
+    methods
+        function obj = Pt(x, y)
+            if nargin > 0, obj.x = x; obj.y = y; end
+        end
+    end
+end
+@main
+objs = [Pt(1, 2), Pt(3, 4)]; assert(numel(objs) == 2); assert(isequal([objs.x], [1 3])); objs(3) = Pt(5, 6); assert(objs(3).y == 6);
+e = Pt.empty; assert(isempty(e)); xs = arrayfun(@(o) o.x, objs); assert(isequal(xs, [1 3 5])); objs(2) = []; assert(numel(objs) == 2);
+o2 = repmat(Pt(9, 9), 1, 3); assert(numel(o2) == 3); assert(isequal(size(objs), [1 2]));
+
+### oop/heterogeneous_arrays
+@file Base.m
+classdef Base < matlab.mixin.Heterogeneous
+    methods
+        function v = id(~)
+            v = 0;
+        end
+    end
+end
+@file D1.m
+classdef D1 < Base
+    methods
+        function v = id(~)
+            v = 1;
+        end
+    end
+end
+@file D2.m
+classdef D2 < Base
+    methods
+        function v = id(~)
+            v = 2;
+        end
+    end
+end
+@main
+a = [D1(), D2()]; assert(isa(a, 'Base')); assert(numel(a) == 2); assert(a(2).id() == 2);
+
+### oop/mixin_copyable
+@file Node.m
+classdef Node < matlab.mixin.Copyable
+    properties
+        v = 1
+    end
+end
+@main
+n = Node(); m = copy(n); m.v = 5; assert(n.v == 1); k = n; k.v = 7; assert(n.v == 7);
+
+### oop/mixin_setget
+@file Opt.m
+classdef Opt < matlab.mixin.SetGet
+    properties
+        Gain = 1
+        Name = 'n'
+    end
+end
+@main
+o = Opt(); set(o, 'Gain', 4); assert(get(o, 'Gain') == 4); set(o, 'Gain', 2, 'Name', 'z'); assert(strcmp(o.Name, 'z'));
+
+### oop/dynamicprops
+@file Dyn.m
+classdef Dyn < dynamicprops
+end
+@main
+d = Dyn(); addprop(d, 'extra'); d.extra = 7; assert(d.extra == 7);
+
+### oop/inherit_from_builtin
+@file Meters.m
+classdef Meters < double
+    methods
+        function o = Meters(v)
+            o = o@double(v);
+        end
+        function s = label(o)
+            s = sprintf('%g m', double(o));
+        end
+    end
+end
+@main
+m = Meters(5); assert(strcmp(m.label(), '5 m')); assert(double(m) + 1 == 6); assert(isa(m, 'double'));
+
+### oop/metaclass_introspection
+@file Pt.m
+classdef Pt
+    properties
+        x = 0
+        y = 0
+    end
+    methods
+        function d = dist(obj, other)
+            d = hypot(obj.x - other.x, obj.y - other.y);
+        end
+    end
+end
+@main
+mc = ?Pt; assert(strcmp(mc.Name, 'Pt')); p = Pt(); m2 = metaclass(p); assert(numel(m2.PropertyList) == 2);
+assert(any(strcmp(methods(p), 'dist'))); assert(isequal(properties('Pt'), {'x'; 'y'}));
+
+### oop/packages
+@file +geo/circarea.m
+function a = circarea(r)
+a = pi * r^2;
+end
+@file +geo/Box.m
+classdef Box
+    properties
+        w = 2
+    end
+    methods
+        function v = vol(o)
+            v = o.w^3;
+        end
+    end
+end
+@main
+assert(abs(geo.circarea(1) - pi) < 1e-12); b = geo.Box(); assert(b.vol() == 8); f = @geo.circarea; assert(f(2) > 12);
+
+### oop/package_import
+@file +geo/circarea.m
+function a = circarea(r)
+a = pi * r^2;
+end
+@main
+import geo.*
+assert(abs(circarea(1) - pi) < 1e-12);
+import geo.circarea
+assert(abs(circarea(2) - 4 * pi) < 1e-12);
+
+### oop/class_folders
+@file @Poly2/Poly2.m
+classdef Poly2
+    properties
+        c = [1 0]
+    end
+    methods
+        function o = Poly2(c)
+            if nargin, o.c = c; end
+        end
+        v = evalat(o, x)
+    end
+end
+@file @Poly2/evalat.m
+function v = evalat(o, x)
+v = polyval(o.c, x);
+end
+@main
+p = Poly2([1 2]); assert(p.evalat(3) == 5);
+
+### oop/private_folder
+@file private/hidden_helper.m
+function r = hidden_helper()
+r = 7;
+end
+@file uses_private.m
+function r = uses_private()
+r = hidden_helper() + 1;
+end
+@main
+assert(uses_private() == 8);
+
+### oop/old_style_classes
+@file @oldc/oldc.m
+function o = oldc(v)
+s.v = v; o = class(s, 'oldc');
+end
+@file @oldc/double.m
+function d = double(o)
+d = o.v;
+end
+@file @oldc/plus.m
+function r = plus(a, b)
+r = oldc(double(a) + double(b));
+end
+@main
+a = oldc(2) + oldc(3); assert(double(a) == 5); assert(isa(a, 'oldc'));
+
+### oop/save_load_objects
+@file Pt.m
+classdef Pt
+    properties
+        x = 0
+        y = 0
+    end
+end
+@main
+p = Pt(); p.y = 2; save('obj.mat', 'p'); clear p; S = load('obj.mat'); assert(isa(S.p, 'Pt') && S.p.y == 2);
+
+### oop/input_parser
+p = inputParser; addRequired(p, 'n', @isnumeric); addOptional(p, 'k', 2, @isnumeric); addParameter(p, 'Mode', 'fast', @ischar);
+parse(p, 5, 3, 'Mode', 'slow'); r = p.Results; assert(r.n == 5 && r.k == 3 && strcmp(r.Mode, 'slow'));
+parse(p, 1); assert(p.Results.k == 2 && any(strcmp(p.UsingDefaults, 'Mode')));
+p.KeepUnmatched = true; parse(p, 1, 'Other', 9); assert(p.Unmatched.Other == 9);
+t = false; try, parse(p, 'x'); catch, t = true; end; assert(t);
+p2 = inputParser; p2.addParameter('a', 1); p2.parse('a', 4); assert(p2.Results.a == 4);
+
+### oop/validation_functions
+validateattributes(5, {'numeric'}, {'positive', 'scalar'}); t = false; try, validateattributes(-1, {'numeric'}, {'positive'}); catch, t = true; end; assert(t);
+assert(strcmp(validatestring('app', {'apple', 'pear'}), 'apple'));
+mustBePositive(3); t = false; try, mustBeInteger(1.5); catch, t = true; end; assert(t); mustBeMember('a', {'a', 'b'}); mustBeNonempty(1);
+
+### oop/oncleanup
+@file oc_test.m
+function oc_test(m)
+c = onCleanup(@() bump(m)); m('n') = m('n') + 10;
+end
+@file bump.m
+function bump(m)
+m('n') = m('n') + 1;
+end
+@main
+m = containers.Map(); m('n') = 0; oc_test(m); assert(m('n') == 11);
+
+### oop/unit_test_framework_functions
+@file tAdd.m
+function tests = tAdd
+tests = functiontests(localfunctions);
+end
+function testSum(testCase)
+verifyEqual(testCase, 1 + 1, 2);
+end
+function testTol(testCase)
+verifyEqual(testCase, 0.1 + 0.2, 0.3, 'AbsTol', 1e-12);
+end
+@main
+r = runtests('tAdd'); assert(numel(r) == 2 && all([r.Passed]));
+
+### oop/unit_test_framework_classes
+@file MyT.m
+classdef MyT < matlab.unittest.TestCase
+    methods (Test)
+        function a(tc)
+            tc.verifyEqual(2 * 2, 4);
+        end
+        function b(tc)
+            tc.verifyTrue(true); tc.assertEqual([1 2], [1 2]);
+        end
+    end
+end
+@main
+r = runtests('MyT'); assert(numel(r) == 2 && all([r.Passed]));
+
+### gui/app_components *
+f = uifigure('Visible', 'off'); b = uibutton(f, 'Text', 'Go'); assert(strcmp(b.Text, 'Go')); delete(f);
+f = uifigure('Visible', 'off'); s = uislider(f, 'Value', 5); assert(s.Value == 5); delete(f);
+f = uifigure('Visible', 'off'); g = uigridlayout(f, [2 2]); t = uitable(g, 'Data', magic(3)); assert(isequal(t.Data, magic(3))); delete(f);
+f = uifigure('Visible', 'off'); d = uidropdown(f, 'Items', {'a', 'b'}, 'Value', 'b'); assert(strcmp(d.Value, 'b')); delete(f);
+f = uifigure('Visible', 'off'); e = uieditfield(f, 'numeric', 'Value', 3); assert(e.Value == 3); ax = uiaxes(f); plot(ax, 1:3); delete(f);
+f = figure('Visible', 'off'); c = uicontrol(f, 'Style', 'pushbutton', 'String', 'Go', 'Callback', @(s, e) disp('x')); assert(strcmp(get(c, 'String'), 'Go')); close(f);
+f = figure('Visible', 'off'); c = uicontrol(f, 'Style', 'slider', 'Min', 0, 'Max', 10, 'Value', 4); assert(get(c, 'Value') == 4); close(f);
+f = figure('Visible', 'off'); h.x = 5; guidata(f, h); d = guidata(f); assert(d.x == 5); close(f);

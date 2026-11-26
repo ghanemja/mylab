@@ -1,0 +1,558 @@
+### lang/operator_precedence
+assert(-2^2 == -4); assert(2^-1 == 0.5); assert(2^3^2 == 64);
+a = [1 -1]; assert(numel(a) == 2); b = [1 - 1]; assert(numel(b) == 1);
+assert(isequal(1:3', 1:3)); assert(~0 == 1); assert(isequal(~[1 0] == [0 1], [true true]));
+assert(1 + 2 * 3 == 7); assert(isequal(1:2+3, 1:5)); assert(isequal(-1:1, [-1 0 1]));
+c = [1 2]'; assert(iscolumn(c)); d = [c' c']; assert(numel(d) == 4);
+
+### lang/end_and_growth
+x = 1:10; assert(x(end) == 10); x(end+1) = 11; assert(numel(x) == 11);
+assert(isequal(x(end:-1:end-2), [11 10 9]));
+A = magic(4); assert(A(end, end) == 1); assert(A(end) == 1); assert(isequal(A(end, [1 end]), [4 1]));
+x([1 end]) = []; assert(numel(x) == 9);
+y = []; y(3) = 5; assert(isequal(y, [0 0 5]));
+B = []; B(2, 3) = 1; assert(isequal(size(B), [2 3]));
+c = {}; c{3} = 1; assert(isequal(size(c), [1 3]) && isempty(c{2}));
+s = struct(); s(3).a = 1; assert(numel(s) == 3 && isempty(s(1).a));
+z = 1:5; z(z > 2) = []; assert(isequal(z, [1 2]));
+M = eye(3); M(2, :) = []; assert(isequal(size(M), [2 3]));
+
+### lang/implicit_expansion
+assert(isequal((1:3) + (1:2)', [2 3 4; 3 4 5]));
+assert(isequal([1 2; 3 4] - [1 2], [0 0; 2 2]));
+assert(isequal(size(ones(3, 1, 2) .* ones(1, 4)), [3 4 2]));
+assert(isequal(max([1 5 3], [2; 4]), [2 5 3; 4 5 4]));
+threw = false; try, [1 2 3] + [1 2]; catch, threw = true; end; assert(threw);
+
+### lang/comma_separated_lists
+s(1).a = 1; s(2).a = 2; [s.a] = deal(7, 8); assert(isequal([s.a], [7 8]));
+c = {1, 'two', [3 4]}; [p, q, r] = c{:}; assert(strcmp(q, 'two') && isequal(r, [3 4]));
+t = {s.a}; assert(iscell(t) && numel(t) == 2);
+args = {2, 3}; z = zeros(args{:}); assert(isequal(size(z), [2 3]));
+v = [c{[1 3]}]; assert(isequal(v, [1 3 4]));
+[mx, ix] = max([3 9 2]); assert(mx == 9 && ix == 2);
+[~, ix2] = min([3 9 2]); assert(ix2 == 3);
+
+### lang/control_flow
+r = 0; switch 'b', case {'a', 'b'}, r = 1; otherwise, r = -1; end; assert(r == 1);
+switch 3, case {1, 2}, r = 0; case 3, r = 5; end; assert(r == 5);
+n = 0; for v = [1 2; 3 4], n = n + 1; assert(isequal(size(v), [2 1])); end; assert(n == 2);
+n = 0; for c = {1, 'a'}, assert(iscell(c)); n = n + 1; end; assert(n == 2);
+k = 0; while true, k = k + 1; if k < 3, continue; end; break; end; assert(k == 3);
+n = 0; for i = [], n = n + 1; end; assert(n == 0);
+if [], error('empty is false'); end
+if [1 1 0], error('needs all true'); end
+x = 5; if x > 3 && x < 10, ok = true; else, ok = false; end; assert(ok);
+assert(~(false && error('not evaluated')));
+assert(true || error('not evaluated'));
+
+### lang/try_catch_basics
+try, error('my:id', 'msg %d', 5); catch e, assert(strcmp(e.identifier, 'my:id')); assert(strcmp(e.message, 'msg 5')); assert(isa(e, 'MException')); end
+try, error(struct('message', 'm1', 'identifier', 'x:y')); catch e5, assert(strcmp(e5.identifier, 'x:y')); end
+try, assert(false, 'as:id', 'failed %d', 3); catch e6, assert(strcmp(e6.identifier, 'as:id') && strcmp(e6.message, 'failed 3')); end
+try, x = [1 2 3]; x(7); catch e8, assert(~isempty(e8.message)); end
+ok = false; try, error('a:b', 'c'); catch, ok = true; end; assert(ok);
+try, try, error('in:ner', 'x'); catch e, rethrow(e); end, catch e9, assert(strcmp(e9.identifier, 'in:ner')); end
+w = warning('off', 'all'); warning('my:w', 'hi'); [msg, id] = lastwarn; assert(strcmp(id, 'my:w')); warning(w);
+
+### lang/mexception_api
+ME = MException('a:b', 'hello %s', 'x');
+try, throw(ME); catch e2, assert(strcmp(e2.message, 'hello x')); end
+try
+    try, error('in:ner', 'x'); catch e, e3 = MException('out:er', 'y'); e3 = addCause(e3, e); throw(e3); end
+catch e4
+    assert(numel(e4.cause) == 1); assert(strcmp(e4.cause{1}.identifier, 'in:ner')); r = getReport(e4); assert(ischar(r) && ~isempty(r));
+end
+
+### lang/error_identifiers_matlab *
+try, x = [1 2 3]; x(7); catch e, end; assert(strcmp(e.identifier, 'MATLAB:badsubscript'), e.identifier);
+try, undefined_fn_xyz(1); catch e, end; assert(strcmp(e.identifier, 'MATLAB:UndefinedFunction'), e.identifier);
+try, [1 2 3] * [4 5 6]; catch e, end; assert(strcmp(e.identifier, 'MATLAB:innerdim'), e.identifier);
+try, s.a = 1; s.b; catch e, end; assert(strcmp(e.identifier, 'MATLAB:nonExistentField'), e.identifier);
+try, ones(2, 3) + ones(3, 2); catch e, end; assert(any(strcmp(e.identifier, {'MATLAB:sizeDimensionsMustMatch', 'MATLAB:dimagree'})), e.identifier);
+
+### lang/anonymous_closures
+a = 2; f = @(x) @(y) x + y + a; g = f(1); a = 100; assert(g(3) == 6);
+h = @() deal(1, 2); [p, q] = h(); assert(q == 2);
+fs = cell(1, 3); for k = 1:3, fs{k} = @() k * 10; end; assert(fs{2}() == 20);
+sq = str2func('@(x) x.^2'); assert(sq(3) == 9);
+assert(isequal(cellfun(@(f) f(2), {@sin, @cos}), [sin(2) cos(2)]));
+k = @plus; assert(k(1, 2) == 3); assert(feval(@max, [1 5 2]) == 5);
+assert(nargin(@(x, y) x) == 2);
+c = @(varargin) numel(varargin); assert(c(1, 2, 3) == 3);
+assert(isa(@sin, 'function_handle')); assert(strcmp(func2str(@sin), 'sin'));
+
+### lang/functions_in_files
+@file addn.m
+function [s, varargout] = addn(a, b, varargin)
+if nargin < 2, b = 10; end
+s = a + b;
+for k = 1:numel(varargin), s = s + varargin{k}; end
+for k = 1:nargout - 1, varargout{k} = k * s; end
+end
+@main
+assert(addn(1) == 11); assert(addn(1, 2, 3, 4) == 10);
+[s, d, t] = addn(1, 2); assert(s == 3 && d == 3 && t == 6);
+
+### lang/nargin_of_function_name
+@file addn.m
+function [s, varargout] = addn(a, b, varargin)
+s = a + b;
+end
+@main
+assert(nargin('addn') == -3); assert(nargout('addn') == -2);
+
+### lang/script_local_functions
+y = twice(4); assert(y == 8); assert(helper2() == 3);
+disp('PROBE_OK');
+function r = twice(x)
+r = 2 * x;
+end
+function r = helper2()
+r = 3;
+end
+
+### lang/nested_functions
+@file counter_demo.m
+function total = counter_demo(n)
+total = 0;
+    function bump(k)
+        total = total + k;
+    end
+for i = 1:n, bump(i); end
+end
+@file make_counter.m
+function [inc, get] = make_counter()
+count = 0;
+inc = @increment; get = @count_val;
+    function increment()
+        count = count + 1;
+    end
+    function v = count_val()
+        v = count;
+    end
+end
+@main
+assert(counter_demo(4) == 10);
+[inc, get] = make_counter(); inc(); inc(); assert(get() == 2);
+
+### lang/persistent_global
+@file nextid.m
+function r = nextid()
+persistent n
+if isempty(n), n = 0; end
+n = n + 1; r = n;
+end
+@file setg.m
+function setg(v)
+global GV
+GV = v;
+end
+@main
+nextid(); nextid(); assert(nextid() == 3); clear nextid; assert(nextid() == 1);
+global GV
+setg(42); assert(GV == 42);
+
+### lang/arguments_block
+@file scaled.m
+function r = scaled(x, opts)
+arguments
+    x (1,1) double {mustBePositive}
+    opts.Scale (1,1) double = 2
+    opts.Name (1,:) char = 'n'
+end
+r = x * opts.Scale;
+end
+@main
+assert(scaled(3) == 6); assert(scaled(3, 'Scale', 4) == 12);
+threw = false; try, scaled(-1); catch, threw = true; end; assert(threw, 'validator must reject -1');
+threw = false; try, scaled([1 2]); catch, threw = true; end; assert(threw, 'size must be checked');
+assert(scaled(int8(3)) == 6 && isa(scaled(int8(3)), 'double'));
+
+### lang/name_value_equals_syntax
+@file scaled.m
+function r = scaled(x, opts)
+arguments
+    x (1,1) double
+    opts.Scale (1,1) double = 2
+end
+r = x * opts.Scale;
+end
+@main
+assert(scaled(3, Scale=5) == 15);
+
+### lang/arguments_repeating
+@file sumpairs.m
+function r = sumpairs(a, b)
+arguments (Repeating)
+    a (1,1) double
+    b (1,1) double
+end
+r = sum([a{:}]) * 10 + sum([b{:}]);
+end
+@main
+assert(sumpairs(1, 2, 3, 4) == 46);
+
+### lang/command_syntax
+format long
+format short
+x = 1; clear x
+assert(~exist('x', 'var'));
+warning off my:id
+a.b = 3; assert(a.b == 3);
+disp hello
+
+### lang/syntax_misc
+x = [1, 2, ... a continuation comment
+     3];
+assert(numel(x) == 3);
+%{
+block comment
+%}
+y = 5; % trailing
+s = 'it''s'; assert(numel(s) == 4);
+A = [1 2
+     3 4]; assert(isequal(size(A), [2 2]));
+t = {1, 'a'; 2, 'b'}; assert(isequal(size(t), [2 2]));
+z = 3 + 4i; assert(imag(z) == 4); w = 1e3; assert(w == 1000);
+q = x'; assert(iscolumn(q)); r = x.'; assert(isequal(q, r));
+v = x(:)'; if true, v = v + 1; end, assert(v(1) == 2)
+f = @(x) x'; assert(isequal(f([1 2]), [1; 2]));
+
+### lang/hex_binary_literals
+h = 0x1F; b = 0b101; assert(h == 31 && b == 5 && isa(h, 'uint8'));
+
+### lang/logical_and_empty_edge_cases
+assert(sum([]) == 0); assert(prod([]) == 1); assert(isempty(max([]))); assert(isnan(mean([])));
+assert(all([])); assert(~any([])); assert(isequal(size(zeros(0, 3) * zeros(3, 0)), [0 0]));
+assert(isequal([zeros(0, 3); 1 2 3], [1 2 3])); assert(isequal(size(ones(2, 0)), [2 0]));
+assert(NaN ~= NaN); assert(isequaln([1 NaN], [1 NaN])); assert(~isequal(NaN, NaN));
+assert(max([1 NaN 3]) == 3); x = sort([3 NaN 1]); assert(isnan(x(3)));
+assert(mod(-1, 3) == 2); assert(rem(-1, 3) == -1); assert(mod(5, 0) == 5);
+assert(round(-2.5) == -3); assert(round(2.567, 2) == 2.57); assert(fix(-2.7) == -2);
+assert(1 / 0 == Inf); assert(isnan(0 / 0)); assert(isequal('', '') && isempty(''));
+assert(isequal(size(sum(zeros(0, 3))), [1 3])); assert(isequal(sum(zeros(0, 3)), [0 0 0]));
+assert(isequal(size(zeros(3, 0)'), [0 3])); assert(numel(unique([NaN NaN 1])) == 3);
+
+### lang/numeric_classes
+assert(int8(127) + int8(1) == 127); assert(uint8(5) - uint8(10) == 0);
+assert(strcmp(class(int8(1) + 1), 'int8')); assert(int32(7) / int32(2) == 4);
+assert(idivide(int32(7), int32(2)) == 3); assert(int8(-0.5) == -1); assert(int8(2.5) == 3);
+assert(uint8(300) == 255); assert(strcmp(class(single(1) + 1), 'single'));
+assert(strcmp(class(single(1) * int8(2)), 'int8')); assert(strcmp(class(true + true), 'double'));
+assert(strcmp(class(['a' 66]), 'char')); assert(isequal([int8(1) 2.7], int8([1 3])));
+assert(strcmp(class('a' + 1), 'double')); assert(int8(5) / int8(0) == 127);
+threw = false; try, int8(1) + int16(1); catch, threw = true; end; assert(threw);
+assert(eps == 2^-52); assert(eps(single(1)) == 2^-23); assert(flintmax == 2^53);
+assert(bitand(12, 10) == 8); assert(bitshift(1, 3) == 8); assert(bitxor(uint8(5), uint8(1)) == 4);
+assert(isequal(typecast(single(1), 'uint32'), uint32(1065353216)));
+assert(realmax * 2 == Inf); assert(strcmp(class(1:3 > 2), 'logical'));
+assert(intmax('int32') == 2147483647); assert(intmin('int8') == -128); assert(double(intmax('uint8')) + 1 == 256);
+
+### lang/float_formatting
+assert(strcmp(sprintf('%g', 0.1 + 0.2), '0.3')); assert(strcmp(num2str(pi, 8), '3.1415927'));
+assert(strcmp(num2str(123456789), '123456789')); assert(strcmp(num2str(1.23456789), '1.2346'));
+assert(strcmp(num2str([1 2 3]), '1  2  3')); assert(strcmp(mat2str([1 2; 3 4]), '[1 2;3 4]'));
+assert(strcmp(sprintf('%5.2f|%d|%s', pi, 3, 'x'), ' 3.14|3|x')); assert(strcmp(sprintf('%d,', [1 2 3]), '1,2,3,'));
+assert(strcmp(sprintf('%x', 255), 'ff'));
+assert(strcmp(sprintf('%5s|%-5s|', 'a', 'b'), '    a|b    |')); assert(strcmp(sprintf('%c%c', 72, 105), 'Hi'));
+assert(strcmp(sprintf('%.3g', 1234.5), '1.23e+03')); assert(strcmp(sprintf('%+d %05.1f %%', 5, 2.5), '+5 002.5 %'));
+assert(strcmp(sprintf('%s', [72 105]), 'Hi')); assert(strcmp(int2str(2.7), '3'));
+assert(strcmp(num2str(true), '1')); assert(strcmp(num2str(1e10), '10000000000'));
+assert(strcmp(num2str(0.1 + 0.2), '0.3')); assert(strcmp(mat2str([0.1 1/3]), '[0.1 0.333333333333333]'));
+assert(strcmp(num2str(-0.5), '-0.5')); assert(strcmp(num2str(3), '3'));
+assert(strcmp(sprintf('%d', int8(5)), '5')); assert(strcmp(sprintf('%e', 12345.678), '1.234568e+04'));
+
+### lang/sprintf_non_integer_with_d
+assert(strcmp(sprintf('%d', 1.5), '1.500000e+00'));
+
+### lang/display_format *
+s = evalc('x = 5'); assert(strcmp(s, sprintf('\nx =\n\n     5\n\n')), s);
+s = evalc('disp(pi)'); assert(strcmp(s, sprintf('    3.1416\n')), s);
+s = evalc('disp([1.5 2.5])'); assert(strcmp(s, sprintf('    1.5000    2.5000\n')), s);
+s = evalc('A = [1 2; 3 4]'); assert(strcmp(s, sprintf('\nA =\n\n     1     2\n     3     4\n\n')), s);
+s = evalc('c = ''abc'''); assert(strcmp(s, sprintf('\nc =\n\n    ''abc''\n\n')), s);
+s = evalc('fprintf(''%d\n'', 3)'); assert(strcmp(s, sprintf('3\n')), s);
+s = evalc('x = 0.1'); assert(strcmp(s, sprintf('\nx =\n\n    0.1000\n\n')), s);
+s = evalc('disp(''hi'')'); assert(strcmp(s, sprintf('hi\n')), s);
+
+### lang/unicode_chars
+s = 'héllo'; assert(length(s) == 5); assert(double('€') == 8364); assert(strcmp(upper('é'), 'É'));
+assert(strcmp(fliplr('añb'), 'bña')); assert(numel(char(8364)) == 1);
+
+### lang/eval_family
+eval('x = 3;'); assert(x == 3); s = evalc('disp(5)'); assert(strcmp(strtrim(s), '5'));
+eval('error(''boom'')', 'y = 1;'); assert(y == 1);
+z = eval('x + 1'); assert(z == 4);
+assert(feval('plus', 1, 2) == 3); assert(exist('x', 'var') == 1); assert(exist('sin') > 0);
+names = who; assert(any(strcmp(names, 'x')));
+assignin('base', 'qq', 7); assert(evalin('base', 'qq') == 7);
+
+### octave_ext/octave_only_syntax
+x = 1; x += 2; x *= 3; assert(x == 9);
+if x != 9, error('ne'); end
+y = 2 ** 3; assert(y == 8);
+# hash comment
+printf('%d\n', 3);
+z = !true; assert(z == false);
+do, x--; until x < 5
+assert(x == 4);
+A = [1 2 3](2); assert(A == 2);
+unwind_protect, q = 1; unwind_protect_cleanup, q = 2; end_unwind_protect
+assert(q == 2);
+if true, w = 1; endif
+for i = 1:2, w = w + 1; endfor
+
+### strings/char_functions_classic
+assert(strcmp(upper('abc'), 'ABC')); assert(strcmp(strrep('hello', 'l', 'L'), 'heLLo'));
+assert(isequal(strsplit('a,b,c', ','), {'a', 'b', 'c'})); assert(strcmp(strjoin({'a', 'b'}, '-'), 'a-b'));
+assert(strcmp(strtrim('  x  '), 'x')); assert(isequal(strfind('abcabc', 'bc'), [2 5]));
+[tok, rest] = strtok('one two'); assert(strcmp(tok, 'one') && strcmp(rest, ' two'));
+assert(str2double('1e3') == 1000); assert(isnan(str2double('abc'))); assert(isequal(str2num('[1 2;3 4]'), [1 2; 3 4]));
+assert(strcmpi('ABC', 'abc')); assert(strncmp('hello', 'help', 3)); assert(isequal(strcmp({'a', 'b'}, 'a'), [true false]));
+assert(strcmp(regexprep('abc123', '\d+', 'X'), 'abcX')); assert(strcmp(fliplr('abc'), 'cba'));
+assert(isequal(size(char('a', 'bcd')), [2 3])); assert(strcmp(deblank('ab  '), 'ab')); assert(strcmp(blanks(2), '  '));
+assert(strcmp(dec2bin(5), '101')); assert(bin2dec('101') == 5); assert(strcmp(dec2hex(255), 'FF')); assert(hex2dec('ff') == 255);
+assert(isequal(isstrprop('a1 ', 'digit'), [false true false])); assert(strcmp(lower('ABC'), 'abc'));
+assert(strcmp(strcat('a ', 'b'), 'ab')); assert(isequal(strcat({'a '}, 'b'), {'a b'}));
+
+### strings/regexp
+[tok, mat] = regexp('ab12cd345', '(\d+)', 'tokens', 'match'); assert(isequal(mat, {'12', '345'}) && strcmp(tok{2}{1}, '345'));
+n = regexp('key=val', '(?<k>\w+)=(?<v>\w+)', 'names'); assert(strcmp(n.k, 'key') && strcmp(n.v, 'val'));
+assert(strcmp(regexp('abc', 'b.', 'match', 'once'), 'bc')); assert(isequal(regexp('a1b2', '\d'), [2 4]));
+assert(isequal(regexp('a,b;c', '[,;]', 'split'), {'a', 'b', 'c'}));
+assert(strcmp(regexprep('abc', '(a)(b)', '$2$1'), 'bac')); assert(~isempty(regexpi('ABC', 'b', 'match')));
+assert(isempty(regexp('abc', 'x', 'match', 'once'))); assert(strcmp(regexprep('aaa', 'a', 'b', 'once'), 'baa'));
+[s, e] = regexp('hello world', 'o\s?w'); assert(s == 5 && e == 7);
+assert(strcmp(regexp('price: $42', '(?<=\$)\d+', 'match', 'once'), '42'));
+assert(strcmp(regexptranslate('escape', 'a.b'), 'a\.b'));
+
+### strings/regexp_dynamic_replacement
+assert(strcmp(regexprep('john smith', '(\w)(\w*)', '${upper($1)}$2'), 'John Smith'));
+
+### strings/modern_text_functions_on_char
+assert(contains('hello', 'ell')); assert(startsWith('hello', 'he')); assert(endsWith('hello', 'lo'));
+assert(strcmp(replace('abc', 'b', 'x'), 'axc')); assert(strcmp(extractBefore('a=b', '='), 'a')); assert(strcmp(extractAfter('a=b', '='), 'b'));
+assert(isequal(extractBetween('f(x)', '(', ')'), {'x'}));
+assert(count('banana', 'an') == 2); assert(strcmp(erase('abcabc', 'b'), 'acac')); assert(strlength('abc') == 3);
+assert(strcmp(strip('  a  '), 'a')); assert(strcmp(pad('a', 3), 'a  ')); assert(strcmp(reverse('abc'), 'cba'));
+assert(strcmp(insertAfter('ac', 'a', 'b'), 'abc')); assert(isequal(newline, char(10)));
+assert(contains('Hello', 'hell', 'IgnoreCase', true)); assert(isequal(contains({'ab', 'cd'}, 'a'), [true false]));
+
+### strings/string_array_basics
+s = "abc"; assert(isstring(s)); assert(numel(s) == 1); assert(strlength(s) == 3);
+assert(s + "d" == "abcd"); assert(s + 1 == "abc1"); t = ["a", "bb", "ccc"]; assert(isequal(size(t), [1 3]));
+assert(isequal(strlength(t), [1 2 3])); assert(isequal(t == "bb", [false true false]));
+assert(strcmp(class(t(2)), 'string')); c = char(t(3)); assert(strcmp(c, 'ccc')); assert(isequal(cellstr(t), {'a', 'bb', 'ccc'}));
+assert(string(12) == "12"); assert(double("3.5") == 3.5); assert(isequal(string([1 2]), ["1", "2"]));
+z = strings(1, 2); assert(all(z == "")); assert(ismissing(string(missing)));
+assert(isequal(sort(["b", "a"]), ["a", "b"])); assert(isequal(unique(["a", "b", "a"]), ["a", "b"]));
+assert("abc" < "abd"); u = [s; "x"]; assert(isequal(size(u), [2 1]));
+assert(strcmp(s, 'abc')); assert(isequal(s{1}(2), 'b')); x = "a" + ["1", "2"]; assert(isequal(x, ["a1", "a2"]));
+
+### strings/string_array_methods
+t = ["apple pie", "banana"]; assert(isequal(contains(t, "an"), [false true])); assert(isequal(upper(t(2)), "BANANA"));
+assert(isequal(split("a,b,c", ","), ["a"; "b"; "c"])); assert(join(["a", "b"], "-") == "a-b");
+assert(replace("abc", "b", "x") == "axc"); assert(extractBefore("a=b", "=") == "a"); assert(extractBetween("f(x)", "(", ")") == "x");
+assert(strip("  a ") == "a"); assert(isequal(compose("%d-%s", 5, "x"), "5-x")); assert(startsWith("hello", "he"));
+assert(isequal(strsplit("a b"), ["a", "b"])); assert(sprintf("%d", 3) == "3" && isstring(sprintf("%d", 3)));
+assert(isequaln(str2double(["1", "x"]), [1 NaN]));
+assert(isequal(lower("ABC"), "abc")); assert(erase("abc", "b") == "ac"); assert(pad("a", 3) == "a  "); assert(reverse("abc") == "cba");
+w = "The quick fox"; words = split(w); assert(numel(words) == 3 && words(2) == "quick");
+assert(isequal(count(["aa", "b"], "a"), [2 0])); assert(strjoin(["x", "y"], ", ") == "x, y");
+n = "5"; assert(str2double(n) + 1 == 6);
+
+### strings/pattern_objects
+r = extract("abc123def45", digitsPattern); assert(numel(r) == 2 && r(1) == "123" && r(2) == "45");
+assert(contains("a1", lettersPattern + digitsPattern)); assert(replace("a1b22", digitsPattern, "#") == "a#b#");
+p = "x" + wildcardPattern + "z"; assert(matches("xyyz", p));
+
+### strings/strings_in_structures_and_io
+s = struct('name', "Ann"); assert(s.name == "Ann"); c = {"a", 'b'}; assert(isstring(c{1}) && ischar(c{2}));
+m = containers.Map(); m("k") = 1; assert(m('k') == 1);
+x = ["b"; "a"]; [~, i] = sort(x); assert(isequal(i, [2; 1])); assert(ismember("a", x));
+fn = "f" + 1 + ".txt"; fid = fopen(fn, 'w'); fprintf(fid, "%s\n", "hello"); fclose(fid); assert(strtrim(string(fileread(fn))) == "hello");
+assert(isequal(string({'a', 'b'}), ["a", "b"])); assert(isfile(fn)); delete(fn);
+v = "3" + "4"; assert(v == "34"); assert(length("hello") == 1);
+switch "b", case "a", r = 1; case {"b", "c"}, r = 2; end; assert(r == 2);
+
+### tables/construct_and_index
+T = table([1; 2; 3], {'a'; 'b'; 'c'}, [true; false; true], 'VariableNames', {'N', 'S', 'L'});
+assert(height(T) == 3 && width(T) == 3); assert(isequal(T.N, [1; 2; 3])); assert(T{2, 'N'} == 2);
+U = T(T.N > 1, :); assert(height(U) == 2); T.D = T.N * 2; assert(isequal(T.Properties.VariableNames, {'N', 'S', 'L', 'D'}));
+assert(isequal(T{:, {'N', 'D'}}, [1 2; 2 4; 3 6])); assert(strcmp(T.S{3}, 'c')); assert(isequal(size(T), [3 4]));
+V = sortrows(T, 'N', 'descend'); assert(V.N(1) == 3); T(2, :) = []; assert(height(T) == 2);
+W = T(:, [1 4]); assert(width(W) == 2); assert(istable(W)); assert(isequal(table2array(W), [1 2; 3 6]));
+T.N(1) = 10; assert(T.N(1) == 10); X = [T; T]; assert(height(X) == 4);
+a = [1; 2]; b = [3; 4]; Y = table(a, b); assert(isequal(Y.Properties.VariableNames, {'a', 'b'}));
+
+### tables/io_roundtrip
+T = table([1; 2], {'x'; 'y'}, 'VariableNames', {'Id', 'Name'}); writetable(T, 't.csv');
+R = readtable('t.csv'); assert(isequal(R.Id, [1; 2])); assert(isequal(R.Name, {'x'; 'y'})); assert(isequal(R.Properties.VariableNames, {'Id', 'Name'}));
+txt = fileread('t.csv'); assert(strncmp(txt, 'Id,Name', 7));
+M = readmatrix('t.csv'); assert(isequal(M(:, 1), [1; 2]));
+
+### tables/grouping
+g = {'a'; 'b'; 'a'; 'b'}; x = [1; 2; 3; 4]; T = table(g, x);
+S = groupsummary(T, 'g', 'mean', 'x'); assert(isequal(S.mean_x, [2; 3])); assert(isequal(S.GroupCount, [2; 2]));
+[G, names] = findgroups(T.g); assert(isequal(G, [1; 2; 1; 2])); assert(isequal(splitapply(@sum, T.x, G), [4; 6]));
+V = varfun(@mean, T, 'InputVariables', 'x', 'GroupingVariables', 'g'); assert(isequal(V.mean_x, [2; 3]));
+C = groupcounts(T, 'g'); assert(isequal(C.GroupCount, [2; 2]));
+
+### tables/joins
+A = table([1; 2; 3], {'a'; 'b'; 'c'}, 'VariableNames', {'k', 'va'}); B = table([2; 3; 4], [20; 30; 40], 'VariableNames', {'k', 'vb'});
+J = innerjoin(A, B); assert(isequal(J.k, [2; 3]) && isequal(J.vb, [20; 30]));
+O = outerjoin(A, B, 'MergeKeys', true); assert(height(O) == 4);
+L = join(A(2:3, :), B); assert(isequal(L.vb, [20; 30]));
+
+### tables/stack_unstack
+T = table([1; 2], [10; 20], [30; 40], 'VariableNames', {'id', 'a', 'b'});
+S = stack(T, {'a', 'b'}); assert(height(S) == 4);
+U = unstack(S, 'a_b', 'a_b_Indicator'); assert(height(U) == 2);
+
+### tables/rowfun
+T = table([1; 2], [10; 20], [30; 40], 'VariableNames', {'id', 'a', 'b'});
+R = rowfun(@(a, b) a + b, T, 'InputVariables', {'a', 'b'}, 'OutputVariableNames', 'sum'); assert(isequal(R.sum, [40; 60]));
+
+### tables/utilities
+T = table([1; NaN; 3], {'a'; 'b'; 'c'}, 'VariableNames', {'x', 's'});
+T = addvars(T, [7; 8; 9], 'NewVariableNames', 'y'); assert(width(T) == 3); T = removevars(T, 'y'); assert(width(T) == 2);
+T = renamevars(T, 'x', 'z'); assert(strcmp(T.Properties.VariableNames{1}, 'z'));
+assert(isequal(ismissing(T.z), [false; true; false])); F = fillmissing(T.z, 'constant', 0); assert(isequal(F, [1; 0; 3]));
+R = rmmissing(T); assert(height(R) == 2); H = head(T, 2); assert(height(H) == 2);
+S = table2struct(T); assert(numel(S) == 3 && S(3).z == 3); T2 = struct2table(S); assert(height(T2) == 3);
+A = array2table([1 2; 3 4], 'VariableNames', {'p', 'q'}); assert(A.q(2) == 4); C = table2cell(A); assert(isequal(size(C), [2 2]));
+T.Properties.RowNames = {'r1', 'r2', 'r3'}; assert(T{'r3', 'z'} == 3);
+K = cell2table({1, 'a'; 2, 'b'}, 'VariableNames', {'n', 'c'}); assert(K.n(2) == 2);
+assert(isequal(T.Properties.VariableNames, {'z', 's'})); summary(T);
+
+### tables/timetable
+t = datetime(2024, 1, 1) + hours(0:3)'; TT = timetable(t, [1; 2; 3; 4], 'VariableNames', {'v'});
+assert(height(TT) == 4); R = retime(TT, 'daily', 'sum'); assert(R.v(1) == 10);
+
+### types/datetime_basics
+t = datetime(2024, 2, 28) + days(2); assert(t.Day == 1 && t.Month == 3 && t.Year == 2024);
+d = datetime(2024, 3, 1) - datetime(2024, 1, 1); assert(days(d) == 60); assert(hours(d) == 1440);
+p = datetime('2020-05-06', 'InputFormat', 'yyyy-MM-dd'); assert(month(p) == 5 && day(p) == 6 && year(p) == 2020);
+p.Format = 'dd/MM/yyyy'; assert(strcmp(char(p), '06/05/2020')); assert(strcmp(datestr(p, 'yyyy-mm-dd'), '2020-05-06'));
+s = dateshift(datetime(2024, 5, 17), 'start', 'month'); assert(s.Day == 1); assert(isnat(NaT));
+v = datetime(2024, 1, 1):days(1):datetime(2024, 1, 5); assert(numel(v) == 5); assert(v(2) > v(1));
+q = datetime(2024, 1, 31) + calmonths(1); assert(q.Month == 2 && q.Day == 29);
+assert(weekday(datetime(2024, 1, 1)) == 2); assert(string(datetime(2024, 1, 2), 'yyyy-MM-dd') == "2024-01-02");
+[y, m, dd] = ymd(datetime(2023, 12, 25)); assert(y == 2023 && m == 12 && dd == 25);
+assert(isequal(sort([datetime(2024, 1, 2), datetime(2024, 1, 1)]), [datetime(2024, 1, 1), datetime(2024, 1, 2)]));
+assert(posixtime(datetime(1970, 1, 2)) == 86400);
+
+### types/datetime_timezones
+t = datetime(2024, 1, 1, 12, 0, 0, 'TimeZone', 'America/New_York'); u = t; u.TimeZone = 'Europe/London'; assert(hour(u) == 17);
+z = datetime(2024, 7, 1, 12, 0, 0, 'TimeZone', 'UTC'); z.TimeZone = 'Asia/Tokyo'; assert(hour(z) == 21);
+
+### types/duration
+d = duration(1, 30, 0); assert(minutes(d) == 90); assert(hours(1.5) == d); assert(seconds(d) == 5400);
+assert(strcmp(char(d), '01:30:00')); e = d * 2; assert(hours(e) == 3); assert(d < hours(2));
+assert(isduration(d)); x = [minutes(1), seconds(30)]; assert(seconds(sum(x)) == 90);
+
+### types/legacy_dates
+n = datenum(2020, 1, 1); assert(n == 737791); assert(strcmp(datestr(n, 'yyyy-mm-dd'), '2020-01-01'));
+v = datevec('2020-03-04 05:06:07', 'yyyy-mm-dd HH:MM:SS'); assert(isequal(v, [2020 3 4 5 6 7]));
+assert(eomday(2024, 2) == 29); assert(weekday(n) == 4); c = clock; assert(numel(c) == 6); t0 = tic; e = toc(t0); assert(e >= 0);
+assert(addtodate(n, 1, 'month') == datenum(2020, 2, 1)); assert(abs(etime([2020 1 1 0 1 0], [2020 1 1 0 0 0]) - 60) < 1e-6);
+
+### types/categorical_basics
+c = categorical({'a', 'b', 'a', 'c'}); assert(isequal(categories(c), {'a'; 'b'; 'c'})); assert(isequal(countcats(c), [2 1 1]));
+assert(isequal(c == 'a', [true false true false])); assert(iscategorical(c)); assert(isequal(double(c), [1 2 1 3]));
+o = categorical({'lo', 'hi', 'mid'}, {'lo', 'mid', 'hi'}, 'Ordinal', true); assert(o(1) < o(2));
+c2 = mergecats(c, {'a', 'b'}, 'ab'); assert(isequal(categories(c2), {'ab'; 'c'})); c3 = renamecats(c, 'c', 'z'); assert(any(c3 == 'z'));
+c4 = removecats(c, 'c'); assert(isundefined(c4(4))); assert(isequal(cellstr(c(1:2)), {'a', 'b'}));
+
+### types/categorical_ordinal_minmax
+o = categorical({'lo', 'hi', 'mid'}, {'lo', 'mid', 'hi'}, 'Ordinal', true); assert(max(o) == 'hi'); assert(min(o) == 'lo');
+
+### types/containers_map
+m = containers.Map(); m('a') = 1; m('b') = 2; assert(m.isKey('a') && isKey(m, 'b')); assert(m.Count == 2);
+assert(isequal(keys(m), {'a', 'b'})); assert(isequal(values(m), {1, 2})); assert(isequal(values(m, {'b'}), {2}));
+remove(m, 'a'); assert(m.Count == 1); m2 = containers.Map({'x', 'y'}, [10 20]); assert(m2('y') == 20);
+m3 = containers.Map('KeyType', 'double', 'ValueType', 'any'); m3(3) = 'q'; m4 = m3; m4(4) = 1; assert(m3.Count == 2);
+threw = false; try, m('zz'); catch, threw = true; end; assert(threw); assert(length(m3) == 2);
+m5 = containers.Map('UniformValues', false); m5('k') = {1, 2}; assert(iscell(m5('k')));
+k = keys(m2); for i = 1:numel(k), assert(m2(k{i}) > 0); end
+
+### types/dictionary
+d = dictionary(["a", "b"], [1 2]); assert(d("b") == 2); d("c") = 3; assert(numEntries(d) == 3);
+assert(isKey(d, "a")); k = keys(d); assert(numel(k) == 3); d = remove(d, "a"); assert(~isKey(d, "a"));
+
+### types/struct_functions
+s = struct('a', 1, 'b', 'x'); assert(isequal(fieldnames(s), {'a'; 'b'})); assert(isequal(isfield(s, {'a', 'z'}), [true false]));
+s = rmfield(s, 'b'); assert(~isfield(s, 'b')); f = 'dyn'; s.(f) = 5; assert(s.dyn == 5);
+t = struct('v', {1, 2, 3}); assert(isequal(size(t), [1 3])); assert(isequal(arrayfun(@(e) e.v * 2, t), [2 4 6]));
+u = struct('c', {{1, 2}}); assert(iscell(u.c) && numel(u) == 1); n.a.b.c = 4; assert(getfield(n, 'a', 'b', 'c') == 4);
+n = setfield(n, 'a', 'b', 'd', 9); assert(n.a.b.d == 9); o = orderfields(struct('z', 1, 'a', 2)); assert(isequal(fieldnames(o), {'a'; 'z'}));
+c = struct2cell(struct('p', 1, 'q', 'w')); assert(isequal(c, {1; 'w'})); r = cell2struct({1; 2}, {'x', 'y'}, 1); assert(r.y == 2);
+assert(isequal(structfun(@(v) v * 2, struct('a', 1, 'b', 2)), [2; 4])); assert(isstruct(t) && isempty(struct([])));
+t(2) = []; assert(numel(t) == 2); [t.v] = deal(0); assert(all([t.v] == 0)); q = [t.v]; assert(isrow(q));
+w = struct(); w(2).k = 1; assert(isempty(w(1).k)); x = repmat(struct('m', 0), 2, 2); assert(isequal(size(x), [2 2]));
+
+### types/cell_functions
+c = {1, 'a', [1 2 3]}; assert(isequal(cellfun(@numel, c), [1 1 3])); assert(isequal(cellfun('isempty', {[], 1}), [true false]));
+d = cellfun(@(x) x * 2, {1, 2}, 'UniformOutput', false); assert(isequal(d, {2, 4}));
+[mx, ix] = cellfun(@max, {[1 5], [7 2]}); assert(isequal(mx, [5 7]) && isequal(ix, [2 1]));
+assert(isequal(cell2mat({[1 2], 3; [4 5], 6}), [1 2 3; 4 5 6])); assert(isequal(num2cell([1 2]), {1, 2}));
+m = mat2cell(magic(4), [2 2], [3 1]); assert(isequal(size(m{1, 1}), [2 3])); assert(iscellstr({'a', 'b'}) && ~iscellstr({'a', 1}));
+c(2) = []; assert(numel(c) == 2); e = cell(2, 3); assert(isempty(e{2, 3})); assert(isequal(sort({'b', 'a', 'c'}), {'a', 'b', 'c'}));
+[tf, loc] = ismember('b', {'a', 'b'}); assert(tf && loc == 2); [u, ~, j] = unique({'x', 'y', 'x'}); assert(isequal(u, {'x', 'y'}) && isequal(j(:)', [1 2 1]));
+r = cellfun(@(x) error('bad'), {1, 2}, 'ErrorHandler', @(err, x) -1); assert(isequal(r, [-1 -1]));
+n = {1, {2, {3}}}; assert(n{2}{2}{1} == 3);
+assert(isequal(arrayfun(@(k) k^2, 1:3), [1 4 9])); a = arrayfun(@(k) 1:k, 1:2, 'UniformOutput', false); assert(isequal(a{2}, [1 2]));
+
+### arrays/manipulation
+A = reshape(1:6, 2, 3); assert(isequal(A(:, 2)', [3 4])); assert(isequal(reshape(A, [], 2), [1 4; 2 5; 3 6]));
+assert(isequal(size(permute(zeros(2, 3, 4), [3 1 2])), [4 2 3])); assert(isequal(size(squeeze(ones(1, 1, 3))), [3 1]));
+assert(isequal(repmat([1 2], 2, 2), [1 2 1 2; 1 2 1 2])); assert(isequal(repelem([1 2], 2), [1 1 2 2]));
+assert(isequal(cat(3, 1, 2), reshape([1 2], 1, 1, 2))); assert(isequal(circshift(1:4, 1), [4 1 2 3]));
+assert(isequal(flip([1 2; 3 4]), [3 4; 1 2])); assert(isequal(rot90([1 2; 3 4]), [2 4; 1 3])); assert(isequal(fliplr([1 2 3]), [3 2 1]));
+assert(isequal(kron([1 2], [1; 1]), [1 2; 1 2])); [X, Y] = meshgrid(1:2, 1:3); assert(isequal(size(X), [3 2]) && Y(3, 1) == 3);
+assert(sub2ind([3 4], 2, 3) == 8); [r, c] = ind2sub([3 4], 8); assert(r == 2 && c == 3);
+assert(isequal(tril(ones(2)), [1 0; 1 1])); assert(isequal(diag([1 2]), [1 0; 0 2])); assert(isequal(blkdiag(1, 2), [1 0; 0 2]));
+assert(isequal(linspace(0, 1, 3), [0 0.5 1])); assert(all(abs(logspace(0, 2, 3) - [1 10 100]) < 1e-12));
+assert(isequal(horzcat([1; 2], [3; 4]), [1 3; 2 4])); assert(isrow(1:3) && iscolumn((1:3)') && isvector(1:3) && isscalar(5) && ismatrix(ones(2)));
+assert(isequal(find([0 1 0 1]), [2 4])); assert(isequal(find([0 1 0 1], 1, 'last'), 4)); [i, j, v] = find([0 2; 3 0]); assert(isequal([i j v], [2 1 3; 1 2 2]));
+assert(nnz([1 0 2]) == 2); assert(isequal(cumsum([1 2 3]), [1 3 6])); assert(isequal(diff([1 4 9]), [3 5])); assert(isequal(triu(magic(3), 1), [0 1 6; 0 0 7; 0 0 0]));
+[G1, G2] = ndgrid(1:2, 1:3); assert(isequal(size(G1), [2 3])); assert(isequal(colon(1, 3), 1:3));
+
+### arrays/reductions_with_flags
+A = [1 2; 3 4]; assert(sum(A, 'all') == 10); assert(isequal(sum(A, 2), [3; 7])); assert(max(A, [], 'all') == 4);
+assert(isequal(max(A, [], 2), [2; 4])); assert(mean([1 NaN 3], 'omitnan') == 2); assert(isequal(min(A, [], [1 2]), 1));
+assert(isequal(cumsum([1 2 3], 'reverse'), [6 5 3])); assert(isequal(vecnorm([3 4; 6 8], 2, 2), [5; 10]));
+[lo, hi] = bounds([3 1 2]); assert(lo == 1 && hi == 3); assert(isequal(maxk([5 1 9 3], 2), [9 5])); assert(isequal(cummax([1 3 2]), [1 3 3]));
+assert(abs(std([1 2 3 4]) - sqrt(5 / 3)) < 1e-12); assert(var([1 2 3 4], 1) == 1.25); assert(median([3 1 2]) == 2); assert(mode([1 2 2 3]) == 2);
+assert(isequal(any(A > 3, 1), [false true])); assert(all(A(:) > 0)); assert(isequal(prod(A), [3 8]));
+assert(isequal(movmean([1 2 3 4 5], 3), [1.5 2 3 4 4.5])); assert(isequal(sum(A, [1 2]), 10)); assert(isequal(mean(A, 'all'), 2.5));
+assert(isequal(rescale([1 2 3]), [0 0.5 1])); assert(isequal(normalize([1 2 3]), [-1 0 1])); assert(nnz(isoutlier([1 1 1 1 1 100])) == 1);
+[N, edges] = histcounts([1 2 2 3 5], 0:2:6); assert(isequal(N, [1 3 1])); assert(isequal(discretize([1 5], [0 2 6]), [1 2]));
+
+### arrays/sets_and_sorting
+[u, i, j] = unique([3 1 3 2]); assert(isequal(u, [1 2 3])); assert(isequal(u(j), [3 1 3 2])); assert(isequal(unique([3 1 3 2], 'stable'), [3 1 2]));
+assert(isequal(unique([1 2; 1 2; 3 4], 'rows'), [1 2; 3 4])); [tf, loc] = ismember([1 5 2], [2 1]); assert(isequal(tf, [true false true]) && isequal(loc, [2 0 1]));
+[c, ia, ib] = intersect([1 2 3], [3 1 5]); assert(isequal(c, [1 3]) && isequal(ia(:)', [1 3]) && isequal(ib(:)', [2 1]));
+assert(isequal(union([3 1], [2 1]), [1 2 3])); assert(isequal(setdiff([1 2 3 4], [2 4]), [1 3])); assert(isequal(setxor([1 2], [2 3]), [1 3]));
+[s, k] = sort([3 1 2], 'descend'); assert(isequal(s, [3 2 1]) && isequal(k, [1 3 2])); assert(isequal(sortrows([1 2; 1 1; 0 5], [1 -2]), [0 5; 1 2; 1 1]));
+assert(issorted([1 2 2 3])); assert(isequal(sort([-3 1 -2], 'ComparisonMethod', 'abs'), [1 -2 -3]));
+assert(isequal(ismember([1 2; 3 4], [3 4], 'rows'), [false; true])); assert(isequal(sort([2 1; 0 5], 2), [1 2; 0 5]));
+assert(isequal(accumarray([1; 2; 1], [10; 20; 30]), [40; 20])); assert(isequal(accumarray([1 1; 2 2; 1 1], [1; 2; 3]), [4 0; 0 2]));
+assert(isequal(accumarray([1; 2; 1], [1; 2; 3], [], @max), [3; 2])); assert(isequal(histc([1 2 2 5], 1:5), [1 2 0 0 1]));
+assert(isequal(fliplr(sort('hello')), 'ollhe')); assert(isequal(nchoosek(4, 2), 6)); assert(isequal(size(nchoosek(1:4, 2)), [6 2])); assert(isequal(size(perms(1:3)), [6 3]));
+assert(isequal(primes(10), [2 3 5 7])); assert(isprime(7)); assert(isequal(factor(12), [2 2 3])); assert(gcd(12, 18) == 6 && lcm(4, 6) == 12);
+assert(isequal(cumprod([1 2 3]), [1 2 6])); assert(dot([1 2 3], [4 5 6]) == 32); assert(isequal(cross([1 0 0], [0 1 0]), [0 0 1]));
+
+### arrays/nd_and_complex
+A = zeros(2, 3, 4); assert(ndims(A) == 3); assert(isequal(size(sum(A, 3)), [2 3])); [r, c, p] = size(A); assert(p == 4);
+B = cat(3, [1 2; 3 4], [5 6; 7 8]); assert(B(2, 1, 2) == 7); assert(isequal(B(:, :, end), [5 6; 7 8])); assert(B(end) == 8);
+assert(isequal(size(permute(B, [3 1 2])), [2 2 2])); assert(isequal(mean(B, 3), [3 4; 5 6])); assert(numel(B(:)) == 8);
+z = 3 + 4i; assert(abs(z) == 5); assert(conj(z) == 3 - 4i); assert(abs(angle(1i) - pi / 2) < 1e-15); assert(abs(exp(1i * pi) + 1) < 1e-15);
+assert(~isreal(sqrt(-1))); assert(isreal(complex(1, 0)) == false); assert(isequal([1+2i 3]', [1-2i; 3])); assert(isequal([1+2i 3].', [1+2i; 3]));
+r = roots([1 0 1]); assert(all(abs(abs(r) - 1) < 1e-12)); assert(abs((-8)^(1/3) - (1 + sqrt(3) * 1i)) < 1e-12); assert(nthroot(-8, 3) == -2);
+assert(isequal(sort([3+4i, 1, -2]), [1, -2, 3+4i])); assert(isequal(size(A(:, :, 1)), [2 3])); A(:, :, 5) = 1; assert(size(A, 3) == 5);
+
+### arrays/page_functions
+A = rand(2, 3, 4); B = rand(3, 2, 4); C = pagemtimes(A, B); assert(isequal(size(C), [2 2 4])); assert(norm(C(:, :, 2) - A(:, :, 2) * B(:, :, 2)) < 1e-12);
+T = pagetranspose(A); assert(isequal(size(T), [3 2 4]));

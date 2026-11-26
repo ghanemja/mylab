@@ -1,0 +1,248 @@
+### linalg/solve_and_basics
+A = [4 -2; 1 1]; b = [2; 3]; x = A \ b; assert(norm(A * x - b) < 1e-12); assert(abs(det(A) - 6) < 1e-12);
+assert(norm(inv(A) * A - eye(2)) < 1e-12); assert(rank([1 2; 2 4]) == 1); assert(trace(A) == 5);
+assert(abs(norm([3 4]) - 5) < 1e-12); assert(norm([1 2; 3 4], 1) == 6); assert(norm([1 2; 3 4], inf) == 7); assert(abs(norm([1 2; 3 4], 'fro') - sqrt(30)) < 1e-12);
+X = [1 1; 1 2; 1 3]; y = [1; 2; 2]; c = X \ y; assert(norm(c - [2/3; 1/2]) < 1e-12);
+assert(norm(pinv([1 2; 2 4]) - [1 2; 2 4] / 25) < 1e-12); N = null([1 1]); assert(abs(sum(N)) < 1e-12 && abs(norm(N) - 1) < 1e-12);
+assert(norm(expm(zeros(2)) - eye(2)) < 1e-12); assert(norm(expm([0 1; 0 0]) - [1 1; 0 1]) < 1e-12); assert(norm(sqrtm([4 0; 0 9]) - [2 0; 0 3]) < 1e-12);
+assert(abs(cond([1 0; 0 2]) - 2) < 1e-12); assert(norm(logm(expm([1 2; 0 1])) - [1 2; 0 1]) < 1e-10); assert(norm([1 2; 3 4] / [1 2; 3 4] - eye(2)) < 1e-12);
+u = [1 2 3] / 2; assert(isequal(u, [0.5 1 1.5])); assert(isequal(rref([1 2; 3 4]), eye(2)));
+
+### linalg/decompositions
+A = [4 3; 6 3]; [L, U, P] = lu(A); assert(norm(P * A - L * U) < 1e-12); [Q, R] = qr(A); assert(norm(Q * R - A) < 1e-12 && norm(Q' * Q - eye(2)) < 1e-12);
+S = [4 2; 2 3]; R2 = chol(S); assert(norm(R2' * R2 - S) < 1e-12); L2 = chol(S, 'lower'); assert(norm(L2 * L2' - S) < 1e-12);
+[U2, D, V] = svd([3 0; 0 4]); assert(isequal(diag(D)', [4 3])); assert(isequal(svd([3 0; 0 4])', [4 3]));
+[V2, E] = eig(S); assert(norm(S * V2 - V2 * E) < 1e-12); e = eig([2 0; 0 1]); assert(isequal(e', [1 2]));
+[Qe, Re] = qr([1 2; 3 4; 5 6], 0); assert(isequal(size(Qe), [3 2])); [Ue, Se, Ve] = svd([1 2; 3 4; 5 6], 'econ'); assert(isequal(size(Ue), [3 2]));
+[T, Sch] = schur(S); assert(norm(T * Sch * T' - S) < 1e-12); [Pm, H] = hess(magic(3)); assert(norm(Pm * H * Pm' - magic(3)) < 1e-10);
+ev = eig([1 2; 3 4], [2 0; 0 1]); assert(numel(ev) == 2);
+
+### linalg/advanced *
+[V, D, W] = eig([2 1; 0 3]); assert(norm(W' * [2 1; 0 3] - D * W') < 1e-10);
+[AA, BB, Q, Z] = qz([1 2; 3 4], [5 6; 7 8]); assert(norm(Q * [1 2; 3 4] * Z - AA) < 1e-10);
+[L, D] = ldl([4 2; 2 3]); assert(norm(L * D * L' - [4 2; 2 3]) < 1e-12);
+R = chol([4 2; 2 3]); R1 = cholupdate(R, [1; 1]); assert(norm(R1' * R1 - ([4 2; 2 3] + ones(2))) < 1e-10);
+assert(norm(lsqminnorm([1 2; 2 4], [1; 2]) - [0.2; 0.4]) < 1e-12);
+x = linsolve([2 0; 1 3], [2; 5], struct('LT', true)); assert(norm(x - [1; 4/3]) < 1e-12);
+dA = decomposition([4 3; 6 3]); y = dA \ [1; 2]; assert(norm([4 3; 6 3] * y - [1; 2]) < 1e-12);
+[G, y2] = planerot([3; 4]); assert(abs(y2(1) - 5) < 1e-12);
+assert(abs(normest(magic(4)) - 34) < 1e-4);
+c = condest(sparse([2 0; 0 1])); assert(abs(c - 2) < 1e-10);
+F = funm([1 0; 0 2], @exp); assert(norm(F - diag(exp([1 2]))) < 1e-10);
+[Q, R] = qr([1 2; 3 4]); [Q1, R1] = qrupdate(Q, R, [1; 0], [0; 1]); assert(norm(Q1 * R1 - ([1 2; 3 4] + [0 1; 0 0])) < 1e-10);
+assert(abs(subspace([1; 0], [1; 1]) - pi / 4) < 1e-12);
+assert(isequal(size(gallery('minij', 4)), [4 4]));
+B = balance([1 100; 0.01 1]); assert(isequal(size(B), [2 2]));
+T = tensorprod([1 2; 3 4], [1; 1], 2, 1); assert(isequal(T, [3; 7]));
+assert(isequal(hankel([1 2 3]), [1 2 3; 2 3 0; 3 0 0]));
+assert(isequal(toeplitz([1 2 3]), [1 2 3; 2 1 2; 3 2 1]));
+assert(isequal(vander([1 2 3]), [1 1 1; 4 2 1; 9 3 1]));
+assert(isequal(hilb(2), [1 1/2; 1/2 1/3])); assert(isequal(pascal(3), [1 1 1; 1 2 3; 1 3 6])); assert(isequal(compan([1 2 3]), [-2 -3; 1 0]));
+assert(isequal(size(orth([1 1; 1 1])), [2 1])); assert(abs(rcond(eye(2)) - 1) < 1e-12);
+assert(abs(cond([1 2; 3 4], 1) - 21) < 1e-10);
+assert(isequal(size(gallery('poisson', 4)), [16 16]));
+x = lscov([1 0; 0 1; 1 1], [1; 2; 3]); assert(norm(x - [1; 2]) < 1e-12);
+assert(isequal(circshift([1 2; 3 4], 1, 2), [2 1; 4 3])); assert(istril([1 0; 1 1]) && isdiag(eye(2)) && issymmetric([1 2; 2 1]) && isbanded([1 0; 0 1], 0, 0));
+
+### sparse/core
+S = sparse([1 2 3], [1 2 3], [4 5 6]); assert(issparse(S) && nnz(S) == 3); assert(isequal(full(S), diag([4 5 6])));
+b = [4; 10; 18]; x = S \ b; assert(norm(x - [1; 2; 3]) < 1e-12); assert(isequal(full(speye(2)), eye(2)));
+T = spdiags([1 2 3; 4 5 6; 7 8 9], -1:1, 3, 3); assert(issparse(T) && T(2, 1) == 1); [i, j, v] = find(S); assert(isequal(v', [4 5 6]));
+assert(issparse(S * S) && issparse(S + S) && issparse(S')); assert(isequal(full(S(2, :)), [0 5 0])); assert(nzmax(S) >= 3);
+S(1, 3) = 9; assert(nnz(S) == 4); assert(issparse(sprand(5, 5, 0.3))); A = sparse(4, 4); assert(nnz(A) == 0);
+assert(issparse(kron(speye(2), S))); assert(~issparse(full(S))); assert(isequal(spones(S) ~= 0, S ~= 0));
+
+### sparse/advanced *
+A = sparse(diag(1:10)); d = eigs(A, 2); assert(norm(sort(d) - [9; 10]) < 1e-8);
+A = sparse(diag(1:10)); s = svds(A, 1); assert(abs(s - 10) < 1e-8);
+e = ones(16, 1); A = spdiags([-e 2 * e -e], -1:1, 16, 16); b = ones(16, 1); [x, flag] = pcg(A, b, 1e-10, 100); assert(flag == 0 && norm(A * x - b) < 1e-6);
+e = ones(16, 1); A = spdiags([-e 2 * e -e], -1:1, 16, 16); A = A + speye(16); b = ones(16, 1); [x, flag] = gmres(A, b, [], 1e-10, 16); assert(flag == 0 && norm(A * x - b) < 1e-6);
+e = ones(16, 1); A = spdiags([-e 2 * e -e], -1:1, 16, 16); A = A + speye(16); b = ones(16, 1); [x, flag] = bicgstab(A, b, 1e-10, 100); assert(flag == 0);
+e = ones(16, 1); A = spdiags([-e 2 * e -e], -1:1, 16, 16); L = ichol(A); assert(istril(L));
+e = ones(16, 1); A = spdiags([-e 2 * e -e], -1:1, 16, 16); [L, U] = ilu(A); assert(issparse(L) && issparse(U));
+e = ones(16, 1); A = spdiags([-e 2 * e -e], -1:1, 16, 16); p = amd(A); assert(isequal(sort(p), 1:16));
+e = ones(16, 1); A = spdiags([-e 2 * e -e], -1:1, 16, 16); p = symrcm(A); assert(isequal(sort(p(:)'), 1:16));
+A = sparse([1 0; 1 1]); p = dmperm(A); assert(numel(p) == 2);
+S = sparse([1 0; 0 2]); assert(issparse(S(1, 1)));
+A = sparse([4 1; 1 3]); R = chol(A); assert(issparse(R) && norm(full(R' * R - A)) < 1e-12);
+A = sparse([4 1; 1 3]); [L, U, P, Q] = lu(A); assert(norm(full(P * A * Q - L * U)) < 1e-12);
+A = spalloc(3, 3, 5); A(2, 2) = 1; assert(nnz(A) == 1);
+G = graph([1 2 3], [2 3 1]); assert(numnodes(G) == 3 && numedges(G) == 3);
+G = digraph([1 2], [2 3]); p = shortestpath(G, 1, 3); assert(isequal(p, [1 2 3]));
+G = graph([1 2 4], [2 3 5]); bins = conncomp(G); assert(max(bins) == 2);
+
+### ode/solvers *
+[t, y] = ode45(@(t, y) -y, [0 1], 1); assert(abs(y(end) - exp(-1)) < 1e-3 && t(end) == 1);
+opts = odeset('RelTol', 1e-10, 'AbsTol', 1e-12); [t, y] = ode45(@(t, y) -y, [0 1], 1, opts); assert(abs(y(end) - exp(-1)) < 1e-9);
+sol = ode45(@(t, y) -y, [0 1], 1); v = deval(sol, 0.5); assert(abs(v - exp(-0.5)) < 1e-3);
+[t, y] = ode45(@(t, y) [y(2); -y(1)], [0 pi], [0; 1]); assert(abs(y(end, 1)) < 1e-2 && size(y, 2) == 2);
+[t, y] = ode45(@(t, y) -y, [0 0.5 1], 1); assert(numel(t) == 3 && abs(y(2) - exp(-0.5)) < 2e-3);
+[t, y] = ode23(@(t, y) -y, [0 1], 1); assert(abs(y(end) - exp(-1)) < 1e-2);
+[t, y] = ode113(@(t, y) -y, [0 1], 1); assert(abs(y(end) - exp(-1)) < 1e-2);
+[t, y] = ode15s(@(t, y) -1000 * (y - cos(t)), [0 1], 0); assert(abs(y(end) - cos(1)) < 1e-2);
+[t, y] = ode23s(@(t, y) -1000 * (y - cos(t)), [0 1], 0); assert(abs(y(end) - cos(1)) < 1e-2);
+[t, y] = ode23t(@(t, y) -y, [0 1], 1); assert(abs(y(end) - exp(-1)) < 1e-2);
+[t, y] = ode23tb(@(t, y) -y, [0 1], 1); assert(abs(y(end) - exp(-1)) < 1e-2);
+[t, y] = ode78(@(t, y) -y, [0 1], 1); assert(abs(y(end) - exp(-1)) < 1e-6);
+[t, y] = ode89(@(t, y) -y, [0 1], 1); assert(abs(y(end) - exp(-1)) < 1e-6);
+ev = @(t, y) deal(y(1), 1, -1); opts = odeset('Events', ev); [t, y, te] = ode45(@(t, y) [y(2); -9.81], [0 5], [10; 0], opts); assert(abs(te - sqrt(20 / 9.81)) < 1e-3);
+opts = odeset('Mass', [2 0; 0 1]); [t, y] = ode45(@(t, y) [-2 * y(1); -y(2)], [0 1], [1; 1], opts); assert(abs(y(end, 1) - exp(-1)) < 1e-3);
+opts = odeset('MaxStep', 0.01); [t, y] = ode45(@(t, y) 1, [0 1], 0, opts); assert(numel(t) >= 100);
+sol = bvp4c(@(x, y) [y(2); -y(1)], @(ya, yb) [ya(1); yb(1) - 1], bvpinit(linspace(0, pi / 2, 5), [0 1])); assert(abs(deval(sol, pi / 4, 1) - sin(pi / 4)) < 1e-3);
+sol = dde23(@(t, y, Z) -Z, 1, 1, [0 2]); assert(abs(sol.y(end) + 0.5) < 1e-3);
+F = ode(ODEFcn = @(t, y) -y, InitialValue = 1); S = solve(F, 0, 1); assert(abs(S.Solution(end) - exp(-1)) < 1e-3);
+[t, y] = ode15i(@(t, y, yp) yp + y, [0 1], 1, -1); assert(abs(y(end) - exp(-1)) < 1e-2);
+
+### quadrature/integrals *
+assert(abs(integral(@(x) exp(-x.^2), -Inf, Inf) - sqrt(pi)) < 1e-8);
+assert(abs(integral(@(x) x.^2, 0, 1) - 1/3) < 1e-10);
+assert(abs(integral(@(x) 1 ./ sqrt(x), 0, 1) - 2) < 1e-6);
+q = integral(@(x) [x, x.^2], 0, 1, 'ArrayValued', true); assert(norm(q - [1/2 1/3]) < 1e-10);
+assert(abs(integral2(@(x, y) x .* y, 0, 1, 0, 2) - 1) < 1e-8);
+assert(abs(integral2(@(x, y) x + y, 0, 1, 0, @(x) x) - 0.5) < 1e-8);
+assert(abs(integral3(@(x, y, z) x + y + z, 0, 1, 0, 1, 0, 1) - 1.5) < 1e-8);
+assert(abs(quadgk(@(x) sin(x), 0, pi) - 2) < 1e-10);
+assert(abs(quad(@(x) sin(x), 0, pi) - 2) < 1e-5);
+assert(abs(quadl(@(x) sin(x), 0, pi) - 2) < 1e-5);
+assert(trapz([0 1 2], [0 1 4]) == 3); assert(isequal(cumtrapz([1 2 3]), [0 1.5 4]));
+assert(abs(integral(@(x) x, 0, 1, 'RelTol', 1e-12, 'AbsTol', 1e-14) - 0.5) < 1e-13);
+assert(abs(dblquad(@(x, y) x .* y, 0, 1, 0, 1) - 0.25) < 1e-6);
+
+### optim/base_matlab *
+x = fzero(@(x) x^2 - 2, [0 2]); assert(abs(x - sqrt(2)) < 1e-10);
+x = fzero(@cos, 1); assert(abs(x - pi / 2) < 1e-10);
+[x, fv, flag] = fzero(@(x) x^3 - 1, 0.5, optimset('TolX', 1e-12)); assert(flag == 1 && abs(x - 1) < 1e-9);
+x = fminsearch(@(x) (x(1) - 1)^2 + (x(2) + 2)^2, [0 0]); assert(norm(x - [1 -2]) < 1e-3);
+[x, fval] = fminbnd(@(x) (x - 2)^2, 0, 5); assert(abs(x - 2) < 1e-4);
+x = lsqnonneg([1 0; 0 1], [1; -1]); assert(norm(x - [1; 0]) < 1e-10);
+o = optimset('Display', 'off', 'TolFun', 1e-8); assert(optimget(o, 'TolFun') == 1e-8);
+x = fminsearch(@(x) sum((x - [3 4]).^2), [0 0], optimset('TolX', 1e-8, 'TolFun', 1e-8)); assert(norm(x - [3 4]) < 1e-5);
+
+### optim/toolbox *
+x = fsolve(@(x) [x(1)^2 + x(2)^2 - 4; x(1) - x(2)], [1; 1], optimset('Display', 'off')); assert(norm(x - sqrt(2)) < 1e-5);
+x = fminunc(@(x) (x(1) - 1)^2 + (x(2) - 2)^2, [0 0], optimset('Display', 'off')); assert(norm(x - [1 2]) < 1e-4);
+x = fmincon(@(x) x(1)^2 + x(2)^2, [1 1], [], [], [1 1], 1, [], [], [], optimset('Display', 'off')); assert(norm(x - [0.5 0.5]) < 1e-4);
+x = fmincon(@(x) -x(1) * x(2), [1 1], [1 1], 2, [], [], [0 0], [], [], optimset('Display', 'off')); assert(norm(x - [1 1]) < 1e-3);
+x = fmincon(@(x) (x(1) - 2)^2 + (x(2) - 2)^2, [0 0], [], [], [], [], [], [], @(x) deal(x(1)^2 + x(2)^2 - 1, []), optimset('Display', 'off')); assert(norm(x - [1 1] / sqrt(2)) < 1e-3);
+x = lsqnonlin(@(p) p(1) * exp(p(2) * (0:3)) - 2 * exp(-0.5 * (0:3)), [1 0], [], [], optimset('Display', 'off')); assert(norm(x - [2 -0.5]) < 1e-4);
+x = lsqcurvefit(@(p, t) p(1) * t + p(2), [0 0], 1:4, [3 5 7 9], [], [], optimset('Display', 'off')); assert(norm(x - [2 1]) < 1e-5);
+x = linprog([-1; -1], [1 2; 3 1], [4; 6], [], [], [0; 0], [], optimset('Display', 'off')); assert(norm(x - [1.6; 1.2]) < 1e-6);
+x = quadprog([2 0; 0 2], [-2; -5], [1 1], 2, [], [], [], [], [], optimset('Display', 'off')); assert(norm(x - [0.25; 1.75]) < 1e-6);
+x = intlinprog([-1; -1], [1 2], [2 2; 1 0], [5; 2], [], [], [0; 0], []); assert(abs(sum(x) - 2) < 1e-6);
+x = lsqlin([1 0; 0 1], [1; 2], [1 1], 1, [], [], [], [], [], optimset('Display', 'off')); assert(norm(x - [0; 1]) < 1e-6);
+rng(1); x = ga(@(x) (x - 3)^2, 1, [], [], [], [], 0, 10); assert(abs(x - 3) < 0.1);
+rng(1); x = particleswarm(@(x) (x - 3)^2, 1, 0, 10); assert(abs(x - 3) < 0.01);
+x = patternsearch(@(x) (x - 3)^2, 0, [], [], [], [], 0, 10); assert(abs(x - 3) < 0.01);
+rng(1); x = simulannealbnd(@(x) (x - 3)^2, 0, 0, 10); assert(abs(x - 3) < 0.5);
+x = optimvar('x', 'LowerBound', 0); p = optimproblem('Objective', (x - 2)^2); s = solve(p, struct('x', 0)); assert(abs(s.x - 2) < 1e-4);
+x = fminimax(@(x) [x^2; (x - 2)^2], 0, [], [], [], [], [], [], [], optimset('Display', 'off')); assert(abs(x - 1) < 1e-3);
+[x, fval, exitflag, output] = fminunc(@(x) x^2, 1, optimset('Display', 'off')); assert(exitflag > 0 && isfield(output, 'iterations'));
+o = optimoptions('fmincon', 'Algorithm', 'sqp', 'MaxIterations', 50, 'Display', 'off'); assert(strcmp(o.Algorithm, 'sqp')); x = fmincon(@(x) (x - 1)^2, 0, [], [], [], [], -5, 5, [], o); assert(abs(x - 1) < 1e-4);
+f = fit((1:4)', [2; 4; 6; 8], 'poly1'); assert(abs(f.p1 - 2) < 1e-8);
+
+### interp/interpolation *
+assert(interp1([1 2 3], [10 20 30], 2.5) == 25);
+assert(isnan(interp1([1 2 3], [10 20 30], 4)));
+assert(interp1([1 2 3], [10 20 30], 4, 'linear', 'extrap') == 40);
+assert(interp1([1 2 3], [10 20 30], 2.4, 'nearest') == 20);
+assert(interp1([1 2 3], [10 20 30], 2.4, 'previous') == 20 && interp1([1 2 3], [10 20 30], 2.4, 'next') == 30);
+assert(abs(interp1([1 2 3 4], [1 4 9 16], 2.5, 'spline') - 6.25) < 1e-10);
+assert(abs(interp1([1 2 3 4], [1 4 9 16], 2.5, 'pchip') - 6.25) < 0.2);
+assert(abs(interp1([1 2 3 4 5], [1 4 9 16 25], 2.5, 'makima') - 6.25) < 0.2);
+assert(abs(interp1([1 2 3 4], [1 4 9 16], 2.5, 'cubic') - 6.25) < 0.2);
+assert(interp1([10 20 30], 1.5) == 15);
+[X, Y] = meshgrid(1:3, 1:3); assert(interp2(X, Y, X + Y, 1.5, 2.5) == 4);
+[X, Y] = meshgrid(1:3, 1:3); assert(abs(interp2(X, Y, X .* Y, 1.5, 2.5, 'cubic') - 3.75) < 0.1);
+[X, Y, Z] = meshgrid(1:2, 1:2, 1:2); assert(interp3(X, Y, Z, X + Y + Z, 1.5, 1.5, 1.5) == 4.5);
+F = griddedInterpolant([1 2 3], [10 20 30]); assert(F(2.5) == 25);
+[X, Y] = ndgrid(1:3, 1:3); F = griddedInterpolant(X, Y, X + 2 * Y, 'linear'); assert(F(1.5, 2.5) == 6.5);
+F = scatteredInterpolant([0; 1; 0; 1], [0; 0; 1; 1], [0; 1; 1; 2]); assert(abs(F(0.5, 0.5) - 1) < 1e-10);
+v = griddata([0 1 0 1], [0 0 1 1], [0 1 1 2], 0.5, 0.5); assert(abs(v - 1) < 1e-10);
+pp = spline([0 1 2 3], [0 1 8 27]); assert(abs(ppval(pp, 1.5) - 3.375) < 1e-10);
+assert(abs(spline([0 1 2 3], [0 1 8 27], 2.5) - 15.625) < 1e-10);
+pp = pchip([0 1 2], [0 1 4]); assert(abs(ppval(pp, 1) - 1) < 1e-12);
+pp = mkpp([0 1 2], [1 0; 2 1]); [b, c] = unmkpp(pp); assert(isequal(b, [0 1 2]) && ppval(pp, 1.5) == 2);
+vq = interp1([1 2 3], [10 20 30; 1 2 3]', [1.5 2.5]); assert(isequal(vq, [15 1.5; 25 2.5]));
+p = polyfit([1 2 3], [2 4 6], 1); assert(norm(p - [2 0]) < 1e-10);
+[p, S, mu] = polyfit([1 2 3 4], [1 4 9 16], 2); assert(isstruct(S) && numel(mu) == 2 && abs(polyval(p, 2.5, [], mu) - 6.25) < 1e-10);
+
+### fft/transforms_and_filters *
+x = [1 2 3 4]; X = fft(x); assert(norm(X - [10, -2+2i, -2, -2-2i]) < 1e-12);
+x = rand(1, 8); assert(norm(ifft(fft(x)) - x) < 1e-12 && isreal(ifft(fft(x))));
+x = rand(1, 5); X = fft(x, 8); assert(numel(X) == 8);
+A = rand(4, 3); assert(isequal(size(fft(A, [], 2)), [4 3]) && norm(fft(A) - [fft(A(:, 1)), fft(A(:, 2)), fft(A(:, 3))]) < 1e-12);
+A = rand(4); assert(norm(ifft2(fft2(A)) - A) < 1e-12);
+assert(isequal(fftshift([1 2 3 4]), [3 4 1 2]) && isequal(ifftshift([1 2 3 4 5]), [3 4 5 1 2]));
+A = rand(2, 3, 4); assert(norm(reshape(ifftn(fftn(A)) - A, 1, [])) < 1e-12);
+assert(nextpow2(100) == 7);
+x = randn(1, 16); assert(abs(sum(abs(x).^2) - sum(abs(fft(x)).^2) / 16) < 1e-10);
+x = [1 2 3 4]; y = ifft(fft(x), 'symmetric'); assert(isreal(y));
+c = conv([1 2 3], [1 1]); assert(isequal(c, [1 3 5 3]));
+c = conv([1 2 3], [1 1], 'same'); assert(isequal(c, [3 5 3]));
+[q, r] = deconv([1 3 5 3], [1 1]); assert(isequal(q, [1 2 3]) && all(r == 0));
+C = conv2([1 2; 3 4], [1 1]); assert(isequal(C, [1 3 2; 3 7 4]));
+y = filter(1, [1 -0.5], [1 0 0]); assert(isequal(y, [1 0.5 0.25]));
+y = filter([1 1] / 2, 1, [2 4 6]); assert(isequal(y, [1 3 5]));
+[y, zf] = filter(1, [1 -0.5], [1 0], 0); assert(zf == 0.25);
+
+### poly/polynomials *
+assert(norm(sort(roots([1 -3 2])) - [1; 2]) < 1e-12);
+assert(isequal(poly([1 2]), [1 -3 2]));
+assert(polyval([1 2 3], 2) == 11);
+assert(isequal(polyder([1 2 3]), [2 2]) && isequal(polyint([2 2]), [1 2 0]));
+[r, p, k] = residue(1, [1 3 2]); assert(norm(sort(r) - [-1; 1]) < 1e-10 && norm(sort(p) - [-2; -1]) < 1e-10 && isempty(k));
+assert(isequal(polyvalm([1 0 0], [1 2; 3 4]), [7 10; 15 22]));
+p = polyfit(0:3, [1 3 5 7], 1); assert(norm(p - [2 1]) < 1e-10);
+assert(isequal(conv([1 1], [1 -1]), [1 0 -1]));
+e = polyeig([-2 0; 0 -3], eye(2)); assert(norm(sort(e) - [2; 3]) < 1e-10);
+p = poly([1 2; 3 4]); assert(norm(p - [1 -5 -2]) < 1e-10);
+
+### special/functions *
+assert(gamma(5) == 24 && abs(gammaln(10) - log(362880)) < 1e-10);
+assert(abs(beta(2, 3) - 1/12) < 1e-12);
+assert(abs(erf(0.5) - 0.520499877813047) < 1e-12 && abs(erfc(0.5) + erf(0.5) - 1) < 1e-15);
+assert(abs(erfinv(erf(0.3)) - 0.3) < 1e-12 && abs(erfcinv(0.5) - 0.476936276204470) < 1e-12);
+assert(abs(besselj(0, 1) - 0.765197686557967) < 1e-12);
+assert(abs(bessely(0, 1) - 0.088256964215677) < 1e-12);
+assert(abs(besseli(1, 1) - 0.565159103992485) < 1e-12 && abs(besselk(0, 1) - 0.421024438240708) < 1e-12);
+assert(abs(airy(0) - 0.355028053887817) < 1e-12);
+[K, E] = ellipke(0.5); assert(abs(K - 1.854074677301372) < 1e-10 && abs(E - 1.350643881047675) < 1e-10);
+[sn, cn, dn] = ellipj(0.5, 0.3); assert(abs(sn^2 + cn^2 - 1) < 1e-12);
+assert(abs(expint(1) - 0.219383934395520) < 1e-12);
+P = legendre(2, 0.5); assert(norm(P - [-0.125; -1.299038105676658; 2.25]) < 1e-10);
+assert(abs(psi(1) + 0.577215664901533) < 1e-12);
+assert(abs(gammainc(1, 2) - 0.264241117657115) < 1e-12 && abs(betainc(0.5, 2, 3) - 0.6875) < 1e-12);
+assert(factorial(5) == 120 && nchoosek(5, 2) == 10);
+assert(sind(180) == 0 && cosd(90) == 0 && abs(tand(45) - 1) < 1e-12);
+assert(abs(log1p(1e-10) - 1e-10) < 1e-20 && abs(expm1(1e-10) - 1e-10) < 1e-19);
+assert(hypot(3, 4) == 5 && abs(nthroot(27, 3) - 3) < 1e-12 && sign(-2) == -1);
+[th, r] = cart2pol(1, 1); assert(abs(th - pi / 4) < 1e-15 && abs(r - sqrt(2)) < 1e-15);
+[x, y, z] = sph2cart(0, 0, 1); assert(norm([x y z] - [1 0 0]) < 1e-15);
+[n, d] = rat(0.75); assert(n == 3 && d == 4);
+assert(abs(deg2rad(180) - pi) < 1e-15 && rad2deg(pi) == 180);
+assert(abs(sec(0) - 1) < 1e-15 && abs(acoth(2) - 0.549306144334055) < 1e-12 && abs(asinh(1) - 0.881373587019543) < 1e-12);
+assert(abs(erfcx(1) - 0.427583576155807) < 1e-12);
+assert(abs(betaln(2, 3) - log(1/12)) < 1e-12 && abs(gammaincinv(0.5, 1) - log(2)) < 1e-12);
+assert(abs(besselh(0, 1, 1) - (0.765197686557967 + 0.088256964215677i)) < 1e-12);
+
+### stats/base_matlab *
+assert(abs(std([2 4 4 4 5 5 7 9]) - 2.138089935299395) < 1e-12);
+assert(abs(std([2 4 4 4 5 5 7 9], 1) - 2) < 1e-12);
+R = corrcoef([1 2 3 4], [2 4 6 9]); assert(abs(R(1, 2) - 11.5 / sqrt(5 * 26.75)) < 1e-12);
+C = cov([1 2 3 4], [2 4 6 9]); assert(abs(C(1, 2) - 11.5 / 3) < 1e-12);
+assert(median([1 2 3 4]) == 2.5 && mode([1 1 2 2]) == 1);
+assert(isequal(movmedian([1 9 2 8 3], 3), [5 2 8 3 5.5]));
+assert(isequal(cummin([3 1 2]), [3 1 1]));
+y = smoothdata([1 2 3 4 5], 'movmean', 3); assert(isequal(y, [1.5 2 3 4 4.5]));
+y = detrend([1 2 3 4]); assert(norm(y) < 1e-12);
+assert(isequal(fillmissing([1 NaN 3], 'linear'), [1 2 3]) && isequal(fillmissing([1 NaN 3], 'previous'), [1 1 3]));
+assert(isequal(rmmissing([1 NaN 3]), [1 3]));
+tf = isoutlier([1 2 3 100]); assert(tf(4));
+assert(isequal(gradient([1 4 9 16]), [3 4 6 7]));
+assert(isequal(prctile([1 2 3 4 5], 50), 3) && isequal(quantile([1 2 3 4 5], 0.5), 3));
+assert(iqr([1 2 3 4 5 6 7 8]) == 4);
+assert(abs(rms([3 4]) - sqrt(12.5)) < 1e-12);
+assert(isequal(mink([5 1 9 3], 2), [1 3]) && isequal(topkrows([1 2; 3 4; 2 9], 1), [3 4]));
+assert(xor(true, false) && isequal(cumsum([1 2; 3 4], 2), [1 3; 3 7]));
+[N, c] = hist([1 2 2 3 3 3], 3); assert(isequal(N, [1 2 3]));
+assert(isequal(movsum([1 2 3 4], 2), [1 3 5 7]) && isequal(movmax([1 3 2], 2), [1 3 3]) && isequal(movmin([1 3 2], 2), [1 1 2]));

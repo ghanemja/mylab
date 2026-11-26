@@ -1,0 +1,32 @@
+# Seconds, best of three, measured 26 Nov 2026 on a 4-core Linux container.
+# case  mylab@88f790f  octave-8.4.0   (b12: Octave was stopped after 350 s)
+b01_scalar_loop  0.0697  0.5584
+b02_array_fill  0.1876  1.4155
+b03_while_if  0.6024  2.1001
+b04_nested_matrix  0.0429  0.2668
+b05_recursion_fib22  0.5304  0.2140
+b06_call_user_function  4.5649  1.4200
+b07_call_anonymous  0.0189  0.6283
+b08_struct_fields  12.3845  1.6343
+b09_cell_and_string_build  3.8228  0.3035
+b10_small_array_ops  7.1493  0.8212
+b11_object_methods  1.0084  0.9786
+b12_map_inserts  0.3541  >350
+b13_ode45_vdp  1.0091  0.7034
+b14_fminsearch_rosen  0.1341  0.0398
+b15_bubble_sort  0.6658  4.4778
+b16_text_parsing  8.2216  1.9688
+b20_vec_elementwise  0.0834  0.6396
+b21_matmul_1500  0.0517  0.0654
+b22_solve_1500  0.5261  0.0913
+b23_eig_500  0.1027  0.0657
+b24_svd_600  0.0575  0.0469
+b25_fft_4m  0.3478  0.1599
+b26_sort_unique_5m  1.1013  0.5082
+b27_logical_index_1e7  0.3836  0.3632
+b28_sparse_tridiag_solve  0.1311  0.0678
+b29_arrayfun_cellfun  1.1269  0.3531
+b30_accumarray_interp  0.1814  0.2044
+b31_csv_write_read  0.9599  0.2245
+b32_plot_to_png  0.1534  0.3573
+b33_regexprep_cellstr  3.4172  0.9109
