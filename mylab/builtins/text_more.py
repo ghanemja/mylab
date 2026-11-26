@@ -340,6 +340,9 @@ def _numel(v: Any) -> int:
 def _must_be_float(interp, args, nargout):
     nargs(args, 1, 1, "mustBeFloat")
     v = args[0]
+    from ..classdef import UserObject
+    if isinstance(v, UserObject) and v._data is not None:
+        v = v._data  # a class derived from double or single is floating point too
     if not (isinstance(v, np.ndarray) and v.dtype.kind in "fc"):
         _fail("mustBeFloat", "Value must be a floating-point array.")
     return None

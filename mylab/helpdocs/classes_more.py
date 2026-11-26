@@ -113,34 +113,4 @@ HELP = {
                        "Returns a cell column of handles to the local functions of the file that calls it "
                        "(the main function of a function file is not included). Typical use: "
                        "tests = functiontests(localfunctions)."),
-    "mlock": ("mlock",
-              "Called inside a function: protects that function's persistent variables from clear "
-              "functions, clear all and clear name until munlock is called."),
-    "munlock": (["munlock", "munlock(functionName)"],
-                "Removes the protection that mlock gave to the calling function (or to the named one), so "
-                "clear can reset its persistent variables again."),
-    "mislocked": (["tf = mislocked", "tf = mislocked(functionName)"],
-                  "True when the calling function (or the named one) is protected by mlock."),
-    # -- validators ------------------------------------------------------------------------------------
-    "mustBeScalarOrEmpty": ("mustBeScalarOrEmpty(value)", "Raises an error unless value has one element or none."),
-    "mustBeRow": ("mustBeRow(value)", "Raises an error unless value is a row vector (1-by-N, N may be 0)."),
-    "mustBeColumn": ("mustBeColumn(value)", "Raises an error unless value is a column vector (N-by-1)."),
-    "mustBeMatrix": ("mustBeMatrix(value)", "Raises an error unless value has at most two dimensions."),
-    "mustBeFloat": ("mustBeFloat(value)", "Raises an error unless value is of class double or single."),
-    "mustBeUnderlyingType": ("mustBeUnderlyingType(value, typeNames)",
-                             "Raises an error unless the class of value (for an object derived from a "
-                             "built-in type, the class of its data) is one of typeNames, a name or a cell "
-                             "or string array of names."),
-    "mustBeNonmissing": ("mustBeNonmissing(value)",
-                         "Raises an error if value contains a missing value: NaN in numbers, <missing> in "
-                         "strings, NaT in datetimes."),
-    "mustBeNonsparse": ("mustBeNonsparse(value)", "Raises an error if value is a sparse matrix."),
-    "mustBeSparse": ("mustBeSparse(value)", "Raises an error unless value is a sparse matrix."),
-    "mustBeValidVariableName": ("mustBeValidVariableName(value)",
-                                "Raises an error unless value is text that could be a variable name: a "
-                                "letter followed by letters, digits or underscores, and not a keyword."),
-    "mustBeBetween": (["mustBeBetween(value, lower, upper)", "mustBeBetween(value, lower, upper, intervalType)"],
-                      "Raises an error unless every element of value lies between lower and upper. "
-                      "intervalType is 'closed' (default, both ends allowed), 'open', 'openleft', "
-                      "'openright', 'closedleft' or 'closedright'."),
 }

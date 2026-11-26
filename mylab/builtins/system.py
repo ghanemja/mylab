@@ -267,31 +267,9 @@ def _toc(interp, args, nargout):
     return None
 
 
-@builtin("pause")
-def _pause(interp, args, nargout):
-    if args and not is_text(args[0]):
-        secs = float(num(args[0]).flat[0])
-        if np.isfinite(secs) and secs > 0:
-            time.sleep(min(secs, 3600))
-    return None
-
-
-@builtin("clock")
-def _clock(interp, args, nargout):
-    t = time.localtime()
-    return np.array([[t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min,
-                      t.tm_sec + (time.time() % 1)]], dtype=float)
-
-
 @builtin("cputime")
 def _cputime(interp, args, nargout):
     return time.process_time()
-
-
-@builtin("now")
-def _now(interp, args, nargout):
-    # days since year 0 (MATLAB datenum convention)
-    return time.time() / 86400.0 + 719529.0
 
 
 @builtin("datestr")
@@ -509,14 +487,6 @@ def _nargout(interp, args, nargout):
     return float(interp.frame.nargout)
 
 
-@builtin("lasterr")
-def _lasterr(interp, args, nargout):
-    e = interp.last_error
-    if nargout > 1:
-        return (char(e.message if e else ""), char((e.identifier or "") if e else ""))
-    return char(e.message if e else "")
-
-
 @builtin("narginchk")
 def _narginchk(interp, args, nargout):
     lo, hi = num(args[0]).flat[0], num(args[1]).flat[0]
@@ -618,11 +588,6 @@ def _input(interp, args, nargout):
     return interp.eval_expression(reply)
 
 
-@builtin("keyboard")
-def _keyboard(interp, args, nargout):
-    return None
-
-
 class FormatOptions(MObject):
     """The value returned by ``fmt = format``: the numeric format and the line spacing."""
 
@@ -690,7 +655,7 @@ def _format(interp, args, nargout):
     return current if nargout else None
 
 
-@builtin("more", "beep", "commandwindow", "pack", "dbstop")
+@builtin("more", "beep", "commandwindow", "pack")
 def _noop(interp, args, nargout):
     return None
 

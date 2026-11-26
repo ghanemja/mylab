@@ -706,15 +706,8 @@ HELP: dict = {
     "toc": (["toc", "elapsed = toc", "elapsed = toc(t)"],
             "Seconds since the last tic (or since tic returned t). Without an output it prints "
             "'Elapsed time is ... seconds.'"),
-    "pause": ("pause(n)",
-              "Waits n seconds (at most an hour). pause with no argument, or with text such as 'on', returns "
-              "immediately instead of waiting for a key press."),
-    "clock": ("c = clock", "Current local date and time as [year month day hour minute seconds]."),
     "cputime": ("t = cputime",
                 "Processor time used by mylab so far, in seconds. Differences between two calls time code."),
-    "now": ("t = now",
-            "Current date and time as a serial day number (days counted from year 0), with the time of day as a "
-            "fraction."),
     "datestr": (["s = datestr", "s = datestr(t)"],
                 "Formats a serial day number (now if omitted) as text like '05-Mar-2024 14:07:30' in local "
                 "time. A format argument is not supported."),
@@ -747,9 +740,6 @@ HELP: dict = {
                 "Inside a function, the number of outputs the caller asked for. nargout(fun), with a "
                 "function name or handle, is the number of outputs fun declares; it is negative when the "
                 "list ends in varargout, and -1 for an anonymous function."),
-    "lasterr": (["msg = lasterr", "[msg, id] = lasterr"],
-                "Message (and identifier) of the error most recently caught by try/catch. Prefer "
-                "catch err and err.message in new code."),
     "narginchk": ("narginchk(minargs, maxargs)",
                   "Inside a function, throws an error if the number of inputs passed is below minargs or "
                   "above maxargs."),
@@ -774,7 +764,6 @@ HELP: dict = {
     "input": (["x = input(prompt)", "s = input(prompt, 's')"],
               "Shows prompt and reads a line from the user. The reply is evaluated as an expression, so "
               "typing 2*3 gives 6; an empty reply gives []. With 's' the raw text is returned instead."),
-    "keyboard": ("keyboard", "Accepted for compatibility; mylab has no interactive debugger, so it does nothing."),
     "format": (["format", "format long", "format short", "format longG", "format shortG"],
                "Chooses how many digits numbers display with: long shows about 15 significant digits, short "
                "(the default) about 5. 'compact' and 'loose' are accepted but change nothing."),
@@ -782,7 +771,6 @@ HELP: dict = {
     "beep": ("beep", "Accepted for compatibility; makes no sound."),
     "commandwindow": ("commandwindow", "Accepted for compatibility; does nothing."),
     "pack": ("pack", "Accepted for compatibility; does nothing."),
-    "dbstop": ("dbstop ...", "Accepted for compatibility; mylab has no debugger, so no breakpoint is set."),
     "profile": ("profile on|off|viewer", "Accepted for compatibility; no profiling is done."),
     # -- environment -----------------------------------------------------------------------------
     "version": ("v = version", "mylab's version as text, e.g. 'mylab 0.1.0'."),
