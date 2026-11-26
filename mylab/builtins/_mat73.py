@@ -22,11 +22,11 @@ from ..values import Cell, Struct
 HDF5_SIGNATURE = b"\x89HDF\r\n\x1a\n"
 
 
-def h5py_module(what: str = "Version 7.3 MAT-files"):
+def h5py_module(what: str = "Version 7.3 MAT-files (they are HDF5 files)"):
     try:
         import h5py
     except ImportError:
-        raise MatlabError(f"{what} are HDF5 files and need the optional Python package 'h5py', which is not "
+        raise MatlabError(f"{what} need the optional Python package 'h5py', which is not "
                           "installed. Install it with 'pip install h5py'.", "mylab:hdf5:notInstalled") from None
     return h5py
 

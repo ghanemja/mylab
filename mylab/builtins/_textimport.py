@@ -664,12 +664,17 @@ def detect_layout(rows: list, width: int, decimal: str, thousands: str, want_nam
     return names_line, first
 
 
+_NA_WORDS = {"NA", "N/A", "na", "n/a", "NaN", "nan"}
+
+
 def column_kind(items: list[str], decimal: str, thousands: str, missing: set, trim: bool = False) -> str:
     """'double', 'datetime', 'duration' or 'char' for the text of one column."""
     live = [s for s in items if s.strip() and s.strip() not in missing]
     if not live:
         return "double"
-    if all(parse_number(s, decimal, thousands, trim) is not None for s in live):
+    # the usual "not available" marks do not turn a column of numbers into text; they are read as NaN
+    numbers = [s for s in live if s.strip() not in _NA_WORDS]
+    if numbers and all(parse_number(s, decimal, thousands, trim) is not None for s in numbers):
         return "double"
     if parse_durations(live) is not None:
         return "duration"

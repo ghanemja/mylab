@@ -299,30 +299,30 @@ def _make_valid_name(interp, args, nargout):
 
 @builtin("matlab.lang.makeUniqueStrings")
 def _make_unique_strings(interp, args, nargout):
-    nargs(args, 1, 4, "matlab.lang.makeUniqueStrings")
+    nargs(args, 1, 3, "matlab.lang.makeUniqueStrings")
     items, kind, shape = _text_list(args[0], "The input")
     exclude: list[str] = []
     check = list(range(len(items)))
     maxlen = NAME_LENGTH_MAX
     if len(args) > 1:
-        a = args[1]
-        if isinstance(a, np.ndarray) and a.dtype.kind in "bf" and a.size == 0:
+        a = args[1]  # names to avoid, or which elements may be changed (a logical or index vector)
+        if isinstance(a, np.ndarray) and a.dtype == bool:
+            flags = a.flatten(order="F")
+            if flags.size != len(items):
+                raise MatlabError("matlab.lang.makeUniqueStrings: the logical index must have one element per name.")
+            check = [k for k in range(len(items)) if flags[k]]
+        elif isinstance(a, np.ndarray) and a.dtype.kind in "iuf":
+            check = [int(x) - 1 for x in num(a).flatten()] if a.size else check
+            if any(k < 0 or k >= len(items) for k in check):
+                raise MatlabError("matlab.lang.makeUniqueStrings: an index is out of range.")
+        elif isinstance(a, Cell) and a.data.size == 0:
             exclude = []
         else:
             exclude = _text_list(a, "The names to avoid")[0]
     if len(args) > 2:
-        w = args[2]
-        if isinstance(w, np.ndarray) and w.dtype == bool:
-            flags = w.flatten(order="F")
-            if flags.size != len(items):
-                raise MatlabError("matlab.lang.makeUniqueStrings: the logical index must have one element per name.")
-            check = [k for k in range(len(items)) if flags[k]]
-        elif isinstance(w, np.ndarray) and w.size:
-            check = [int(x) - 1 for x in num(w).flatten()]
-            if any(k < 0 or k >= len(items) for k in check):
-                raise MatlabError("matlab.lang.makeUniqueStrings: an index is out of range.")
-    if len(args) > 3:
-        maxlen = to_int(args[3], "maxStringLength")
+        maxlen = to_int(args[2], "maxStringLength")
+        if maxlen < 1:
+            raise MatlabError("matlab.lang.makeUniqueStrings: the maximum length must be positive.")
     out = list(items)
     fixed = set(exclude) | {out[k] for k in range(len(out)) if k not in check}
     seen: set[str] = set()

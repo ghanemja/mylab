@@ -360,7 +360,8 @@ class MatSource:
             from . import _matio
             with open(path, "rb") as fh:
                 self._mat5 = _matio.MatFile5(fh.read())
-            if self._mat5.damage and not self._mat5.variables():
+            found = self._mat5.variables()  # reading the list is what notices a damaged file
+            if self._mat5.damage and not found:
                 raise MatlabError(f"Unable to read the MAT-file '{path}': the file is damaged "
                                   f"({self._mat5.damage}).", "MATLAB:load:unableToReadMatFile")
             if self._mat5.damage:
