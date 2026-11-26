@@ -457,7 +457,7 @@ def _fir2(interp, args, nargout):
         n += 1
     L = n + 1
     npt = scalars[0] if scalars else (512 if L < 1024 else int(2 ** np.ceil(np.log2(L))))
-    lap = scalars[1] if len(scalars) > 1 else int(np.fix(npt / 25))
+    lap = scalars[1] if len(scalars) > 1 else int(np.trunc(npt / 25))
     if 2 * npt < L:
         raise MatlabError("fir2: the number of grid points must be at least half the filter length.")
     win = _window_from(interp, win_spec, L, "fir2")
@@ -2961,7 +2961,7 @@ def _segments(n: int, L: int, noverlap: int, name: str) -> np.ndarray:
 
 def _welch_window(interp, spec, n: int, name: str) -> np.ndarray:
     if spec is None:
-        L = int(np.fix(n / 4.5))
+        L = int(np.trunc(n / 4.5))
         if L < 1:
             raise MatlabError(f"{name}: the signal is too short.")
         return _w_hamming(L)
@@ -3000,7 +3000,7 @@ def _welch_core(interp, sigs: list[np.ndarray], rest: list, flags: set, name: st
     else:
         win = _welch_window(interp, rest[pos] if _given(rest, pos) else None, n, name)
         pos += 1
-        noverlap = to_int(rest[pos], "noverlap") if _given(rest, pos) else int(np.fix(win.size / 2))
+        noverlap = to_int(rest[pos], "noverlap") if _given(rest, pos) else int(np.trunc(win.size / 2))
         pos += 1
     L = win.size
     fvec = None

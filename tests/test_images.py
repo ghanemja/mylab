@@ -428,22 +428,27 @@ def test_canny_circle_outline(m):
 # -- morphology -----------------------------------------------------------------------------------
 
 def test_strel_shapes(m):
-    assert np.array_equal(m.num("strel('disk', 1)"), [[0, 1, 0], [1, 1, 1], [0, 1, 0]])
-    d2 = m.num("strel('disk', 2)")
+    def nh(code):
+        return m.num(code + ".Neighborhood")
+
+    assert np.array_equal(nh("strel('disk', 1)"), [[0, 1, 0], [1, 1, 1], [0, 1, 0]])
+    d2 = nh("strel('disk', 2)")
     assert d2.dtype == bool and np.array_equal(d2.astype(int), [[0, 0, 1, 0, 0], [0, 1, 1, 1, 0], [1, 1, 1, 1, 1],
                                                              [0, 1, 1, 1, 0], [0, 0, 1, 0, 0]])
     y, x = np.mgrid[-5:6, -5:6]
-    assert np.array_equal(m.num("strel('disk', 5)"), x * x + y * y <= 25)
-    assert np.array_equal(m.num("strel('diamond', 2)"), np.abs(x[3:8, 3:8]) + np.abs(y[3:8, 3:8]) <= 2)
-    assert np.array_equal(m.num("strel('square', 3)"), np.ones((3, 3), bool))
-    assert np.array_equal(m.num("strel('rectangle', [2 4])"), np.ones((2, 4), bool))
-    assert np.array_equal(m.num("strel('line', 5, 0)"), np.ones((1, 5), bool))
-    assert np.array_equal(m.num("strel('line', 3, 90)"), np.ones((3, 1), bool))
-    assert np.array_equal(m.num("strel('line', 5, 45)"), np.eye(3, dtype=bool)[::-1])
-    assert np.array_equal(m.num("strel('line', 5, -45)"), np.eye(3, dtype=bool))
-    assert np.array_equal(m.num("strel([0 1 0; 1 1 1])"), [[0, 1, 0], [1, 1, 1]])
+    # a true disk with n = 0; the default (a disk built from four line directions) is slightly smaller
+    assert np.array_equal(nh("strel('disk', 5, 0)"), x * x + y * y <= 25)
+    assert nh("strel('disk', 5)").shape == (9, 9)
+    assert np.array_equal(nh("strel('diamond', 2)"), np.abs(x[3:8, 3:8]) + np.abs(y[3:8, 3:8]) <= 2)
+    assert np.array_equal(nh("strel('square', 3)"), np.ones((3, 3), bool))
+    assert np.array_equal(nh("strel('rectangle', [2 4])"), np.ones((2, 4), bool))
+    assert np.array_equal(nh("strel('line', 5, 0)"), np.ones((1, 5), bool))
+    assert np.array_equal(nh("strel('line', 3, 90)"), np.ones((3, 1), bool))
+    assert np.array_equal(nh("strel('line', 5, 45)"), np.eye(3, dtype=bool)[::-1])
+    assert np.array_equal(nh("strel('line', 5, -45)"), np.eye(3, dtype=bool))
+    assert np.array_equal(nh("strel([0 1 0; 1 1 1])"), [[0, 1, 0], [1, 1, 1]])
     assert np.array_equal(m.num("getnhood(strel('square', 2))"), np.ones((2, 2), bool))
-    assert m.num("strel('octagon', 3)").shape == (7, 7)
+    assert nh("strel('octagon', 3)").shape == (7, 7)
     with pytest.raises(MatlabError):
         m.run("strel('blob', 3)")
 
@@ -596,7 +601,7 @@ def test_regionprops_intensity_and_errors(m):
     assert np.array_equal(m.num("[e.Area]"), [[0, 0, 1]])
     assert scalar(m, "numel(regionprops(false(3)))") == 0
     with pytest.raises(MatlabError, match="not supported"):
-        m.run("regionprops(L, 'ConvexHull')")
+        m.run("regionprops(L, 'MaxFeretProperties')")
     with pytest.raises(MatlabError, match="MeanIntensity"):
         m.run("regionprops(L, 'MeanIntensity')")
 
