@@ -269,12 +269,13 @@ _MONDAY = {
 def test_the_reported_french_date(m):
     m.execute("d = datetime('1 janvier 2020', 'InputFormat', 'd MMMM yyyy', 'Locale', 'fr_FR');")
     assert num(m, "[year(d) month(d) day(d)]").tolist() == [[2020, 1, 1]]
-    assert txt(m, "char(d, 'eeee d MMMM yyyy')") == "mercredi 1 janvier 2020"
+    assert txt(m, "char(d, 'eeee d MMMM yyyy', 'fr_FR')") == "mercredi 1 janvier 2020"
+    assert txt(m, "char(d)") == "01-Jan-2020"  # as in MATLAB, 'Locale' only says how to read the text
 
 
 @pytest.mark.parametrize("loc", sorted(_MONDAY))
 def test_display_and_parse_in_each_language(m, loc):
-    m.execute(f"t = datetime(2021, 3, 15, 'Locale', '{loc}', 'Format', 'eeee d MMMM yyyy'); s = char(t);")
+    m.execute(f"t = datetime(2021, 3, 15, 'Format', 'eeee d MMMM yyyy'); s = char(t, t.Format, '{loc}');")
     assert txt(m, "s") == _MONDAY[loc]
     m.execute(f"u = datetime('{_MONDAY[loc]}', 'InputFormat', 'eeee d MMMM yyyy', 'Locale', '{loc}');")
     assert num(m, "u == t").item()
@@ -288,17 +289,18 @@ def test_display_and_parse_in_each_language(m, loc):
 def test_am_pm_markers(m, loc, text, hour):
     m.execute(f"t = datetime('{text}', 'InputFormat', 'd MMMM yyyy h:mm a', 'Locale', '{loc}');")
     assert num(m, "hour(t)").item() == hour
-    assert txt(m, "char(t, 'd MMMM yyyy h:mm a')") == text
+    assert txt(m, f"char(t, 'd MMMM yyyy h:mm a', '{loc}')") == text
 
 
-def test_month_and_day_names_follow_the_locale(m):
-    m.execute("d = datetime(2022, 5, 5, 'Locale', 'ru_RU'); mn = month(d, 'name'); dn = day(d, 'name');"
-              "ms = month(d, 'shortname'); s = char(d, 'd MMMM yyyy');")
-    assert to_str(m.get_var("mn").data[0, 0]) == "май"  # the month on its own: nominative
-    assert txt(m, "s") == "5 мая 2022"  # next to a day number: genitive
-    assert to_str(m.get_var("dn").data[0, 0]) == "четверг"
-    assert to_str(m.get_var("ms").data[0, 0]) == "мая"
-    m.execute("e = datetime(2022, 5, 5); en = month(e, 'name'); ed = day(e, 'shortname');")
+def test_month_and_day_names_in_another_language(m):
+    m.execute("d = datetime(2022, 5, 5);")
+    assert txt(m, "char(d, 'LLLL', 'ru_RU')") == "май"  # the month on its own: nominative
+    assert txt(m, "char(d, 'd MMMM yyyy', 'ru_RU')") == "5 мая 2022"  # next to a day number: genitive
+    assert txt(m, "char(d, 'eeee', 'ru_RU')") == "четверг"
+    # month and day names from month() and day() are English, as with MATLAB's default locale
+    m.execute("d2 = datetime('5 мая 2022', 'InputFormat', 'd MMMM yyyy', 'Locale', 'ru_RU');"
+              "en = month(d2, 'name'); ed = day(d2, 'shortname');")
+    assert num(m, "d2 == d").item()
     assert to_str(m.get_var("en").data[0, 0]) == "May" and to_str(m.get_var("ed").data[0, 0]) == "Thu"
 
 
@@ -316,7 +318,7 @@ def test_default_locale_is_english(m):
     m.execute("t = datetime('15 March 2021', 'InputFormat', 'd MMMM yyyy'); s = char(t);")
     assert txt(m, "s") == "15-Mar-2021"
     m.execute("u = datetime('12 octobre 2021', 'Locale', 'fr_FR'); v = datetime(u, 'Format', 'MMMM');")
-    assert num(m, "[year(u) month(u) day(u)]").tolist() == [[2021, 10, 12]] and txt(m, "char(v)") == "octobre"
+    assert num(m, "[year(u) month(u) day(u)]").tolist() == [[2021, 10, 12]] and txt(m, "char(v)") == "October"
 
 
 def test_unknown_locale_is_an_error(m):

@@ -32,10 +32,11 @@ HELP = {
                  "the letters y (year), M (month: MM number, MMM short name, MMMM full name), d (day), "
                  "e (weekday: eee short, eeee full), H (hour 0-23), h (hour 1-12), m (minute), s (second), "
                  "S (fraction of a second), a (AM/PM), with literal text in single quotes. 'TimeZone' may be "
-                 "'UTC', 'local' or '' (none); other zones are not available. 'Locale' (such as 'fr_FR', "
-                 "'de_DE', 'es_ES', 'it_IT', 'pt_BR', 'nl_NL', 'sv_SE', 'pl_PL', 'ru_RU', 'ja_JP' or 'zh_CN'; "
-                 "default 'en_US') is the language of month names, weekday names and the AM/PM marker, both in "
-                 "the text read and in the values shown. Properties Year, Month, Day, "
+                 "'UTC', 'local', '' (none) or an IANA zone name such as 'Europe/Paris'. 'Locale' (such as "
+                 "'fr_FR', 'de_DE', 'es_ES', 'it_IT', 'pt_BR', 'nl_NL', 'sv_SE', 'pl_PL', 'ru_RU', 'ja_JP' or "
+                 "'zh_CN'; default 'en_US') is the language of month names, weekday names and the AM/PM marker "
+                 "in the text read; values are shown in English, and char(t, fmt, locale) shows them in another "
+                 "language. Properties Year, Month, Day, "
                  "Hour, Minute, Second, Format and TimeZone can be read and set. Datetimes support "
                  "subtraction (giving a duration), adding durations and calendar durations, comparison, "
                  "sorting, indexing and concatenation; NaT marks a missing value."),
@@ -73,13 +74,13 @@ HELP = {
     "year": ("y = year(t)", "Year numbers of a datetime array (serial date numbers and date text are also "
              "accepted)."),
     "month": (["m = month(t)", "names = month(t, 'name')", "names = month(t, 'shortname')"],
-              "Month numbers (1-12) of a datetime array, or the month names as a cell array of text, in the "
-              "language of the datetime's Locale (English by default). Serial date numbers and date text are "
+              "Month numbers (1-12) of a datetime array, or the English month names as a cell array of text "
+              "(char(t, 'MMMM', locale) gives them in another language). Serial date numbers and date text are "
               "also accepted."),
     "day": (["d = day(t)", "d = day(t, 'dayofyear')", "d = day(t, 'dayofweek')", "names = day(t, 'name')"],
             "Day of the month of each element of a datetime array. Options give the day of the year, the day "
-            "of the week (1 is Sunday) or the weekday names ('name' or 'shortname', in the language of the "
-            "datetime's Locale)."),
+            "of the week (1 is Sunday) or the English weekday names ('name' or 'shortname'; "
+            "char(t, 'eeee', locale) gives them in another language)."),
     "hour": ("h = hour(t)", "Hour (0-23) of each element of a datetime array."),
     "minute": ("m = minute(t)", "Minute (0-59) of each element of a datetime array."),
     "second": ("s = second(t)", "Seconds, including any fraction, of each element of a datetime array."),

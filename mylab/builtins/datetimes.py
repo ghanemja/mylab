@@ -1336,11 +1336,10 @@ _DATETIME_OPTS = ("Format", "InputFormat", "ConvertFrom", "TimeZone", "Locale", 
 @builtin("datetime")
 def _datetime(interp, args, nargout):
     args, opts = _split_options(args, _DATETIME_OPTS)
+    # As in MATLAB, 'Locale' says how to read month and day names in the text; values are shown in English
+    # (char, string and cellstr take a locale to show them in another language).
     loc = locale_key(opts["Locale"]) if "Locale" in opts else None
-    out = _datetime_make(interp, args, opts, loc)
-    if "Locale" in opts and isinstance(out, DatetimeArray):
-        out.locale = loc
-    return out
+    return _datetime_make(interp, args, opts, loc)
 
 
 def _datetime_make(interp, args: list, opts: dict, loc: str | None):
