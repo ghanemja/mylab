@@ -1,10 +1,5 @@
 """Regression tests for silent wrong answers found while reviewing the merged engine core."""
 
-import numpy as np
-import pytest  # noqa: F401
-
-from mylab.errors import MatlabError  # noqa: F401
-
 
 def test_argument_names_do_not_leak_to_later_calls(m, tmp_path, monkeypatch):
     # The variable names of one call's arguments (for inputname, table, display) used to stay
@@ -29,3 +24,16 @@ def test_rounding_and_parts_keep_integer_class(m):
     assert m.str("class(floor(true))") == "double"
     assert m.str("class(floor(single(2.5)))") == "single"
     assert m.num("floor(-2.5)") == -3
+
+
+def test_helper_interpreter_keeps_the_display_format(m, monkeypatch):
+    # The first indexed assignment into a sparse matrix makes a helper interpreter; its start
+    # reset the process-wide display format, so 'format long' was silently lost.
+    from mylab.builtins import sparse
+    monkeypatch.setitem(sparse._REF, "baseline", None)  # calibrate again inside this run
+    m.run("format long")
+    try:
+        out = m.run("S = sparse(2, 2); S(1, 1) = 1; x = pi")
+        assert "3.141592653589793" in out
+    finally:
+        m.run("format short")

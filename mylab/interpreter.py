@@ -187,7 +187,11 @@ class Interpreter:
         # they do not trust set this to False (or start mylab with MYLAB_PYTHON=0).
         self.python_enabled = os.environ.get("MYLAB_PYTHON", "1") != "0"
         self.index_overloads = False  # set once a class defines subsref, subsasgn, end, ... (classdef.py)
-        FORMAT.reset()  # a new session starts with 'format short' and 'format loose'
+        # A new session starts with 'format short' and 'format loose'. The format is shared by the
+        # whole process, so a helper interpreter made while code runs (sparse indexing, a block
+        # diagram's parameters) must not reset the format the running session chose.
+        if not _CURRENT:
+            FORMAT.reset()
 
     # -- public API -------------------------------------------------------------------
     @property
