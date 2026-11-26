@@ -2,6 +2,14 @@
 // outside links to load: styles are inline and figures are embedded as data URLs.
 
 import { escapeHtml, renderMarkdown } from "./markdown.js";
+import { imageSize } from "./codec.js";
+import { FIGURE_SCALE } from "./engine.js";
+
+/** width="…" for a figure, so a picture drawn at twice the size for sharp screens is shown at its own size. */
+function widthAttr(b64, scale) {
+  const size = imageSize(b64);
+  return size ? ` width="${Math.round(size.width / scale)}"` : "";
+}
 
 /** Syntax-highlighted HTML for MATLAB-language code (uses CodeMirror's tokenizer when loaded). */
 export function highlight(code) {
@@ -91,11 +99,11 @@ export function buildReport(report) {
       }
       for (const f of r.figures || []) {
         figureNo++;
-        out.push(`<figure><img alt="Figure ${figureNo}" src="data:image/png;base64,${f}"><figcaption>Figure ${figureNo}</figcaption></figure>`);
+        out.push(`<figure><img alt="Figure ${figureNo}" src="data:image/png;base64,${f}"${widthAttr(f, FIGURE_SCALE)}><figcaption>Figure ${figureNo}</figcaption></figure>`);
       }
       for (const a of r.animations || []) {
         figureNo++;
-        out.push(`<figure><img alt="Animation ${figureNo}" src="data:image/gif;base64,${a}"><figcaption>Figure ${figureNo} (animation)</figcaption></figure>`);
+        out.push(`<figure><img alt="Animation ${figureNo}" src="data:image/gif;base64,${a}"${widthAttr(a, 1)}><figcaption>Figure ${figureNo} (animation)</figcaption></figure>`);
       }
     }
     out.push(`</section>`);

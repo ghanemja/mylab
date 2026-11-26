@@ -43,6 +43,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
       - run: python -m pytest -q -p no:cacheprovider
+      # The function reference the VS Code extension bundles is generated from mylab's help entries.
+      # (The browser app needs no such file: it reads the list from the engine when it starts.)
+      - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: python scripts/gen_editor_data.py --check
 
   dependencies:
     name: test (${{ matrix.name }} NumPy, SciPy, Matplotlib)

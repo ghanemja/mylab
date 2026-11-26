@@ -359,7 +359,7 @@ li.CodeMirror-hint-active { background: var(--accent); color: var(--accent-text)
 /* ---------- Plots ---------- */
 .plots { flex: 1; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .plot-card { border: 1px solid var(--border); border-radius: 6px; background: #fff; overflow: hidden; flex: none; }
-.plot-card img { display: block; width: 100%; height: auto; cursor: zoom-in; }
+.plot-card img { display: block; max-width: 100%; height: auto; margin: 0 auto; cursor: zoom-in; }
 .plot-meta { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 8px; background: var(--panel-2); border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
 .plot-meta span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plot-card.new { animation: pop .35s ease-out; }
@@ -626,6 +626,9 @@ body[data-stepping] .var-table tbody tr { cursor: default; }
 .welcome-card .ic { width: 20px; height: 20px; color: var(--accent); grid-row: span 2; margin-top: 1px; }
 .welcome-card strong { font-size: 14.5px; }
 .welcome-card span { grid-column: 2; color: var(--muted); font-size: 13px; }
+.whatsnew-sub { font-size: 14px; margin: 16px 0 4px; }
+.whatsnew-list { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; }
+.viewer-code { max-height: 8em; margin-top: 6px; }
 .plot-card.animation .plot-meta span::before { content: "▶ "; color: var(--accent); }
 
 /* ---------- Footer ---------- */
@@ -836,7 +839,8 @@ body[data-stepping] .var-table tbody tr { cursor: default; }
 .CodeMirror-hint { display: flex; align-items: baseline; gap: 8px; border-radius: 4px; max-width: none; }
 .hint-kind { width: 14px; text-align: center; color: var(--muted); font-size: 11px; flex: none; }
 .hint-kind.variable { color: var(--cm-number); }
-.hint-kind.function, .hint-kind.script, .hint-kind.builtin { color: var(--cm-builtin); }
+.hint-kind.function, .hint-kind.script, .hint-kind.builtin, .hint-kind.method { color: var(--cm-builtin); }
+.hint-kind.property { color: var(--cm-number); }
 .hint-kind.keyword { color: var(--cm-keyword); }
 .hint-name { flex: none; }
 .hint-detail { color: var(--muted); font-family: var(--font); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
