@@ -43,3 +43,10 @@ Made after the first merge:
   tfdata pads numerator and denominator to the same length, so `d` is
   [0 1 0] there. The two cases are now tested by length; the numerator check
   is unchanged.
+- `stats_tbx/held_out#31`: fitctree on four observations was expected to
+  split them, but MATLAB's default MinParentSize is 10 (a node with fewer
+  observations is not split), so MATLAB grows a single leaf there: it
+  predicts the first class for both points and the resubstitution loss is
+  0.5, which is what mylab returned. The check now passes
+  'MinParentSize', 2, which keeps what it tests (separable data classified
+  without error).

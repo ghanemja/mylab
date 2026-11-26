@@ -29,7 +29,7 @@ t = tabulate([1 2 2 3 3 3]); assert(isequal(t(:, 1:2), [1 1; 2 2; 3 3]) && abs(t
 [h, p] = kstest2([1 2 3 4 5], [1.1 2.1 3.1 4.1 5.1]); assert(h == 0); [p, h] = signrank([1 2 3], [1 2 3]); assert(h == 0); p = ranksum([1 2 3], [1 2 3]); assert(p == 1);
 Z = linkage([0 0; 0 1; 5 5; 5 6], 'single'); assert(isequal(size(Z), [3 3]) && abs(Z(3, 3) - sqrt(41)) < 1e-10); T = cluster(Z, 'cutoff', 2, 'criterion', 'distance'); assert(T(1) == T(2) && T(3) == T(4) && T(1) ~= T(3));
 mdl = fitcknn([1; 2; 8; 9], {'a'; 'a'; 'b'; 'b'}); l = predict(mdl, 8.5); assert(strcmp(l, 'b') || isequal(l, {'b'})); cm = confusionmat({'a', 'b', 'a'}, {'a', 'a', 'a'}); assert(isequal(cm, [2 0; 1 0]));
-mdl = fitctree([1 0; 2 0; 3 1; 4 1], [0; 0; 1; 1]); assert(isequal(predict(mdl, [1.5 0; 3.5 1]), [0; 1])); L = resubLoss(mdl); assert(L == 0);
+mdl = fitctree([1 0; 2 0; 3 1; 4 1], [0; 0; 1; 1], 'MinParentSize', 2); assert(isequal(predict(mdl, [1.5 0; 3.5 1]), [0; 1])); L = resubLoss(mdl); assert(L == 0);
 g = grpstats([1; 2; 3; 4; 5; 6], {'a'; 'b'; 'a'; 'b'; 'a'; 'b'}); assert(isequal(g, [3; 4])); assert(isequal(tiedrank([10 30 20 20]), [1 4 2.5 2.5])); assert(abs(prctile(1:10, 25) - 3) < 1e-12);
 rng(5); s = bootstrp(100, @median, 1:9); assert(numel(s) == 100 && all(s >= 1 & s <= 9)); ci = bootci(200, @mean, 1:10); assert(ci(1) < 5.5 && ci(2) > 5.5);
 
