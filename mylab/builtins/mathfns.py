@@ -200,8 +200,22 @@ _SCALAR = {
     "fix": lambda x: math.copysign(math.trunc(x), x) if math.isfinite(x) else None,
 }
 
+def _keep_int(fn, zero=False):
+    """Rounding and real/imag/conj of an integer array: the result keeps the integer class."""
+    def f(a):
+        if a.dtype.kind in "iu":
+            return np.zeros_like(a) if zero else a.copy()
+        return fn(a)
+    return f
+
+
+_INT_PRESERVING = {"floor", "ceil", "fix", "real", "imag", "conj"}
+
 for _name, _fn in _ELEMENTWISE.items():
-    builtin(_name)(_unary_math(_fn, scalar=_SCALAR.get(_name)))
+    if _name in _INT_PRESERVING:
+        builtin(_name)(_unary_math(_keep_int(_fn, zero=_name == "imag"), allow_int=True, scalar=_SCALAR.get(_name)))
+    else:
+        builtin(_name)(_unary_math(_fn, scalar=_SCALAR.get(_name)))
 
 _log2_one = _unary_math(np.emath.log2, scalar=_SCALAR["log2"])
 

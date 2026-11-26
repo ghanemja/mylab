@@ -17,3 +17,15 @@ def test_argument_names_do_not_leak_to_later_calls(m, tmp_path, monkeypatch):
     assert m.str("t.Properties.VariableNames{1}") != "b"
     m.run("r2 = argname(q);")
     assert m.str("r2") == "q"
+
+
+def test_rounding_and_parts_keep_integer_class(m):
+    # floor/ceil/fix/real/imag/conj of an integer array used to return double.
+    for fn in ("floor", "ceil", "fix", "real", "imag", "conj"):
+        assert m.str(f"class({fn}(int8([3 -4])))") == "int8"
+        assert m.str(f"class({fn}(uint16(5)))") == "uint16"
+    assert m.num("floor(int8([3 -4]))").tolist() == [[3, -4]]
+    assert m.num("imag(int8([3 -4]))").tolist() == [[0, 0]]
+    assert m.str("class(floor(true))") == "double"
+    assert m.str("class(floor(single(2.5)))") == "single"
+    assert m.num("floor(-2.5)") == -3
