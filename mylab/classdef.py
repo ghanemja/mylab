@@ -1637,13 +1637,13 @@ def subs_levels(s: Any) -> list:
     return levels
 
 
-def _chain_frame(interp, value: Any, levels: list):
+def _chain_frame(interp, value: Any, levels: list, raw: bool = True):
     """A scratch workspace and the syntax tree of ``value`` followed by the subscript ``levels``."""
     from .interpreter import Frame
     from .values import is_char
     frame = Frame(interp, interp.frame.functions, name=interp.frame.name, file=interp.frame.file)
     frame.owner_class = interp.frame.owner_class
-    frame.raw_index = True  # the first level uses built-in indexing, not the class's overload
+    frame.raw_index = raw  # raw: the first level uses built-in indexing, not the class's overload
     frame.vars["__v"] = value
     node: A.Node = A.Ident("__v")
     for i, (kind, subs) in enumerate(levels):
@@ -1875,8 +1875,30 @@ def _find_overloaded(interp, node: A.Node, frame, attr: str):
         k += 1
 
 
+def _forwarded_levels(interp, node: A.Node, frame) -> list | None:
+    """Levels of ``x.(indexOp)`` when ``indexOp`` is an IndexingOperation value, else None."""
+    if type(node) is not A.DynField:
+        return None
+    expr = node.expr
+    root = expr.base if type(expr) is A.Index else expr
+    if type(root) is not A.Ident:
+        return None
+    held = frame.lookup(root.name)
+    if not (isinstance(held, IndexOp) or (isinstance(held, NativeArray)
+                                          and held.kind == "matlab.indexing.IndexingOperation")):
+        return None
+    return index_op_levels(interp.eval(expr, frame))
+
+
 def overloaded_ref(interp, node: A.Node, frame, nargout: int) -> list | None:
     """Evaluate an indexing expression through a class's subsref; None when no class takes it over."""
+    levels = _forwarded_levels(interp, node, frame)
+    if levels is not None:  # value.(indexOp): apply the forwarded indexing operations
+        value = interp.eval(node.base, frame)
+        if not levels:
+            return [value]
+        tmp, chain = _chain_frame(interp, value, levels, raw=False)
+        return interp.eval_multi(chain, tmp, nargout)
     found = _find_overloaded(interp, node, frame, "overloads_ref")
     if found is None:
         return None
@@ -1886,6 +1908,19 @@ def overloaded_ref(interp, node: A.Node, frame, nargout: int) -> list | None:
 
 def overloaded_assign(interp, target: A.Node, value: Any, frame) -> bool:
     """Run an indexed assignment through a class's subsasgn; False when no class takes it over."""
+    levels = _forwarded_levels(interp, target, frame)
+    if levels is not None:  # value.(indexOp) = rhs
+        current = interp.lookup_existing(target.base, frame)
+        if not levels:
+            new = value
+        else:
+            tmp, chain = _chain_frame(interp, current, levels, raw=False)
+            if current is None:
+                del tmp.vars["__v"]
+            interp.assign(chain, value, tmp)
+            new = tmp.vars["__v"]
+        interp.assign(target.base, new, frame)
+        return True
     found = _find_overloaded(interp, target, frame, "overloads_asgn")
     if found is None:
         return False
@@ -1896,6 +1931,21 @@ def overloaded_assign(interp, target: A.Node, value: Any, frame) -> bool:
     elif new is not obj:
         interp.assign(nodes[k - 1], new, frame)
     return True
+
+
+def object_to_builtin(interp, value: Any, kind: str) -> Any:
+    """Convert an object stored into a ``kind`` array (``A(k) = obj``): its converter method or data."""
+    cls = getattr(value, "cls", None)
+    if type(value) in (UserObject, ObjectArray) and cls is not None:
+        if kind in cls.methods:
+            res = cls.call(interp, kind, [value], 1)
+            if res and isinstance(res[0], np.ndarray):
+                return res[0]
+        if type(value) is UserObject and (value._data is not None or value._enum_value is not None):
+            return _plain(value)
+    raise MatlabError(f"The following error occurred converting from {_class_name(value)} to {kind}: "
+                      f"Conversion to {kind} from {_class_name(value)} is not possible.",
+                      "MATLAB:UnableToConvert")
 
 
 def subsindex_value(interp, v: Any) -> Any:
@@ -2017,35 +2067,37 @@ def _one(item: Any) -> np.ndarray:
 
 # -- matlab.mixin.indexing.RedefinesParen / RedefinesDot / RedefinesBrace ------------------------------
 
-class IndexOp(MObject):
+class IndexOp(NativeItem):
     """One level of a matlab.indexing.IndexingOperation array: Type and Indices or Name."""
 
-    def __init__(self, kind: str, subs: Any):
-        self.kind = kind
+    kind = "matlab.indexing.IndexingOperation"
+
+    def __init__(self, op: str, subs: Any):
+        self.op = op  # '()', '{}' or '.'
         self.subs = subs
 
-    def class_name(self) -> str:
-        return "matlab.indexing.IndexingOperation"
+    def array_props(self) -> list[str]:
+        return ["Type", "Indices", "Name"]
 
     def get_field(self, interp, name: str) -> Any:
         from .values import Cell, char
         if name == "Type":
-            label = {"()": "Paren", "{}": "Brace", ".": "Dot"}[self.kind]
+            label = {"()": "Paren", "{}": "Brace", ".": "Dot"}[self.op]
             made = INDEXING_CONTEXT.get("Type:" + label)
             return made if made is not None else char(label)
         if name == "Indices":
-            if self.kind == ".":
+            if self.op == ".":
                 raise MatlabError("A dot indexing operation has a Name, not Indices.")
             return Cell.from_list(list(self.subs))
         if name == "Name":
-            if self.kind != ".":
+            if self.op != ".":
                 raise MatlabError("Only a dot indexing operation has a Name.")
             return char(self.subs)
         raise MatlabError(f"Unrecognized property '{name}' for class '{self.class_name()}'.")
 
     def display_lines(self) -> list[str]:
         return ["  IndexingOperation with properties:", "",
-                f"    Type: {({'()': 'Paren', '{}': 'Brace', '.': 'Dot'})[self.kind]}"]
+                f"    Type: {({'()': 'Paren', '{}': 'Brace', '.': 'Dot'})[self.op]}"]
 
 
 def index_ops(levels: list) -> Any:
@@ -2056,9 +2108,9 @@ def index_ops(levels: list) -> Any:
 def index_op_levels(v: Any) -> list | None:
     """[(type, subs)] of an IndexingOperation value (used by ``obj.(indexOp)`` forwarding)."""
     if isinstance(v, IndexOp):
-        return [(v.kind, v.subs)]
+        return [(v.op, v.subs)]
     if isinstance(v, NativeArray) and v.kind == "matlab.indexing.IndexingOperation":
-        return [(e.kind, e.subs) for e in v.elements()]
+        return [(e.op, e.subs) for e in v.elements()]
     return None
 
 

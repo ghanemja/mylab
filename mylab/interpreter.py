@@ -163,6 +163,7 @@ class Interpreter:
         self._file_cache: dict[str, tuple[Any, A.Program]] = {}
         self._dir_cache: dict[str, tuple[int, frozenset]] = {}
         self._type_dirs: dict[str, frozenset] = {}  # folders holding @double-style method folders
+        self._private_dirs: set[str] = set()  # folders known to hold a private subfolder
         self.state: dict[str, Any] = {}  # scratch space for builtins (tic, rng, figures...)
         self.classes: dict[str, Any] = {}  # classdef name -> ClassInfo
         self.trace_hook: Callable[[A.Node, Frame], None] | None = None  # called before each statement
@@ -211,6 +212,7 @@ class Interpreter:
                     self.classes[cd.name] = ClassInfo(cd, file, self, program.functions)
             if file:
                 frame.file = file
+                self._dir_listing(os.path.dirname(file))  # notes a private subfolder next to the script
             self.exec_block(program.body, frame)
         except ReturnSignal:
             pass
@@ -795,6 +797,9 @@ class Interpreter:
                 if isinstance(value, (Cell, Struct, FunctionHandle, MString, StringArray)):
                     raise MatlabError(f"Unable to perform assignment: cannot put a {class_name(value)} "
                                       f"into a {class_name(current)} array.")
+                if isinstance(value, MObject):  # A(k) = obj: the object is converted to A's class
+                    from .classdef import object_to_builtin
+                    value = object_to_builtin(self, value, class_name(current))
                 cur, val = coerce_for_assignment(current, value)
                 if cur.dtype.kind == "U":
                     fill = lambda: "\0"  # noqa: E731
@@ -1230,7 +1235,8 @@ class Interpreter:
             for cd in found[0].classdefs.values():
                 self.classes[cd.name] = ClassInfo(cd, found[1], self, found[0].functions)
             return self.classes.get(name)
-        if found is not None and found[0].functions and os.path.basename(os.path.dirname(found[1])) == "@" + name:
+        if found is not None and found[0].functions and "@" in found[1] \
+                and os.path.basename(os.path.dirname(found[1])) == "@" + name:
             from .classdef import old_style_class
             return old_style_class(self, name, found[1])  # an @name folder with a constructor function
         return None
@@ -1256,7 +1262,7 @@ class Interpreter:
             res = self._call_imported(name, args, nargout, imports, True)
             if res is not None:
                 return res
-        if frame.file:
+        if self._private_dirs and frame.file:  # some folder read so far has a private subfolder
             found = self.find_private_function(name, frame.file)
             if found is not None:
                 main = next(iter(found[0].functions.values()))
@@ -1282,7 +1288,7 @@ class Interpreter:
             if program.functions and not program.body:
                 main = next(iter(program.functions.values()))
                 owner = None
-                if os.path.basename(os.path.dirname(path)) == "@" + name:
+                if "@" in path and os.path.basename(os.path.dirname(path)) == "@" + name:
                     from .classdef import old_style_class
                     owner = old_style_class(self, name, path)  # constructor of an @folder class
                 return self.call_user_function(main, args, nargout, program.functions, path, owner=owner)
@@ -1297,6 +1303,11 @@ class Interpreter:
             res = self.call_dotted(name, lambda: args, nargout, frame)
             if res is not None:
                 return res
+        elif frame.file:  # a private folder made after its parent folder was last read
+            found = self.find_private_function(name, frame.file)
+            if found is not None:
+                main = next(iter(found[0].functions.values()))
+                return self.call_user_function(main, args, nargout, found[0].functions, found[1])
         raise MatlabError(f"Unrecognized function or variable '{name}'.", "MATLAB:UndefinedFunction")
 
     def _call_imported(self, name: str, args: list[Any], nargout: int, imports: list,
@@ -1322,9 +1333,9 @@ class Interpreter:
     def find_private_function(self, name: str, file: str) -> tuple[A.Program, str] | None:
         """``name.m`` in the private folder that code in ``file`` may use (None if there is none)."""
         d = os.path.dirname(file)
-        if "private" in self._dir_listing(d):
+        if d in self._private_dirs or "private" in self._dir_listing(d):
             folder = os.path.join(d, "private")
-        elif os.path.basename(d) == "private":
+        elif d.endswith("private") and os.path.basename(d) == "private":
             folder = d  # functions in a private folder see each other
         else:
             return None
@@ -1372,7 +1383,8 @@ class Interpreter:
         """Whether an import or a private function may give ``name`` a meaning other than the built-in."""
         if frame.imports:
             return True
-        return bool(frame.file) and self.find_private_function(name, frame.file) is not None
+        return bool(self._private_dirs) and bool(frame.file) \
+            and self.find_private_function(name, frame.file) is not None
 
     def call_builtin(self, name: str, fn: Callable, args: list[Any], nargout: int) -> list[Any]:
         try:
@@ -1607,6 +1619,10 @@ class Interpreter:
             self._type_dirs[d] = typed
         else:
             self._type_dirs.pop(d, None)
+        if "private" in names:
+            self._private_dirs.add(d)
+        else:
+            self._private_dirs.discard(d)
         return names
 
     def find_file_function(self, name: str) -> tuple[A.Program, str] | None:
@@ -1639,6 +1655,7 @@ class Interpreter:
             return cached[1]
         with open(path, encoding="utf-8") as fh:
             program = parse(fh.read())
+        self._dir_listing(os.path.dirname(path))  # notes a private subfolder next to the file
         for fn in program.functions.values():
             fn.file = path  # type: ignore[attr-defined]  # so calls through a handle know their file
         self._file_cache[path] = (mtime, program)

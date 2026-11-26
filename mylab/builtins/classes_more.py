@@ -1314,6 +1314,60 @@ def _num_args(interp, args, nargout):
     return raw_builtin(interp, "numArgumentsFromSubscript", list(args), 1)[0]
 
 
+@builtin("listLength")
+def _list_length(interp, args, nargout):
+    """listLength(obj, indexOp, indexingContext): values a forwarded indexing operation produces."""
+    nargs(args, 3, 3, "listLength")
+    from ..classdef import index_op_levels
+    levels = index_op_levels(args[1])
+    if levels is None:
+        raise MatlabError("listLength needs the indexing operations a parenReference, dotReference or "
+                          "braceReference method received.")
+    if not levels or levels[-1][0] == "()":
+        return 1.0
+    value = args[0]
+    if len(levels) > 1:
+        from ..classdef import _chain_frame
+        tmp, chain = _chain_frame(interp, value, levels[:-1], raw=False)
+        value = interp.eval(chain, tmp)
+    kind, subs = levels[-1]
+    if kind == "." and isinstance(value, (Struct, ObjectArray)):
+        return float(int(np.prod(shape_of(value))))
+    if kind == "{}" and isinstance(value, Cell):
+        from .. import indexing as ix
+        picked = ix.get(value.data, [ix.COLON if (is_char(a) and a.size == 1 and a.flat[0] == ":") else a
+                                     for a in subs])
+        return float(picked.size)
+    return 1.0
+
+
+def _size_of(interp, obj: Any) -> tuple:
+    """The size a class derived from RedefinesParen reports through its size method."""
+    res = obj.cls.call(interp, "size", [obj], 1) if "size" in obj.cls.methods else []
+    if not res:
+        return tuple(shape_of(obj))
+    return tuple(int(x) for x in np.real(np.asarray(res[0])).flatten())
+
+
+def _from_size(name: str, fn):
+    @base_method("matlab.mixin.indexing.RedefinesParen", name)
+    def method(interp, args, nargout):
+        nargs(args, 1, 1, name)
+        return fn(_size_of(interp, args[0]))
+    return method
+
+
+_from_size("numel", lambda d: float(int(np.prod(d))))
+_from_size("ndims", lambda d: float(len(d)))
+_from_size("length", lambda d: float(0 if 0 in d else max(d)))
+_from_size("isempty", lambda d: bool_scalar(0 in d))
+_from_size("isscalar", lambda d: bool_scalar(all(x == 1 for x in d)))
+_from_size("isvector", lambda d: bool_scalar(len(d) == 2 and 1 in d))
+_from_size("isrow", lambda d: bool_scalar(len(d) == 2 and d[0] == 1))
+_from_size("iscolumn", lambda d: bool_scalar(len(d) == 2 and d[1] == 1))
+_from_size("ismatrix", lambda d: bool_scalar(len(d) == 2))
+
+
 # -- old-style classes: inferiorto / superiorto -----------------------------------------------------------
 
 def _rank(interp, args, superior: bool, what: str) -> None:

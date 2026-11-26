@@ -53,6 +53,11 @@ HELP = {
         "for example in [a, b] = obj{1:2}. A class that overloads subsref can define this method to state "
         "the count; calling builtin('numArgumentsFromSubscript', obj, s, ctx) gives the standard answer. "
         "s is the subscript struct array that subsref receives."),
+    "listLength": ("n = listLength(obj, indexOp, indexingContext)",
+                   "How many values the indexing operations indexOp produce when applied to obj. Used "
+                   "inside the parenListLength, dotListLength and braceListLength methods of classes "
+                   "derived from matlab.mixin.indexing.RedefinesParen, RedefinesDot or RedefinesBrace, "
+                   "to pass the question on to a contained value."),
     "matlab.mixin.util.IndexingContext.Statement": ("matlab.mixin.util.IndexingContext.Statement", _CTX),
     "matlab.mixin.util.IndexingContext.Expression": ("matlab.mixin.util.IndexingContext.Expression", _CTX),
     "matlab.mixin.util.IndexingContext.Assignment": ("matlab.mixin.util.IndexingContext.Assignment", _CTX),

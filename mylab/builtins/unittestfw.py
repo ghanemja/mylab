@@ -308,9 +308,10 @@ def compare(actual: Any, expected: Any, tol: Tolerance | None = None, path: str 
         lines = [f"--> The numeric values are not equal{here}" +
                  (f" within {tol.label}." if tol is not None else " (NaN values are treated as equal).")]
         if a.size == 1:
-            err = a.flat[0] - e.flat[0]
-            lines.append(f"      Error: {_num(err)}" + (f"   RelativeError: {_num(err / e.flat[0])}"
-                                                           if e.flat[0] != 0 else ""))
+            with np.errstate(invalid="ignore", over="ignore", divide="ignore"):
+                err = a.flat[0] - e.flat[0]
+                rel = err / e.flat[0] if e.flat[0] != 0 else None
+            lines.append(f"      Error: {_num(err)}" + (f"   RelativeError: {_num(rel)}" if rel is not None else ""))
         else:
             lines.append(f"--> {bad.size} of {a.size} elements differ. First differences:")
             lines.append("        Index    Actual    Expected    Error")
@@ -318,6 +319,14 @@ def compare(actual: Any, expected: Any, tol: Tolerance | None = None, path: str 
             for i in bad[:8]:
                 lines.append(f"        {i + 1:<8} {_num(af[i]):<9} {_num(ef[i]):<11} {_num(af[i] - ef[i])}")
         return lines
+    if isinstance(actual, MObject) and not isinstance(actual, (UserObject, ObjectArray)):
+        from ..interpreter import current_interpreter
+        interp = current_interpreter()  # tables, datetimes, ...: the type's own isequal decides
+        if interp is not None and actual.has_method("isequal"):
+            res = actual.call_method(interp, "isequal", [actual, expected], 1)
+            if res and bool(np.all(np.asarray(res[0]))):
+                return None
+            return [f"--> The values are not equal{here}."]
     if values_equal(actual, expected, nan_equal=True):
         return None
     kind = {"char": "character arrays", "string": "strings", "logical": "logical values"}.get(ca, "values")
