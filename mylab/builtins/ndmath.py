@@ -596,10 +596,8 @@ def _builtin(interp, args, nargout):
         raise MatlabError("builtin needs a function name, e.g. builtin('disp', x).")
     f = args[0]
     name = f.name if hasattr(f, "name") and getattr(f, "name", None) else text(f, "function name")
-    fn = interp.builtins.get(name)
-    if fn is None:
-        raise MatlabError(f"'{name}' is not a built-in function.")
-    res = interp.call_builtin(name, fn, list(args[1:]), nargout)
+    from ..classdef import raw_builtin
+    res = raw_builtin(interp, name, list(args[1:]), nargout)  # skips class methods of that name
     return tuple(res) if res else None
 
 

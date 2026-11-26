@@ -239,6 +239,9 @@ def _clear(interp, args, nargout):
         frame.vars.clear()
         if names and names[0] in ("all", "-all"):
             interp.global_vars.clear()
+            _clear_functions(interp, frame, None)
+            if frame is interp.base:
+                frame.imports = None
             from .plotting import close_all
             close_all(interp)
         return None
@@ -246,15 +249,48 @@ def _clear(interp, args, nargout):
         for n in names[1:] or list(interp.global_vars):
             interp.global_vars.pop(n, None)
         return None
-    if names[0] in ("functions",):
+    if names[0] in ("functions", "-functions", "classes", "-classes", "import", "-import", "mex"):
+        kind = names[0].lstrip("-")
+        if kind == "import":
+            if frame is not interp.base:
+                raise MatlabError("clear import can only be used at the command prompt.")
+            frame.imports = None
+            return None
+        if kind == "classes":  # also clears every variable, like MATLAB
+            frame.vars.clear()
+            interp.classes.clear()
+        _clear_functions(interp, frame, names[1:] if kind == "functions" and len(names) > 1 else None)
         return None
     import fnmatch
     for pattern in names:
+        hit = False
         for n in list(frame.vars):
             if fnmatch.fnmatchcase(n, pattern):
                 del frame.vars[n]
+                hit = True
         frame.globals.pop(pattern, None)
+        if not hit:  # clear name: a function of that name loses its persistent variables
+            _clear_functions(interp, frame, [pattern])
     return None
+
+
+def _clear_functions(interp, frame, patterns) -> None:
+    """Forget persistent variables: of every function (``patterns`` None) or of the named ones."""
+    locked = interp.state.get("mlocked", set())
+    stores = interp.persistent_vars
+    owners = interp.state.get("persistent_owners", {})
+    if patterns is None:
+        for key in list(stores):
+            if owners.get(key) not in locked:
+                del stores[key]
+                owners.pop(key, None)
+        return
+    import fnmatch
+    for key in list(stores):
+        name = owners.get(key)
+        if name is not None and name not in locked and any(fnmatch.fnmatchcase(name, p) for p in patterns):
+            del stores[key]
+            owners.pop(key, None)
 
 
 @builtin("who")
@@ -1237,6 +1273,9 @@ def _save(interp, args, nargout):
             data[n] = v if not is_char(v) else to_str(v)
         elif isinstance(v, MString):
             data[n] = str(v)
+        elif getattr(v, "cls", None) is not None:  # classdef objects (saveobj hook, handles kept shared)
+            from .classes_more import STREAM_FIELD, pack_value
+            data[n] = {STREAM_FIELD: pack_value(interp, v)}
     savemat(fname, data)
     return None
 
@@ -1256,7 +1295,10 @@ def _load(interp, args, nargout):
     for k, v in raw.items():
         if k.startswith("__"):
             continue
-        if isinstance(v, np.ndarray) and v.dtype.kind == "U":
+        if isinstance(v, np.ndarray) and v.dtype.names and "MylabObjectStream" in v.dtype.names:
+            from .classes_more import unpack_value  # an object written by save (loadobj hook runs)
+            loaded[k] = unpack_value(interp, v["MylabObjectStream"].flat[0])
+        elif isinstance(v, np.ndarray) and v.dtype.kind == "U":
             loaded[k] = char(str(v[0]) if v.size else "")
         elif isinstance(v, np.ndarray) and v.dtype.kind in "biufc":
             loaded[k] = np.atleast_2d(v).astype(float) if v.dtype.kind != "c" else np.atleast_2d(v)
@@ -1298,12 +1340,17 @@ def _run(interp, args, nargout):
 
 @builtin("import")
 def _import(interp, args, nargout):
-    """``import pkg.*`` / ``import pkg.name``: later calls may leave out the package name."""
-    imports = interp.state.setdefault("imports", [])
+    """``import pkg.*`` / ``import pkg.name``: later calls in this workspace may leave out the package."""
+    frame = interp.frame
+    imports = frame.imports
     for a in args:
         name = text(a)
-        if name and name not in imports:
+        if not name:
+            continue
+        if imports is None:
+            imports = frame.imports = []  # one list per workspace: a function's imports end with it
+        if name not in imports:
             imports.append(name)
     if nargout:
-        return Cell.from_list([char(n) for n in imports], column=True)
+        return Cell.from_list([char(n) for n in imports or []], column=True)
     return None

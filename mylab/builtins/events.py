@@ -24,10 +24,10 @@ class EventData(MObject):
         self.fields.update(extra or {})
 
     def class_name(self) -> str:
-        return "event.EventData"
+        return "event.PropertyEvent" if "AffectedObject" in self.fields else "event.EventData"
 
     def isa_class(self, name: str) -> bool:
-        return name in ("event.EventData", "handle")
+        return name in ("event.EventData", "handle", self.class_name())
 
     def get_field(self, interp, name: str) -> Any:
         if name in self.fields:
@@ -118,9 +118,23 @@ def property_event(interp, obj, prop: str, when: str) -> None:
     listeners = (obj._listeners or {}).get(f"{prop}:{when}")
     if not listeners:
         return
-    src = Struct.scalar({"Name": char(prop), "DefiningClass": char(obj.cls.name)})
+    if prop in obj.cls.prop_defs:
+        from .classes_more import MetaProperty
+        src: Any = MetaProperty(obj.cls, prop)  # callbacks receive the property's meta.property
+    elif obj._dynprops and prop in obj._dynprops:
+        src = obj._dynprops[prop]
+    else:
+        src = Struct.scalar({"Name": char(prop), "DefiningClass": char(obj.cls.name)})
     data = EventData(src, when, {"AffectedObject": obj})
-    _fire(interp, listeners, [src, data])
+    busy = obj.__dict__.setdefault("_firing", set())
+    key = f"{prop}:{when}"
+    if key in busy:
+        return  # a listener that reads or sets the property does not trigger itself again
+    busy.add(key)
+    try:
+        _fire(interp, listeners, [src, data])
+    finally:
+        busy.discard(key)
 
 
 @builtin("notify")
@@ -160,8 +174,11 @@ def _add_listener(interp, args, what: str) -> Listener:
         when = text(args[2])
         if when not in ("PreSet", "PostSet", "PreGet", "PostGet"):
             raise MatlabError(f"Unknown property event '{when}'; use 'PreSet' or 'PostSet'.")
-        if name not in obj.cls.prop_defs:
+        entry = obj.cls.prop_defs.get(name)
+        dyn = obj._dynprops.get(name) if obj._dynprops else None
+        if entry is None and dyn is None:
             raise MatlabError(f"'{name}' is not a property of class '{obj.cls.name}'.")
+        # MATLAB wants the property declared SetObservable / GetObservable; mylab also listens without.
         key, callback = f"{name}:{when}", args[3]
     else:
         if name not in obj.cls.events and name != "ObjectBeingDestroyed":
@@ -191,6 +208,15 @@ def _listener(interp, args, nargout):
 @builtin("event.EventData")
 def _event_data(interp, args, nargout):
     return EventData()
+
+
+@builtin("event.hasListener")
+def _has_listener(interp, args, nargout):
+    if len(args) != 2:
+        raise MatlabError("event.hasListener needs an object and an event name.")
+    obj = _source_object(args[0], "event.hasListener")
+    listeners = (obj._listeners or {}).get(text(args[1], "event name"), [])
+    return bool_scalar(any(lst.active() for lst in listeners))
 
 
 @builtin("enumeration")

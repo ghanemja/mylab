@@ -127,7 +127,7 @@ def run(interp, p: Plan, frame) -> Any:
         return NOT_FUSED
     for name in p.funcs:  # a variable or user function with the same name wins
         if name in frame.vars or frame.has(name) or name in frame.functions or name in interp.classes \
-                or interp.find_file_function(name) is not None:
+                or interp.find_file_function(name) is not None or interp.private_or_imported(name, frame):
             p.skip = 1 << 30
             return NOT_FUSED
     vals = [interp.eval(n, frame) for n in p.leaves]

@@ -374,6 +374,8 @@ def _class_ok(v, cls: str) -> bool:
     c = class_name(v)
     if cls == c:
         return True
+    if hasattr(v, "isa_class"):  # objects: the class itself, a superclass, or a category
+        return bool(v.isa_class(cls))
     if cls == "numeric":
         return c in _NUMERIC_CLASSES
     if cls == "float":

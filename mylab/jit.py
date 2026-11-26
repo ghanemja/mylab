@@ -447,7 +447,8 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
         ok = shadow_cache.get(name)
         if ok is None:
             ok = not (name in frame.functions or name in interp.classes
-                      or interp.find_file_function(name) is not None)
+                      or interp.find_file_function(name) is not None
+                      or interp.private_or_imported(name, frame))
             shadow_cache[name] = ok
         return ok
 

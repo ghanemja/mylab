@@ -160,6 +160,9 @@ def _struct(interp, args, nargout):
 @builtin("fieldnames")
 def _fieldnames(interp, args, nargout):
     s = args[0]
+    if not isinstance(s, Struct) and hasattr(s, "cls") and getattr(s, "cls", None) is not None:
+        from .objfuncs import public_property_names  # an object: its public properties (or its fields)
+        return Cell.from_list([char(f) for f in public_property_names(interp, s)], column=True)
     if not isinstance(s, Struct):
         raise MatlabError("fieldnames: input must be a struct.")
     return Cell.from_list([char(f) for f in s.fields], column=True)
