@@ -9,16 +9,23 @@ HELP = {
                  "Number written by the text s in the given base (2 to 36). A char matrix or cell array gives a "
                  "column of numbers; text that is not a valid number gives NaN."),
     "dec2bin": (["s = dec2bin(d)", "s = dec2bin(d, n)"],
-                "Binary digits of the non-negative integer d as text, with at least n digits. An array gives a "
-                "char matrix with one row per number. Example: dec2bin(5) is '101'."),
+                "Binary digits of the integer d as text, with at least n digits. An array gives a char matrix "
+                "with one row per number. A fraction is dropped; a negative number is written in two's "
+                "complement with the fewest bits (8, 16, 32 or 64) that hold every value, so dec2bin(-5) is "
+                "'11111011'. Example: dec2bin(5) is '101'."),
     "dec2hex": (["s = dec2hex(d)", "s = dec2hex(d, n)"],
-                "Hexadecimal digits (upper case) of the non-negative integer d as text, with at least n digits. "
-                "An array gives a char matrix with one row per number. Example: dec2hex(255) is 'FF'."),
+                "Hexadecimal digits (upper case) of the integer d as text, with at least n digits. An array "
+                "gives a char matrix with one row per number. Negative numbers are written in two's complement "
+                "as for dec2bin, so dec2hex(-1) is 'FF'. Example: dec2hex(255) is 'FF'."),
     "bin2dec": ("d = bin2dec(s)",
                 "Value of a binary digit string; spaces are ignored. A char matrix or cell array gives a column "
-                "of numbers. Example: bin2dec('101') is 5."),
+                "of numbers, and text that is not binary gives NaN. A 0b prefix is allowed, and a suffix s8, "
+                "s16, s32 or s64 (u8 ... u64) reads the digits as a signed (unsigned) integer of that size, so "
+                "bin2dec('11111011s8') is -5. Example: bin2dec('101') is 5."),
     "hex2dec": ("d = hex2dec(s)",
-                "Value of a hexadecimal digit string. A char matrix or cell array gives a column of numbers. "
+                "Value of a hexadecimal digit string (either case). A char matrix or cell array gives a column "
+                "of numbers, and text that is not hexadecimal gives NaN. A 0x prefix is allowed, and a suffix "
+                "s8 ... s64 or u8 ... u64 reads the digits as an integer of that type, so hex2dec('FFs8') is -1. "
                 "Example: hex2dec('ff') is 255."),
     "orderfields": (["s = orderfields(s)", "s = orderfields(s, names)", "s = orderfields(s, perm)",
                      "s = orderfields(s, s2)", "[s, p] = orderfields(...)"],

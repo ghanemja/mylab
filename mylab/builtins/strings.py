@@ -1662,7 +1662,7 @@ def _dec2base(value, symbols: str, min_len: int, name: str):
     return _rows_to_char([r.rjust(width, symbols[0]) for r in rows])
 
 
-def _base2dec(value, symbols: str, name: str):
+def _base2dec(value, symbols: str, name: str, prefix: str = ""):
     value = _as_cell_if_strings(value)
     if isinstance(value, Cell):
         rows = [to_str(x) for x in value.values_f()]
@@ -1679,6 +1679,13 @@ def _base2dec(value, symbols: str, name: str):
     out = []
     for r in rows:
         r = r.replace(" ", "")
+        bits, signed = 0, False
+        if prefix:  # bin2dec/hex2dec also read the literal forms 0x1F / 0b101 and the suffixes s8 ... u64
+            if r[:2].lower() == "0" + prefix:
+                r = r[2:]
+            lit = re.fullmatch(r"(.+?)([su])(8|16|32|64)", r)
+            if lit:
+                r, signed, bits = lit.group(1), lit.group(2) == "s", int(lit.group(3))
         total = 0
         ok = bool(r)
         for c in r:
@@ -1686,6 +1693,11 @@ def _base2dec(value, symbols: str, name: str):
                 ok = False
                 break
             total = total * base + lookup[c]
+        if ok and bits:
+            if total >= 2 ** bits:
+                ok = False
+            elif signed and total >= 2 ** (bits - 1):
+                total -= 2 ** bits  # two's complement
         out.append(float(total) if ok else float("nan"))
     if not out:
         return np.zeros((0, 0))
@@ -1705,18 +1717,38 @@ def _base2dec_fn(interp, args, nargout):
     return _base2dec(args[0], _base_symbols(args[1], "base2dec"), "base2dec")
 
 
+def _twos_complement(value, name: str):
+    """dec2bin/dec2hex input: the fraction is dropped, and negative values become their two's complement
+    in the fewest bits (8, 16, 32 or 64) that hold every value."""
+    if isinstance(value, Cell) or not isinstance(value, np.ndarray) or value.dtype.kind not in "fiu":
+        return value
+    if value.dtype.kind == "f":
+        if value.size and not np.all(np.isfinite(value)):
+            raise MatlabError(f"{name}: the input must be finite.")
+        value = np.trunc(value)
+    if not value.size or value.min() >= 0:
+        return value
+    ints = [int(x) for x in value.flatten(order="F")]
+    lo, hi = min(ints), max(ints)
+    bits = next((b for b in (8, 16, 32, 64) if -2 ** (b - 1) <= lo and hi < 2 ** (b - 1)), None)
+    if bits is None:
+        raise MatlabError(f"{name}: negative inputs must fit in a 64-bit signed integer.")
+    out = np.array([x % 2 ** bits for x in ints], dtype=np.uint64)
+    return out.reshape(value.shape, order="F")
+
+
 def _dec2(base: int, name: str):
     def f(interp, args, nargout):
         nargs(args, 1, 2, name)
         n = to_int(args[1], "length") if len(args) > 1 else 0
-        return _dec2base(args[0], _DIGITS[:base], n, name)
+        return _dec2base(_twos_complement(args[0], name), _DIGITS[:base], n, name)
     return f
 
 
 def _2dec(base: int, name: str):
     def f(interp, args, nargout):
         nargs(args, 1, 1, name)
-        return _base2dec(args[0], _DIGITS[:base], name)
+        return _base2dec(args[0], _DIGITS[:base], name, prefix="x" if base == 16 else "b")
     return f
 
 

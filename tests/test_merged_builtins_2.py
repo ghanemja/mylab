@@ -52,3 +52,29 @@ def test_random_generators_check_sizes(m):
         m.run("gamrnd(2)")
     with pytest.raises(MatlabError, match="size"):
         m.run("gamrnd([1 2], [1 2 3])")
+
+
+def test_dec2bin_dec2hex_negative_and_fractional(m):
+    # negative numbers are written in two's complement (fewest of 8/16/32/64 bits); fractions are dropped.
+    # One copy wrote '-101', the other raised an error.
+    assert m.str("dec2bin(-5)") == "11111011"
+    assert m.str("dec2bin(int8(-3))") == "11111101"
+    assert m.str("dec2bin(-129)") == "1111111101111111"
+    assert m.str("dec2hex(-1)") == "FF"
+    assert m.str("dec2hex(-200)") == "FF38"
+    assert m.str("dec2bin(2.5)") == "10"
+    assert m.num("size(dec2bin([-1 3]))").tolist() == [[2, 8]]
+    m.run("b = dec2bin([1 2 3]);")
+    assert m.str("b(3, :)") == "11"  # one copy only converted the first element
+
+
+def test_bin2dec_hex2dec_arrays_literals_and_bad_text(m):
+    # char matrices and cells give a column; invalid text is NaN (one copy summed the rows or raised)
+    assert m.num("bin2dec(['10';'11'])").tolist() == [[2], [3]]
+    assert m.num("hex2dec({'A','1F'})").tolist() == [[10], [31]]
+    assert np.isnan(m.num("hex2dec('G')")) and np.isnan(m.num("bin2dec('12')"))
+    # the 0x / 0b prefixes and the s8 ... u64 suffixes of the number literal syntax
+    assert m.num("hex2dec('0xFF')") == 255 and m.num("bin2dec('0b101')") == 5
+    assert m.num("hex2dec('FFs8')") == -1 and m.num("hex2dec('FFu8')") == 255
+    assert m.num("bin2dec('11111011s8')") == -5
+    assert np.isnan(m.num("hex2dec('1FFs8')"))

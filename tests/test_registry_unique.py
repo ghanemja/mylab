@@ -10,9 +10,9 @@ from mylab.builtins._registry import BUILTINS, REGISTRATIONS, registered_by_seve
 # editing at the time). Remove a name from this set when its duplicate is resolved; the second
 # test fails as a reminder once a listed name has a single implementation.
 NOT_YET_RESOLVED = {
-    "addvars", "allfinite", "anynan", "bin2dec", "blkdiag", "brush", "contains",
-    "datestr", "dec2bin", "dec2hex", "e", "endsWith", "extractAfter", "extractBefore",
-    "height", "hex2dec", "insertAfter", "insertBefore",
+    "addvars", "allfinite", "anynan", "blkdiag", "brush", "contains",
+    "datestr", "e", "endsWith", "extractAfter", "extractBefore",
+    "height", "insertAfter", "insertBefore",
     "mustBeInRange", "mustBeVector", "rms", "rows2vars", "startsWith",
     "table2struct", "varfun", "width",
 }
