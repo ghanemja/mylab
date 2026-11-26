@@ -156,7 +156,7 @@ _YY_SHARED_PROPS = {
     "XTickLabelMode", "XTickLabelRotation", "XTickLabelFormat", "XAxis", "XScale", "XDir", "XColor",
     "XAxisLocation", "XMinorTick", "XGrid", "YGrid", "XMinorGrid", "YMinorGrid", "GridAlpha", "GridColor",
     "GridLineStyle", "GridLineWidth", "MinorGridAlpha", "MinorGridColor", "MinorGridLineStyle",
-    "MinorGridLineWidth", "Color",
+    "MinorGridLineWidth", "Color", "Box",
 }
 
 
@@ -182,10 +182,20 @@ def _yy_restyle(ax) -> None:
         ax.yaxis.set_label_position("right")
         ax.xaxis.set_visible(False)
         ax.patch.set_visible(False)
+        yy_right_frame(ax)
     else:
         ax.yaxis.tick_left()
     ax.tick_params(axis="y", colors=color)
     ax.yaxis.label.set_color(color)
+
+
+def yy_right_frame(right) -> None:
+    """The right side of a yyaxis chart draws only its own y-axis line; the left axes draws the rest of
+    the frame. (Drawn again on top, the frame would hide what the left side shows on it, such as a yline
+    at a limit, and box off would leave the top edge.)"""
+    for name in ("top", "bottom", "left"):
+        if name in right.spines:
+            right.spines[name].set_visible(False)
 
 
 def _replace_axes(interp, ax, projection: str, carry: bool = False):
@@ -6366,7 +6376,7 @@ def _grid(interp, args, nargout):
 @builtin("box")
 @_with_axes_arg
 def _box(interp, args, nargout):
-    ax = _axes(interp, fresh=False)
+    ax = _yy_host(_axes(interp, fresh=False))
     if args:
         mode = text(args[0]).lower()
         if mode not in ("on", "off"):

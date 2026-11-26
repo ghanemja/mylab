@@ -157,6 +157,25 @@ def test_cla_reset_removes_the_right_side(m):
     assert m.num("k") == 1
 
 
+def _dark(px) -> np.ndarray:
+    return np.all(px < 80, axis=-1)
+
+
+def test_box_off_after_yyaxis_right_keeps_both_y_axis_lines(m):
+    m.run(_YY + "box off; ax = gca; b = ax.Box;")
+    assert m.str("b") == "off"
+    fig = _fig(m)
+    base, right = _sides(m)
+    img = _image(fig)
+    bb = base.get_window_extent()
+    H = fig.bbox.height
+    top, bottom = int(H - bb.y1), int(H - bb.y0)
+    x0, x1 = int(round(bb.x0)), int(round(bb.x1))
+    assert _dark(img[top - 1:top + 2, x0 + 20:x1 - 20]).any(axis=0).mean() < 0.1  # no top edge
+    assert _dark(img[top + 10:bottom - 10, x1 - 2:x1 + 2]).any(axis=1).mean() > 0.95  # right y-axis line
+    assert _dark(img[top + 10:bottom - 10, x0 - 2:x0 + 2]).any(axis=1).mean() > 0.95  # left y-axis line
+
+
 # -- 2. xline / yline ----------------------------------------------------------------------------------
 
 def _frame_row(fig, ax) -> int:
@@ -178,6 +197,19 @@ def test_yline_at_the_limit_keeps_the_limits_and_shows_on_the_frame(m):
     red = (mid[..., 0] > 200) & (mid[..., 1] < 80) & (mid[..., 2] < 80)
     assert red.any(axis=0).mean() > 0.95  # drawn over the frame along its whole length
     assert _drawn(fig, line).any()
+
+
+def test_yline_at_the_limit_of_the_left_side_of_a_yyaxis_chart_shows(m):
+    # the right side is drawn over the left one: it must not draw the frame again on top of the line
+    m.run("figure; yyaxis left; plot(1:3); yline(3, 'r'); yyaxis right; plot([10 20 30]);")
+    fig = _fig(m)
+    base, right = _sides(m)
+    img = _image(fig)
+    row = _frame_row(fig, base)
+    bb = base.get_window_extent()
+    mid = img[row - 1:row + 2, int(bb.x0) + 10:int(bb.x1) - 10]
+    red = (mid[..., 0] > 200) & (mid[..., 1] < 80) & (mid[..., 2] < 80)
+    assert red.any(axis=0).mean() > 0.95
 
 
 def test_xline_at_the_limit_shows_on_the_frame(m):

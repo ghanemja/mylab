@@ -777,6 +777,7 @@ def build_figure(interp, node: dict, visible: bool = True, reuse: bool = False):
             right.yaxis.tick_right()
             right.yaxis.set_label_position("right")
             right.xaxis.set_visible(False)
+            P.yy_right_frame(right)
             st.axes[P._fig_number(interp, fig)] = left
     for key, fn in (("suptitle", fig.suptitle), ("supxlabel", fig.supxlabel), ("supylabel", fig.supylabel)):
         if extra.get(key) is not None and _txt(extra[key]):
