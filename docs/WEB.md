@@ -29,8 +29,9 @@ Contents: [For students](#for-students) · [For teachers](#for-teachers) ·
 | **Assistant** (optional) | An AI helper, see below. |
 
 The first time you open the app, a welcome window points to the examples, to
-*Step through*, to *Open from GitHub* and to an example assignment. You can
-open it again with **Getting started** at the bottom of the page.
+*Step through*, to *Open from GitHub*, to an example assignment and to
+[block diagrams](#block-diagrams). You can open it again with **Getting
+started** at the bottom of the page.
 
 Everything the app can do is also in the **command palette**: press
 Ctrl+Shift+P (or the ⋯ button in the top bar), type a few letters of what you
@@ -204,6 +205,8 @@ and the later sections are not run.
   export (.zip) and import (.zip) them.
 - Put a file in a **folder** by giving it a name with a slash, such as
   `homework1/solve.m` (new file, or rename). Click a folder to fold it.
+- **New file** (the **+** button, Alt+N) makes a script or function (`.m`)
+  or a [block diagram](#block-diagrams) (`.mlb.json`).
 - Projects can hold **data files** too: `.csv`, `.txt`, `.json`, `.mat`,
   images and so on. Click an image to view it. The eye button previews a CSV
   file as a table.
@@ -226,8 +229,12 @@ and the later sections are not run.
 A file whose name ends in `.mlb.json` is a block-diagram model. It opens in a
 diagram editor: drag blocks from the library, draw lines between their ports,
 press **Run**, and watch the scopes. The results land in the Workspace, so
-your scripts can plot them. Start with Ctrl+Shift+P → *New block diagram…* or
-one of the *Example model* entries. `.slx` files can be imported.
+your scripts can plot them. The example models are in the `models` folder of
+*My files*, next to the `.m` examples, and **Getting started → Block
+diagrams** opens one. For a model of your own, press **+** in the Files panel
+(New file) and choose *Block diagram*: it starts with a small model you can
+run and change. Ctrl+Shift+P → *New block diagram…* makes an empty one.
+`.slx` files can be imported.
 [BLOCKS.md](BLOCKS.md) describes the editor, the blocks, and how the same
 models are built and run from code with `add_block` and `sim`.
 
@@ -702,7 +709,8 @@ app windows and the app builder (`scripts/test_web_apps.mjs`, which also runs
 on its own: a button, a slider drag, a table edit, themes, an app link on a
 phone, building an app, generating code and reopening it),
 assignments (wrong answer, right answer, `exit`, the timeout watchdog,
-submission .zip, reload), block diagrams (an example model run and its scope
+submission .zip, reload), block diagrams (found from the Files panel, from
+New file and from the welcome window; an example model run and its scope
 values, building a model with the mouse and with the keyboard alone,
 parameter validation, undo and redo, subsystems, error markers, `.slx`
 import, themes, an 800 px window, touch), Stop, persistence (files, tabs, cursor,

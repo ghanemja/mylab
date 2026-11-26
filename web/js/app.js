@@ -24,7 +24,7 @@ import { initHistory } from "./history.js";
 import { renderDiff, statsText } from "./diff.js";
 import { initUiApp } from "./uiapp.js";
 import { initDesigner } from "./designer.js";
-import { initBlocks } from "./blocks/index.js"; // mylab Blocks: the diagram editor
+import { initBlocks, exampleModelFiles } from "./blocks/index.js"; // mylab Blocks: the diagram editor
 
 /* ================================================================== state */
 
@@ -136,10 +136,21 @@ async function loadProjects() {
   if (!state.projects.some((p) => p.id === DEFAULT_PROJECT) && (!state.projects.length || !seeded)) {
     const p = await store.putProject({ id: DEFAULT_PROJECT, name: "My files", kind: "files" });
     if (!seeded) {
-      await store.putFiles(p.id, EXAMPLES.map((e) => ({ path: e.name, content: e.content })));
+      await store.putFiles(p.id, [...EXAMPLES.map((e) => ({ path: e.name, content: e.content })), ...exampleModelFiles()]);
       prefs.set("seeded", true);
+      prefs.set("seededModels", true);
     }
     state.projects = await store.listProjects();
+  }
+  // The example block diagrams came after the first examples: add them once to "My files" of
+  // people who already had those, next to the .m examples. Files that exist are not touched.
+  if (seeded && !prefs.get("seededModels", false)) {
+    if (state.projects.some((p) => p.id === DEFAULT_PROJECT)) {
+      const have = new Set((await store.listFiles(DEFAULT_PROJECT)).map((f) => f.path));
+      const add = exampleModelFiles().filter((f) => !have.has(f.path) && !have.has(f.path.split("/")[0]));
+      if (add.length) await store.putFiles(DEFAULT_PROJECT, add);
+    }
+    prefs.set("seededModels", true);
   }
   sortProjects();
   $("storage-note").textContent = store.persistent
@@ -298,6 +309,7 @@ function saveLabel() {
 function fileIcon(path, f) {
   if (typeof f.content !== "string") return isImageName(path) ? "image" : "data";
   if (path.endsWith(".m")) return isFunctionFile(f.content) ? "fn" : "file";
+  if (/\.mlb\.json$/i.test(path)) return "blocks";
   return /\.(csv|tsv|dat|json)$/i.test(path) ? "table" : "text";
 }
 
@@ -640,20 +652,60 @@ async function createFile(path, content, { open = true } = {}) {
   if (open) openFile(path);
 }
 
+/**
+ * New file. Besides .m files, other modules can offer kinds of file here (app.fileKinds, for
+ * example a block diagram): { value, label, ext, text, warn(path), content(path) }.
+ */
 async function newFile(folder = "") {
   if (typeof folder !== "string") folder = "";
   if (!folder && state.active) folder = dirName(state.active);
   const prefix = folder ? folder + "/" : "";
-  let n = 1;
-  while (state.files.has(`${prefix}untitled${n > 1 ? n : ""}.m`)) n++;
+  const kinds = [
+    {
+      value: "m", label: "Script or function", ext: ".m",
+      text: "Scripts and function files end in .m. A function file should have the same name as its function. Use a / to put the file in a folder, for example homework1/solve.m.",
+    },
+    ...(app.fileKinds || []),
+  ];
+  let kind = kinds[0];
+  const kindOf = (v) => kinds.find((k) => v.trim().toLowerCase().endsWith(k.ext.toLowerCase())) || null;
+  const untitled = (k) => {
+    let n = 1;
+    while (state.files.has(`${prefix}untitled${n > 1 ? n : ""}${k.ext}`)) n++;
+    return `${prefix}untitled${n > 1 ? n : ""}${k.ext}`;
+  };
+  const defaults = new Set(kinds.map(untitled));
+  // a name without an extension gets the one of the chosen kind (validatePath adds .m)
+  const withExt = (v) => (kind === kinds[0] || !v.trim() || /\.[A-Za-z0-9]+$/.test(baseName(v.trim())) ? v : v.trim() + kind.ext);
   const path = await promptDialog({
     title: "New file",
-    text: "Scripts and function files end in .m. A function file should have the same name as its function. Use a / to put the file in a folder, for example homework1/solve.m.",
-    value: `${prefix}untitled${n > 1 ? n : ""}.m`,
+    text: kind.text,
+    value: untitled(kind),
     okLabel: "Create",
-    validate: (v) => validatePath(v),
+    validate: (v) => {
+      const r = validatePath(withExt(v));
+      if (!r.error && !r.warn && kind.warn && kindOf(r.name) === kind) r.warn = kind.warn(r.name);
+      return r;
+    },
+    choices: kinds.length > 1 && {
+      legend: "Kind of file",
+      value: kind.value,
+      items: kinds.map((k) => ({ value: k.value, label: k.label, detail: k.ext })),
+      detect: (v) => (kindOf(v) || {}).value || null,
+      pick: (value, typed) => {
+        const from = kind;
+        kind = kinds.find((k) => k.value === value);
+        if (typed) return { text: kind.text };
+        // the name stays, with the extension of the new kind (a name that was not changed is renumbered)
+        const v = $("prompt-input").value.trim();
+        const base = v.toLowerCase().endsWith(from.ext.toLowerCase()) ? v.slice(0, -from.ext.length) : v;
+        return { text: kind.text, value: defaults.has(v) || !base ? untitled(kind) : base + kind.ext, ext: kind.ext };
+      },
+    },
   });
   if (!path) return;
+  const chosen = kindOf(path);
+  if (chosen && chosen.content) return createFile(path, chosen.content(path));
   const fnName = baseName(path).replace(/\.m$/, "");
   const template = path.endsWith(".m") && /^[A-Za-z]\w*$/.test(fnName) ? `% ${fnName}.m\n\n` : "";
   await createFile(path, template);
@@ -1652,13 +1704,24 @@ function onFatal({ error }) {
 
 /* ================================================================== welcome */
 
+/** Examples go into an ordinary project of files: leave an assignment, a GitHub or a shared project. */
+async function toFilesProject() {
+  if (state.project.kind !== "files" || state.project.temp) await switchProject((state.projects.find((p) => p.id === DEFAULT_PROJECT) || state.projects.find((p) => !p.temp)).id);
+}
+
 /** Make sure an example file exists in the current project (never overwrites) and open it. */
 async function openExample(name) {
   const ex = EXAMPLES.find((e) => e.name === name);
   if (!ex) return;
-  if (state.project.kind !== "files" || state.project.temp) await switchProject((state.projects.find((p) => p.id === DEFAULT_PROJECT) || state.projects.find((p) => !p.temp)).id);
+  await toFilesProject();
   if (!state.files.has(name)) await createFile(name, ex.content, { open: false });
   openFile(name);
+}
+
+/** The same for an example block diagram: it opens in the diagram editor. */
+async function openExampleModel(name) {
+  await toFilesProject();
+  await app.blocks.openExample(name);
 }
 
 function showWelcome() {
@@ -1675,6 +1738,7 @@ function setupWelcome() {
   $("welcome-examples").addEventListener("click", go(() => openExample("welcome.m")));
   $("welcome-github").addEventListener("click", go(() => app.openGithubDialog()));
   $("welcome-assignment").addEventListener("click", go(() => app.openExampleAssignment()));
+  $("welcome-blocks").addEventListener("click", go(() => openExampleModel("mass_spring_damper")));
   $("welcome-step").addEventListener(
     "click",
     go(async () => {

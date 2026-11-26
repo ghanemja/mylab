@@ -79,6 +79,7 @@
       <symbol id="i-step" viewBox="0 0 24 24"><path d="M4 6h9M4 12h6M4 18h9" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M14 12h6m0 0l-3-3m3 3l-3 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-section" viewBox="0 0 24 24"><rect x="3.5" y="4" width="11" height="16" rx="2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-dasharray="3 2.5"/><path d="M15.5 8l6 4-6 4z" fill="currentColor"/></symbol>
       <symbol id="i-report" viewBox="0 0 24 24"><path d="M6 3h8l5 5v12a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z M14 3v5h5" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <symbol id="i-blocks" viewBox="0 0 24 24"><rect x="2.5" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="none"/><rect x="14.5" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M9.5 7.5h4.5m-2-2l2 2-2 2M18 11v7.5H6V11m-2 2l2-2 2 2" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-task" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16" rx="2" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M9 4.5V3.5h6v1M8.5 13l2.5 2.5 4.5-5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-repo" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2.3" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="7" cy="18" r="2.3" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="17" cy="9" r="2.3" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M7 8.3v7.4M17 11.3c0 3-4 3-10 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></symbol>
       <symbol id="i-first" viewBox="0 0 24 24"><path d="M18 6l-8 6 8 6z" fill="currentColor"/><path d="M7 6v12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
@@ -394,6 +395,11 @@
           <strong>Example assignment</strong>
           <span>See how homework works: read a problem, write a function, check your answers.</span>
         </button>
+        <button id="welcome-blocks" type="button" class="welcome-card">
+          <svg class="ic"><use href="#i-blocks"/></svg>
+          <strong>Block diagrams</strong>
+          <span>Build a model from blocks and lines, run it and watch the scopes. Opens an example model; more are in the <code>models</code> folder.</span>
+        </button>
       </div>
       <p class="muted small">You can also drop your own files or a folder onto the page. Find this again under “Getting started” at the bottom of the page.</p>
       <menu><button value="close" class="btn primary" id="welcome-close">Start coding</button></menu>
@@ -507,6 +513,7 @@
   <dialog id="dlg-prompt" class="dialog">
     <form method="dialog">
       <h2 id="prompt-title">Name</h2>
+      <fieldset id="prompt-choices" class="prompt-choices" hidden></fieldset>
       <p id="prompt-text" class="muted"></p>
       <input id="prompt-input" type="text" spellcheck="false" autocomplete="off">
       <p id="prompt-error" class="error-text small" hidden></p>

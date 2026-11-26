@@ -606,11 +606,22 @@ body[data-stepping] .var-table tbody tr { cursor: default; }
 .summary-body { overflow: auto; max-height: 46vh; }
 .summary-body h3 { font-size: 13px; margin: 8px 0 4px; }
 .summary-list { margin: 0; padding-left: 18px; font-size: 13px; }
+.prompt-choices { display: flex; flex-wrap: wrap; gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.prompt-choice {
+  flex: 1 1 170px; display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 14px; cursor: pointer;
+  border: 1px solid var(--border-strong); border-radius: 8px; background: var(--panel);
+}
+.prompt-choice:hover { border-color: var(--accent); }
+.prompt-choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.prompt-choice input { margin: 0; accent-color: var(--accent); }
+.prompt-choice span { display: flex; flex-direction: column; line-height: 1.3; }
+.prompt-choice small { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 .welcome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .welcome-card {
   display: grid; grid-template-columns: 22px 1fr; gap: 2px 10px; align-items: start; text-align: left; padding: 12px 14px;
   border: 1px solid var(--border-strong); border-radius: 10px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer;
 }
+.welcome-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .welcome-card:hover { border-color: var(--accent); background: var(--panel-2); }
 .welcome-card .ic { width: 20px; height: 20px; color: var(--accent); grid-row: span 2; margin-top: 1px; }
 .welcome-card strong { font-size: 14.5px; }

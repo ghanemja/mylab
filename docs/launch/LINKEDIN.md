@@ -33,7 +33,7 @@ Two datasets come with it, for anyone building tools for this language:
 
 What it is not: a full replacement. Many toolboxes are missing. The
 block-diagram tool covers the basics but is not Simulink: of 82 public model
-files, 50 import fully and 30 of the 68 models run (6 of those with a
+files, 50 import fully and 31 of the 68 models run (6 of those with a
 stand-in part). Results are checked against GNU Octave
 (5,377 automated checks, all passing), not against MATLAB itself. If your
 code doesn't run, please open an issue; that is the most useful thing you
