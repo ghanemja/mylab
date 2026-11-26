@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import glob
-import gzip as _gzip
 import os
-import shutil
 import sys
-import tarfile
-import zipfile
 
 import numpy as np
 
@@ -18,6 +14,13 @@ from ..values import (
 )
 from ._registry import BUILTINS, builtin
 from ._util import bool_scalar, is_text, nargs, num, text
+from .._lazy import lazy_module
+
+# archive and copy modules: imported the first time a script needs them, not at start-up
+_gzip = lazy_module("gzip", globals(), "_gzip")
+shutil = lazy_module("shutil", globals(), "shutil")
+tarfile = lazy_module("tarfile", globals(), "tarfile")
+zipfile = lazy_module("zipfile", globals(), "zipfile")
 
 IN_BROWSER = sys.platform == "emscripten"
 

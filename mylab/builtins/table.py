@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import os
 from typing import Any
 
@@ -17,6 +16,9 @@ from ..values import (
 )
 from ._registry import builtin
 from ._util import bool_scalar, fnum, is_text, num, parse_options, text
+from .._lazy import lazy_module
+
+csv = lazy_module("csv", globals(), "csv")  # imported on first use, not at start-up
 
 
 def _height(v: Any) -> int:
