@@ -742,3 +742,287 @@ def _matfile(interp, args, nargout):
         if writable is None:
             writable = True  # a file that does not exist yet is created by the first assignment
     return MatFileObject(interp, os.path.abspath(path), bool(writable))
+
+
+# -- import options and datastores -------------------------------------------------------------------
+
+@builtin("detectImportOptions")
+def _detect_import_options(interp, args, nargout):
+    if not args or not is_text(args[0]):
+        raise MatlabError("detectImportOptions needs a file name, for example detectImportOptions('data.csv').")
+    from . import _textimport
+    name = text(args[0])
+    if os.path.splitext(name)[1].lower() in (".xls", ".xlsx", ".xlsm", ".xlsb", ".ods"):
+        raise MatlabError("detectImportOptions: import options for spreadsheet files are not supported; call "
+                          "readtable, readmatrix or readcell on the workbook with their Sheet and Range options.")
+    nv = _textimport.name_values(list(args[1:]), _textimport.KNOWN, "detectImportOptions")
+    return _textimport.detect(interp, name, nv)
+
+
+@builtin("delimitedTextImportOptions")
+def _delimited_text_import_options(interp, args, nargout):
+    from . import _textimport
+    nv = _textimport.name_values(list(args), _textimport._known(
+        "NumVariables", "Delimiter", "VariableNames", "VariableTypes", "DataLines", "VariableNamesLine",
+        "RowNamesColumn", "Encoding", "MissingRule", "ImportErrorRule", "EmptyLineRule",
+        "ConsecutiveDelimitersRule", "LeadingDelimitersRule", "TrailingDelimitersRule", "ExtraColumnsRule",
+        "VariableNamingRule", "PreserveVariableNames", "CommentStyle", "LineEnding", "Whitespace",
+        "SelectedVariableNames"), "delimitedTextImportOptions")
+    o = _textimport.ImportOptions()
+    count = 0
+    if "NumVariables" in nv:
+        count = int(np.asarray(nv.pop("NumVariables")).flat[0])
+    elif "VariableNames" in nv:
+        count = len(_textimport.text_items(nv["VariableNames"], "VariableNames"))
+    elif "VariableTypes" in nv:
+        count = len(_textimport.text_items(nv["VariableTypes"], "VariableTypes"))
+    o.names = [f"Var{k + 1}" for k in range(count)]
+    o.types = ["char"] * count
+    o.var_opts = [{"Name": n, "Type": "char"} for n in o.names]
+    for key in ("Delimiter", "VariableNames", "VariableTypes"):
+        if key in nv:
+            o = o.set_field(interp, key, nv.pop(key))
+    for key, v in nv.items():
+        o = o.set_field(interp, key, v)
+    return o
+
+
+def _datastore_args(interp, args: list, fn: str):
+    from . import _textimport
+    if not args:
+        raise MatlabError(f"{fn} needs a file, folder or pattern, for example {fn}('data/*.csv').")
+    extra = _textimport._known("FileExtensions", "IncludeSubfolders", "ReadSize", "SelectedVariableNames",
+                               "SelectedFormats", "Type", "AlternateFileSystemRoots",
+                               unsupported=("TextscanFormats",))
+    known = dict(_textimport.KNOWN)
+    known.update(extra)
+    nv = _textimport.name_values(list(args[1:]), known, fn)
+    kind = text(nv.pop("Type")).lower() if "Type" in nv else "tabulartext"
+    if kind != "tabulartext":
+        raise MatlabError(f"{fn}: only datastores of type 'tabulartext' are supported, not '{kind}'.")
+    nv.pop("AlternateFileSystemRoots", None)
+    exts = None
+    if "FileExtensions" in nv:
+        exts = tuple(e.lower() for e in _textimport.text_items(nv.pop("FileExtensions"), "FileExtensions"))
+    sub = "IncludeSubfolders" in nv and bool(np.asarray(nv.pop("IncludeSubfolders")).any())
+    files = _textimport.datastore_files(interp, args[0], exts, sub)
+    if exts is None and len(files) > 1:
+        texty = [f for f in files if os.path.splitext(f)[1].lower() in (".csv", ".txt", ".dat", ".tsv", ".asc")]
+        files = texty or files
+    read_size = nv.pop("ReadSize", None)
+    selected = nv.pop("SelectedVariableNames", None)
+    formats = nv.pop("SelectedFormats", None)
+    ds = _textimport.TabularTextDatastore(interp, files, nv)
+    if selected is not None:
+        ds.set_field(interp, "SelectedVariableNames", selected)
+    if formats is not None:
+        ds.set_field(interp, "SelectedFormats", formats)
+    if read_size is not None:
+        ds.set_field(interp, "ReadSize", read_size)
+    return ds
+
+
+@builtin("tabularTextDatastore")
+def _tabular_text_datastore(interp, args, nargout):
+    return _datastore_args(interp, list(args), "tabularTextDatastore")
+
+
+@builtin("datastore")
+def _datastore(interp, args, nargout):
+    return _datastore_args(interp, list(args), "datastore")
+
+
+# -- memory-mapped files ----------------------------------------------------------------------------
+
+_MAP_TYPES = {"int8": "i1", "uint8": "u1", "int16": "i2", "uint16": "u2", "int32": "i4", "uint32": "u4",
+              "int64": "i8", "uint64": "u8", "single": "f4", "double": "f8"}
+
+
+class MemoryMap(MObject):
+    """memmapfile: the bytes of a file seen as an array (or as records with named fields)."""
+
+    is_handle = True
+
+    def __init__(self, path: str):
+        self.path = path
+        self.writable = False
+        self.offset = 0
+        self.repeat: float = np.inf
+        self.format: Any = "uint8"  # a type name, or a list of (type, dims, field name)
+
+    def class_name(self) -> str:
+        return "memmapfile"
+
+    def isa_class(self, name: str) -> bool:
+        return name == "memmapfile"
+
+    def set_format(self, v: Any) -> None:
+        if is_text(v):
+            name = text(v)
+            if name not in _MAP_TYPES:
+                raise MatlabError(f"memmapfile: unknown Format '{name}'. Types are: {', '.join(_MAP_TYPES)}.")
+            self.format = name
+            return
+        if not isinstance(v, Cell) or v.data.ndim != 2 or v.data.shape[1] not in (2, 3) or v.data.shape[0] < 1:
+            raise MatlabError("memmapfile: Format must be a type name or a cell array with one row "
+                              "{type, size, fieldname} per field.")
+        rows = []
+        for r in range(v.data.shape[0]):
+            name = text(v.data[r, 0], "the type")
+            if name not in _MAP_TYPES:
+                raise MatlabError(f"memmapfile: unknown type '{name}' in Format.")
+            dims = tuple(int(x) for x in np.asarray(v.data[r, 1]).flatten())
+            if len(dims) < 2 or any(d < 1 for d in dims):
+                raise MatlabError("memmapfile: each size in Format must have at least two positive dimensions.")
+            field = text(v.data[r, 2], "the field name") if v.data.shape[1] == 3 else "x"
+            if not re.fullmatch(r"[A-Za-z]\w*", field):
+                raise MatlabError(f"memmapfile: '{field}' is not a valid field name.")
+            rows.append((name, dims, field))
+        if len({r[2] for r in rows}) != len(rows):
+            raise MatlabError("memmapfile: the field names in Format must be different.")
+        if v.data.shape[1] == 2 and len(rows) > 1:
+            raise MatlabError("memmapfile: a Format with several rows needs a field name in each row.")
+        self.format = rows
+
+    def _dtype(self) -> np.dtype:
+        if isinstance(self.format, str):
+            return np.dtype(_MAP_TYPES[self.format])
+        # each field is stored column by column: reversed dimensions in C order
+        return np.dtype([(f, _MAP_TYPES[t], dims[::-1]) for t, dims, f in self.format])
+
+    def _map(self, mode: str):
+        if not os.path.isfile(self.path):
+            raise MatlabError(f"memmapfile: the file '{self.path}' does not exist.",
+                              "MATLAB:memmapfile:inaccessibleFile")
+        dt = self._dtype()
+        size = os.path.getsize(self.path) - self.offset
+        fit = size // dt.itemsize if size > 0 else 0
+        count = fit if np.isinf(self.repeat) else int(self.repeat)
+        if count < 1 or count > fit:
+            raise MatlabError(f"memmapfile: the file is too small to map {'one' if count < 2 else count} "
+                              f"element{'s' if count > 1 else ''} of {dt.itemsize} bytes at offset {self.offset} "
+                              f"({max(size, 0)} bytes are available).", "MATLAB:memmapfile:mapfile:fileTooSmall")
+        try:
+            return np.memmap(self.path, dtype=dt, mode=mode, offset=self.offset, shape=(count,))
+        except (OSError, ValueError) as e:
+            raise MatlabError(f"memmapfile: cannot map '{self.path}': {e}") from None
+
+    def data(self) -> Any:
+        mm = self._map("r")
+        try:
+            if isinstance(self.format, str):
+                return np.array(mm).reshape(-1, 1)
+            out = np.empty((mm.shape[0], 1), dtype=object)
+            for k in range(mm.shape[0]):
+                rec = {}
+                for _t, _dims, f in self.format:
+                    rec[f] = np.ascontiguousarray(np.array(mm[f][k]).transpose())
+                out[k, 0] = rec
+            return Struct(out, [f for _t, _d, f in self.format])
+        finally:
+            del mm
+
+    def store(self, value: Any) -> None:
+        if not self.writable:
+            raise MatlabError("memmapfile: the map is read-only. Create it with 'Writable', true (or set "
+                              "m.Writable = true) to change the file.",
+                              "MATLAB:memmapfile:illegalSubscriptedAssignment")
+        mm = self._map("r+")
+        try:
+            if isinstance(self.format, str):
+                if not isinstance(value, np.ndarray) or value.size != mm.shape[0]:
+                    raise MatlabError(f"memmapfile: Data must keep its {mm.shape[0]} elements.")
+                if class_name(value) != self.format:
+                    raise MatlabError(f"memmapfile: Data must be of class {self.format}, not {class_name(value)}.")
+                mm[:] = value.reshape(-1, order="F")
+            else:
+                if not isinstance(value, Struct) or value.data.size != mm.shape[0]:
+                    raise MatlabError(f"memmapfile: Data must stay a {mm.shape[0]}-by-1 structure array.")
+                for k, rec in enumerate(value.data.flatten(order="F")):
+                    for t, dims, f in self.format:
+                        v = rec.get(f)
+                        if not isinstance(v, np.ndarray) or tuple(v.shape) != dims or class_name(v) != t:
+                            raise MatlabError(f"memmapfile: field '{f}' must be a {'x'.join(map(str, dims))} "
+                                              f"{t} array.")
+                        mm[f][k] = v.transpose()
+            mm.flush()
+        finally:
+            del mm
+
+    def get_field(self, interp, name: str) -> Any:
+        if name == "Data":
+            return self.data()
+        if name == "Filename":
+            return char(self.path)
+        if name == "Writable":
+            return bool_scalar(self.writable)
+        if name == "Offset":
+            return np.array([[float(self.offset)]])
+        if name == "Repeat":
+            return np.array([[float(self.repeat)]])
+        if name == "Format":
+            if isinstance(self.format, str):
+                return char(self.format)
+            data = np.empty((len(self.format), 3), dtype=object)
+            for r, (t, dims, f) in enumerate(self.format):
+                data[r, 0], data[r, 1], data[r, 2] = char(t), np.array([[float(d) for d in dims]]), char(f)
+            return Cell(data)
+        raise MatlabError(f"Unrecognized property '{name}' for class 'memmapfile'.")
+
+    def set_field(self, interp, name: str, value: Any) -> "MemoryMap":
+        if name == "Data":
+            self.store(value)
+        elif name == "Writable":
+            self.writable = bool(np.asarray(value).any())
+        elif name == "Offset":
+            off = float(np.asarray(value, dtype=float).flat[0])
+            if off < 0 or off != int(off):
+                raise MatlabError("memmapfile: Offset must be a non-negative whole number of bytes.")
+            self.offset = int(off)
+        elif name == "Repeat":
+            r = float(np.asarray(value, dtype=float).flat[0])
+            if not (np.isinf(r) or (r >= 1 and r == int(r))):
+                raise MatlabError("memmapfile: Repeat must be a positive integer or Inf.")
+            self.repeat = r
+        elif name == "Format":
+            self.set_format(value)
+        elif name == "Filename":
+            self.path = os.path.abspath(os.path.expanduser(text(value, "Filename")))
+        else:
+            raise MatlabError(f"Unrecognized property '{name}' for class 'memmapfile'.")
+        return self
+
+    def display_lines(self) -> list[str]:
+        fmt = f"'{self.format}'" if isinstance(self.format, str) else \
+            "{" + "; ".join(f"'{t}' [{' '.join(map(str, d))}] '{f}'" for t, d, f in self.format) + "}"
+        try:
+            n = self._map("r").shape[0]
+            shown = f"{n}x1 {self.format} array" if isinstance(self.format, str) else f"{n}x1 struct array"
+        except MatlabError:
+            shown = "(the file cannot be mapped)"
+        return [f"    Filename: '{self.path}'", f"    Writable: {'true' if self.writable else 'false'}",
+                f"      Offset: {self.offset}", f"      Format: {fmt}",
+                f"      Repeat: {'Inf' if np.isinf(self.repeat) else int(self.repeat)}", f"        Data: {shown}"]
+
+
+@builtin("memmapfile")
+def _memmapfile(interp, args, nargout):
+    if not args or not is_text(args[0]):
+        raise MatlabError("memmapfile needs a file name, for example m = memmapfile('data.bin', 'Format', 'double').")
+    path = find_file(interp, text(args[0]))
+    if path is None:
+        raise MatlabError(f"memmapfile: the file '{text(args[0])}' does not exist.",
+                          "MATLAB:memmapfile:inaccessibleFile")
+    m = MemoryMap(os.path.abspath(path))
+    rest = list(args[1:])
+    if len(rest) % 2:
+        raise MatlabError("memmapfile: options must be name-value pairs.")
+    for k in range(0, len(rest), 2):
+        key = text(rest[k], "option name").lower()
+        name = {"format": "Format", "offset": "Offset", "repeat": "Repeat", "writable": "Writable"}.get(key)
+        if name is None:
+            raise MatlabError(f"memmapfile: unknown option '{text(rest[k])}'. Options are Format, Offset, "
+                              "Repeat and Writable.")
+        m.set_field(interp, name, rest[k + 1])
+    m._map("r")  # report a file that is too small now, as MATLAB does
+    return m

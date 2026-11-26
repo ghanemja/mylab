@@ -831,6 +831,72 @@ class MFile:
         self.endian = endian  # '<' or '>'
         self.encoding = encoding
         self.hit_eof = False
+        self.wbits = [0, 0]  # bits written with a bit precision that do not fill a byte yet: value, count
+        self.rbits = [0, 0]  # bits read from the file but not yet handed out
+        self.bit_order = endian
+
+    def sync(self) -> None:
+        """Finish bit-field I/O before anything else touches the file: pad the last byte with zeros."""
+        if self.wbits[1]:
+            value, count = self.wbits
+            self.wbits = [0, 0]
+            byte = value & 0xFF if self.bit_order == "<" else (value << (8 - count)) & 0xFF
+            self.raw.write(bytes([byte]))
+        self.rbits = [0, 0]
+
+    def write_bits(self, values: list[int], width: int, order: str) -> None:
+        if self.rbits[1] or (self.wbits[1] and order != self.bit_order):
+            self.sync()
+        self._switch()
+        self.bit_order = order
+        acc, count = self.wbits
+        out = bytearray()
+        mask = (1 << width) - 1
+        for v in values:
+            v &= mask
+            if order == "<":  # the first value sits in the low bits of the first byte
+                acc |= v << count
+                count += width
+                while count >= 8:
+                    out.append(acc & 0xFF)
+                    acc >>= 8
+                    count -= 8
+            else:
+                acc = (acc << width) | v
+                count += width
+                while count >= 8:
+                    out.append((acc >> (count - 8)) & 0xFF)
+                    count -= 8
+                    acc &= (1 << count) - 1
+        self.wbits = [acc, count]
+        if out:
+            self.raw.write(bytes(out))
+
+    def read_bits(self, width: int, order: str, skip: int = 0) -> int | None:
+        """The next ``width`` bits as an unsigned number, or None at the end of the file."""
+        if self.wbits[1] or (self.rbits[1] and order != self.bit_order):
+            self.sync()
+        self.bit_order = order
+        acc, count = self.rbits
+        need = width + skip
+        while count < need:
+            b = self.raw.read(1)
+            if not b:
+                self.rbits = [acc, count]
+                return None
+            if order == "<":
+                acc |= b[0] << count
+            else:
+                acc = (acc << 8) | b[0]
+            count += 8
+        if order == "<":
+            value = acc & ((1 << width) - 1)
+            acc >>= need
+        else:
+            value = (acc >> (count - width)) & ((1 << width) - 1)
+            acc &= (1 << (count - need)) - 1
+        self.rbits = [acc, count - need]
+        return value
 
     def decode(self, data: bytes) -> str:
         try:
@@ -845,6 +911,7 @@ class MFile:
             return s.encode("utf-8")
 
     def read(self, n: int = -1) -> str:
+        self.sync()
         if n is None or n < 0:
             return self.decode(self.raw.read())
         out = self.raw.read(n)
@@ -864,15 +931,18 @@ class MFile:
         return self.decode(out)
 
     def readline(self) -> str:
+        self.sync()
         return self.decode(self.raw.readline())
 
     def write(self, s: str) -> int:
+        self.sync()
         self._switch()
         data = self.encode(s)
         self.raw.write(data)
         return len(data)
 
     def write_bytes(self, data: bytes) -> None:
+        self.sync()
         self._switch()
         self.raw.write(data)
 
@@ -885,9 +955,12 @@ class MFile:
         return self.raw.tell()
 
     def seek(self, pos: int, whence: int = 0) -> int:
+        self.sync()
         return self.raw.seek(pos, whence)
 
     def size(self) -> int:
+        if self.wbits[1]:
+            self.sync()
         pos = self.raw.tell()
         end = self.raw.seek(0, 2)
         self.raw.seek(pos)
@@ -902,9 +975,13 @@ class MFile:
         return end
 
     def flush(self) -> None:
+        if self.wbits[1]:
+            self.sync()
         self.raw.flush()
 
     def close(self) -> None:
+        if self.wbits[1]:
+            self.sync()
         self.raw.close()
 
 
@@ -1072,12 +1149,23 @@ _CHAR_NAMES = {"char", "uchar", "schar", "char*1", "unsignedchar", "signedchar"}
 
 
 def _precision_code(name: str) -> str:
+    """NumPy type code for a precision name; bit fields give 'ubitN' or 'bitN' (1 to 64 bits)."""
     key = name.lower().replace(" ", "")
     if key not in _PRECISIONS:
-        if re.fullmatch(r"u?bit\d+", key):
-            raise MatlabError(f"Bit-field precisions such as '{name}' are not supported.")
+        m = re.fullmatch(r"(u?)bit(\d+)", key)
+        if m:
+            if not 1 <= int(m.group(2)) <= 64:
+                raise MatlabError(f"The bit-field precision '{name}' must have between 1 and 64 bits.")
+            return key
         raise MatlabError(f"Unknown precision '{name}'.")
     return _PRECISIONS[key]
+
+
+def _bit_width(code: str) -> tuple[int, bool] | None:
+    """(number of bits, signed) for a bit-field code, None for an ordinary type code."""
+    if "bit" not in code:
+        return None
+    return int(code.split("bit")[1]), not code.startswith("u")
 
 
 def parse_precision(spec: str) -> tuple[str, str, int]:
@@ -1096,8 +1184,13 @@ def parse_precision(spec: str) -> tuple[str, str, int]:
     else:
         src, dst = s, None
     code = _precision_code(src)
+    bits = _bit_width(code)
     if dst is None:
-        if same:
+        if same and bits is not None:
+            # the smallest integer class that holds the field
+            size = next(n for n in (8, 16, 32, 64) if n >= bits[0])
+            out = f"{'int' if bits[1] else 'uint'}{size}"
+        elif same:
             out = "char" if src.lower().replace(" ", "") in ("char", "char*1") else _CLASS_OF[code]
         else:
             out = "double"
@@ -1108,7 +1201,10 @@ def parse_precision(spec: str) -> tuple[str, str, int]:
         elif low == "logical":
             out = "logical"
         else:
-            out = _CLASS_OF[_precision_code(dst)]
+            dcode = _precision_code(dst)
+            if _bit_width(dcode) is not None:
+                raise MatlabError(f"The output class in '{spec}' must be a class name such as 'double' or 'uint8'.")
+            out = _CLASS_OF[dcode]
     return code, out, block
 
 
@@ -1138,6 +1234,23 @@ def _read_values(fh, dtype, want, block: int, skip: int) -> np.ndarray:
     return np.concatenate(chunks) if chunks else np.zeros(0, dtype=dtype)
 
 
+def _read_bit_fields(fh, bits: tuple[int, bool], want, block: int, skip: int, order: str) -> np.ndarray:
+    """Values of a bit-field precision; ``skip`` bits are passed over after every ``block`` values."""
+    width, signed = bits
+    out: list[int] = []
+    while want is None or len(out) < want:
+        v = fh.read_bits(width, order)
+        if v is None:
+            break
+        if signed and v >= 1 << (width - 1):
+            v -= 1 << width
+        out.append(v)
+        if skip and len(out) % block == 0:
+            if fh.read_bits(0, order, skip) is None:
+                break
+    return np.array(out, dtype=np.int64 if signed else np.uint64)
+
+
 @builtin("fread")
 def _fread(interp, args, nargout):
     nargs(args, 1, 5, "fread")
@@ -1152,7 +1265,8 @@ def _fread(interp, args, nargout):
         skip = to_int(rest.pop(0), "skip")
     endian = machine_format(rest.pop(0), fh.endian) if rest else fh.endian
     code, out_class, block = parse_precision(spec)
-    dtype = np.dtype(endian + code)
+    bits = _bit_width(code)
+    dtype = np.dtype(endian + code) if bits is None else np.dtype(np.int64 if bits[1] else np.uint64)
     shape = None
     if size is None or size.size == 0:
         want = None
@@ -1166,7 +1280,11 @@ def _fread(interp, args, nargout):
         raise MatlabError("fread: size must be n, Inf or [m n].")
     if want is not None and want < 0:
         raise MatlabError("fread: size must not be negative.")
-    values = _read_values(fh, dtype, want, block, skip)
+    if bits is None:
+        fh.sync()
+        values = _read_values(fh, dtype, want, block, skip)
+    else:
+        values = _read_bit_fields(fh, bits, want, block, skip, endian)
     count = values.size
     if want is None or count < want:
         fh.hit_eof = True
@@ -1234,6 +1352,18 @@ def _fwrite(interp, args, nargout):
     fh = file_handle(interp, fid)
     endian = machine_format(rest.pop(0), fh.endian) if rest else fh.endian
     code, _out, _block = parse_precision(spec)
+    bits = _bit_width(code)
+    if bits is not None:
+        width, signed = bits
+        lo, hi = (-(1 << (width - 1)), (1 << (width - 1)) - 1) if signed else (0, (1 << width) - 1)
+        vals = np.real(num(flat)).astype(float)
+        vals = np.where(np.isnan(vals), 0, np.round(vals))
+        ints = [int(min(max(v, lo), hi)) for v in vals]
+        for v in ints:
+            if skip:
+                fh.write_bits([0] * skip, 1, endian)  # skipped bits are written as zeros
+            fh.write_bits([v], width, endian)
+        return float(count) if nargout else None
     dtype = np.dtype(endian + code)
     if was_text and spec.lower().replace(" ", "").lstrip("*") in ("char", "char*1") and skip == 0:
         fh.write("".join(flat) if count else "")
