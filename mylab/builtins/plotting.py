@@ -47,6 +47,7 @@ def _plt():
             if headless:
                 matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        plt.rcParams["figure.max_open_warning"] = 0  # a script may keep any number of figures open
         _MPL = plt
     return _MPL
 
@@ -214,6 +215,9 @@ def _axes(interp, fresh: bool = True, projection: str | None = None):
         ax.cla()
         _clear_rulers(ax)
         ax.__dict__.pop("_mylab_padded", None)
+        known = st.handles.get(id(ax))
+        if known is not None and known.kind == "geoaxes":
+            known.kind = "axes"
         _yy_restyle(ax)
         _axes_created(interp, ax)
         if getattr(ax, "_mylab_linked", None):
@@ -340,7 +344,7 @@ def close_all(interp) -> None:
 def _with_axes_arg(fn: Callable) -> Callable:
     """Let a builtin take an axes handle as its first argument, e.g. plot(ax, x, y)."""
     def wrapper(interp, args, nargout):
-        if args and isinstance(args[0], GraphicsHandle) and args[0].kind in ("axes", "polaraxes"):
+        if args and isinstance(args[0], GraphicsHandle) and args[0].kind in ("axes", "polaraxes", "geoaxes"):
             st = _state(interp)
             prev = st.override_ax
             st.override_ax = args[0].obj
@@ -1295,6 +1299,8 @@ def _parent_get(h):
 
 
 def _axes_kind(ax) -> str:
+    if getattr(ax, "_mylab_geo", False):
+        return "geoaxes"
     return "polaraxes" if getattr(ax, "name", "") == "polar" else "axes"
 
 
@@ -2065,9 +2071,25 @@ def refresh_categorical_ruler(ax, which: str) -> None:
             getattr(ax, f"set_{which}lim")((hi, lo) if inverted else (lo, hi))
 
 
+_AXES_STATE = ("_mylab_rulers", "_mylab_tickfmt", "_mylab_geo", "_mylab_geo_lat", "_mylab_geo_lon",
+               "_mylab_geo_manual", "_mylab_basemap", "_mylab_bubbles", "_mylab_chart_host", "_mylab_contour",
+               "_mylab_xticklabels", "_mylab_yticklabels", "_mylab_zticklabels", "_mylab_xticks_fixed",
+               "_mylab_yticks_fixed", "_mylab_zticks_fixed", "_mylab_daspect", "_mylab_pbaspect",
+               "_mylab_subtitle", "_mylab_minor_grid", "_mylab_colororder", "_mylab_styleorder",
+               "_mylab_cycle_start", "_mylab_cycle_lines", "_mylab_zoom_reset", "_mylab_secondary",
+               "_mylab_bubblelegend", "_mylab_tickinterp", "_mylab_lights", "_mylab_camera",
+               "_mylab_pos_before_legend")
+
+
 def _clear_rulers(ax) -> None:
-    ax.__dict__.pop("_mylab_rulers", None)
-    ax.__dict__.pop("_mylab_tickfmt", None)
+    """Forget what mylab remembers about an axes that has just been cleared."""
+    for name in _AXES_STATE:
+        ax.__dict__.pop(name, None)
+    fig = ax.figure
+    if fig is not None:
+        for a in list(fig.axes):  # small axes that a chart placed over this one
+            if getattr(a, "_mylab_matrix_of", None) is ax:
+                a.remove()
 
 
 # axes ---------------------------------------------------------------------------------------
@@ -5476,6 +5498,28 @@ def _refresh_legend(interp, ax) -> None:
     _make_legend(interp, ax, reuse=leg)
 
 
+def _room_for_legend(ax, loc_name: str) -> None:
+    """Shrink an axes so that a legend placed outside it stays inside the figure (undone when it moves in)."""
+    fig = ax.figure
+    before = getattr(ax, "_mylab_pos_before_legend", None)
+    if before is not None:
+        ax.set_position(before)
+        ax._mylab_pos_before_legend = None
+    engine = getattr(fig, "get_layout_engine", lambda: None)()
+    if not loc_name.endswith("outside") or engine is not None or hasattr(ax, "get_zlim"):
+        return
+    b = ax.get_position()
+    ax._mylab_pos_before_legend = [b.x0, b.y0, b.width, b.height]
+    if "east" in loc_name:
+        ax.set_position([b.x0, b.y0, b.width * 0.80, b.height])
+    elif "west" in loc_name:
+        ax.set_position([b.x0 + b.width * 0.20, b.y0, b.width * 0.80, b.height])
+    elif loc_name.startswith("north"):
+        ax.set_position([b.x0, b.y0, b.width, b.height * 0.86])
+    else:
+        ax.set_position([b.x0, b.y0 + b.height * 0.16, b.width, b.height * 0.84])
+
+
 def _legend_look(leg) -> dict:
     """The styling of a legend that must survive when it is built again."""
     frame = leg.get_frame()
@@ -5581,6 +5625,9 @@ def _make_legend(interp, ax, labels=None, handles=None, location=None, orientati
     order = list(range(len(handles)))
     if reverse:
         order.reverse()
+    _room_for_legend(ax, loc_name)
+    if pair is not None:
+        pair[1].set_position(pair[0].get_position())
     leg = host.legend([handles[i] for i in order], [shown[i] for i in order], **kw)
     if box is not None:
         leg.set_frame_on(box)
