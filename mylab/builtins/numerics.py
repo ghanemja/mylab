@@ -325,7 +325,7 @@ def _interp_text_tail(args: list) -> tuple[list, str | None, Any]:
 
 def _interp1_object(method: str, x: np.ndarray, yv: np.ndarray):
     """A callable that interpolates ``yv`` (rows = sample points) with ``method``."""
-    from scipy.interpolate import Akima1DInterpolator, CubicSpline, PchipInterpolator, interp1d
+    from scipy.interpolate import CubicSpline, PchipInterpolator, interp1d
     n = x.size
     if method in ("linear", "nearest", "previous", "next"):
         if n < 2 and method == "linear":
@@ -342,7 +342,8 @@ def _interp1_object(method: str, x: np.ndarray, yv: np.ndarray):
     if method in ("pchip", "cubic", "v5cubic"):
         return PchipInterpolator(x, yv, axis=0, extrapolate=True)
     if method == "makima":
-        return Akima1DInterpolator(x, yv, axis=0, method="makima", extrapolate=True)
+        from .._compat import makima
+        return makima(x, yv, axis=0, extrapolate=True)
     raise MatlabError(f"Unknown interpolation method '{method}'.")
 
 
@@ -440,7 +441,7 @@ def _ppval_eval(pp, xq: np.ndarray) -> np.ndarray:
 
 
 def _spline_like(interp, args, nargout, kind: str):
-    from scipy.interpolate import Akima1DInterpolator, CubicSpline, PchipInterpolator
+    from scipy.interpolate import CubicSpline, PchipInterpolator
     nargs(args, 2, 3, kind)
     x = np.real(fnum(args[0])).flatten(order="F").astype(float)
     y = fnum(args[1])
@@ -465,7 +466,8 @@ def _spline_like(interp, args, nargout, kind: str):
     elif kind == "pchip":
         obj = PchipInterpolator(x, yv, axis=0)
     else:
-        obj = Akima1DInterpolator(x, yv, axis=0, method="makima", extrapolate=True)
+        from .._compat import makima
+        obj = makima(x, yv, axis=0, extrapolate=True)
     pp = _pp_from_ppoly(obj, d)
     if len(args) > 2:
         return _ppval_eval(pp, fnum(args[2]))

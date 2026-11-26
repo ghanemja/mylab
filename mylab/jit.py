@@ -54,6 +54,9 @@ from . import ast as A
 from . import fastnum
 from . import indexing as ix
 from . import ops
+from ._refcount import CALLER_LOCAL as _RC_CALLER_LOCAL
+from ._refcount import DICT_AND_LOCAL as _RC_DICT_AND_LOCAL
+from ._refcount import ELEMENT as _RC_ELEMENT
 from .errors import BreakSignal, ContinueSignal
 from .values import Cell, FunctionHandle, MString, StringArray, Struct, char, is_true, to_matlab, to_numeric
 
@@ -327,7 +330,7 @@ def _get2(a, i, j):
 def _set1(a, i, x):
     """``a(i) = x`` in place, for a local real double array that nothing else refers to."""
     if type(a) is not _ND or a.dtype is not _F64 or a.ndim != 2 or not a.flags.writeable or a.base is not None \
-            or sys.getrefcount(a) > 3:
+            or sys.getrefcount(a) > _RC_CALLER_LOCAL:
         raise Bail
     k = int(i)
     if k != i or k < 1 or k > a.size:
@@ -342,7 +345,7 @@ def _set1(a, i, x):
 
 def _set2(a, i, j, x):
     if type(a) is not _ND or a.dtype is not _F64 or a.ndim != 2 or not a.flags.writeable or a.base is not None \
-            or sys.getrefcount(a) > 3:
+            or sys.getrefcount(a) > _RC_CALLER_LOCAL:
         raise Bail
     r, c = int(i), int(j)
     if r != i or c != j or r < 1 or c < 1 or r > a.shape[0] or c > a.shape[1]:
@@ -1826,7 +1829,7 @@ def _prepare(interp, stmt, frame, loop_var):
     if compiled.struct_fields:
         for s in {n.split(".", 1)[0] for n in compiled.struct_fields}:
             struct = fvars[s]
-            if sys.getrefcount(struct) > 3 or sys.getrefcount(struct.data[0, 0]) > 2:
+            if sys.getrefcount(struct) > _RC_DICT_AND_LOCAL or sys.getrefcount(struct.data[0, 0]) > _RC_ELEMENT:
                 fvars[s] = struct.copy()
     args = []
     for n, typ in compiled.variables:
@@ -1839,7 +1842,7 @@ def _prepare(interp, stmt, frame, loop_var):
             args.append(v)
     for n, written in compiled.arrays:
         arr = _entry_value(frame, n)
-        if written and (not arr.flags.writeable or arr.base is not None or sys.getrefcount(arr) > 3):
+        if written and (not arr.flags.writeable or arr.base is not None or sys.getrefcount(arr) > _RC_DICT_AND_LOCAL):
             arr = arr.copy()  # copy-on-write: this workspace gets its own array before modifying it
             if "." in n:
                 s, f = n.split(".", 1)

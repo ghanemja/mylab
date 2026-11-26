@@ -688,8 +688,8 @@ def _linsolve(interp, args, nargout):
             x = sla.solve_triangular(a, b, lower=opts["LT"], trans=2 if trans else 0, check_finite=False) \
                 if n else np.zeros((0, b.shape[1]))
         if nargout > 1:
-            trcon = sla.lapack.get_lapack_funcs("trcon", (a,))
-            rc = float(trcon(a, norm="1", uplo="L" if opts["LT"] else "U")[0]) if n else np.inf
+            from .._compat import triangular_rcond
+            rc = triangular_rcond(a, bool(opts["LT"])) if n else np.inf
     else:
         if opts["POSDEF"]:
             try:

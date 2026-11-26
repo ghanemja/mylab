@@ -11,10 +11,10 @@ requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "mylab contributors" }]
 dependencies = [
-    "numpy>=1.24",
-    "scipy>=1.10",
-    "matplotlib>=3.7",
-    "pillow>=9",
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "matplotlib>=3.8",
+    "pillow>=10",
 ]
 keywords = ["matlab", "octave", "numerical computing", "education", "interpreter"]
 classifiers = [

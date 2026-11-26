@@ -358,7 +358,11 @@ def _mod(a, b):
         r = a - np.floor(a / b) * b
     r = np.where(b == 0, a, r)
     # Results within roundoff of b are reported as 0, as MATLAB does.
-    close = (b != 0) & np.isclose(r, b, rtol=0, atol=np.finfo(float).eps * np.maximum(np.abs(a), 1) * 4)
+    # (np.isclose with an array tolerance needs NumPy 2; this is the same test written out)
+    atol = np.finfo(float).eps * np.maximum(np.abs(a), 1) * 4
+    with np.errstate(invalid="ignore"):
+        near = (r == b) | (np.isfinite(r) & np.isfinite(b) & (np.abs(r - b) <= atol))
+    close = (b != 0) & near
     return np.where(close, 0.0, r)
 
 

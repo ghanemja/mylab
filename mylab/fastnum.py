@@ -997,8 +997,8 @@ class _ScipyLapack:
         x, info = lapack.dtrtrs(a, b, lower=int(lower))
         if info != 0:
             return None
-        rcond, info = lapack.dtrcon(a, norm="1", uplo="L" if lower else "U", diag="N")
-        return x, float(rcond)
+        from ._compat import triangular_rcond
+        return x, triangular_rcond(a, lower)
 
 
 def _lapack_self_test(be) -> bool:

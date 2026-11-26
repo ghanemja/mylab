@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Run every check locally: lint, unit tests, conformance, benchmark tasks,
-# and (with --web) the browser and VS Code extension tests.
+# Run the checks CI runs: lint, unit tests, conformance, benchmark tasks; with --full also the
+# MATLAB-behaviour checks and the speed check, and with --web the browser and VS Code tests.
 #
-#     scripts/check.sh           # Python checks, about 3 minutes
+#     scripts/check.sh           # Python checks, about 5 minutes
+#     scripts/check.sh --full    # also the probe ratchet and the speed check (about 10 more minutes)
 #     scripts/check.sh --web     # also the browser tests (needs Node and Playwright)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -12,6 +13,13 @@ echo "== lint";        "$PY" -m ruff check .
 echo "== tests";       "$PY" -m pytest -q
 echo "== conformance"; "$PY" tests/conformance/run.py --compare | tail -1
 echo "== tasks";       "$PY" datasets/matlab-tasks/tools/run_tasks.py | tail -1
+
+if [ "${1:-}" = "--full" ]; then
+  echo "== MATLAB-behaviour checks"
+  "$PY" tests/probes/check_expected.py --set original --jobs 4 | tail -1
+  "$PY" tests/probes/check_expected.py --set heldout --jobs 4 | tail -1
+  echo "== speed";       "$PY" benchmarks/speed_check.py --limit 0.25 | tail -1
+fi
 
 if [ "${1:-}" = "--web" ]; then
   echo "== browser app"; PYTHON="$PY" node scripts/test_web.mjs --no-screenshot | tail -1

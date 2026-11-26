@@ -15,6 +15,9 @@ from . import fastnum
 from . import fuse
 from . import jit
 from . import ops
+from ._refcount import DICT_AND_LOCAL as _RC_DICT_AND_LOCAL
+from ._refcount import FRESH_LEFT as _RC_FRESH_LEFT
+from ._refcount import FRESH_RIGHT as _RC_FRESH_RIGHT
 from .display import FORMAT, format_display, function_handle_text, unparse
 from .errors import BreakSignal, ContinueSignal, MatlabError, ReturnSignal
 from .objects import MObject
@@ -674,7 +677,7 @@ class Interpreter:
         if not arr.flags.writeable or arr.dtype.kind not in "fb" or arr.dtype != value.dtype \
                 and not (arr.dtype.kind == "f" and value.dtype.kind in "b"):
             return False
-        if arr.base is not None or sys.getrefcount(arr) > 3:  # shared elsewhere: copy-on-write path
+        if arr.base is not None or sys.getrefcount(arr) > _RC_DICT_AND_LOCAL:  # shared: copy-on-write path
             return False
         pos = self._scalar_positions(target.args, arr, frame)
         if pos is None:
@@ -921,7 +924,7 @@ class Interpreter:
                     fused = fuse.run(self, fplan, frame)
                     if fused is not fuse.NOT_FUSED:
                         return fused
-            return self.binop_values(op, self.eval(node.left, frame), self.eval(node.right, frame))
+            return self._binop_fresh(op, self.eval(node.left, frame), self.eval(node.right, frame))
         if t is A.UnaryOp:
             return self.unary_values(node.op, self.eval(node.operand, frame))
         return self._eval_rest(node, frame, t)
@@ -932,23 +935,33 @@ class Interpreter:
             return call_unary_operator(self, op, operand)
         return ops.unary(op, operand)
 
+    def _binop_fresh(self, op: str, left: Any, right: Any) -> Any:
+        """``binop_values`` for operands the caller has just computed and passes on directly.
+
+        Large arrays: when an operand is a temporary (nothing else refers to it), the result is
+        written into it instead of a new array, e.g. the a.*b in  a.*b + c. Only this call site
+        may do that: its arguments are call results, so this frame owns the one reference a
+        temporary has. A helper passing on its own parameters cannot promise that (Python 3.14
+        lends a caller's reference to the callee without counting it), so binop_values never
+        works in place.
+        """
+        if type(left) is np.ndarray and type(right) is np.ndarray and (left.size >= 100000 or right.size >= 100000):
+            ufunc = _INPLACE.get(op)
+            if ufunc is not None and left.dtype is _F64 and right.dtype is _F64:
+                if left.base is None and left.flags.writeable and sys.getrefcount(left) == _RC_FRESH_LEFT \
+                        and (right.shape == left.shape or right.shape == (1, 1)):
+                    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                        return ufunc(left, right, out=left)
+                if op in ("+", ".*") and right.base is None and right.flags.writeable \
+                        and sys.getrefcount(right) == _RC_FRESH_RIGHT and left.shape == (1, 1) and right.size > 1:
+                    return ufunc(left, right, out=right)
+        return self.binop_values(op, left, right)
+
     def binop_values(self, op: str, left: Any, right: Any) -> Any:
         """Apply a (non short-circuit) binary operator to two values."""
         if isinstance(left, MObject) or isinstance(right, MObject):
             from .classdef import call_operator
             return call_operator(self, op, left, right)
-        if type(left) is np.ndarray and type(right) is np.ndarray and (left.size >= 100000 or right.size >= 100000):
-            # Large arrays: when an operand is a temporary (nothing else refers to it), write the
-            # result into it instead of allocating a new array, e.g. the a.*b in  a.*b + c.
-            ufunc = _INPLACE.get(op)
-            if ufunc is not None and left.dtype is _F64 and right.dtype is _F64:
-                if left.base is None and left.flags.writeable and sys.getrefcount(left) == 2 \
-                        and (right.shape == left.shape or right.shape == (1, 1)):
-                    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-                        return ufunc(left, right, out=left)
-                if op in ("+", ".*") and right.base is None and right.flags.writeable \
-                        and sys.getrefcount(right) == 2 and left.shape == (1, 1) and right.size > 1:
-                    return ufunc(left, right, out=right)
         return ops.binop(op, left, right)
 
     def _eval_rest(self, node: A.Node, frame: Frame, t: type) -> Any:

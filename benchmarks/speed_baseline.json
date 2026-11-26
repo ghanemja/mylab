@@ -1,0 +1,160 @@
+{
+ "calibration": {
+  "numpy": 0.05993593400125974,
+  "python": 0.07832136400247691
+ },
+ "cases": {
+  "b01_scalar_loop": {
+   "relative": 0.979732681846211,
+   "seconds": 0.076734,
+   "unit": "python"
+  },
+  "b02_array_fill": {
+   "relative": 3.6573290525295388,
+   "seconds": 0.286447,
+   "unit": "python"
+  },
+  "b03_while_if": {
+   "relative": 3.2478877665097263,
+   "seconds": 0.254379,
+   "unit": "python"
+  },
+  "b04_nested_matrix": {
+   "relative": 1.0071581490524777,
+   "seconds": 0.078882,
+   "unit": "python"
+  },
+  "b05_recursion_fib22": {
+   "relative": 0.071487519035329,
+   "seconds": 0.005599,
+   "unit": "python"
+  },
+  "b06_call_user_function": {
+   "relative": 0.3345319675378916,
+   "seconds": 0.026201,
+   "unit": "python"
+  },
+  "b07_call_anonymous": {
+   "relative": 0.3668092399296244,
+   "seconds": 0.028729,
+   "unit": "python"
+  },
+  "b08_struct_fields": {
+   "relative": 0.9766173122008065,
+   "seconds": 0.07649,
+   "unit": "python"
+  },
+  "b09_cell_and_string_build": {
+   "relative": 2.887832750114606,
+   "seconds": 0.226179,
+   "unit": "python"
+  },
+  "b10_small_array_ops": {
+   "relative": 3.4129257502658725,
+   "seconds": 0.267305,
+   "unit": "python"
+  },
+  "b11_object_methods": {
+   "relative": 14.38095485625582,
+   "seconds": 1.126336,
+   "unit": "python"
+  },
+  "b12_map_inserts": {
+   "relative": 5.6383338776637535,
+   "seconds": 0.441602,
+   "unit": "python"
+  },
+  "b13_ode45_vdp": {
+   "relative": 12.069325043548849,
+   "seconds": 0.945286,
+   "unit": "python"
+  },
+  "b14_fminsearch_rosen": {
+   "relative": 1.21390888949525,
+   "seconds": 0.095075,
+   "unit": "python"
+  },
+  "b15_bubble_sort": {
+   "relative": 9.145397416436053,
+   "seconds": 0.71628,
+   "unit": "python"
+  },
+  "b16_text_parsing": {
+   "relative": 7.042893175131058,
+   "seconds": 0.551609,
+   "unit": "python"
+  },
+  "b20_vec_elementwise": {
+   "relative": 3.0958055979589822,
+   "seconds": 0.18555,
+   "unit": "numpy"
+  },
+  "b21_matmul_1500": {
+   "relative": 0.7719242349510659,
+   "seconds": 0.046266,
+   "unit": "numpy"
+  },
+  "b22_solve_1500": {
+   "relative": 1.1015428573885633,
+   "seconds": 0.066022,
+   "unit": "numpy"
+  },
+  "b23_eig_500": {
+   "relative": 1.123633111291542,
+   "seconds": 0.067346,
+   "unit": "numpy"
+  },
+  "b24_svd_600": {
+   "relative": 0.9789452851233916,
+   "seconds": 0.058674,
+   "unit": "numpy"
+  },
+  "b25_fft_4m": {
+   "relative": 3.421520051655319,
+   "seconds": 0.205072,
+   "unit": "numpy"
+  },
+  "b26_sort_unique_5m": {
+   "relative": 3.796153405988765,
+   "seconds": 0.227526,
+   "unit": "numpy"
+  },
+  "b27_logical_index_1e7": {
+   "relative": 5.559886661530894,
+   "seconds": 0.333237,
+   "unit": "numpy"
+  },
+  "b28_sparse_tridiag_solve": {
+   "relative": 2.328219328275873,
+   "seconds": 0.139544,
+   "unit": "numpy"
+  },
+  "b29_arrayfun_cellfun": {
+   "relative": 16.474789687768887,
+   "seconds": 1.290328,
+   "unit": "python"
+  },
+  "b30_accumarray_interp": {
+   "relative": 2.8015580769371304,
+   "seconds": 0.167914,
+   "unit": "numpy"
+  },
+  "b31_csv_write_read": {
+   "relative": 2.29056245285365,
+   "seconds": 0.137287,
+   "unit": "numpy"
+  },
+  "b32_plot_to_png": {
+   "relative": 3.070378447696037,
+   "seconds": 0.184026,
+   "unit": "numpy"
+  },
+  "b33_regexprep_cellstr": {
+   "relative": 27.001304521881412,
+   "seconds": 2.114779,
+   "unit": "python"
+  }
+ },
+ "note": "Times relative to the calibration workloads of benchmarks/speed_check.py, recorded with --update.",
+ "startup": 3.301103310648604
+}

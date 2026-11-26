@@ -1,47 +1,111 @@
 name: CI
 
-# Runs only when started by hand (Actions tab → Run workflow), so pushes use no
-# Actions minutes. Run scripts/check.sh on your own machine for the same checks.
+# Runs on every push and pull request. The same checks run locally with scripts/check.sh.
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MPLBACKEND: Agg
+  PYTHONUTF8: "1"
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install "ruff==0.16.9"
+      - run: ruff check .
+
   test:
+    name: test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.10", "3.12", "3.13"]
-        include:
-          - os: windows-latest
-            python-version: "3.12"
-          - os: macos-latest
-            python-version: "3.12"
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: ruff check .
-      - run: pytest -q
-        env:
-          MPLBACKEND: Agg
+      - run: python -m pytest -q -p no:cacheprovider
 
-  tasks:
+  dependencies:
+    name: test (${{ matrix.name }} NumPy, SciPy, Matplotlib)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: oldest
+            python-version: "3.10"
+            pins: "numpy==1.26.* scipy==1.13.* matplotlib==3.8.* pillow==10.*"
+          - name: newest
+            python-version: "3.14"
+            pins: "--upgrade numpy scipy matplotlib pillow"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install ${{ matrix.pins }} pytest
+      - run: pip install -e .
+      - run: python -c "import numpy, scipy, matplotlib; print(numpy.__version__, scipy.__version__, matplotlib.__version__)"
+      - run: python -m pytest -q -p no:cacheprovider
+
+  probes:
+    name: MATLAB-behaviour checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
+      - run: pip install -e ".[excel,symbolic,fast]"
+      - name: Original checks (no check that passed before may fail now)
+        run: python tests/probes/check_expected.py --set original --jobs 4
+      - name: Held-out checks
+        run: python tests/probes/check_expected.py --set heldout --jobs 4
+
+  tasks:
+    name: MATLAB Tasks benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - run: pip install -e .
-      - name: MATLAB Tasks benchmark (reference solutions must all pass on mylab)
-        working-directory: datasets/matlab-tasks
+      - working-directory: datasets/matlab-tasks
         run: python tools/run_tasks.py --show-failures
 
+  speed:
+    name: speed (fails on a slowdown of more than 25%)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[fast]"
+      - run: python benchmarks/speed_check.py --limit 0.25
+
   web:
+    name: browser app
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,4 +118,4 @@ jobs:
       - run: pip install build setuptools wheel
       - run: npm install --no-save playwright@1.48.2
       - run: npx playwright install --with-deps chromium
-      - run: node scripts/test_web.mjs
+      - run: node scripts/test_web.mjs --no-screenshot
