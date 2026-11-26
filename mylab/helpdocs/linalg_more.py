@@ -130,8 +130,10 @@ HELP = {
                  "Hadamard matrix of order n: entries +1 and -1 with H'*H = n*eye(n). n must be a power "
                  "of 2, or 12 or 20 times a power of 2."),
     "condeig": (["c = condeig(A)", "[V, D, s] = condeig(A)"],
-                "Condition numbers of the eigenvalues of A: the reciprocals of the cosines of the angles "
-                "between left and right eigenvectors. Large values mean sensitive eigenvalues."),
+                "How sensitive each eigenvalue of A is to small changes in A. For eigenvalue k, with unit "
+                "left eigenvector y and unit right eigenvector x, the value is 1/|y'*x|: 1 for a normal "
+                "matrix, and large when the eigenvalue is ill-conditioned. The three-output form also "
+                "returns the eigenvectors V and the eigenvalues D."),
     "normest1": (["c = normest1(A)", "c = normest1(A, t)", "[c, v, w, it] = normest1(A, t, X0)",
                   "c = normest1(afun, t, X0, p1, ...)"],
                  "Estimates the 1-norm of a square matrix from a few products with A and A'. t is the "
