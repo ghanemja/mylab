@@ -206,7 +206,9 @@ def _trimesh(interp, args, nargout):
 @builtin("trisurf")
 @_with_axes_arg
 def _trisurf(interp, args, nargout):
-    args, opts = _split_name_values(args, {"edgecolor", "facecolor", "facealpha", "linewidth"}, kind="patch")
+    from .triangulation import plot_args
+    args, opts = _split_name_values(plot_args(args), {"edgecolor", "facecolor", "facealpha", "linewidth"},
+                                    kind="patch")
     _reject_text(args, "patch")
     nums = [a for a in args if not is_text(a)]
     if len(nums) < 4:
@@ -237,7 +239,8 @@ def _trisurf(interp, args, nargout):
 @builtin("triplot")
 @_with_axes_arg
 def _triplot(interp, args, nargout):
-    args, opts = _split_name_values(args, {"color", "linewidth"}, kind="line")
+    from .triangulation import plot_args
+    args, opts = _split_name_values(plot_args(args), {"color", "linewidth"}, kind="line")
     _reject_text(args, "line")
     spec = next((text(a) for a in args if is_text(a) and _is_linespec(text(a))), "")
     nums = [a for a in args if not is_text(a)]
