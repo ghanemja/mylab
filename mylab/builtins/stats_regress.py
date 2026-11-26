@@ -564,7 +564,17 @@ def _fitnlm(interp, args, nargout):
 # -- lasso, elastic net, ridge -----------------------------------------------------------------------------------------
 
 def _soft(x, t):
-    return np.sign(x) * np.maximum(np.abs(x) - t, 0.0)
+    """Soft thresholding of a scalar. An excess over the threshold of rounding size counts as none: at
+    the largest lambda of a path |x| equals the threshold, but it is a sum computed in another order
+    (by another BLAS routine) than the threshold, so it can come out an ulp above it."""
+    ax = abs(x)
+    excess = ax - t
+    if excess <= 8 * _EPS * max(ax, t):
+        return 0.0
+    return float(excess if x > 0 else -excess)
+
+
+_EPS = float(np.finfo(float).eps)
 
 
 def _cd_path(X: np.ndarray, y: np.ndarray, w: np.ndarray, lambdas: np.ndarray, alpha: float, tol: float,

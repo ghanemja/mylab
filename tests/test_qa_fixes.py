@@ -312,3 +312,35 @@ def test_struct_array_sharing_keeps_copies_independent():
                       "c=cell(2,2); c{3,4}=1; disp(size(c)); disp(class(c{3,1}))")
     assert r.error is None
     assert r.output.split() == ["1", "0", "5", "9", "3", "4", "double"]
+
+
+def test_deep_recursion_on_a_small_stack():
+    """MATLAB's 500 levels must not overflow a 1 MB thread stack (a Windows main thread's size).
+
+    Before Python 3.12 every Python call also uses C stack; without moving deep calls to fresh
+    stacks the process died with no error (seen on Windows with Python 3.10).
+    """
+    import threading
+    from mylab import Interpreter
+    res = {}
+
+    def work():
+        it = Interpreter(out=lambda s: None)
+        it.execute("function s = f(n)\nif n == 0\ns = 0;\nelse\ns = n + f(n - 1);\nend\nend\nr = f(450);")
+        res["r"] = it.eval_expression("r").item()
+        try:
+            it.execute("function g(n)\ng(n + 1);\nend\ng(1)")
+        except MatlabError as e:
+            res["err"] = str(e)
+        it.execute("function c = h(n)\nif n == 0\nc = {};\nelse\nc = [h(n - 1), {n}];\nend\nend\nq = numel(h(300));")
+        res["q"] = it.eval_expression("q").item()
+
+    old = threading.stack_size()
+    threading.stack_size(1024 * 1024)
+    try:
+        t = threading.Thread(target=work)
+        t.start()
+    finally:
+        threading.stack_size(old)
+    t.join()
+    assert res == {"r": 450 * 451 / 2, "err": "Maximum recursion limit of 500 reached.", "q": 300}

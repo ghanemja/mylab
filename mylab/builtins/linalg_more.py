@@ -2106,7 +2106,10 @@ def _cluster_poles(poles: np.ndarray, tol: float, real_coeffs: bool):
 def _pf_expand(b_rem: np.ndarray, a: np.ndarray, tol: float = 1e-3):
     """Residues and poles of b_rem/a (deg b_rem < deg a), both in descending powers."""
     real_coeffs = not (np.any(np.imag(a) != 0) or np.any(np.imag(b_rem) != 0))
-    p_sorted, starts = _cluster_poles(np.roots(a).astype(complex), tol, real_coeffs)
+    # the roots of a real polynomial from the real eigensolver: real roots come out exactly real
+    # (the complex solver can leave +-1e-17i on them, depending on the LAPACK library)
+    poles = np.roots(np.real(a) if real_coeffs else a).astype(complex)
+    p_sorted, starts = _cluster_poles(poles, tol, real_coeffs)
     res = np.zeros(p_sorted.size, dtype=complex)
     for gi, s in enumerate(starts):
         e = starts[gi + 1] if gi + 1 < starts.size else p_sorted.size

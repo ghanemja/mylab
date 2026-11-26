@@ -236,6 +236,13 @@ def test_summation_order_is_verified():
         fastnum._FAST["sum"] = real
 
 
+def assert_same_solution(x, ref, rtol=1e-9):
+    """Two LAPACK builds (NumPy's and SciPy's) round differently: on Windows a 130 x 130 solve
+    differed by 4e-11 in a component of 0.025. Each component must agree to rtol relative to the
+    solution's largest component, the usual measure for comparing solves."""
+    np.testing.assert_allclose(x, ref, rtol=rtol, atol=rtol * np.abs(ref).max())
+
+
 def test_solve_matches_numpy_and_warns_like_matlab():
     rng = np.random.default_rng(2)
     backend = fastnum.lapack_backend()
@@ -246,11 +253,11 @@ def test_solve_matches_numpy_and_warns_like_matlab():
         if backend is not None and backend.name == "numpy-openblas":
             assert np.array_equal(x, np.linalg.solve(a, b) + 0.0)  # the same library and driver as NumPy
         else:
-            np.testing.assert_allclose(x, np.linalg.solve(a, b), rtol=1e-9)
+            assert_same_solution(x, np.linalg.solve(a, b))
         spd = a @ a.T + n * np.eye(n)
         np.testing.assert_allclose(ops.left_divide(spd, b), np.linalg.solve(spd, b), rtol=1e-10)
         for tri in (np.triu(a) + 3 * np.eye(n), np.tril(a) + 3 * np.eye(n), np.diag(np.arange(1.0, n + 1))):
-            np.testing.assert_allclose(ops.left_divide(tri, b), np.linalg.solve(tri, b), rtol=1e-9)
+            assert_same_solution(ops.left_divide(tri, b), np.linalg.solve(tri, b))
         np.testing.assert_allclose(ops.right_divide(b.T, a), np.linalg.solve(a.T, b).T, rtol=1e-9)
     c = rng.standard_normal((4, 4)) + 1j * rng.standard_normal((4, 4))
     np.testing.assert_allclose(ops.left_divide(c, np.ones((4, 1))), np.linalg.solve(c, np.ones((4, 1))), rtol=1e-12)

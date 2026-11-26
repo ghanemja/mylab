@@ -86,7 +86,7 @@ def test_textscan_options(m):
 
 
 def test_textscan_leaves_the_file_where_it_stopped(w, tmp_path):
-    (tmp_path / "t.txt").write_text("name value\n1 2\n3 4\n5 6\n")
+    (tmp_path / "t.txt").write_text("name value\n1 2\n3 4\n5 6\n", newline="\n")  # LF on every platform
     w.run("fid = fopen('t.txt'); h = fgetl(fid); A = textscan(fid, '%f %f', 1); p = ftell(fid);"
           "B = textscan(fid, '%f %f'); e = feof(fid); fclose(fid);")
     assert w.num("A{1} == 1 && A{2} == 2") and w.num("isequal([B{:}], [3 4; 5 6])") and w.num("e")

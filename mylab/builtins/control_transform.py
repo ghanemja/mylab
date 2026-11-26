@@ -49,6 +49,32 @@ def _cancel(z: np.ndarray, p: np.ndarray, tol: float):
     return cn.pair_conjugates(np.array(kept_z, dtype=complex)), cn.pair_conjugates(np.array(p, dtype=complex))
 
 
+def _merge_multiple_roots(r: np.ndarray, tol: float) -> np.ndarray:
+    """Roots computed from a polynomial, with each cluster of nearly equal roots replaced by its mean.
+
+    A double root comes out of the eigenvalue solver split by about sqrt(eps) (-1 +- 1e-8 for
+    s^2 + 2s + 1), by an amount that depends on the LAPACK library; the mean of the cluster is
+    accurate to working precision. Without this, cancelling one of the pair against a zero left
+    the other slightly off on some platforms (1/(s + 1.00000001)).
+    """
+    r = np.asarray(r, dtype=complex).ravel()
+    if r.size < 2:
+        return r
+    out = r.copy()
+    used = np.zeros(r.size, dtype=bool)
+    for i in range(r.size):
+        if used[i]:
+            continue
+        group = [i]
+        for j in range(i + 1, r.size):
+            if not used[j] and abs(r[j] - r[i]) <= tol * max(1.0, abs(r[i])):
+                group.append(j)
+        if len(group) > 1:
+            out[group] = r[group].mean()
+            used[group] = True
+    return out
+
+
 def minreal_model(sys: LTI, tol: float | None = None):
     """The model without cancelling pole/zero pairs or unreachable states; also the number removed."""
     sys = _need_dynamic(sys, "minreal")
@@ -60,9 +86,13 @@ def minreal_model(sys: LTI, tol: float | None = None):
     z = _grid(g.ny, g.nu, lambda i, j: None)
     p = _grid(g.ny, g.nu, lambda i, j: None)
     removed = 0
+    from_polynomials = isinstance(sys, TF)  # zeros and poles computed as roots, not given
     for i in range(g.ny):
         for j in range(g.nu):
-            z[i][j], p[i][j] = _cancel(g.z[i][j], g.p[i][j], eff)
+            gz, gp = g.z[i][j], g.p[i][j]
+            if from_polynomials:
+                gz, gp = _merge_multiple_roots(gz, 10 * eff), _merge_multiple_roots(gp, 10 * eff)
+            z[i][j], p[i][j] = _cancel(gz, gp, eff)
             removed += len(g.p[i][j]) - len(p[i][j])
     out = ZPK(z, p, g.k, g.ts, g.var)
     out.display_format = g.display_format

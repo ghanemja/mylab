@@ -148,6 +148,70 @@ def _reads_an_argument(e: BaseException) -> bool:
     line = frames[-1].line if frames else ""
     return bool(line and re.search(r"\b(args|rest|argv|arguments|inputs)\s*\[", line))
 
+_STACK_HOP = 32  # every this many nested calls, a call continues on a fresh stack
+_HOP_THREADS = sys.platform != "emscripten"  # (no threads in the browser)
+_HOP_STACK_BYTES = 64 * 1024 * 1024
+_HOP_LOCK = None
+
+
+def _on_fresh_stack(fn: Callable, *args: Any) -> Any:
+    """Run ``fn(*args)`` on a new thread with a large stack, and wait for it.
+
+    Each level of MATLAB calls takes several Python frames, and before Python 3.12 each Python call
+    also takes C stack, so recursion as deep as MATLAB allows (500 levels) can overflow a thread's
+    stack and end the process without any error: Windows gives the main thread 1-2 MB, macOS gives
+    other threads 512 KB. Continuing every _STACK_HOP levels on a fresh 64 MB stack keeps every
+    stack short. Errors (and return/break signals) come back to the caller; Ctrl+C while waiting
+    is passed on to the thread doing the work.
+    """
+    import contextvars
+    import threading
+    global _HOP_LOCK
+    if _HOP_LOCK is None:
+        _HOP_LOCK = threading.Lock()
+    box: dict[str, Any] = {}
+    ctx = contextvars.copy_context()
+
+    def run() -> None:
+        fastnum.quiet_enter()  # floating-point warnings stay silenced on this thread too
+        try:
+            box["value"] = ctx.run(fn, *args)
+        except BaseException as e:  # noqa: BLE001 - handed to the waiting thread
+            box["error"] = e
+        finally:
+            fastnum.quiet_leave()
+
+    with _HOP_LOCK:
+        try:
+            old = threading.stack_size()
+            threading.stack_size(_HOP_STACK_BYTES)
+        except (ValueError, RuntimeError):  # stack size cannot be set here: stay on this stack
+            return fn(*args)
+        try:
+            worker = threading.Thread(target=run, name="mylab-deep-call", daemon=True)
+            worker.start()
+        finally:
+            threading.stack_size(old)
+    try:
+        while worker.is_alive():
+            worker.join(0.25)  # a timed wait, so Ctrl+C reaches this thread on every platform
+    except KeyboardInterrupt:
+        _raise_in_thread(worker, KeyboardInterrupt)
+        worker.join()
+        raise
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
+def _raise_in_thread(thread: Any, exc_type: type) -> None:
+    import ctypes
+    try:
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread.ident), ctypes.py_object(exc_type))
+    except Exception:  # noqa: BLE001 - best effort
+        pass
+
+
 class Interpreter:
     """Runs MATLAB-language code.
 
@@ -1631,7 +1695,10 @@ class Interpreter:
         if outermost:
             fastnum.quiet_enter()
         try:
-            self.exec_block(fn.body, frame)
+            if self.depth % _STACK_HOP == 0 and _HOP_THREADS:
+                _on_fresh_stack(self.exec_block, fn.body, frame)  # deep recursion: see _on_fresh_stack
+            else:
+                self.exec_block(fn.body, frame)
         except ReturnSignal:
             pass
         finally:

@@ -1,8 +1,8 @@
 name: Deploy web app to GitHub Pages
 
 # Deploys on every push to main. One-time setup by the repository owner: Settings > Pages >
-# Build and deployment > Source: "GitHub Actions". Until then the deploy step fails with
-# "Pages site not found"; the build step still runs.
+# Build and deployment > Source: "GitHub Actions". Until then the run fails at configure-pages
+# with "Get Pages site failed"; the wheel build before it still runs and is checked.
 
 on:
   push:

@@ -1755,8 +1755,11 @@ async function main() {
       // copy, paste, rotate, connect from the keyboard
       const g1 = await blockAt("Gain");
       await page.mouse.click(g1.x, g1.y);
+      // a slow machine may not have handled the click yet: copy only once the block is selected
+      await page.waitForFunction(() => window.mylab.app.blocks.editor.sel.has("Gain"), null, { timeout: 5000 }).catch(() => {});
       await page.keyboard.press("Control+c");
       await page.keyboard.press("Control+v");
+      await page.waitForFunction(() => JSON.parse(window.mylab.app.blocks.editor.text()).blocks.length === 4, null, { timeout: 5000 }).catch(() => {});
       check((await names()).join() === "Constant,Gain,Scope,Gain1", "paste adds a copy with a new name: " + (await names()).join());
       await page.keyboard.press("r");
       check((await model()).blocks[3].rotation === 1, "R rotates the selected block");
