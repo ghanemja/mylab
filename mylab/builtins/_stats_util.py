@@ -520,11 +520,11 @@ def _gnum(x: Any) -> str:
 
 # -- numeric helpers -----------------------------------------------------------------------------------
 
-def num_hessian(f: Callable, x: np.ndarray, rel: float = 1e-4) -> np.ndarray:
-    """Central-difference Hessian of a scalar function."""
+def num_hessian(f: Callable, x: np.ndarray, rel: float = 1e-4, steps: np.ndarray | None = None) -> np.ndarray:
+    """Central-difference Hessian of a scalar function (``steps`` overrides the default step sizes)."""
     x = np.asarray(x, dtype=float)
     n = x.size
-    h = rel * np.maximum(np.abs(x), 1e-2)
+    h = rel * np.maximum(np.abs(x), 1e-2) if steps is None else np.asarray(steps, dtype=float)
     H = np.empty((n, n))
     f0 = f(x)
     for i in range(n):

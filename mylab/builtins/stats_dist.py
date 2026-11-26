@@ -125,6 +125,9 @@ class Fam:
         if x.size == 0:
             raise MatlabError(f"Cannot fit a {self.display} distribution to empty data.")
         has_cens = cens is not None and cens.any()
+        if has_cens and self.name == "Exponential" and start is None and not np.all(cens):
+            f = np.ones(x.size) if freq is None else freq       # total time on test over the number of failures
+            return np.array([float(np.sum(f * x) / np.sum(f * ~cens))])
         if self.closed is not None and not has_cens and start is None:
             xe = x if freq is None else np.repeat(x, np.round(freq).astype(int)) \
                 if np.all(freq == np.round(freq)) else None
@@ -196,8 +199,11 @@ class Fam:
             v = self.nll(th, x, cens, freq)
             return v if np.isfinite(v) else np.nan
 
+        spread = float(np.std(x)) if x.size > 1 and np.std(x) > 0 else 1.0
+        steps = np.array([1e-3 * (max(abs(base[i]), spread) if self.kinds[i] == "real" else abs(base[i]) or 1e-3)
+                          for i in est])
         with np.errstate(all="ignore"):
-            H = num_hessian(f, base[est])
+            H = num_hessian(f, base[est], steps=steps)
             try:
                 Ci = np.linalg.inv(H)
             except np.linalg.LinAlgError:
@@ -715,7 +721,7 @@ def _random_core(interp, fam: Fam, fname: str, args: list) -> np.ndarray:
 
 
 def _stat_fn(fam: Fam) -> Callable:
-    fname = f"{fam.prefix}stat"
+    fname = "poisstat" if fam.prefix == "poiss" else f"{fam.prefix}stat"
 
     def f(interp, args, nargout):
         k = len(fam.pnames)
@@ -891,7 +897,7 @@ def _register_functions() -> None:
         for kind in ("pdf", "cdf", "inv"):
             builtin(f"{fam.prefix}{kind}")(_dist_fn(fam, kind))
         builtin(f"{fam.prefix}rnd")(_rnd_fn(fam))
-        builtin(f"{fam.prefix}stat")(_stat_fn(fam))
+        builtin("poisstat" if fam.prefix == "poiss" else f"{fam.prefix}stat")(_stat_fn(fam))
         if fam.prefix in fits:
             builtin(f"{fam.prefix}fit")(_fit_fn(fam, fam.prefix in censor))
         if fam.prefix in likes:
@@ -971,7 +977,7 @@ def _mle(interp, args, nargout):
         raise MatlabError("mle: the option 'TruncationBounds' is not supported.")
     if custom:
         return _mle_custom(interp, x, cens, freq, opts, alpha, nargout)
-    fam = family(opts.get("distribution", "normal"), "mle")
+    fam = family(opts["distribution"], "mle") if "distribution" in opts else FAMILIES["normal"]
     fixed: dict[int, float] = {}
     if _key(fam.name) == "binomial":
         if "ntrials" not in opts:

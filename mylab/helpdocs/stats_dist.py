@@ -47,7 +47,10 @@ HELP = {}
 for _p, (_d, _a, _desc) in _FAMILIES.items():
     for _k, (_usage, _text) in _KINDS.items():
         _u = [u.format(p=_p, a=_a) for u in _usage] if isinstance(_usage, list) else _usage.format(p=_p, a=_a)
-        HELP[f"{_p}{_k}"] = (_u, _text.format(d=_d, desc=_desc))
+        _name = "poisstat" if (_p, _k) == ("poiss", "stat") else f"{_p}{_k}"
+        if _name == "poisstat":
+            _u = "[m, v] = poisstat(lambda)"
+        HELP[_name] = (_u, _text.format(d=_d, desc=_desc))
 
 _FITS = {
     "exp": "the mean", "gam": "[shape, scale]", "beta": "[a, b]", "wbl": "[scale, shape]",
