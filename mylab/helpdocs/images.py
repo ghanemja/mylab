@@ -2,7 +2,7 @@
 
 _CLASSES = ("Value ranges follow the class: 0..255 for uint8, 0..65535 for uint16, -32768..32767 for int16 "
             "and 0..1 for double and single.")
-_SE = ("The structuring element is a matrix of zeros and ones, such as the result of strel; its centre is "
+_SE = ("The structuring element is a strel object or a matrix of zeros and ones; its centre is "
        "element floor((size+1)/2).")
 
 HELP = {
@@ -217,23 +217,27 @@ HELP = {
                "position; 'distinct' takes non-overlapping blocks, padding the matrix with zeros."),
     "edge": (["BW = edge(I)", "BW = edge(I, method)", "BW = edge(I, method, threshold)",
               "BW = edge(I, method, threshold, direction)", "BW = edge(I, 'canny', threshold, sigma)",
-              "[BW, threshold] = edge(...)"],
+              "[BW, threshold] = edge(...)", "[BW, threshold, Gv, Gh] = edge(I, 'sobel')"],
              "Finds edges in a grayscale image and returns them as a binary image. Methods: 'sobel' "
              "(default), 'prewitt' and 'roberts' threshold the gradient magnitude and thin the result "
-             "('nothinning' skips that; direction 'horizontal' or 'vertical' limits the search); 'log' marks "
-             "zero crossings after a Laplacian-of-Gaussian filter (sigma 2); 'canny' smooths (sigma "
-             "sqrt(2)), keeps ridges of the gradient and links weak edges to strong ones, with thresholds "
-             "[low high]. Thresholds are chosen automatically when omitted. Edge maps agree closely with "
-             "other implementations but individual pixels may differ."),
+             "('nothinning' skips that; direction 'horizontal' or 'vertical' limits the search), and can "
+             "also return the two gradient images; 'log' and 'zerocross' mark zero crossings after a "
+             "Laplacian-of-Gaussian filter (sigma 2); 'canny' and 'approxcanny' smooth (sigma sqrt(2)), "
+             "keep ridges of the gradient and link weak edges to strong ones, with thresholds [low high]. "
+             "Thresholds are chosen automatically when omitted and returned as the second output. Edge maps "
+             "agree closely with other implementations but individual pixels may differ."),
     # -- morphology ------------------------------------------------------------------------------
-    "strel": (["se = strel('disk', r)", "se = strel('square', w)", "se = strel('rectangle', [m n])",
-               "se = strel('line', len, deg)", "se = strel('diamond', r)", "se = strel('octagon', r)",
-               "se = strel(nhood)"],
-              "Structuring element for imdilate, imerode, imopen and imclose. In mylab it is simply a "
-              "logical matrix that marks the neighbourhood, so it can be displayed, indexed and combined "
-              "like any matrix; there is no strel object and no .Neighborhood property (use getnhood, or the "
-              "value itself). 'disk' is the exact disk of pixels within distance r of the centre, which "
-              "for larger radii is not the same as the polygon approximation used elsewhere."),
+    "strel": (["se = strel('disk', r)", "se = strel('disk', r, n)", "se = strel('square', w)",
+               "se = strel('rectangle', [m n])", "se = strel('line', len, deg)", "se = strel('diamond', r)",
+               "se = strel('octagon', r)", "se = strel('sphere', r)", "se = strel('cube', w)",
+               "se = strel('arbitrary', nhood)", "se = strel(nhood)"],
+              "Structuring element for imdilate, imerode, imopen, imclose and the other morphology "
+              "functions. The result is an object: se.Neighborhood is the logical matrix of the shape and "
+              "se.Dimensionality its number of dimensions; getnhood(se), reflect(se) and translate(se, v) "
+              "are available. A 'disk' of radius 3 or more is built from line segments in n directions "
+              "(n = 4 by default, or 6 or 8), which makes it 2r-1 pixels wide; n = 0 gives the exact disk "
+              "of pixels within distance r of the centre. The radius of an 'octagon' must be a multiple of "
+              "3. 'cuboid', 'pair' and 'periodicline' shapes are also accepted."),
     "getnhood": (["nhood = getnhood(se)"], "Neighbourhood of a structuring element as a logical matrix."),
     "imdilate": (["B = imdilate(A, se)"],
                  "Dilation: each pixel becomes the largest value under the structuring element, which grows "
@@ -284,23 +288,25 @@ HELP = {
                 "Applies a binary morphological operation n times (once by default; Inf repeats until "
                 "nothing changes). Operations: 'thin' and 'skel' (reduce shapes to one-pixel-wide lines, "
                 "both by Zhang-Suen thinning), 'remove' (keep outlines), 'clean' (drop isolated pixels), "
-                "'fill' (fill isolated holes), 'majority', 'bridge', 'diag', 'spur', 'endpoints', "
-                "'branchpoints', 'dilate', 'erode', 'open', 'close', 'perim4' and 'perim8'. Thinned shapes "
-                "can differ by a few pixels from other implementations."),
+                "'fill' (fill isolated holes), 'majority', 'bridge', 'diag', 'spur', 'hbreak', 'endpoints', "
+                "'branchpoints', 'dilate', 'erode', 'open', 'close', 'tophat', 'bothat', 'perim4' and "
+                "'perim8'. Thinned shapes can differ by a few pixels from other implementations."),
     "regionprops": (["stats = regionprops(BW, properties)", "stats = regionprops(L, properties)",
-                     "stats = regionprops(CC, properties)", "stats = regionprops(L, I, properties)"],
+                     "stats = regionprops(CC, properties)", "stats = regionprops(L, I, properties)",
+                     "stats = regionprops('table', ...)"],
                     "Measures the regions of a binary image (8-connected groups), a label matrix or a "
-                    "bwconncomp struct and returns a struct array with one element per region. Properties: "
-                    "Area, Centroid ([x y]), BoundingBox ([left top width height], measured from pixel "
-                    "edges), MajorAxisLength, MinorAxisLength, Eccentricity, Orientation (of the ellipse "
-                    "with the same second moments), EquivDiameter, Extent, Perimeter, Circularity, Image, "
-                    "FilledImage, FilledArea, EulerNumber, PixelIdxList, PixelList and SubarrayIdx; with a "
-                    "grayscale image I also MeanIntensity, MinIntensity, MaxIntensity, PixelValues and "
-                    "WeightedCentroid. The default is 'basic' (Area, Centroid, BoundingBox); 'all' gives "
-                    "everything listed. Perimeter is estimated from the chain of boundary pixels (with the "
-                    "usual correction for diagonal steps and corners) and can differ a little from other "
-                    "implementations. Convex-hull properties and table output are not "
-                    "supported."),
+                    "bwconncomp struct and returns a struct array with one element per region, or with "
+                    "'table' as first input a table with one row per region. Properties: Area, Centroid "
+                    "([x y]), BoundingBox ([left top width height], measured from pixel edges), "
+                    "MajorAxisLength, MinorAxisLength, Eccentricity, Orientation (of the ellipse with the "
+                    "same second moments), EquivDiameter, Extent, Perimeter, Circularity, Image, "
+                    "FilledImage, FilledArea, EulerNumber, ConvexHull ([x y] corners), ConvexImage, "
+                    "ConvexArea, Solidity (Area / ConvexArea), Extrema, PixelIdxList, PixelList and "
+                    "SubarrayIdx; with a grayscale image I also MeanIntensity, MinIntensity, MaxIntensity, "
+                    "PixelValues and WeightedCentroid. The default is 'basic' (Area, Centroid, BoundingBox); "
+                    "'all' gives everything listed. Perimeter is estimated from the chain of boundary "
+                    "pixels (with the usual correction for diagonal steps and corners) and can differ a "
+                    "little from other implementations."),
     # -- geometry --------------------------------------------------------------------------------
     "imresize": (["B = imresize(A, scale)", "B = imresize(A, [rows cols])", "B = imresize(..., method)",
                   "B = imresize(..., 'Antialiasing', tf)"],
