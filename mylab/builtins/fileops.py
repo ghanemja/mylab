@@ -582,6 +582,13 @@ def _url_legacy(args: list, name: str) -> tuple[str, bytes | None, float]:
     rest, timeout = _split_web_options(list(args))
     url = text(rest[0], "URL")
     data = None
+    if len(rest) > 1 and not (len(rest) == 3 and is_text(rest[1]) and text(rest[1]).lower() in ("get", "post")
+                              and isinstance(rest[2], Cell)):
+        if is_text(rest[1]) and text(rest[1]).lower() not in ("get", "post"):
+            from ._util import unknown_option_error
+            raise unknown_option_error(name, text(rest[1]), ("Timeout",), None)
+        raise MatlabError(f"{name}: expected {name}(URL, ..., 'get' or 'post', {{name, value, ...}}) "
+                          "or the 'Timeout' option.", f"MATLAB:{name}:InvalidInput")
     if len(rest) >= 3 and is_text(rest[1]) and isinstance(rest[2], Cell):
         query = _query_string(rest[2].values_f())
         if text(rest[1]).lower() == "post":

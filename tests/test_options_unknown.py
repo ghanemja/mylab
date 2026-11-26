@@ -393,32 +393,60 @@ LOUD = {
 }
 
 KNOWN_IGNORED = {
+    'set_param': "'optsmdl', 'StopTime', '5'",
     'table': '',
 }
 
-NOCALL = ['add_block',
- 'add_line',
- 'bubblelegend',
- 'gmdistribution.fit',
- 'h5create',
- 'h5writeatt',
- 'listdlg',
- 'multcompare',
- 'nccreate',
- 'nlparci',
- 'nlpredci',
- 'odextend',
- 'readlines',
- 'sampsizepwr',
- 'set_param',
- 'sim',
- 'textread',
- 'uigetfile',
- 'uiputfile',
- 'urlread',
- 'urlwrite',
- 'webread',
- 'websave']
+_TEXT_SLOT = "the unknown name lands in a positional slot that takes text ({}) and is rejected there"
+_TODO = "not fixed yet: {}"
+LOUD_REASONS = {
+    **{n: "owned by the parallel merge of the text and table functions"
+       for n in ("addvars", "contains", "endsWith", "startsWith")},
+    **{n: _TODO.format("the unknown name is counted as an extra positional argument")
+       for n in ("array2timetable", "blockproc", "count", "datasample", "donutchart", "eraseBetween",
+                 "extractBetween", "imfuse", "imresize3", "imshowpair", "imtransform", "matches", "piechart",
+                 "replaceBetween", "splitvars", "violinplot", "fplot3")},
+    **{n: _TODO.format("the plotting helper takes the unknown name for the plotting interval")
+       for n in ("ezcontour", "ezcontourf", "ezmesh", "ezplot", "ezsurf", "ezsurfc", "fcontour", "fimplicit",
+                 "fimplicit3", "fmesh", "fsurf")},
+    **{n: _TODO.format("the call's own name-value parser rejects the pair without naming it")
+       for n in ("cluster", "exportgraphics", "find_system", "geobubble", "heatmap", "imgaussfilt", "imresize",
+                 "pcolor", "subtitle", "title", "parallelplot", "stackedplot", "wordcloud")},
+    "arrayfun": "a text argument is a data input (a char array), as in MATLAB",
+    "cellfun": "a text argument is a data input, as in MATLAB",
+    "classify": _TEXT_SLOT.format("the discriminant type"),
+    "corner": _TEXT_SLOT.format("the method"),
+    "imbinarize": _TEXT_SLOT.format("the method"),
+    "imtranslate": _TEXT_SLOT.format("the interpolation method"),
+    "imwarp": _TEXT_SLOT.format("the interpolation method"),
+    "linkage": _TEXT_SLOT.format("the linkage method"),
+    "tiledlayout": _TEXT_SLOT.format("the arrangement"),
+    "datetime": _TEXT_SLOT.format("the date text"),
+    "duration": _TEXT_SLOT.format("the duration text"),
+    "timetable": _TEXT_SLOT.format("a variable"),
+    "fitlm": _TEXT_SLOT.format("the model specification"),
+    "fitglm": _TEXT_SLOT.format("the model specification"),
+    "stepwiselm": _TEXT_SLOT.format("the model specification"),
+    "glmfit": _TEXT_SLOT.format("the distribution name"),
+    "lassoglm": _TEXT_SLOT.format("the distribution name"),
+    "runstest": _TEXT_SLOT.format("the reference value, which may be 'ud'"),
+    "confusionchart": _TEXT_SLOT.format("the predicted labels"),
+    "grpstats": _TEXT_SLOT.format("the grouping variable"),
+    "vartestn": _TEXT_SLOT.format("the grouping variable"),
+    "boxplot": _TEXT_SLOT.format("the grouping variable"),
+    "load": _TEXT_SLOT.format("the variable names; load has no name-value options"),
+    "save": _TEXT_SLOT.format("the file name; save has no name-value options"),
+    "dlmwrite": _TEXT_SLOT.format("the delimiter"),
+    "writecell": _TEXT_SLOT.format("the file name, which this minimal call leaves out"),
+    "writematrix": _TEXT_SLOT.format("the file name, which this minimal call leaves out"),
+    "writetable": _TEXT_SLOT.format("the file name, which this minimal call leaves out"),
+    "retime": _TEXT_SLOT.format("the time-step name"),
+    "pivot": _TEXT_SLOT.format("a variable name"),
+    "matlab.unittest.constraints.Matches": _TEXT_SLOT.format("the expression"),
+    "matlab.unittest.constraints.Throws": _TEXT_SLOT.format("the error identifier"),
+}
+
+NOCALL = ['listdlg', 'readlines', 'textread', 'uigetfile', 'uiputfile']
 
 DUPS = ['boxchart',
  'clock',
@@ -475,6 +503,23 @@ DUPS = ['boxchart',
 
 CALLS["readlines"] = "'m.csv'"
 CALLS["textread"] = "'m.csv', '%s'"
+CALLS.update({  # these need the model 'optsmdl' made by the session fixture, or check options before any I/O
+    "add_block": "'simulink/Sources/Constant', 'optsmdl/C9'",
+    "add_line": "'optsmdl', 'C1/1', 'G1/1'",
+    "sim": "'optsmdl'",
+    "bubblelegend": "ancestor(bubblechart(1:3, 1:3, 1:3), 'axes')",
+    "gmdistribution.fit": "[randn(30,1); randn(30,1)+5], 2",
+    "h5create": "'f1.h5', '/d', [2 2]",
+    "h5writeatt": "'f2.h5', '/', 'a', 1",
+    "nccreate": "'f1.nc', 'v'",
+    "multcompare": "nthargout(3, @anova1, [1 2 3 4 5 6]', [1 1 2 2 3 3]', 'off')",
+    "nlparci": "[1 1], [0.1; -0.1; 0.2; -0.2], 'jacobian', [1 1; 2 1; 3 1; 4 1]",
+    "nlpredci": "@(b,x) b(1)*x+b(2), (1:4)', [1 1], [0.1; -0.1; 0.2; -0.2], 'jacobian', [1 1; 2 1; 3 1; 4 1]",
+    "odextend": "ode45(@(t,y) -y, [0 1], 1), [], 2",
+    "sampsizepwr": "'z', [0 1], 0.5, 0.9",
+    "urlread": "'http://127.0.0.1:9/x'",
+    "urlwrite": "'http://127.0.0.1:9/x', 'u.txt'",
+})
 
 _NOCALL_REASON = "no minimal call written yet (needs a model, a block diagram, a network or a dialog)"
 EXEMPT = {name: "being merged" for name in DUPS}
@@ -485,6 +530,8 @@ EXEMPT.update({
     "uigetfile": "opens a dialog",
     "uiputfile": "opens a dialog",
     "listdlg": "opens a dialog",
+    "webread": "name-value pairs after the URL are query parameters, as in MATLAB",
+    "websave": "name-value pairs after the URL are query parameters, as in MATLAB",
 })
 for _name in ("set", "table"):
     CALLS.pop(_name, None)
@@ -551,6 +598,10 @@ def test_every_option_parser_is_listed():
     assert not missing, "add these built-ins to a table in tests/test_options_unknown.py: " + ", ".join(missing)
 
 
+def test_loud_entries_have_reasons():
+    assert sorted(LOUD) == sorted(LOUD_REASONS)
+
+
 def test_tables_do_not_overlap():
     groups = [set(CALLS), set(LOUD), set(KNOWN_IGNORED), set(EXEMPT)]
     for i, a in enumerate(groups):
@@ -564,9 +615,11 @@ def session(tmp_path_factory):
     os.chdir(tmp_path_factory.mktemp("opts"))
     interp = Interpreter(out=lambda s: None)
     interp.execute("writematrix([0 1 2; 3 4 5], 'm.csv'); a = 1; save('v.mat', 'a'); "
-                   "imwrite(uint8(magic(4)), 'img.png'); writestruct(struct('a', 1), 's.xml');")
+                   "imwrite(uint8(magic(4)), 'img.png'); writestruct(struct('a', 1), 's.xml'); "
+                   "new_system('optsmdl'); add_block('simulink/Sources/Constant', 'optsmdl/C1'); "
+                   "add_block('simulink/Math Operations/Gain', 'optsmdl/G1');")
     yield interp
-    interp.execute("close all force;")
+    interp.execute("close all force; close_system('optsmdl', 0);")
     os.chdir(old)
 
 
