@@ -121,7 +121,8 @@ def _ziggurat() -> tuple:
             x.append(math.sqrt(-2.0 * math.log(v / x[-1] + f(x[-1]))))
         x.append(0.0)
         edges = np.array(x)
-        _ZIGGURAT = (edges, np.exp(-0.5 * edges * edges), r)
+        heights = [math.exp(-0.5 * e * e) for e in x]
+        _ZIGGURAT = (edges, r, x, heights)
     return _ZIGGURAT
 
 
@@ -137,19 +138,48 @@ def _pairs(words: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return u, (255 - (lo >> np.uint64(24))).astype(np.intp)
 
 
+def _uniform53(raw) -> float:
+    a, b = raw(2).tolist()
+    return ((a >> 3) * 16777216 + (b & 0xFFFFFF)) / 9007199254740992.0
+
+
+def _normal_one(raw, edge: list, height: list, r: float) -> float:
+    """One normal number, drawing pairs of twister outputs as needed (the same steps as the block code)."""
+    import math
+    while True:
+        a, b = raw(2).tolist()
+        layer = 255 - (b >> 24)
+        x = (2.0 * (((a >> 3) * 16777216 + (b & 0xFFFFFF)) / 9007199254740992.0) - 1.0) * edge[layer]
+        if abs(x) < edge[layer + 1]:
+            return x
+        if layer == 0:  # beyond the last edge: sample the tail
+            while True:
+                tx = -math.log(_uniform53(raw) or 2.0 ** -53) / r
+                ty = -math.log(_uniform53(raw) or 2.0 ** -53)
+                if ty + ty >= tx * tx:
+                    return (r + tx) if x > 0 else -(r + tx)
+        y = height[layer] + _uniform53(raw) * (height[layer + 1] - height[layer])
+        if y < math.exp(-0.5 * x * x):  # the wedge between two layers
+            return x
+
+
 def normal(interp, count: int) -> np.ndarray:
     """Standard normal numbers from the twister by the ziggurat method.
 
-    Each number is a 53-bit uniform scaled to (-1, 1) times the
-    edge of a layer (see _pairs for how the bits are used). A candidate outside the
-    layer's inner rectangle draws one more uniform for the wedge (or the tail). Checked against
-    the values MATLAB prints for randn after rng default.
+    Each number is a 53-bit uniform scaled to (-1, 1) times the edge of a layer (see _pairs for
+    how the bits are used). A candidate outside the layer's inner rectangle draws one more
+    uniform for the wedge (or two per attempt for the tail). Checked against the values MATLAB
+    prints for randn after rng default.
     """
+    import math
     gen = _rng(interp)
     bits = gen.bit_generator
     if not isinstance(bits, np.random.MT19937):
         return gen.standard_normal(count)
-    edges, heights, r = _ziggurat()
+    edges, r, edge_list, height_list = _ziggurat()
+    if count <= 64:  # a few numbers: one at a time is quicker than saving and restoring the state
+        raw = bits.random_raw
+        return np.array([_normal_one(raw, edge_list, height_list, r) for _ in range(count)])
     out = np.empty(count)
     filled = 0
     extra = 32
@@ -167,14 +197,15 @@ def normal(interp, count: int) -> np.ndarray:
             if j <= busy:
                 continue  # this pair was consumed as an extra uniform
             k = j + 1
+            xj = float(x[j])
             if layer[j] == 0:  # beyond the last edge: sample the tail
                 done = False
                 while k + 1 < m:
-                    tx = -np.log(u01[k]) / r
-                    ty = -np.log(u01[k + 1])
+                    tx = -math.log(float(u01[k]) or 2.0 ** -53) / r
+                    ty = -math.log(float(u01[k + 1]) or 2.0 ** -53)
                     k += 2
                     if ty + ty >= tx * tx:
-                        x[j] = (r + tx) if x[j] > 0 else -(r + tx)
+                        x[j] = (r + tx) if xj > 0 else -(r + tx)
                         done = True
                         break
                 if not done:
@@ -186,9 +217,9 @@ def normal(interp, count: int) -> np.ndarray:
                 if k >= m:
                     m = j
                     break
-                i = layer[j]
-                y = heights[i] + u01[k] * (heights[i + 1] - heights[i])
-                keep[j] = y < np.exp(-0.5 * x[j] * x[j])
+                i = int(layer[j])
+                y = height_list[i] + float(u01[k]) * (height_list[i + 1] - height_list[i])
+                keep[j] = y < math.exp(-0.5 * xj * xj)
                 keep[k] = False
                 busy = k
             ends[j] = busy

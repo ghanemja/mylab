@@ -89,7 +89,8 @@ def test_memoize_caches_by_input_and_output_count(m, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "counted.m").write_text("function [q, r] = counted(a, b)\nglobal CALLS\nCALLS = CALLS + 1;\n"
                                         "q = floor(a / b); r = mod(a, b);\nend\n")
-    m.run("global CALLS; CALLS = 0; f = memoize(@counted); x = f(7, 2); y = f(7, 2); [q, r] = f(7, 2); [q2, r2] = f(7, 2);")
+    m.run("global CALLS; CALLS = 0; f = memoize(@counted); x = f(7, 2); y = f(7, 2); [q, r] = f(7, 2);"
+          "[q2, r2] = f(7, 2);")
     assert m.num("x == 3 && y == 3 && q == 3 && r == 1 && q2 == 3 && r2 == 1") and m.num("CALLS") == 2
     m.run("s = stats(f);")
     assert m.num("s.Cache.TotalHits") == 2 and m.num("s.Cache.TotalMisses") == 2
@@ -192,7 +193,8 @@ def test_nargin_of_named_functions_and_mat2str(m, tmp_path, monkeypatch):
 
 def test_parfeval_futures(m):
     m.run("f = parfeval(@max, 1, [1 5 2]); v = fetchOutputs(f); g = parfeval(@size, 2, ones(3, 4));"
-          "[r, c] = fetchOutputs(g); st = f.State; h = parfeval(backgroundPool, @(x) x + 1, 1, 4); w = fetchOutputs(h);")
+          "[r, c] = fetchOutputs(g); st = f.State; h = parfeval(backgroundPool, @(x) x + 1, 1, 4);"
+          "w = fetchOutputs(h);")
     assert m.num("v") == 5 and m.num("r") == 3 and m.num("c") == 4 and m.str("st") == "finished" and m.num("w") == 5
     m.run("e = parfeval(@() error('my:id', 'went wrong'), 0); none = isempty(f.Error); has = ~isempty(e.Error);")
     assert m.num("none && has")

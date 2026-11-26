@@ -113,7 +113,8 @@ def test_netcdf_round_trip(w, tmp_path):
     # an independent reader sees the same file: the dimensions are stored in the opposite order
     from scipy.io import netcdf_file
     with netcdf_file(str(tmp_path / "a.nc"), "r", mmap=False) as f:
-        assert f.variables["M"].dimensions == ("c", "r") and f.variables["M"][:].tolist() == [[1, 5], [2, 6], [3, 7], [4, 8]]
+        assert f.variables["M"].dimensions == ("c", "r")
+        assert f.variables["M"][:].tolist() == [[1, 5], [2, 6], [3, 7], [4, 8]]
         assert f.variables["T"][:].tolist() == [[1, 2, 3], [4, 5, 6]] and f.variables["v"].units == b"m/s"
         assert f.variables["u"].getValue() == 7 and f.title == b"demo"
 
@@ -151,7 +152,8 @@ def test_hdf5(w, tmp_path):
           "h5create('a.h5', '/s', [1 2], 'Datatype', 'string'); h5write('a.h5', '/s', [\"ab\" \"cde\"]);"
           "s = h5read('a.h5', '/s');")
     assert w.num("isequal(R, M) && isa(x, 'int8') && isequal(x, int8([1 2 3 4])) && isequal(E, [1 2; 3 4; 5 6])")
-    assert w.num("isequal(part, [2 3; 5 6]) && isequal(st, [1 3]) && isequal(v, (1:5)') && isequal(s, [\"ab\" \"cde\"])")
+    assert w.num("isequal(part, [2 3; 5 6]) && isequal(st, [1 3]) && isequal(v, (1:5)')")
+    assert w.num("isequal(s, [\"ab\" \"cde\"])")
     with h5py.File(tmp_path / "a.h5", "r") as f:
         assert f["d"].shape == (3, 2) and f["d"][()].tolist() == [[1, 4], [2, 5], [3, 6]]   # reversed dimensions
         assert f["ext"].maxshape == (2, None) and f["ext"].compression == "gzip" and f["ext"].chunks == (2, 5)
@@ -197,7 +199,8 @@ def test_video_written_and_read_without_ffmpeg(w, tmp_path, monkeypatch):
     monkeypatch.setattr(plotting, "_find_ffmpeg", lambda: None)     # prove that no external program is used
     w.run("v = VideoWriter('v.avi'); open(v); writeVideo(v, uint8(zeros(32, 32, 3)));"
           "writeVideo(v, uint8(255 * ones(32, 32, 3))); close(v); r = VideoReader('v.avi'); f = readFrame(r);"
-          "more = hasFrame(r); g = readFrame(r); done = ~hasFrame(r); A = read(r); B = read(r, 2); C = read(r, [1 Inf]);")
+          "more = hasFrame(r); g = readFrame(r); done = ~hasFrame(r); A = read(r); B = read(r, 2);"
+          "C = read(r, [1 Inf]);")
     assert w.num("f").shape == (32, 32, 3) and w.num("f").dtype == np.uint8 and w.num("f").max() < 5
     assert w.num("more && done && min(g(:)) > 250 && isequal(size(A), [32 32 3 2]) && isequal(B, g) && isequal(A, C)")
     assert w.num("r.NumFrames == 2 && r.FrameRate == 30 && r.Height == 32 && r.Width == 32")
@@ -222,8 +225,10 @@ def test_uncompressed_and_grayscale_avi_are_exact(w):
           "for k = 1:5, writeVideo(v, F + uint8(k)); end; close(v); r = VideoReader('u.avi'); f3 = read(r, 3);"
           "G = uint8(repmat(0:4:159, 30, 1)); g = VideoWriter('g.avi', 'Grayscale AVI'); open(g); writeVideo(g, G);"
           "close(g); rg = VideoReader('g.avi'); fg = readFrame(rg);"
-          "q = VideoWriter('q.avi'); q.Quality = 95; open(q); writeVideo(q, F); close(q); fq = readFrame(VideoReader('q.avi'));")
-    assert w.num("r.NumFrames == 5 && r.FrameRate == 12 && r.Height == 40 && r.Width == 48 && isequal(f3, F + uint8(3))")
+          "q = VideoWriter('q.avi'); q.Quality = 95; open(q); writeVideo(q, F); close(q);"
+          "fq = readFrame(VideoReader('q.avi'));")
+    assert w.num("r.NumFrames == 5 && r.FrameRate == 12 && r.Height == 40 && r.Width == 48")
+    assert w.num("isequal(f3, F + uint8(3))")
     assert w.num("isequal(fg, G)") and w.str("rg.VideoFormat") == "Grayscale"
     err = np.abs(w.num("double(fq)") - w.num("double(F)"))
     assert err.max() < 12 and err.mean() < 2                          # JPEG is close, not exact
@@ -233,8 +238,8 @@ def test_uncompressed_and_grayscale_avi_are_exact(w):
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
 def test_avi_files_agree_with_ffmpeg(w, tmp_path):
-    w.run("v = VideoWriter('m.avi'); v.FrameRate = 10; open(v); for k = 1:4, writeVideo(v, uint8(60 * k * ones(24, 40, 3))); "
-          "end; close(v);")
+    w.run("v = VideoWriter('m.avi'); v.FrameRate = 10; open(v);"
+          "for k = 1:4, writeVideo(v, uint8(60 * k * ones(24, 40, 3))); end; close(v);")
     r = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(tmp_path / "m.avi"), "-f", "rawvideo", "-pix_fmt", "rgb24",
                         "-"], capture_output=True)
     frames = np.frombuffer(r.stdout, dtype=np.uint8).reshape(-1, 24, 40, 3)
@@ -242,7 +247,8 @@ def test_avi_files_agree_with_ffmpeg(w, tmp_path):
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=10",
                     "-frames:v", "7", "-vcodec", "mjpeg", str(tmp_path / "ff.avi")], check=True)
     w.run("r = VideoReader('ff.avi'); f = readFrame(r);")
-    assert w.num("r.NumFrames == 7 && r.FrameRate == 10 && r.Height == 48 && r.Width == 64 && isequal(size(f), [48 64 3])")
+    assert w.num("r.NumFrames == 7 && r.FrameRate == 10 && r.Height == 48 && r.Width == 64")
+    assert w.num("isequal(size(f), [48 64 3])")
 
 
 # -- audio --------------------------------------------------------------------------------------------
@@ -257,7 +263,8 @@ def test_flac_round_trip_is_exact_to_the_sample(w, tmp_path):
     y = np.sin(2 * np.pi * 440 * np.arange(800) / 8000)
     expected = np.clip(np.round(y * 32768), -32768, 32767)
     assert w.num("fs") == 8000 and np.array_equal(w.num("double(n)").ravel(), expected)      # lossless
-    assert np.array_equal(w.num("z").ravel(), expected / 32768) and np.array_equal(w.num("p").ravel(), expected[10:20] / 32768)
+    assert np.array_equal(w.num("z").ravel(), expected / 32768)
+    assert np.array_equal(w.num("p").ravel(), expected[10:20] / 32768)
     assert w.num("fs2 == 44100 && isequal(size(z2), [800 2])") and np.abs(w.num("z2 - st")).max() <= 1.0 / 2 ** 23
     assert w.str("i.CompressionMethod") == "FLAC" and w.num("i.BitsPerSample == 24 && i.NumChannels == 2")
     assert w.num("i.TotalSamples == 800 && i.SampleRate == 44100 && f0 == 8000 && isequal(z0, zeros(100, 1))")
@@ -294,7 +301,8 @@ def test_flac_from_another_encoder(w, tmp_path):
     # ffmpeg's encoder uses linear prediction and stereo decorrelation, which mylab's own does not
     from scipy.io import wavfile
     t = np.arange(6000) / 8000
-    stereo = np.stack([np.sin(2 * np.pi * 440 * t) * 12000, np.sin(2 * np.pi * 300 * t) * 9000], axis=1).astype(np.int16)
+    stereo = np.stack([np.sin(2 * np.pi * 440 * t) * 12000, np.sin(2 * np.pi * 300 * t) * 9000], axis=1)
+    stereo = stereo.astype(np.int16)
     wavfile.write(tmp_path / "src.wav", 8000, stereo)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp_path / "src.wav"), "-compression_level", "8",
                     str(tmp_path / "ff.flac")], check=True)
@@ -309,8 +317,8 @@ def test_formats_that_need_soundfile(w):
     except (ImportError, OSError):
         have = False
     if have:
-        w.run("y = sin(2 * pi * 440 * (0:7999)' / 8000) / 2; audiowrite('x.ogg', y, 8000); [z, fs] = audioread('x.ogg');"
-              "i = audioinfo('x.ogg');")
+        w.run("y = sin(2 * pi * 440 * (0:7999)' / 8000) / 2; audiowrite('x.ogg', y, 8000);"
+              "[z, fs] = audioread('x.ogg'); i = audioinfo('x.ogg');")
         assert w.num("fs == 8000 && abs(numel(z) - 8000) < 200") and w.str("i.CompressionMethod") == "Vorbis"
     else:
         with pytest.raises(MatlabError, match="optional Python package 'soundfile'") as e:

@@ -169,7 +169,8 @@ def test_import_options(w, tmp_path):
           "{'int32', 'categorical'}); B = readtable('o.csv', o3); o4 = opts; o4.SelectedVariableNames = 'b';"
           "C = readtable('o.csv', o4); o5 = opts; o5.VariableNames = {'p', 'q'}; D = readtable('o.csv', o5);")
     assert w.num("isstring(A.a) && A.a(2) == \"2\" && isa(B.a, 'int32') && iscategorical(B.b)")
-    assert w.num("width(C) == 1 && isequal(C.b, {'x'; 'y'})") and w.str("strjoin(D.Properties.VariableNames, ',')") == "p,q"
+    assert w.num("width(C) == 1 && isequal(C.b, {'x'; 'y'})")
+    assert w.str("strjoin(D.Properties.VariableNames, ',')") == "p,q"
     assert w.num("isequal(opts.VariableTypes, {'double', 'char'})")           # the original is unchanged
     (tmp_path / "f.csv").write_text("a,b\n1,x\n,y\nNA,z\n")
     w.run("o = detectImportOptions('f.csv'); o = setvaropts(o, 'a', 'TreatAsMissing', 'NA', 'FillValue', -1);"
@@ -212,7 +213,8 @@ def test_bit_field_precisions(w, tmp_path):
     assert (tmp_path / "b.bin").read_bytes() == bytes([5 | (2 << 3)])     # the first field is in the low bits
     w.run("fid = fopen('b.bin', 'w'); fwrite(fid, [1 0 1 1 0 0 1 0 1], 'ubit1'); fclose(fid);"
           "fid = fopen('b.bin'); x = fread(fid, [1 9], 'ubit1'); fclose(fid);")
-    assert (tmp_path / "b.bin").read_bytes() == bytes([0b01001101, 1]) and w.num("x").tolist() == [[1, 0, 1, 1, 0, 0, 1, 0, 1]]
+    assert (tmp_path / "b.bin").read_bytes() == bytes([0b01001101, 1])
+    assert w.num("x").tolist() == [[1, 0, 1, 1, 0, 0, 1, 0, 1]]
     w.run("fid = fopen('s.bin', 'w'); fwrite(fid, [-3 2 -1 9], 'bit4'); fclose(fid); fid = fopen('s.bin');"
           "y = fread(fid, 4, 'bit4')'; frewind(fid); z = fread(fid, 2, '*bit4')'; fclose(fid);")
     assert w.num("y").tolist() == [[-3, 2, -1, 7]] and w.num("z").dtype == np.int8      # 9 saturates at 7
