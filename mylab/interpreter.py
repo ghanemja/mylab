@@ -187,7 +187,11 @@ class Interpreter:
         # they do not trust set this to False (or start mylab with MYLAB_PYTHON=0).
         self.python_enabled = os.environ.get("MYLAB_PYTHON", "1") != "0"
         self.index_overloads = False  # set once a class defines subsref, subsasgn, end, ... (classdef.py)
-        FORMAT.reset()  # a new session starts with 'format short' and 'format loose'
+        # A new session starts with 'format short' and 'format loose'. The format is shared by the
+        # whole process, so a helper interpreter made while code runs (sparse indexing, a block
+        # diagram's parameters) must not reset the format the running session chose.
+        if not _CURRENT:
+            FORMAT.reset()
 
     # -- public API -------------------------------------------------------------------
     @property
@@ -1094,8 +1098,14 @@ class Interpreter:
                 args = self.eval_elements(node.args, frame)
                 args = [ix_colon_to_char(a) for a in args]
                 # Argument variable names, for functions such as table() that use them.
-                self.state["call_arg_names"] = [a.name if isinstance(a, A.Ident) else None for a in node.args]
-                return self.call_named(base.name, args, nargout, frame, node)
+                # They belong to this call only: a later call through a handle, feval or a built-in
+                # callback must not see them (inputname would name the wrong variable).
+                state = self.state
+                state["call_arg_names"] = [a.name if isinstance(a, A.Ident) else None for a in node.args]
+                try:
+                    return self.call_named(base.name, args, nargout, frame, node)
+                finally:
+                    state.pop("call_arg_names", None)
             if isinstance(base, (A.Field, A.DynField)):
                 dotted = self.dotted_name(base, frame)
                 if dotted is not None:
