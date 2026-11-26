@@ -127,7 +127,7 @@ def test_comparison_stays_sparse_and_cheap(s):
     s.run("Z = speye(200000); P = Z > 0.5; n = nnz(P); M = Z * 3 - Z;")
     assert s.num("n").item() == 200000
     assert is_sparse(s, "P") and is_sparse(s, "M")
-    assert s.num("M(77,77)").item() == 2
+    assert s.num("full(M(77,77))").item() == 2
 
 
 def test_zero_preserving_functions_stay_sparse(s):
@@ -233,10 +233,14 @@ def test_index_get(s, expr, expected):
     assert is_sparse(s, expr)
 
 
-def test_scalar_index_is_a_plain_number(s):
-    assert s.num("A(1,3)").item() == 7
-    assert s.num("A(end,end)").item() == 0
-    assert s.num("A(5)").item() == A.flatten(order="F")[4]
+def test_scalar_index_stays_sparse(s):
+    # indexing a sparse matrix always gives a sparse result, also for a single element
+    assert is_sparse(s, "A(1,3)") and is_sparse(s, "A(5)") and is_sparse(s, "A(end,end)")
+    assert s.num("full(A(1,3))").item() == 7
+    assert s.num("full(A(end,end))").item() == 0
+    assert s.num("full(A(5))").item() == A.flatten(order="F")[4]
+    assert s.num("A(1,3) + 1").item() == 8  # sparse scalar + full scalar is full
+    assert not is_sparse(s, "A(1,3) + 1")
     s.run("x = zeros(1,3); x(2) = A(1,3); y = zeros(4,2); y(:,2) = Q(:,2);")
     np.testing.assert_array_equal(s.num("x"), [[0, 7, 0]])
     np.testing.assert_array_equal(s.num("y")[:, 1], Q[:, 1])
@@ -281,15 +285,15 @@ def test_index_set_variants(s):
 
 
 def test_value_semantics_of_assignment(s):
-    s.run("K = speye(3); K2 = K; K2(1,1) = 7; a = [K(1,1) K2(1,1)];")
+    s.run("K = speye(3); K2 = K; K2(1,1) = 7; a = full([K(1,1) K2(1,1)]);")
     np.testing.assert_array_equal(s.num("a"), [[1, 7]])
-    s.run("st.K = K; t = st; t.K(1,1) = 5; b = [st.K(1,1) t.K(1,1)];")
+    s.run("st.K = K; t = st; t.K(1,1) = 5; b = full([st.K(1,1) t.K(1,1)]);")
     np.testing.assert_array_equal(s.num("b"), [[1, 5]])
-    s.run("c = {K}; K(1,1) = 9; d = [c{1}(1,1) K(1,1)];")
+    s.run("c = {K}; K(1,1) = 9; d = full([c{1}(1,1) K(1,1)]);")
     np.testing.assert_array_equal(s.num("d"), [[1, 9]])
-    s.run("f = @() K(1,1); K(1,1) = 11; e = [f() K(1,1)];")
+    s.run("f = @() K(1,1); K(1,1) = 11; e = full([f() K(1,1)]);")
     np.testing.assert_array_equal(s.num("e"), [[9, 11]])
-    s.run("function B = bump(M)\n M(1,1) = 42; B = M;\nend\nK = speye(3); B = bump(K); g = [K(1,1) B(1,1)];")
+    s.run("function B = bump(M)\n M(1,1) = 42; B = M;\nend\nK = speye(3); B = bump(K); g = full([K(1,1) B(1,1)]);")
     np.testing.assert_array_equal(s.num("g"), [[1, 42]])
 
 

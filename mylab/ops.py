@@ -241,7 +241,32 @@ def left_divide(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         except np.linalg.LinAlgError:
             _warn("Matrix is singular to working precision.", "MATLAB:singularMatrix")
             return np.full((a.shape[1], b.shape[1]), np.inf)
-    return simplify(np.linalg.lstsq(af, bf, rcond=None)[0])
+    return simplify(_qr_solve(af, bf))
+
+
+def _qr_solve(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Least squares for a rectangular system by QR with column pivoting.
+
+    A rank-deficient or underdetermined system gets a basic solution (at most rank(A) nonzeros),
+    not the minimum-norm one.
+    """
+    import scipy.linalg as sla
+    m, n = a.shape
+    if m == 0 or n == 0:
+        return np.zeros((n, b.shape[1]))
+    if not (np.all(np.isfinite(a)) and np.all(np.isfinite(b))):
+        return np.full((n, b.shape[1]), np.nan)
+    q, r, p = sla.qr(a, mode="economic", pivoting=True)
+    d = np.abs(np.diag(r))
+    tol = max(m, n) * np.finfo(float).eps * (d[0] if d.size else 0.0)
+    rank = int(np.sum(d > tol))
+    if rank < min(m, n):
+        _warn(f"Rank deficient, rank = {rank}, tol = {tol:.6e}.", "MATLAB:rankDeficientMatrix")
+    c = q.conj().T @ b
+    x = np.zeros((n, b.shape[1]), dtype=np.result_type(r.dtype, c.dtype))
+    if rank:
+        x[p[:rank], :] = sla.solve_triangular(r[:rank, :rank], c[:rank, :], check_finite=False)
+    return x
 
 
 def right_divide(a: np.ndarray, b: np.ndarray) -> np.ndarray:

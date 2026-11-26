@@ -14,7 +14,7 @@ from ..values import (
     saturate_int, simplify, to_int, to_str,
 )
 from ._registry import builtin
-from ._util import bool_scalar, fnum, get_dim, is_text, keep2d, nargs, num, text
+from ._util import bool_scalar, fnum, get_dim, is_text, nargs, num, text
 
 
 def _given(args: list, i: int) -> bool:
@@ -161,21 +161,31 @@ def _vecnorm(interp, args, nargout):
     nargs(args, 1, 3, "vecnorm")
     a = fnum(args[0])
     p = _scalar(args[1]) if _given(args, 1) else 2.0
-    if p <= 0:
-        raise MatlabError("vecnorm: p must be positive.")
-    if a.size == 0:
-        return np.zeros((1, 0)) if a.shape[0] == 0 else np.zeros((0, 1))
+    if not p > 0:
+        raise MatlabError("vecnorm: p must be a positive real scalar or Inf.")
+    single = a.dtype in (np.float32, np.complex64)
     axis = get_dim(args, 2, a)
-    if axis > 1:
-        return np.abs(a)
-    m = np.abs(a)
-    if np.isinf(p):
-        r = m.max(axis=axis)
+    m = np.abs(a.astype(complex if a.dtype.kind == "c" else float))
+    if axis >= m.ndim:
+        r = m  # along a dimension of length one every norm is the absolute value
+    elif m.shape[axis] == 0:
+        shape = list(m.shape)
+        shape[axis] = 1
+        r = np.zeros(shape)
+    elif np.isinf(p):
+        r = m.max(axis=axis, keepdims=True)
     elif p == 2:
-        r = np.sqrt((m ** 2).sum(axis=axis))
+        scale = m.max(axis=axis, keepdims=True)
+        safe = np.where((scale > 0) & np.isfinite(scale), scale, 1.0)
+        r = safe * np.sqrt(((m / safe) ** 2).sum(axis=axis, keepdims=True))
+        r = np.where(np.isfinite(scale), r, scale)
+    elif p == 1:
+        r = m.sum(axis=axis, keepdims=True)
     else:
-        r = (m ** p).sum(axis=axis) ** (1 / p)
-    return keep2d(r, axis)
+        r = (m ** p).sum(axis=axis, keepdims=True) ** (1 / p)
+    from ..values import as_2d
+    r = as_2d(np.asarray(r))
+    return r.astype(np.float32) if single else r
 
 
 @builtin("nthargout")
@@ -1202,6 +1212,8 @@ def _bessel(name, plain, scaled, needs_complex):
     def f(interp, args, nargout):
         nargs(args, 2, 3, name)
         nu, z = _bcast(name, args[0], args[1])
+        if len(args) > 2 and _scalar(args[2]) not in (0, 1):
+            raise MatlabError(f"{name}: the scale argument must be 0 or 1.")
         scale = len(args) > 2 and _scalar(args[2]) == 1
         fn = scaled if scale else plain
         zc = z
@@ -1236,6 +1248,8 @@ def _airy(interp, args, nargout):
         k, z = to_int(args[0], "k"), fnum(args[1])
     if k not in (0, 1, 2, 3):
         raise MatlabError("airy: k must be 0, 1, 2 or 3.")
+    if len(args) > 2 and _scalar(args[2]) not in (0, 1):
+        raise MatlabError("airy: the scale argument must be 0 or 1.")
     scaled = len(args) > 2 and _scalar(args[2]) == 1
     fn = sp.airye if scaled else sp.airy
     return simplify(np.asarray(fn(z)[k]))
@@ -1245,6 +1259,11 @@ def _airy(interp, args, nargout):
 def _ellipke(interp, args, nargout):
     nargs(args, 1, 2, "ellipke")
     m = fnum(args[0]).astype(float)
+    if len(args) > 1:
+        tol = fnum(args[1])
+        if tol.size != 1 or tol.dtype.kind == "c" or not tol.flat[0] > 0:
+            raise MatlabError("ellipke: the tolerance must be a positive real scalar.")
+        # the integrals are evaluated to full double precision, which meets any tolerance >= eps
     if np.any((m < 0) | (m > 1)):
         raise MatlabError("ellipke: m must be in the range 0 <= m <= 1.")
     K, E = sp.ellipk(m), sp.ellipe(m)
@@ -1278,7 +1297,19 @@ def _gammainc(interp, args, nargout):
         return sp.gammainc(a, x)
     if tail == "upper":
         return sp.gammaincc(a, x)
-    raise MatlabError(f"gammainc: unsupported tail '{tail}'.")
+    if tail in ("scaledlower", "scaledupper"):
+        # scaled by gamma(a+1) * exp(x) / x^a, which removes the leading behaviour for large a or x
+        with np.errstate(all="ignore"):
+            logscale = sp.gammaln(a + 1) + x - a * np.log(x)
+            base = sp.gammainc(a, x) if tail == "scaledlower" else sp.gammaincc(a, x)
+            out = base * np.exp(logscale)
+            if tail == "scaledlower":
+                out = np.where(x == 0, 1.0, out)
+            else:
+                out = np.where((x == 0) & (a > 0), np.inf, out)
+        return out
+    raise MatlabError(f"gammainc: the tail must be 'lower', 'upper', 'scaledlower' or 'scaledupper', "
+                      f"not '{tail}'.")
 
 
 @builtin("betainc")

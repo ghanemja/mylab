@@ -232,7 +232,7 @@ class SparseMatrix(MObject):
                 return SparseMatrix(_reshape(self.m, (r * c, 1)))
             pos, ishape = _positions(a, r * c)
             if pos.size == 1 and ishape == (1, 1):
-                return _dense_scalar(self._m[int(pos[0] % r), int(pos[0] // r)])
+                return _sparse_scalar(self._m[int(pos[0] % r), int(pos[0] // r)], self._m.dtype)
             vals = np.asarray(self.m[pos % r, pos // r]).ravel() if pos.size else np.zeros(0, self._m.dtype)
             shape = ix._linear_result_shape((r, c), ishape, pos.size)
             if len(shape) != 2:
@@ -246,7 +246,7 @@ class SparseMatrix(MObject):
         rp = None if args[0] is ix.COLON else _positions(args[0], r)[0]
         cp = None if args[1] is ix.COLON else _positions(args[1], c)[0]
         if rp is not None and cp is not None and rp.size == 1 and cp.size == 1:
-            return _dense_scalar(self._m[int(rp[0]), int(cp[0])])
+            return _sparse_scalar(self._m[int(rp[0]), int(cp[0])], self._m.dtype)
         sub = self._m
         if sub.format != "csc" and (rp is None or cp is None or rp.size * cp.size > 4096):
             sub = self.m
@@ -450,6 +450,18 @@ def _reshape(m: sp.csc_matrix, shape: tuple) -> sp.csc_matrix:
     rows = lin % shape[0] if shape[0] else lin
     cols = lin // shape[0] if shape[0] else lin
     return sp.csc_matrix((coo.data, (rows, cols)), shape=shape)
+
+
+def _sparse_scalar(v: Any, dtype) -> "SparseMatrix":
+    """One element of a sparse matrix: still sparse (1-by-1), as indexing a sparse matrix always is."""
+    v = np.asarray(v).reshape(-1)[0] if not np.isscalar(v) else v
+    if np.dtype(dtype).kind == "b":
+        val = np.array([[bool(v)]])
+    elif isinstance(v, (complex, np.complexfloating)) and v.imag != 0:
+        val = np.array([[complex(v)]])
+    else:
+        val = np.array([[float(np.real(v))]])
+    return SparseMatrix(sp.csc_matrix(val), canonical=True)
 
 
 def _dense_scalar(v: Any) -> np.ndarray:
@@ -1842,18 +1854,84 @@ def _eig_order(vals: np.ndarray, which: str) -> np.ndarray:
     return np.argsort(np.real(vals), kind="stable")
 
 
+_ITER_STRUCT = {"tol": "tolerance", "maxit": "maxiterations", "p": "subspacedimension", "v0": "startvector",
+                "disp": "display", "fail": "failuretreatment", "issym": "isfunctionsymmetric",
+                "isreal": "isreal", "u0": "leftstartvector"}
+
+
+def _iter_options(rest: list, name: str, allowed: tuple) -> dict:
+    """Options of eigs / svds given as a struct or as name-value pairs (lower-case keys)."""
+    opts: dict = {}
+    items: list = []
+    if len(rest) == 1 and isinstance(rest[0], Struct):
+        st = rest[0]
+        for f in st.fields:
+            key = _ITER_STRUCT.get(f.lower())
+            if key is None or key not in allowed:
+                raise MatlabError(f"{name}: unknown option field '{f}'.")
+            items.append((key, st.get_field(0, f)))
+    else:
+        if len(rest) % 2:
+            raise MatlabError(f"{name}: options must be given as name-value pairs or as one structure.")
+        for k in range(0, len(rest), 2):
+            if not is_text(rest[k]):
+                raise MatlabError(f"{name}: option names must be text.")
+            key = text(rest[k]).lower()
+            if key not in allowed:
+                raise MatlabError(f"{name}: unknown option '{text(rest[k])}'.")
+            items.append((key, rest[k + 1]))
+    for key, val in items:
+        if isinstance(val, np.ndarray) and val.size == 0 and not is_char(val):
+            continue
+        if key == "tolerance":
+            opts[key] = float(np.real(to_numeric(val).flat[0]))
+            if opts[key] < 0:
+                raise MatlabError(f"{name}: Tolerance must be nonnegative.")
+        elif key in ("maxiterations", "subspacedimension"):
+            opts[key] = to_int(val, key)
+            if opts[key] < 1:
+                raise MatlabError(f"{name}: {key} must be a positive integer.")
+        elif key in ("startvector", "leftstartvector", "rightstartvector"):
+            opts[key] = _dense(val).reshape(-1)
+        elif key == "failuretreatment":
+            how = text(val).lower() if is_text(val) else ""
+            if how not in ("replacenan", "keep", "drop"):
+                raise MatlabError(f"{name}: FailureTreatment must be 'replacenan', 'keep' or 'drop'.")
+            opts[key] = how
+        else:  # display, isfunctionsymmetric, issymmetricdefinite, isreal: true/false
+            opts[key] = bool(np.all(to_numeric(val) != 0))
+    return opts
+
+
+_EIGS_OPTS = ("tolerance", "maxiterations", "subspacedimension", "startvector", "failuretreatment", "display",
+              "isfunctionsymmetric", "issymmetricdefinite", "isreal")
+_SVDS_OPTS = ("tolerance", "maxiterations", "subspacedimension", "leftstartvector", "rightstartvector",
+              "failuretreatment", "display")
+
+
 @sbuiltin("eigs")
 def _eigs(interp, args, nargout):
-    if not args or isinstance(args[0], FunctionHandle):
-        raise MatlabError("eigs: pass the matrix itself; function-handle operators are not supported.")
-    a = _num_csc(args[0])
-    n = a.shape[0]
-    if a.shape[0] != a.shape[1]:
-        raise MatlabError("eigs: the matrix must be square.")
+    if not args:
+        raise MatlabError("Not enough input arguments for eigs.")
+    if nargout > 3:
+        raise MatlabError("eigs: too many output arguments.")
     rest = list(args[1:])
+    fun = args[0] if isinstance(args[0], FunctionHandle) else None
+    if fun is not None:
+        if not rest or is_text(rest[0]):
+            raise MatlabError("eigs: with a function handle the size n of the problem must follow it.")
+        n = to_int(rest.pop(0), "n")
+        if n > 2000:
+            raise MatlabError("eigs: function-handle operators are supported for problems of size up to 2000.")
+        a = None
+    else:
+        a = _num_csc(args[0])
+        n = a.shape[0]
+        if a.shape[0] != a.shape[1]:
+            raise MatlabError("eigs: the matrix must be square.")
     b = None
     if rest and (isinstance(rest[0], SparseMatrix) or (isinstance(rest[0], np.ndarray) and not is_char(rest[0])
-                                                       and rest[0].shape == a.shape and n > 1)):
+                                                       and rest[0].shape == (n, n) and n > 1)):
         b = _num_csc(rest.pop(0))
     k = 6
     if rest and not is_text(rest[0]):
@@ -1871,10 +1949,32 @@ def _eigs(interp, args, nargout):
                                   "'largestreal', 'smallestreal', 'bothendsreal' or a numeric shift.")
             which = _WHICH[key]
         elif isinstance(s, Struct):
-            pass
+            rest.insert(0, s)
         else:
             sigma = complex(to_numeric(s).flat[0])
             sigma = sigma.real if sigma.imag == 0 else sigma
+    opts = _iter_options(rest, "eigs", _EIGS_OPTS)
+    if fun is not None:
+        # build the matrix of the operator column by column; with a shift (or 'smallestabs') the
+        # function returns (A - sigma*I) \ x, so its matrix is inverted to recover A
+        cols = [_dense(interp.call_function_value(fun, [np.eye(n)[:, j:j + 1]], 1)[0]).reshape(-1)
+                for j in range(n)]
+        op = np.column_stack(cols) if cols else np.zeros((0, 0))
+        if sigma is not None or which == "SM":
+            shift = 0.0 if sigma is None else sigma
+            try:
+                op = np.linalg.inv(op) + shift * (np.eye(n) if b is None else b.toarray())
+            except np.linalg.LinAlgError:
+                raise MatlabError("eigs: the operator returned by the function handle is singular.") from None
+        if opts.get("isfunctionsymmetric"):
+            op = (op + op.conj().T) / 2
+        a = sp.csc_matrix(op)
+    elif "isfunctionsymmetric" in opts:
+        raise MatlabError("eigs: IsFunctionSymmetric applies only when the operator is a function handle.")
+    v0 = opts.get("startvector")
+    if v0 is not None and v0.size != n:
+        raise MatlabError("eigs: StartVector must have one element per row of the matrix.")
+    failed = False
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         herm = (a != a.conj().T).nnz == 0 and (b is None or (b != b.conj().T).nnz == 0)
@@ -1899,6 +1999,14 @@ def _eigs(interp, args, nargout):
         vals, vecs = vals[order], vecs[:, order]
     else:
         kw: dict = {"k": k, "M": b}
+        if "tolerance" in opts:
+            kw["tol"] = opts["tolerance"]
+        if "maxiterations" in opts:
+            kw["maxiter"] = opts["maxiterations"]
+        if "subspacedimension" in opts:
+            kw["ncv"] = min(max(opts["subspacedimension"], k + 2), n)
+        if v0 is not None:
+            kw["v0"] = v0.astype(complex if v0.dtype.kind == "c" else float)
         solver = spla.eigsh if herm else spla.eigs
         w = which
         if sigma is not None or which == "SM":
@@ -1913,7 +2021,21 @@ def _eigs(interp, args, nargout):
         try:
             vals, vecs = solver(a.astype(complex) if (not herm and a.dtype.kind == "c") else a, which=w, **kw)
         except spla.ArpackNoConvergence as e:
-            raise MatlabError(f"eigs: only {len(e.eigenvalues)} of the {k} requested eigenvalues converged.") from None
+            how = opts.get("failuretreatment", "replacenan")
+            got = len(e.eigenvalues)
+            interp.warn(f"eigs: only {got} of the {k} requested eigenvalues converged.",
+                        "MATLAB:eigs:NotAllEigsConverged")
+            if how == "keep" and got == 0:
+                how = "replacenan"
+            vals = np.asarray(e.eigenvalues)
+            vecs = np.asarray(e.eigenvectors).reshape(n, -1)
+            if how != "drop":  # the missing ones are reported as NaN
+                pad = k - got
+                vals = np.concatenate([vals, np.full(pad, np.nan)])
+                vecs = np.column_stack([vecs, np.full((n, pad), np.nan)])
+            else:
+                k = got
+            failed = True
         except RuntimeError as e:  # singular shift
             raise MatlabError(f"eigs: the shifted matrix is singular; choose a different shift ({e}).") from None
         if sigma is not None:
@@ -1923,12 +2045,15 @@ def _eigs(interp, args, nargout):
         else:
             order = _eig_order(vals, which)
         vals, vecs = vals[order], vecs[:, order]
+    if opts.get("display"):
+        interp.out(f"eigs: {k} eigenvalue(s) of a {n}-by-{n} problem "
+                   f"({'not all converged' if failed else 'converged'}).\n")
     vals = simplify(np.asarray(vals).reshape(-1, 1))
     if nargout <= 1:
         return vals
     d = np.zeros((k, k), dtype=vals.dtype)
     d[np.arange(k), np.arange(k)] = vals.ravel()
-    outs = (simplify(np.asarray(vecs)), d, np.array([[0.0]]))
+    outs = (simplify(np.asarray(vecs)), d, np.array([[1.0 if failed else 0.0]]))
     return outs[:max(nargout, 2)]
 
 
@@ -1954,6 +2079,13 @@ def _svds(interp, args, nargout):
             smallest = float(np.real(to_numeric(s).flat[0])) == 0
             if not smallest:
                 raise MatlabError("svds: only a shift of 0 (the smallest singular values) is supported.")
+    opts = _iter_options(rest, "svds", _SVDS_OPTS)
+    if nargout > 4:
+        raise MatlabError("svds: too many output arguments.")
+    for key, size in (("leftstartvector", r), ("rightstartvector", c)):
+        if key in opts and opts[key].size != size:
+            raise MatlabError(f"svds: {key} has the wrong number of elements.")
+    failed = False
     if k == 0:
         u, sv, vt = np.zeros((r, 0)), np.zeros(0), np.zeros((0, c))
     elif min(r, c) <= 400 or k >= min(r, c) - 1 or smallest and r * c <= 4_000_000:
@@ -1964,15 +2096,33 @@ def _svds(interp, args, nargout):
             sel = np.sort(sel)  # descending values, as for the largest case
         u, sv, vt = u[:, sel], sv[sel], vt[sel, :]
     else:
+        kw: dict = {}
+        if "tolerance" in opts:
+            kw["tol"] = opts["tolerance"]
+        if "maxiterations" in opts:
+            kw["maxiter"] = opts["maxiterations"]
+        if "subspacedimension" in opts:
+            kw["ncv"] = min(max(opts["subspacedimension"], k + 2), min(r, c))
+        start = opts.get("rightstartvector" if r >= c else "leftstartvector")
+        if start is not None:
+            kw["v0"] = start.astype(float)
         try:
-            u, sv, vt = spla.svds(a, k=k, which="SM" if smallest else "LM")
+            u, sv, vt = spla.svds(a, k=k, which="SM" if smallest else "LM", **kw)
         except spla.ArpackNoConvergence:
-            raise MatlabError("svds: the iteration did not converge.") from None
+            interp.warn("svds: the iteration did not converge.", "MATLAB:svds:NotAllSvdsConverged")
+            if opts.get("failuretreatment", "replacenan") == "drop":
+                k = 0
+            u, sv, vt = np.full((r, k), np.nan), np.full(k, np.nan), np.full((k, c), np.nan)
+            failed = True
         order = np.argsort(-sv, kind="stable")
         u, sv, vt = u[:, order], sv[order], vt[order, :]
+    if opts.get("display"):
+        interp.out(f"svds: {sv.size} singular value(s) of a {r}-by-{c} matrix "
+                   f"({'not converged' if failed else 'converged'}).\n")
     if nargout <= 1:
         return sv.reshape(-1, 1)
-    outs = (simplify(u), np.diag(sv) if sv.size else np.zeros((0, 0)), simplify(vt.conj().T), np.array([[0.0]]))
+    outs = (simplify(u), np.diag(sv) if sv.size else np.zeros((0, 0)), simplify(vt.conj().T),
+            np.array([[1.0 if failed else 0.0]]))
     return outs[:max(nargout, 3)]
 
 

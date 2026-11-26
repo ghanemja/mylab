@@ -144,34 +144,173 @@ def _polyint(interp, args, nargout):
     return np.polyint(fnum(args[0]).flatten(), k=k).reshape(1, -1)
 
 
-@builtin("conv")
-def _conv(interp, args, nargout):
-    a, b = fnum(args[0]), fnum(args[1])
-    shape = text(args[2]) if len(args) > 2 else "full"
-    r = np.convolve(a.flatten(), b.flatten(), mode="full")
+def _conv_shape(args, pos, name):
+    if len(args) <= pos:
+        return "full"
+    shape = text(args[pos]).lower() if is_text(args[pos]) else ""
+    if shape not in ("full", "same", "valid"):
+        raise MatlabError(f"{name}: the shape must be 'full', 'same' or 'valid'.")
+    return shape
+
+
+def _conv_vec(a, b, shape):
+    """Convolution of two 1-D arrays with MATLAB's 'same' and 'valid' conventions (sized like a)."""
+    if a.size == 0 or b.size == 0:
+        full = np.zeros(max(a.size + b.size - 1, 0))
+    else:
+        full = np.convolve(a, b, mode="full")
     if shape == "same":
         start = int(np.ceil((b.size - 1) / 2))
-        r = r[start:start + a.size]
-    elif shape == "valid":
-        r = np.convolve(a.flatten(), b.flatten(), mode="valid") if a.size >= b.size else np.zeros(0)
+        return full[start:start + a.size]
+    if shape == "valid":
+        n = max(a.size - max(b.size - 1, 0), 0) if b.size else 0
+        return full[b.size - 1:b.size - 1 + n] if n else np.zeros(0, dtype=full.dtype)
+    return full
+
+
+@builtin("conv")
+def _conv(interp, args, nargout):
+    nargs(args, 2, 3, "conv")
+    a, b = fnum(args[0]), fnum(args[1])
+    for v in (a, b):
+        if v.ndim != 2 or (v.size and 1 not in v.shape):
+            raise MatlabError("conv: A and B must be vectors.")
+    r = _conv_vec(a.flatten(), b.flatten(), _conv_shape(args, 2, "conv"))
     col = a.shape[1] == 1 and a.shape[0] > 1
     return simplify(r.reshape(-1, 1) if col else r.reshape(1, -1))
 
 
 @builtin("deconv")
 def _deconv(interp, args, nargout):
-    q, r = np.polydiv(fnum(args[0]).flatten(), fnum(args[1]).flatten())
-    full_r = np.zeros(fnum(args[0]).size)
-    full_r[-r.size:] = r
-    return q.reshape(1, -1), full_r.reshape(1, -1)
+    if len(args) < 2:
+        raise MatlabError("Not enough input arguments for deconv.")
+    y, h = fnum(args[0]), fnum(args[1])
+    for v in (y, h):
+        if v.ndim != 2 or (v.size and 1 not in v.shape):
+            raise MatlabError("deconv: inputs must be vectors.")
+    rest = list(args[2:])
+    shape = "full"
+    if rest and is_text(rest[0]) and text(rest[0]).lower() in ("full", "same", "valid"):
+        shape = text(rest.pop(0)).lower()
+    if len(rest) % 2:
+        raise MatlabError("deconv: options must be name-value pairs.")
+    method, alpha = "long-division", 0.0
+    for k in range(0, len(rest), 2):
+        key = text(rest[k]).lower() if is_text(rest[k]) else ""
+        if key == "method":
+            method = text(rest[k + 1]).lower() if is_text(rest[k + 1]) else ""
+            if method not in ("long-division", "least-squares"):
+                raise MatlabError("deconv: Method must be 'long-division' or 'least-squares'.")
+        elif key == "regularizationfactor":
+            alpha = float(np.real(fnum(rest[k + 1])).flat[0])
+            if alpha < 0:
+                raise MatlabError("deconv: RegularizationFactor must be nonnegative.")
+        else:
+            raise MatlabError(f"deconv: unknown option '{text(rest[k]) if is_text(rest[k]) else '?'}'.")
+    yv, hv = y.flatten(), h.flatten()
+    col = y.shape[1] == 1 and y.shape[0] > 1
+
+    def orient(v):
+        v = simplify(np.asarray(v))
+        return v.reshape(-1, 1) if col else v.reshape(1, -1)
+
+    if method == "long-division":
+        if shape != "full" or alpha:
+            raise MatlabError("deconv: the shape and RegularizationFactor options need Method 'least-squares'.")
+        if hv.size == 0 or hv[0] == 0:
+            raise MatlabError("First coefficient of the divisor must be nonzero.")
+        if yv.size < hv.size:
+            q, r = np.zeros(1), yv
+        else:
+            q, r = np.polydiv(yv, hv)
+            q, r = np.atleast_1d(q), np.atleast_1d(r)
+        full_r = np.zeros(yv.size, dtype=np.result_type(r.dtype, float))
+        if r.size:
+            full_r[-r.size:] = r
+        return orient(q), orient(full_r)
+    # least squares: x minimizes ||conv(x, h, shape) - y||^2 + alpha ||x||^2
+    ny, nh = yv.size, hv.size
+    nx = {"full": ny - nh + 1, "same": ny, "valid": ny + nh - 1}[shape]
+    if nx < 1 or nh == 0:
+        raise MatlabError("deconv: the lengths of the inputs do not fit the requested shape.")
+    cmat = np.zeros((ny, nx), dtype=np.result_type(yv.dtype, hv.dtype, float))
+    for k in range(nx):
+        e = np.zeros(nx)
+        e[k] = 1.0
+        cmat[:, k] = _conv_vec(e, hv, shape)
+    if alpha:
+        lhs = cmat.conj().T @ cmat + alpha * np.eye(nx)
+        x = np.linalg.solve(lhs, cmat.conj().T @ yv)
+    else:
+        x = np.linalg.lstsq(cmat, yv, rcond=None)[0]
+    return orient(x), orient(yv - cmat @ x)
 
 
 @builtin("filter")
 def _filter(interp, args, nargout):
     from scipy.signal import lfilter
-    b, a, x = fnum(args[0]).flatten(), fnum(args[1]).flatten(), fnum(args[2])
-    axis = 1 if x.shape[0] == 1 else 0
-    return lfilter(b, a, x, axis=axis)
+    nargs(args, 3, 5, "filter")
+    if nargout > 2:
+        raise MatlabError("filter: too many output arguments.")
+    b, a = fnum(args[0]), fnum(args[1])
+    for v in (b, a):
+        if v.ndim != 2 or (v.size and 1 not in v.shape) or v.size == 0:
+            raise MatlabError("filter: the coefficients must be nonempty vectors.")
+    b, a = b.flatten(), a.flatten()
+    if a[0] == 0:
+        raise MatlabError("First denominator filter coefficient must be non-zero.")
+    x = fnum(args[2])
+    single = any(isinstance(v, np.ndarray) and v.dtype in (np.float32, np.complex64) for v in args[:3])
+    dim = None
+    if len(args) > 4 and not (isinstance(args[4], np.ndarray) and args[4].size == 0):
+        dim = to_int(args[4], "dimension")
+        if dim < 1:
+            raise MatlabError("Dimension argument must be a positive integer.")
+    if dim is not None:
+        axis = dim - 1
+    else:
+        axis = next((k for k, n in enumerate(x.shape) if n != 1), 0)
+    order = max(a.size, b.size) - 1
+    if axis >= x.ndim:
+        x = x.reshape(x.shape + (1,) * (axis + 1 - x.ndim))
+    zi_given = len(args) > 3 and not (isinstance(args[3], np.ndarray) and args[3].size == 0)
+    want_zf = nargout > 1
+    shape = list(x.shape)
+    shape[axis] = order
+    zi = None
+    if zi_given:
+        z = fnum(args[3])
+        if z.size == order and (z.ndim == 2 and 1 in z.shape or order <= 1):
+            # one set of initial conditions shared by every column
+            zshape = [1] * x.ndim
+            zshape[axis] = order
+            zi = np.broadcast_to(z.reshape(zshape), shape).astype(np.result_type(z.dtype, float))
+        elif list(z.shape) + [1] * (x.ndim - z.ndim) == shape:
+            zi = z.reshape(shape)
+        else:
+            raise MatlabError("filter: the initial conditions must be a vector of length "
+                              f"max(length(a), length(b)) - 1 = {order}, or an array with that length along "
+                              "the operating dimension.")
+    elif want_zf:
+        zi = np.zeros(shape)
+    if x.size == 0:
+        y = x.copy()
+        zf = zi if zi is not None else np.zeros(shape)
+    elif zi is not None:
+        y, zf = lfilter(b, a, x, axis=axis, zi=zi)
+    else:
+        y = lfilter(b, a, x, axis=axis)
+        zf = None
+    from ..values import as_2d
+    y = as_2d(simplify(np.asarray(y)))
+    if single and y.dtype.kind in "fc":
+        y = y.astype(np.complex64 if y.dtype.kind == "c" else np.float32)
+    if not want_zf:
+        return y
+    zf = as_2d(simplify(np.asarray(zf)))
+    if x.ndim == 2 and 1 in x.shape:
+        zf = zf.reshape(-1, 1)  # the final conditions of a vector are a column
+    return y, zf
 
 
 # -- interpolation ----------------------------------------------------------------------

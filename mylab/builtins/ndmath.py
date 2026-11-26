@@ -53,7 +53,8 @@ def _fftn_common(args: list, inverse: bool, name: str):
             from .signal import _real_if_tiny
             r = _real_if_tiny(r)
     else:
-        r = np.fft.fftn(x, s=s, axes=None if s is None else list(range(len(s)))).astype(complex)
+        from ..values import simplify
+        r = simplify(np.fft.fftn(x, s=s, axes=None if s is None else list(range(len(s)))))
     if single:
         r = r.astype(np.complex64 if np.iscomplexobj(r) else np.float32)
     return r.reshape(_shape2(r.shape))

@@ -502,12 +502,12 @@ def _window_extent(k) -> tuple[int, int]:
 def _parse_mov(args, name):
     nargs(args, 2, None, name)
     x = fnum(args[0]).astype(float)
-    before, after = _window_extent(args[1])
     rest = list(args[2:])
     dim = None
     nanflag = "includenan"
     endpoints = "shrink"
     weight = 0
+    samples = None
     numeric_pos: list = []
     k = 0
     while k < len(rest):
@@ -520,42 +520,79 @@ def _parse_mov(args, name):
                 continue
             if s == "endpoints" and k + 1 < len(rest):
                 e = rest[k + 1]
-                endpoints = text(e).lower() if is_text(e) else float(_scalar(e))
+                if is_text(e):
+                    endpoints = text(e).lower()
+                    if endpoints not in ("shrink", "discard", "fill"):
+                        raise MatlabError(f"{name}: Endpoints must be 'shrink', 'discard', 'fill' or a value.")
+                else:
+                    endpoints = float(_scalar(e))
                 k += 2
                 continue
-            if s == "samplepoints":
-                raise MatlabError(f"{name}: SamplePoints is not supported.")
+            if s == "samplepoints" and k + 1 < len(rest):
+                samples = np.real(fnum(rest[k + 1])).astype(float).reshape(-1)
+                k += 2
+                continue
             raise MatlabError(f"{name}: unknown option '{s}'.")
         numeric_pos.append(a)
         k += 1
     if name in ("movstd", "movvar") and numeric_pos:
         w = numeric_pos.pop(0)
         weight = int(_scalar(w)) if _given([w], 0) else 0
+        if weight not in (0, 1):
+            raise MatlabError(f"{name}: the weight must be 0 or 1.")
     if numeric_pos:
         dim = to_int(numeric_pos[0], "dimension") - 1
+        if dim < 0:
+            raise MatlabError("Dimension argument must be a positive integer.")
+    if len(numeric_pos) > 1:
+        raise MatlabError(f"Too many input arguments for {name}.")
     axis = dim if dim is not None else default_dim(x)
-    return x, before, after, axis, nanflag, endpoints, weight
+    if samples is None:
+        before, after = _window_extent(args[1])
+        window = None
+    else:
+        n = x.shape[axis] if axis < x.ndim else 1
+        if samples.size != n or np.any(np.diff(samples) <= 0):
+            raise MatlabError(f"{name}: SamplePoints must be increasing, one per element along the "
+                              "operating dimension.")
+        kv = np.real(fnum(args[1])).astype(float).reshape(-1)
+        if kv.size not in (1, 2) or np.any(kv < 0):
+            raise MatlabError("Window must be a positive scalar or a two-element vector.")
+        before = after = 0
+        # a scalar window is centred and half open: [t - k/2, t + k/2)
+        window = (kv[0] / 2.0, kv[0] / 2.0, True) if kv.size == 1 else (kv[0], kv[1], False)
+        if endpoints == "discard":
+            raise MatlabError(f"{name}: Endpoints 'discard' cannot be combined with SamplePoints.")
+    return x, before, after, axis, nanflag, endpoints, weight, (samples, window)
 
 
 def _moving(name, reducer):
     def f(interp, args, nargout):
-        x, before, after, axis, nanflag, endpoints, weight = _parse_mov(args, name)
-        if x.size == 0:
+        x, before, after, axis, nanflag, endpoints, weight, (samples, window) = _parse_mov(args, name)
+        if x.size == 0 or axis >= x.ndim:
             return x
         xm = np.moveaxis(x, axis, 0)
         n = xm.shape[0]
         out = np.empty_like(xm)
+        omit = nanflag == "omitnan"
         import warnings
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore", RuntimeWarning)
             for i in range(n):
-                lo, hi = i - before, i + after
-                win = xm[max(lo, 0):min(hi, n - 1) + 1]
-                if nanflag == "omitnan":
-                    out[i] = reducer(win, True, weight)
+                if samples is not None:
+                    d = samples - samples[i]
+                    back, fwd, half_open = window
+                    sel = (d >= -back) & ((d < fwd) if half_open else (d <= fwd))
+                    if not sel.any():
+                        sel[i] = True
+                    win = xm[sel]
+                    partial = (samples[i] - back < samples[0]) or (samples[i] + fwd > samples[-1])
                 else:
-                    out[i] = reducer(win, False, weight)
-                if endpoints != "shrink" and (lo < 0 or hi > n - 1):
+                    lo, hi = i - before, i + after
+                    win = xm[max(lo, 0):min(hi, n - 1) + 1]
+                    partial = lo < 0 or hi > n - 1
+                out[i] = reducer(win, omit, weight)
+                if endpoints != "shrink" and partial:
                     if endpoints == "fill":
                         out[i] = np.nan
                     elif not isinstance(endpoints, str):
@@ -596,140 +633,301 @@ builtin("movstd")(_moving("movstd", _std_red))
 builtin("movvar")(_moving("movvar", lambda w, omit, wt: _std_red(w, omit, wt) ** 2))
 
 
+def _local_regression(xs: np.ndarray, y: np.ndarray, sel_of, degree: int, robust: bool) -> np.ndarray:
+    """Locally weighted polynomial fit (tricube weights), optionally with robust reweighting."""
+    n = y.size
+    out = np.full(n, np.nan)
+    ok = ~np.isnan(y)
+    extra = np.ones(n)
+    for _ in range(6 if robust else 1):
+        for i in range(n):
+            sel = sel_of(i) & ok
+            if not sel.any():
+                continue
+            d = np.abs(xs[sel] - xs[i])
+            dmax = d.max()
+            u = d / (dmax * (1 + 1e-12)) if dmax > 0 else np.zeros(d.size)
+            w = (1 - u ** 3) ** 3 * extra[sel]
+            if not np.any(w > 0):
+                w = np.ones(d.size)
+            deg = min(degree, int(np.count_nonzero(w > 0)) - 1)
+            t = xs[sel] - xs[i]
+            basis = np.vander(t, deg + 1, increasing=True)
+            sw = np.sqrt(w)
+            coef = np.linalg.lstsq(basis * sw[:, None], y[sel] * sw, rcond=None)[0]
+            out[i] = coef[0]
+        if not robust:
+            break
+        resid = y - out
+        scale = np.nanmedian(np.abs(resid[ok]))
+        # residuals at rounding level mean the fit is already exact: nothing to reweight
+        if not scale > 1e-12 * max(float(np.nanmax(np.abs(y[ok]))), 1e-300):
+            break
+        r = resid / (6.0 * scale)
+        extra = np.where(np.abs(r) < 1, (1 - r ** 2) ** 2, 0.0)
+        extra = np.where(ok, extra, 0.0)
+    return out
+
+
+_SMOOTH = ("movmean", "movmedian", "gaussian", "sgolay", "lowess", "loess", "rlowess", "rloess")
+
+
 @builtin("smoothdata")
 def _smoothdata(interp, args, nargout):
     nargs(args, 1, None, "smoothdata")
+    if nargout > 2:
+        raise MatlabError("smoothdata: too many output arguments.")
     x = fnum(args[0]).astype(float)
     rest = list(args[1:])
     dim = None
     if rest and not is_text(rest[0]):
         dim = to_int(rest.pop(0), "dimension") - 1
     method = "movmean"
-    if rest and is_text(rest[0]) and text(rest[0]).lower() in (
-            "movmean", "movmedian", "gaussian", "sgolay", "lowess", "loess", "rlowess", "rloess"):
+    if rest and is_text(rest[0]) and text(rest[0]).lower() in _SMOOTH:
         method = text(rest.pop(0)).lower()
     window = None
     if rest and not is_text(rest[0]):
         window = rest.pop(0)
     nanflag = "omitnan"
     degree = 2
+    factor = None
+    samples = None
     k = 0
     while k < len(rest):
+        if not is_text(rest[k]):
+            raise MatlabError("smoothdata: expected an option name.")
         s = text(rest[k]).lower()
-        if s in ("omitnan", "includenan"):
-            nanflag = s
+        if s in ("omitnan", "includenan", "omitmissing", "includemissing"):
+            nanflag = "omitnan" if s.startswith("omit") else "includenan"
             k += 1
-        elif s == "degree":
+        elif s == "degree" and k + 1 < len(rest):
             degree = to_int(rest[k + 1])
+            if method != "sgolay":
+                raise MatlabError("smoothdata: Degree applies only to the 'sgolay' method.")
             k += 2
-        elif s == "smoothingfactor":
+        elif s == "smoothingfactor" and k + 1 < len(rest):
+            factor = _scalar(rest[k + 1])
+            if not 0 <= factor <= 1:
+                raise MatlabError("smoothdata: SmoothingFactor must be between 0 and 1.")
+            k += 2
+        elif s == "samplepoints" and k + 1 < len(rest):
+            samples = np.real(fnum(rest[k + 1])).astype(float).reshape(-1)
             k += 2
         else:
-            raise MatlabError(f"smoothdata: unknown option '{s}'.")
+            raise MatlabError(f"smoothdata: unknown option '{text(rest[k])}'.")
+    if factor is not None and window is not None:
+        raise MatlabError("smoothdata: give a window or a SmoothingFactor, not both.")
     axis = dim if dim is not None else default_dim(x)
+    if x.size == 0 or axis >= x.ndim:
+        return (x, np.zeros((0, 0))) if nargout > 1 else x
     n = x.shape[axis]
+    if samples is not None and (samples.size != n or np.any(np.diff(samples) <= 0)):
+        raise MatlabError("smoothdata: SamplePoints must be increasing, one per element along the "
+                          "operating dimension.")
+    span = float(samples[-1] - samples[0]) if samples is not None and n > 1 else float(n - 1)
     if window is None:
-        # simple heuristic default: about a tenth of the data, at least 3 points
-        window = np.array([[float(max(3, int(round(n / 10))))]])
+        if factor is not None:
+            # 0 keeps the data as it is, 1 uses a window as long as the whole signal
+            width = factor * span + (0.0 if samples is not None else 1.0)
+        else:
+            # default: about a tenth of the data, at least three points
+            width = float(max(3, int(round(n / 10)))) if samples is None else max(span / 10.0, 0.0)
+        if samples is None:
+            width = float(max(1, int(np.ceil(width))))
+        window = np.array([[width]])
+    win_out = fnum(window).astype(float).reshape(1, -1)
+
+    def done(result):
+        return (result, win_out) if nargout > 1 else result
+
+    sp_args = [char("SamplePoints"), samples.reshape(1, -1)] if samples is not None else []
     if method in ("movmean", "movmedian"):
         fn = _moving(method, _ext_red(np.mean, np.nanmean) if method == "movmean"
                      else _ext_red(np.median, np.nanmedian))
-        return fn(interp, [x, window, float(axis + 1), nanflag], 1)
-    if method == "gaussian":
+        return done(fn(interp, [x, window, np.array([[axis + 1.0]]), char(nanflag), *sp_args], 1))
+    xs = samples if samples is not None else np.arange(n, dtype=float)
+    kv = fnum(window).astype(float).reshape(-1)
+    if kv.size not in (1, 2) or np.any(kv < 0):
+        raise MatlabError("smoothdata: the window must be a positive scalar or a two-element vector.")
+    if samples is None:
         before, after = _window_extent(window)
-        L = before + after + 1
-        sigma = max(L - 1, 1) / 5.0
-        offs = np.arange(-before, after + 1)
-        wts = np.exp(-0.5 * (offs / sigma) ** 2)
-        xm = np.moveaxis(x, axis, 0)
-        out = np.empty_like(xm)
-        for i in range(n):
-            lo, hi = max(i - before, 0), min(i + after, n - 1)
-            seg = xm[lo:hi + 1]
-            ww = wts[(lo - i + before):(hi - i + before) + 1].reshape((-1,) + (1,) * (seg.ndim - 1))
-            ww = np.broadcast_to(ww, seg.shape)
-            if nanflag == "omitnan":
-                mask = ~np.isnan(seg)
-                with np.errstate(all="ignore"):
-                    out[i] = np.sum(np.where(mask, seg, 0) * ww, axis=0) / np.sum(ww * mask, axis=0)
-            else:
-                out[i] = np.sum(seg * ww, axis=0) / np.sum(ww, axis=0)
-        return np.moveaxis(out, 0, axis)
-    if method == "sgolay":
-        import scipy.signal as ss
-        L = int(_scalar(window))
-        if L % 2 == 0:
-            L += 1
-        L = min(L, n if n % 2 else n - 1)
-        if L <= degree:
-            return x
-        return ss.savgol_filter(x, L, degree, axis=axis, mode="interp")
-    raise MatlabError(f"smoothdata: method '{method}' is not supported.")
+
+        def sel_of(i):
+            sel = np.zeros(n, dtype=bool)
+            sel[max(i - before, 0):min(i + after, n - 1) + 1] = True
+            return sel
+    else:
+        back, fwd = (kv[0] / 2.0, kv[0] / 2.0) if kv.size == 1 else (kv[0], kv[1])
+
+        def sel_of(i):
+            d = xs - xs[i]
+            sel = (d >= -back) & (d <= fwd)
+            sel[i] = True
+            return sel
+    xm = np.moveaxis(x, axis, 0)
+    cols = xm.reshape(n, -1)
+    out = np.empty(cols.shape)
+    import warnings
+    with warnings.catch_warnings(), np.errstate(all="ignore"):
+        warnings.simplefilter("ignore")
+        if method == "gaussian":
+            # the standard deviation is a fifth of the full window width
+            full = float(before + after) if samples is None else float(back + fwd)
+            sigma = max(full, 1.0 if samples is None else 1e-300) / 5.0
+            for c in range(cols.shape[1]):
+                col = cols[:, c]
+                for i in range(n):
+                    sel = sel_of(i)
+                    d = xs[sel] - xs[i]
+                    wts = np.exp(-0.5 * (d / sigma) ** 2)
+                    seg = col[sel]
+                    if nanflag == "omitnan":
+                        mask = ~np.isnan(seg)
+                        out[i, c] = np.sum(np.where(mask, seg, 0) * wts) / np.sum(wts * mask)
+                    else:
+                        out[i, c] = np.sum(seg * wts) / np.sum(wts)
+        elif method == "sgolay":
+            for c in range(cols.shape[1]):
+                col = cols[:, c]
+                for i in range(n):
+                    sel = sel_of(i) & ~np.isnan(col)
+                    if nanflag == "includenan" and np.isnan(col[sel_of(i)]).any():
+                        out[i, c] = np.nan
+                        continue
+                    cnt = int(sel.sum())
+                    if cnt == 0:
+                        out[i, c] = np.nan
+                        continue
+                    deg = min(degree, cnt - 1)
+                    t = xs[sel] - xs[i]
+                    out[i, c] = np.linalg.lstsq(np.vander(t, deg + 1, increasing=True), col[sel],
+                                                rcond=None)[0][0]
+        else:
+            deg = 1 if method.endswith("lowess") else 2
+            for c in range(cols.shape[1]):
+                col = cols[:, c]
+                res = _local_regression(xs, col, sel_of, deg, method.startswith("r"))
+                if nanflag == "includenan":
+                    bad = np.array([np.isnan(col[sel_of(i)]).any() for i in range(n)])
+                    res = np.where(bad, np.nan, res)
+                out[:, c] = res
+    return done(np.moveaxis(out.reshape(xm.shape), 0, axis))
+
+
+_NORM_METHODS = ("zscore", "norm", "range", "center", "scale", "medianiqr")
 
 
 @builtin("normalize")
 def _normalize(interp, args, nargout):
-    nargs(args, 1, 4, "normalize")
+    nargs(args, 1, 7, "normalize")
+    if nargout > 3:
+        raise MatlabError("normalize: too many output arguments.")
     x = fnum(args[0]).astype(float)
     rest = list(args[1:])
     dim = None
     if rest and not is_text(rest[0]):
         dim = to_int(rest.pop(0), "dimension") - 1
-    method = text(rest[0]).lower() if rest else "zscore"
-    param = rest[1] if len(rest) > 1 else None
-    if x.size == 0:
-        return x
+        if dim < 0:
+            raise MatlabError("Dimension argument must be a positive integer.")
+    steps: list[tuple[str, object]] = []
+    k = 0
+    while k < len(rest):
+        if not is_text(rest[k]):
+            raise MatlabError("normalize: expected a method name.")
+        method = text(rest[k]).lower()
+        if method not in _NORM_METHODS:
+            raise MatlabError(f"normalize: unknown method '{text(rest[k])}'.")
+        param = None
+        if k + 1 < len(rest) and not (is_text(rest[k + 1]) and text(rest[k + 1]).lower() in _NORM_METHODS):
+            param = rest[k + 1]
+            k += 1
+        steps.append((method, param))
+        k += 1
+    if not steps:
+        steps = [("zscore", None)]
+    names = [m for m, _ in steps]
+    if len(steps) > 2 or (len(steps) == 2 and sorted(names) != ["center", "scale"]):
+        raise MatlabError("normalize: only 'center' and 'scale' can be combined.")
     axis = dim if dim is not None else default_dim(x)
+    if x.size == 0 or axis >= x.ndim:
+        outs = (x, np.zeros(x.shape), np.ones(x.shape))
+        return outs[:max(nargout, 1)] if nargout > 1 else x
     import warnings
+
+    def std_of(v):
+        return np.nanstd(v, axis=axis, keepdims=True, ddof=1 if v.shape[axis] > 1 else 0)
+
+    def med_dev(v):
+        med = np.nanmedian(v, axis=axis, keepdims=True)
+        return np.nanmedian(np.abs(v - med), axis=axis, keepdims=True)
+
+    def iqr_of(v):
+        q = np.nanpercentile(v, [25, 75], axis=axis, method="hazen")
+        return np.expand_dims(q[1] - q[0], axis)
+
+    def kind_of(param, allowed, what):
+        s = text(param).lower()
+        if s not in allowed:
+            raise MatlabError(f"normalize: unknown {what} type '{text(param)}'.")
+        return s
+
+    center = np.zeros([1] * x.ndim)
+    scale = np.ones([1] * x.ndim)
     with warnings.catch_warnings(), np.errstate(all="ignore"):
         warnings.simplefilter("ignore", RuntimeWarning)
-        if method == "zscore":
-            kind = text(param).lower() if param is not None else "std"
-            if kind == "std":
-                c = np.nanmean(x, axis=axis, keepdims=True)
-                s = np.nanstd(x, axis=axis, keepdims=True, ddof=1 if x.shape[axis] > 1 else 0)
-            elif kind == "robust":
-                c = np.nanmedian(x, axis=axis, keepdims=True)
-                s = np.nanmedian(np.abs(x - c), axis=axis, keepdims=True)
-            else:
-                raise MatlabError(f"normalize: unknown zscore type '{kind}'.")
-            return (x - c) / s
-        if method == "range":
-            lim = fnum(param).flatten() if param is not None else np.array([0.0, 1.0])
-            lo, hi = np.nanmin(x, axis=axis, keepdims=True), np.nanmax(x, axis=axis, keepdims=True)
-            return lim[0] + (x - lo) / (hi - lo) * (lim[1] - lim[0])
-        if method == "norm":
-            p = _scalar(param) if param is not None else 2.0
-            if np.isinf(p):
-                nrm = np.nanmax(np.abs(x), axis=axis, keepdims=True)
-            else:
-                nrm = np.nansum(np.abs(x) ** p, axis=axis, keepdims=True) ** (1 / p)
-            return x / nrm
-        if method == "center":
-            kind = param
-            if kind is None or is_text(kind) and text(kind).lower() == "mean":
-                c = np.nanmean(x, axis=axis, keepdims=True)
-            elif is_text(kind) and text(kind).lower() == "median":
-                c = np.nanmedian(x, axis=axis, keepdims=True)
-            else:
-                c = fnum(kind)
-            return x - c
-        if method == "scale":
-            kind = param
-            if kind is None or is_text(kind) and text(kind).lower() == "std":
-                s = np.nanstd(x, axis=axis, keepdims=True, ddof=1 if x.shape[axis] > 1 else 0)
-            elif is_text(kind) and text(kind).lower() == "mad":
-                med = np.nanmedian(x, axis=axis, keepdims=True)
-                s = np.nanmedian(np.abs(x - med), axis=axis, keepdims=True)
-            elif is_text(kind) and text(kind).lower() == "first":
-                s = np.take(x, [0], axis=axis)
-            elif is_text(kind) and text(kind).lower() == "iqr":
-                s = np.diff(np.nanpercentile(x, [25, 75], axis=axis, method="hazen"), axis=0)[0]
-                s = np.expand_dims(s, axis)
-            else:
-                s = fnum(kind)
-            return x / s
-    raise MatlabError(f"normalize: unknown method '{method}'.")
+        for method, param in steps:
+            if method == "zscore":
+                kind = kind_of(param, ("std", "robust"), "zscore") if param is not None else "std"
+                if kind == "std":
+                    center, scale = np.nanmean(x, axis=axis, keepdims=True), std_of(x)
+                else:
+                    center, scale = np.nanmedian(x, axis=axis, keepdims=True), med_dev(x)
+            elif method == "medianiqr":
+                if param is not None:
+                    raise MatlabError("normalize: the 'medianiqr' method takes no parameter.")
+                center, scale = np.nanmedian(x, axis=axis, keepdims=True), iqr_of(x)
+            elif method == "range":
+                lim = fnum(param).flatten() if param is not None else np.array([0.0, 1.0])
+                if lim.size != 2 or not lim[0] < lim[1]:
+                    raise MatlabError("normalize: the range must be a two-element increasing vector.")
+                lo, hi = np.nanmin(x, axis=axis, keepdims=True), np.nanmax(x, axis=axis, keepdims=True)
+                scale = (hi - lo) / (lim[1] - lim[0])
+                center = lo - lim[0] * scale
+            elif method == "norm":
+                p = _scalar(param) if param is not None else 2.0
+                if not p > 0:
+                    raise MatlabError("normalize: the norm type must be a positive number or Inf.")
+                if np.isinf(p):
+                    scale = np.nanmax(np.abs(x), axis=axis, keepdims=True)
+                else:
+                    scale = np.nansum(np.abs(x) ** p, axis=axis, keepdims=True) ** (1 / p)
+            elif method == "center":
+                if param is None or is_text(param):
+                    kind = kind_of(param, ("mean", "median"), "center") if param is not None else "mean"
+                    center = (np.nanmean if kind == "mean" else np.nanmedian)(x, axis=axis, keepdims=True)
+                else:
+                    center = fnum(param).astype(float)
+            else:  # scale
+                if param is None or is_text(param):
+                    kind = kind_of(param, ("std", "mad", "first", "iqr"), "scale") if param is not None else "std"
+                    if kind == "std":
+                        scale = std_of(x)
+                    elif kind == "mad":
+                        scale = med_dev(x)
+                    elif kind == "first":
+                        scale = np.take(x, [0], axis=axis)
+                    else:
+                        scale = iqr_of(x)
+                else:
+                    scale = fnum(param).astype(float)
+        out = (x - center) / scale
+    if nargout <= 1:
+        return out
+    shape = list(x.shape)
+    shape[axis] = 1
+    c_out = np.broadcast_to(center, shape).copy() if np.asarray(center).size <= np.prod(shape) else center
+    s_out = np.broadcast_to(scale, shape).copy() if np.asarray(scale).size <= np.prod(shape) else scale
+    return (out, c_out, s_out)[:nargout]
 
 
 @builtin("rescale")

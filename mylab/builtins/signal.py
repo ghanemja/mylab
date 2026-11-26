@@ -84,13 +84,24 @@ def _fft_common(args, nargout, inverse: bool, name: str):
     if x.size == 0 and not _given(rest, 1):
         return x.astype(complex)
     axis = to_int(rest[2], "dimension") - 1 if _given(rest, 2) else _axis_of(x)
-    if axis > 1:
-        return x.astype(complex) if not inverse else x
+    if axis < 0:
+        raise MatlabError("Dimension argument must be a positive integer.")
     n = to_int(rest[1], "transform length") if _given(rest, 1) else None
+    if n is not None and n < 0:
+        raise MatlabError(f"{name}: the transform length must be nonnegative.")
+    single = x.dtype in (np.float32, np.complex64)
+    if axis >= x.ndim:
+        if n is None or n == 1:
+            return x  # a dimension of length one transforms to itself
+        x = x.reshape(x.shape + (1,) * (axis + 1 - x.ndim))
     if inverse:
         r = np.fft.ifft(x, n=n, axis=axis)
-        return r.real.copy() if symmetric else _real_if_tiny(r)
-    return np.fft.fft(x, n=n, axis=axis).astype(complex)
+        r = r.real.copy() if symmetric else _real_if_tiny(r)
+    else:
+        r = simplify(np.fft.fft(x, n=n, axis=axis))
+    if single:
+        r = r.astype(np.complex64 if np.iscomplexobj(r) else np.float32)
+    return r
 
 
 @builtin("fft")
@@ -117,7 +128,7 @@ def _fft2_common(args, inverse: bool, name: str):
     if inverse:
         r = np.fft.ifft2(x, s=s)
         return r.real.copy() if symmetric else _real_if_tiny(r)
-    return np.fft.fft2(x, s=s).astype(complex)
+    return simplify(np.fft.fft2(x, s=s))
 
 
 @builtin("fft2")

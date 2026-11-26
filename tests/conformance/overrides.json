@@ -920,41 +920,13 @@
   }
  },
  "reductions/sum_classes": {
-  "c1": {
-   "matlab": "'int8'",
-   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
-  },
-  "c10": {
-   "matlab": "'int8'",
-   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
-  },
   "c11": {
    "matlab": "'int8'",
-   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
-  },
-  "c12": {
-   "matlab": "'int8'",
-   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
-  },
-  "c9": {
-   "matlab": "'uint8'",
-   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
-  },
-  "v1": {
-   "matlab": "int8(127)",
-   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
-  },
-  "v10": {
-   "matlab": "int8(127)",
-   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+   "why": "MATLAB cumsum of an integer array keeps the integer class and saturates; Octave 8 returned double here"
   },
   "v11": {
    "matlab": "int8([100 127])",
-   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
-  },
-  "v9": {
-   "matlab": "uint8(255)",
-   "why": "MATLAB sum/prod/cumsum of an integer array keep the integer class and saturate; Octave 8 returned double here"
+   "why": "MATLAB cumsum of an integer array keeps the integer class and saturates; Octave 8 returned double here"
   }
  },
  "rounding/idivide_forms": {
