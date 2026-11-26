@@ -143,9 +143,11 @@ expected values come from MATLAB's documented behaviour.
 - **Version 7.3 MAT-files:** `matfile` reads and writes only the indexed
   part of numeric, char and logical variables; cells, structs and objects are
   read and written whole, as are all variables of version 7 files. String
-  arrays, tables, `datetime` and
-  other objects are stored as structs that mylab turns back into objects;
-  MATLAB sees them as structs. Like MATLAB, `matfile` creates a version 7.3
+  arrays, tables, `datetime` and other objects are stored as structs that
+  mylab turns back into objects; MATLAB sees them as structs. Objects that
+  MATLAB writes into version 7.3 files load as empty arrays, with a warning.
+  An object whose class is not on the path loads as a struct of its saved
+  properties, with a warning. Like MATLAB, `matfile` creates a version 7.3
   file when the file does not exist yet.
 - **Sound:** `sound`, `soundsc` and `audioplayer` play nothing.
 - **Excel:** `xlsread`, `xlswrite`, `readtable`, `writetable`, `readmatrix`,
@@ -206,7 +208,13 @@ expected values come from MATLAB's documented behaviour.
   MATLAB's. A 2-D plot can be viewed in 3-D (`view(3)`); in that view images
   are drawn as a flat surface, contour sets and `pcolor` meshes are left out,
   and a later 2-D `plot` with `hold on` returns the axes to 2-D (MATLAB keeps
-  the 3-D view).
+  the 3-D view). After `yyaxis right`, `gca` is a different handle from the
+  left side's (MATLAB has one axes for both); shared properties (x-axis,
+  title, grid, `Color`, `Box`) read and set through either handle reach the
+  same chart. Constant lines (`xline`, `yline`) are drawn above plotted lines
+  (MATLAB's `Layer` property is not supported), and in polar and 3-D axes
+  they widen the automatic limits. `AffectAutoLimits` on a constant line is a
+  mylab option (default `'off'`, MATLAB's behaviour).
 - **Animations:** when there is no live plot window (browser, Jupyter, MCP),
   each `drawnow`, `pause` or `getframe` records a frame, and the run returns
   an animated GIF (at most 150 frames). `VideoWriter` writes `.avi`/`.mp4`

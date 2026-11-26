@@ -70,6 +70,11 @@ may have relied on.
   are converted to the declared class (they were refused or kept as given).
   Size errors read "Value must be a row vector (size 1x:), but its size is
   2x3."
+- **`xline` and `yline` leave the axis limits alone:** `plot(1:3); yline(5)`
+  keeps the y-limits at [1 3] (were widened to [1 5]), and a constant line
+  outside the limits is not drawn. `'AffectAutoLimits','on'` (a mylab option;
+  MATLAB does not document it for constant lines) brings the old behaviour
+  back.
 
 ### Language
 - Object arrays of classdef objects: `objs(3) = Point(1, 2)`, `[a, b]`,
@@ -210,6 +215,25 @@ may have relied on.
 - `regexprep` evaluates `${...}` expressions in the caller's workspace;
   `fopen` accepts an empty encoding; `exist('model.slx')` returns 4 for
   `.slx` and `.mdl` files.
+- **Objects in MAT-files** (version 7 and 7.3) keep everything across
+  `save` and `load`: the value of a class derived from `double` or an integer
+  class, every field of an old-style `@folder` object, dynamic properties,
+  timetables with their row times, all table properties, dictionaries,
+  `MException` causes and stack, and handle objects (and `containers.Map`)
+  shared between variables or between `save -append` calls. Loading one
+  variable that refers to a handle stored in another works, also through
+  `matfile` and `whos -file`. Load rebuilds objects through their property
+  validation and set methods, and `loadobj` gets a struct when the saved
+  properties no longer fit the class. Objects that MATLAB itself writes into
+  version 7.3 files still load as empty, with a warning.
+- `isequal` compares tables and timetables by value (two tables built apart
+  were unequal); `isequaln` works for `calendarDuration`.
+- **Graphics:** after `yyaxis right`, `xlabel`, `title`, `grid`, `xlim`,
+  x-tick functions and `box` act on the chart's one shared x-axis, title and
+  grid, and `ax.Legend` finds the legend from either side; `cla reset`
+  clears both sides. A constant line at an axis limit is drawn in full over
+  the frame. `subplot` finds an existing axes again after `colorbar` (it
+  made a new one and deleted the old axes and its colorbar).
 
 ### Web app
 - Editor conveniences: a command palette (Ctrl+Shift+P) and file switcher
