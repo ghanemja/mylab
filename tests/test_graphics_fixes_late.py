@@ -241,3 +241,38 @@ def test_constant_line_still_has_its_label_and_legend_entry(m):
     assert [t.get_text() for t in ax.get_legend().get_texts()] == ["data", "max"]
     line = next(ln for ln in ax.lines if getattr(ln, "_mylab_constant", None))
     assert to_rgb(line.get_color()) == (1, 0, 0)
+
+
+# -- 3. subplot finds its axes again -------------------------------------------------------------------
+
+def test_subplot_after_colorbar_returns_the_same_axes(m):
+    m.run("figure; a1 = subplot(2, 1, 1); imagesc(magic(3)); colorbar; a2 = subplot(2, 1, 1); same = a1 == a2;"
+          "ok = isvalid(a1); n = numel(a1.Children);")
+    assert bool(m.num("same")) and bool(m.num("ok")) and m.num("n") == 1
+    fig = _fig(m)
+    assert len(fig.axes) == 2  # the axes and its colorbar
+    assert len(fig.axes[0].images) == 1
+    m.run("a3 = subplot(2, 1, 2); plot(1:3); colorbar('westoutside'); a4 = subplot(2, 1, 2); same2 = a3 == a4;")
+    assert bool(m.num("same2")) and len(fig.axes) == 4
+
+
+def test_subplot_after_outside_legend_and_axis_image_returns_the_same_axes(m):
+    m.run("figure; a1 = subplot(2, 2, 1); plot(1:3); legend('x', 'Location', 'eastoutside');"
+          "b1 = subplot(2, 2, 1); a2 = subplot(2, 2, 2); imagesc(magic(4)); axis image; b2 = subplot(2, 2, 2);"
+          "a3 = subplot(2, 2, 3); plot(1:3); axis equal; b3 = subplot(2, 2, 3);"
+          "same = [a1 == b1, a2 == b2, a3 == b3];")
+    assert m.num("same").tolist() == [[True, True, True]]
+
+
+def test_subplot_of_another_grid_still_replaces_overlapping_axes(m):
+    m.run("figure; a1 = subplot(2, 1, 1); imagesc(magic(3)); colorbar; a2 = subplot(2, 2, 1); ok = isvalid(a1);")
+    assert not bool(m.num("ok"))
+    fig = _fig(m)
+    assert len(fig.axes) == 1 and not hasattr(fig.axes[0], "_colorbar")
+    m.run("figure; b1 = subplot(2, 2, [1 2]); imagesc(magic(3)); colorbar; b2 = subplot(2, 2, [1 2]);"
+          "b3 = subplot(2, 2, 3); same = b1 == b2; ok = isvalid(b1);")
+    assert bool(m.num("same")) and bool(m.num("ok"))  # the bottom-left cell does not overlap the top row
+    m.run("figure; c1 = subplot(2, 1, 1); imagesc(magic(3)); colorbar; c2 = subplot('Position', [0.1 0.1 0.3 0.3]);"
+          "ok = isvalid(c1); p = c2.Position; same = c1 == c2;")
+    assert bool(m.num("ok")) and not bool(m.num("same"))
+    np.testing.assert_allclose(m.num("p"), [[0.1, 0.1, 0.3, 0.3]])

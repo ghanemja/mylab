@@ -5460,12 +5460,15 @@ def _subplot(interp, args, nargout):
     rows = [(q - 1) // n for q in pspec]
     cols = [(q - 1) % n for q in pspec]
     r0, r1, c0, c1 = min(rows), max(rows) + 1, min(cols), max(cols) + 1
-    # Reuse an existing axes occupying exactly the same grid cells (MATLAB does).
+    # Reuse an existing axes occupying exactly the same grid cells (MATLAB does), even when a colorbar has
+    # since made it smaller: matplotlib then moves the axes into a grid nested in its original cell, and
+    # the topmost cell is the one subplot made. The right side of a yyaxis chart is not a subplot of its own.
     ax = None
     for a in fig.axes:
         ss = a.get_subplotspec() if hasattr(a, "get_subplotspec") else None
-        if ss is None or _is_colorbar_axes(a):
+        if ss is None or _is_colorbar_axes(a) or getattr(a, "_mylab_yybase", None) is not None:
             continue
+        ss = ss.get_topmost_subplotspec()
         g = ss.get_gridspec()
         if g.get_geometry() == (m, n) and ss.rowspan == range(r0, r1) and ss.colspan == range(c0, c1):
             ax = a
