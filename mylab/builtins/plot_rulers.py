@@ -396,6 +396,8 @@ def _tickformat(which: str):
     def f(interp, args, nargout):
         args = list(args)
         ax = args.pop(0).obj if args and _is_axes(args[0]) else P._axes(interp, fresh=False)
+        if which == "x":
+            ax = P._yy_host(ax)
         if not args:
             return char(tick_format_get(ax, which))
         tick_format_set(ax, which, text(args[0], "tick label format"))

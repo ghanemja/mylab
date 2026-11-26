@@ -138,6 +138,35 @@ def _is_colorbar_axes(ax) -> bool:
     return hasattr(ax, "_colorbar")
 
 
+def _yy_host(ax):
+    """The axes that draws what both sides of a yyaxis chart share.
+
+    The right side of such a chart is a second matplotlib axes over the first, with its x-axis and
+    background hidden; the x-axis (label, limits, ticks), the title, the grid and the background belong to
+    the left one. Any other axes is its own host."""
+    base = getattr(ax, "_mylab_yybase", None)
+    return base if base is not None else ax
+
+
+# Properties that a yyaxis chart has once for both sides; read or set through the right side, they go to
+# the left axes, which draws them (grid lines follow the left y-axis ticks, as in MATLAB).
+_YY_SHARED_PROPS = {
+    "Title", "Subtitle", "TitleFontWeight", "TitleFontSizeMultiplier", "TitleHorizontalAlignment", "XLabel",
+    "XLim", "XLimMode", "XLimitMethod", "XTick", "XTickMode", "XTickLabel",
+    "XTickLabelMode", "XTickLabelRotation", "XTickLabelFormat", "XAxis", "XScale", "XDir", "XColor",
+    "XAxisLocation", "XMinorTick", "XGrid", "YGrid", "XMinorGrid", "YMinorGrid", "GridAlpha", "GridColor",
+    "GridLineStyle", "GridLineWidth", "MinorGridAlpha", "MinorGridColor", "MinorGridLineStyle",
+    "MinorGridLineWidth", "Color",
+}
+
+
+def _yy_shared_handle(h, key: str):
+    """``h``, or the left axes of its yyaxis chart for a shared property set or read on the right side."""
+    if key in _YY_SHARED_PROPS and h.kind == "axes" and getattr(h.obj, "_mylab_yybase", None) is not None:
+        return _wrap(h.interp, "axes", h.obj._mylab_yybase)
+    return h
+
+
 def _yy_restyle(ax) -> None:
     """Re-apply the left/right styling of yyaxis axes (cla resets it)."""
     side = getattr(ax, "_mylab_yyside", None)
@@ -2676,7 +2705,8 @@ def _nextplot_set(h, v):
 
 
 def _legend_prop_get(h):
-    leg = h.obj.get_legend()
+    pair = _yy_pair(h.obj)  # a yyaxis chart has one legend for both sides, kept by the right axes
+    leg = (pair[1].get_legend() or pair[0].get_legend()) if pair is not None else h.obj.get_legend()
     return _wrap(h.interp, "legend", leg) if leg is not None else np.zeros((0, 0))
 
 
@@ -3352,6 +3382,7 @@ def _get_prop(h: GraphicsHandle, name: str) -> Any:
         raise MatlabError(f"Unrecognized property '{name}' for class '{_short(h.kind)}'.")
     if not _alive(h) and key not in ("Type", "Tag", "UserData"):
         raise MatlabError("Invalid or deleted object.")
+    h = _yy_shared_handle(h, key)
     if entry is None:  # accepted-and-ignored property
         return h.extra.get(key, np.zeros((0, 0)))
     if key == "Visible" and h.kind == "figure":
@@ -3370,6 +3401,7 @@ def _set_prop(h: GraphicsHandle, name: str, value: Any) -> None:
         raise MatlabError(f"Unrecognized property '{name}' for class '{_short(h.kind)}'.")
     if not _alive(h):
         raise MatlabError("Invalid or deleted object.")
+    linked, h = h, _yy_shared_handle(h, key)
     if isinstance(value, (GraphicsHandle, GraphicsArray)) and entry is not None:
         # Nested assignment such as h.Parent.Title.String = 'x' or ax.YAxis(2).Color = 'r' writes the (same)
         # handle or handles back.
@@ -3391,8 +3423,8 @@ def _set_prop(h: GraphicsHandle, name: str, value: Any) -> None:
         raise MatlabError(f"Unable to set the '{key}' property of class '{_short(h.kind)}' because it is "
                           "read-only.")
     setter(h, value)
-    if _LINK_HOOK is not None and h.extra.get("_links"):
-        _LINK_HOOK(h, key, value)
+    if _LINK_HOOK is not None and linked.extra.get("_links"):
+        _LINK_HOOK(linked, key, value)
 
 
 def _resolve(interp, v) -> list[GraphicsHandle]:
@@ -5232,6 +5264,24 @@ def _cla(interp, args, nargout):
     reset = bool(args) and is_text(args[0]) and text(args[0]).lower() == "reset"
     if args and not reset:
         raise MatlabError("cla expects an axes and, optionally, 'reset'.")
+    pair = _yy_pair(ax) if reset else None
+    if pair is not None:  # yyaxis: cla reset clears both sides and removes the right y-axis
+        base, right = pair
+        _forget_children(interp, right)
+        if right in base.figure.axes:
+            right.remove()
+        st.hold.pop(id(right), None)
+        known = st.handles.pop(id(right), None)
+        if known is not None:  # MATLAB has one axes for both sides: a handle taken on the right stays valid
+            known.obj = base
+        for attr in ("_mylab_yyright", "_mylab_yyside"):
+            base.__dict__.pop(attr, None)
+        if st.override_ax is right:
+            st.override_ax = base
+        n = _fig_number(interp, base.figure)
+        if st.axes.get(n) is right:
+            st.axes[n] = base
+        ax = base
     if reset:
         _forget_children(interp, ax)
         ax.cla()
@@ -5910,6 +5960,8 @@ def _label(method):
             ax = _axes(interp, fresh=False)
         finally:
             st.override_ax = prev
+        if method in ("set_xlabel", "set_title"):
+            ax = _yy_host(ax)  # after yyaxis right: the x-axis and title belong to the left axes
         if method == "set_zlabel" and not hasattr(ax, "set_zlabel"):
             t = _zlabel_2d(ax)  # 2-D axes: the label is kept, and shows nowhere until the axes are 3-D
             set_text(interp, t, s, interp_name)
@@ -5952,7 +6004,7 @@ def _subtitle(interp, args, nargout):
     if target is not None and not isinstance(target, _Layout):
         st.override_ax = target
     try:
-        ax = _axes(interp, fresh=False)
+        ax = _yy_host(_axes(interp, fresh=False))
     finally:
         st.override_ax = prev
     left, opts = _split_name_values(args[1:], _TEXT_OPTS)
@@ -6286,7 +6338,7 @@ def _legend(interp, args, nargout):
 @builtin("grid")
 @_with_axes_arg
 def _grid(interp, args, nargout):
-    ax = _axes(interp, fresh=False)
+    ax = _yy_host(_axes(interp, fresh=False))  # yyaxis: the grid follows the left y-axis ticks
     mode = text(args[0]).lower() if args else "toggle"
     if mode == "minor":
         on = not getattr(ax, "_mylab_minor_grid", False)
@@ -6333,7 +6385,7 @@ def _limit_method(interp, ax, method: str, which: str = "xyz") -> None:
         return
     for w in which:
         if w in "xy":
-            set_limit_method(ax, w, method)
+            set_limit_method(_yy_host(ax) if w == "x" else ax, w, method)
 
 
 @builtin("axis")
@@ -6449,6 +6501,8 @@ def _axis(interp, args, nargout):
 def _lim(which):
     def f(interp, args, nargout):
         ax = _axes(interp, fresh=False)
+        if which == "x":
+            ax = _yy_host(ax)
         getter = getattr(ax, f"get_{which}lim", None)
         if not args:
             return ruler_values(ax, which, sorted(getter())) if getter else None
@@ -6489,6 +6543,8 @@ builtin("zlim")(_lim("z"))
 def _ticks(which):
     def f(interp, args, nargout):
         ax = _axes(interp, fresh=False)
+        if which == "x":
+            ax = _yy_host(ax)
         if not hasattr(ax, f"set_{which}ticks"):
             return None
         if not args:
@@ -6517,6 +6573,8 @@ builtin("zticks")(_ticks("z"))
 def _ticklabels_b(which):
     def f(interp, args, nargout):
         ax = _axes(interp, fresh=False)
+        if which == "x":
+            ax = _yy_host(ax)
         if not args:
             return _ticklabels_get(which)(_FakeAxesHandle(ax))
         _set_ticklabels(ax, which, args[0])
@@ -6532,6 +6590,8 @@ builtin("yticklabels")(_ticklabels_b("y"))
 def _tickangle(which):
     def f(interp, args, nargout):
         ax = _axes(interp, fresh=False)
+        if which == "x":
+            ax = _yy_host(ax)
         if not args:
             return _rotation_get(which)(_FakeAxesHandle(ax))
         angle = _scalar(args[0])
