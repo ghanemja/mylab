@@ -321,6 +321,12 @@ def _linspace_values(a, b, n: int) -> np.ndarray:
                 y = a + (b / n1) * k - (a / n1) * k
             else:
                 y = a + k * ((b - a) / n1)
+        elif dtype is float:
+            # a + k*(b - a)/n1, the same operations in the same order, done in place (one array, not three)
+            k *= b - a
+            k /= n1
+            k += a
+            y = k
         else:
             y = a + k * (b - a) / n1
     y = np.asarray(y, dtype=dtype)

@@ -780,6 +780,7 @@ def threads() -> int:
 
 
 _SCIPY_FFT: Any = None
+FFT_THREADED_MIN = 1 << 18  # a single transform this long uses several cores
 
 
 def _scipy_fft():
@@ -804,7 +805,15 @@ def fft(x: np.ndarray, n: int | None, axis: int, inverse: bool = False) -> np.nd
         sf = _scipy_fft()
         if sf is not None:
             lanes = size // max(n if n is not None else x.shape[axis], 1)
-            workers = min(threads(), lanes) if lanes > 1 else 1
+            # several vectors are shared out between cores; one long vector also gains from several (SciPy
+            # splits a large transform's work), as MATLAB's multithreaded fft does
+            workers = min(threads(), lanes) if lanes > 1 else (threads() if size >= FFT_THREADED_MIN else 1)
+            if lanes == 1 and workers > 1:
+                # one vector: SciPy splits the work of a long transform between cores only for a 1-D array
+                shape = list(x.shape)
+                r = (sf.ifft if inverse else sf.fft)(x.reshape(-1), n=n, workers=workers)
+                shape[axis] = r.size
+                return r.reshape(shape).astype(complex, copy=False)
             if inverse:
                 return sf.ifft(x, n=n, axis=axis, workers=workers)
             return sf.fft(x, n=n, axis=axis, workers=workers).astype(complex, copy=False)

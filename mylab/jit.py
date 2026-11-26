@@ -45,6 +45,7 @@ compiler off.
 from __future__ import annotations
 
 import math
+import os
 import sys
 from typing import Any
 
@@ -1488,7 +1489,9 @@ def call_function(interp, fn, args: list, nargout: int, functions: dict):
         r = record.py(interp.depth + 1, *values)
     except Exception:  # noqa: BLE001 - a bail-out: the function is pure, so the interpreter just runs it
         record.bails += 1
-        if record.bails >= MAX_BAILS:
+        # Without arguments a function meets the same values every time, so one bail-out means it would
+        # always bail (and do part of its work twice).
+        if record.bails >= MAX_BAILS or not values:
             state["sigs"][key] = None
         return None
     if record.ret == "d":
@@ -1511,6 +1514,20 @@ def _value_kind(v):
     return "o" if t in _PLAIN else None
 
 
+_PRIVATE_DIRS: dict = {}
+
+
+def _has_private(file) -> bool:
+    """True when the folder of ``file`` has a private/ folder (whose functions only that folder's code sees)."""
+    if not file:
+        return False
+    found = _PRIVATE_DIRS.get(file)
+    if found is None:
+        folder = os.path.dirname(os.path.abspath(str(file)))
+        found = _PRIVATE_DIRS[file] = os.path.isdir(os.path.join(folder, "private"))
+    return found
+
+
 def _compile_anonymous(interp, handle, sig: tuple):
     """The compiled form of an anonymous function for arguments of the given types, or None."""
     body = handle.body
@@ -1520,7 +1537,13 @@ def _compile_anonymous(interp, handle, sig: tuple):
     closure = handle.closure
     functions = closure.get("__functions__", {})
     params = handle.params
-    captured = tuple(sorted(k for k in closure if k != "__functions__" and k not in params))
+    # Entries named __x__ are where the handle was made, not variables (MATLAB names cannot start with _).
+    # Imports and a class's access change what a name means, so those handles stay with the interpreter; the
+    # file matters only when its folder has private functions.
+    internal = [k for k in closure if k.startswith("__")]
+    if any(k not in ("__functions__", "__file__") for k in internal) or _has_private(closure.get("__file__")):
+        return None
+    captured = tuple(sorted(k for k in closure if not k.startswith("__") and k not in params))
     ckinds = []
     for k in captured:
         v = closure[k]

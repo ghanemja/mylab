@@ -704,6 +704,34 @@ def _mtimes(a: Any, b: Any) -> Any:
     return simplify(np.asarray((b.fm().T @ _dense(a).T).T))
 
 
+def _banded_solve(m, rhs):
+    """x = m \\ rhs through LAPACK's banded solver when m is banded, as MATLAB's mldivide does: a narrow band
+    whose diagonals are more than half full. None when m is not banded or is singular (the caller then uses
+    the general sparse solver, which reports a singular matrix)."""
+    from scipy.linalg import LinAlgError, solve_banded
+    n = m.shape[0]
+    if n < 64 or m.nnz == 0:
+        return None
+    if not m.has_canonical_format:  # duplicate entries are summed first, so each place is set once below
+        m = m.copy()
+        m.sum_duplicates()
+    coo = m.tocoo()
+    off = coo.col.astype(np.int64) - coo.row
+    upper, lower = max(int(off.max()), 0), max(int(-off.min()), 0)
+    band = lower + upper + 1
+    if band > 32 or m.nnz <= 0.5 * (band * n - (lower * (lower + 1) + upper * (upper + 1)) // 2):
+        return None
+    dtype = np.result_type(m.dtype, rhs.dtype, np.float64)
+    ab = np.zeros((band, n), dtype=dtype)
+    ab[upper - off, coo.col] = coo.data
+    try:
+        with np.errstate(all="ignore"):
+            x = solve_banded((lower, upper), ab, np.asarray(rhs, dtype=dtype), check_finite=False)
+    except (LinAlgError, ValueError):
+        return None
+    return x if np.all(np.isfinite(x)) else None
+
+
 def _solve(interp, a: Any, b: Any) -> Any:
     """a \\ b where at least one operand is sparse."""
     if _is_scalar(a):
@@ -737,7 +765,10 @@ def _solve(interp, a: Any, b: Any) -> Any:
         warnings.simplefilter("error", spla.MatrixRankWarning)
         warnings.simplefilter("ignore", sp.SparseEfficiencyWarning)
         try:
-            if b_sparse:
+            x = None if b_sparse else _banded_solve(m, rhs)
+            if x is not None:
+                pass
+            elif b_sparse:
                 x = spla.spsolve(m, rhs)
             else:
                 x = spla.splu(m).solve(np.ascontiguousarray(rhs))

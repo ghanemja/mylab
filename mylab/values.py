@@ -224,12 +224,12 @@ def logical(x: Any) -> np.ndarray:
 def char(s: str) -> np.ndarray:
     if s == "":
         return np.zeros((0, 0), dtype="<U1")
-    try:
-        # one character per element, straight from the UTF-32 bytes (the same array as
-        # np.array([list(s)], dtype="<U1"), built several times faster)
-        return np.frombuffer(s.encode("utf-32-le"), dtype="<U1").reshape(1, -1).copy()
-    except UnicodeEncodeError:  # lone surrogates
-        return np.array([list(s)], dtype="<U1")
+    # one character per element: the string's own UCS-4 storage seen as single characters (the same array as
+    # np.array([list(s)], dtype="<U1"), built several times faster; embedded and trailing NULs are kept)
+    a = np.array([s])
+    if a.dtype.itemsize == 4 * len(s):
+        return a.view("<U1").reshape(1, -1)
+    return np.array([list(s)], dtype="<U1")
 
 
 def to_matlab(x: Any) -> Any:

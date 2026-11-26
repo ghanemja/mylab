@@ -1264,10 +1264,31 @@ class _DynamicRegex:
         return None
 
 
+_MIN_WIDTH: dict = {}
+
+
+def _never_empty(rx) -> bool:
+    """True when the pattern cannot match empty text (its shortest match is at least one character)."""
+    w = _MIN_WIDTH.get(rx)
+    if w is None:
+        try:
+            try:
+                from re import _parser as sre_parse  # Python 3.11+
+            except ImportError:  # pragma: no cover - Python 3.10
+                import sre_parse
+            w = sre_parse.parse(rx.pattern, rx.flags).getwidth()[0]
+        except Exception:  # noqa: BLE001 - when in doubt, take the general path
+            w = 0
+        _MIN_WIDTH[rx] = w
+    return w > 0
+
+
 def _regex_matches(rx, s: str, switches: set[str]) -> list:
     out = []
     if rx is None:
         return out
+    if "once" not in switches and _never_empty(rx):
+        return list(rx.finditer(s))  # the same matches as the loop below when none can be empty
     keep_empty = "emptymatch" in switches
     pos = 0
     while pos <= len(s):
@@ -1353,6 +1374,35 @@ def _regexp_one(rx, s: str, switches: set[str], wanted=None) -> dict:
     return {key: make() for key, make in makers.items() if wanted is None or key in wanted}
 
 
+_LIGHT_KEYS = frozenset(("match", "start", "end", "tokens", "split"))
+
+
+def _regexp_light(rx, s: str, switches: set[str], order: list) -> list:
+    """The same values as _regexp_one for 'match', 'start', 'end', 'tokens' and 'split' without 'once'."""
+    matches = _regex_matches(rx, s, switches)
+    out = []
+    for key in order:
+        if key == "match":
+            out.append(Cell.from_list([char(m.group(0)) for m in matches]))
+        elif key == "start":
+            out.append(_row([m.start() + 1.0 for m in matches]))
+        elif key == "end":
+            out.append(_row([float(m.end()) for m in matches]))
+        elif key == "tokens":
+            if rx is not None and rx.groups:
+                out.append(Cell.from_list([Cell.from_list([char(g or "") for g in m.groups()]) for m in matches]))
+            else:
+                out.append(Cell.from_list([Cell.from_list([char(m.group(0))]) for m in matches]))
+        else:  # split
+            pieces, last = [], 0
+            for m in matches:
+                pieces.append(char(s[last:m.start()]))
+                last = m.end()
+            pieces.append(char(s[last:]))
+            out.append(Cell.from_list(pieces))
+    return out
+
+
 def _text_items(v, name: str):
     """(list of str, shape or None): the texts of a char/string/cell argument."""
     v = _as_cell_if_strings(v)
@@ -1385,9 +1435,14 @@ def _regexp(interp, args, nargout):
             shape = (1, 1)
         count = max(len(strs), len(pats)) if strs and pats else 0
         cols = [np.empty(count, dtype=object) for _ in order]
+        light = "once" not in switches and set(order) <= _LIGHT_KEYS
         for k in range(count):
-            res = _regexp_one(compiled[k if len(pats) > 1 else 0], strs[k if len(strs) > 1 else 0], switches,
-                              order)
+            rx, text_k = compiled[k if len(pats) > 1 else 0], strs[k if len(strs) > 1 else 0]
+            if light:  # only the outputs asked for, without building the others (cellfun-sized inputs)
+                for col, value in zip(cols, _regexp_light(rx, text_k, switches, order)):
+                    col[k] = value
+                continue
+            res = _regexp_one(rx, text_k, switches, order)
             for col, key in zip(cols, order):
                 col[k] = res[key]
         out = [Cell(col.reshape(shape, order="F")) for col in cols]
