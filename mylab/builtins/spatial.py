@@ -232,6 +232,27 @@ def _delaunayn(interp, args, nargout):
     return _delaunay_tri(P, "delaunayn") + 1.0
 
 
+@builtin("voronoin")
+def _voronoin(interp, args, nargout):
+    """[V, C] = voronoin(X): the Voronoi diagram of the points in the rows of X.
+
+    V lists the vertices, with Inf in its first row standing for "at infinity"; C{k} lists the rows of V
+    around the cell of point k (1 where the cell is unbounded)."""
+    from scipy.spatial import Voronoi
+    from ..values import Cell
+    nargs(args, 1, 2, "voronoin")
+    X = _real(args[0], "points")
+    if X is None or X.ndim != 2 or X.shape[1] < 2:
+        raise MatlabError("voronoin needs an n-by-d matrix of points, d >= 2.")
+    vor = _qhull(Voronoi, X, "voronoin")
+    V = np.vstack([np.full((1, X.shape[1]), np.inf), vor.vertices])
+    cells = []
+    for k in range(X.shape[0]):
+        region = vor.regions[vor.point_region[k]]
+        cells.append(np.array([[1.0 if i < 0 else i + 2.0 for i in region]]))
+    return (V, Cell.from_list(cells, column=True)) if nargout > 1 else V
+
+
 # -- scattered data interpolation ---------------------------------------------------------------------
 
 _METHODS = {"linear", "nearest", "natural", "cubic", "v4"}

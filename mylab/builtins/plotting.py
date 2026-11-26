@@ -811,6 +811,11 @@ def _wrap(interp, kind: str, obj) -> "GraphicsHandle":
     h = st.handles.get(id(obj))
     if h is not None and h.obj is obj:
         return h
+    if kind == "text" and getattr(obj, "axes", 1) is None:  # a title or axis label: link it to its axes
+        from .plot_objects import _owning_axes
+        ax = _owning_axes(obj)
+        if ax is not None:
+            obj.axes = ax
     h = GraphicsHandle(interp, kind, obj)
     st.handles[id(obj)] = h
     return h

@@ -1485,13 +1485,26 @@ def _text_units_set(h, v):
     set_text_units(h, v, convert=True)
 
 
+def _owning_axes(t):
+    """The axes whose title or axis label ``t`` is (matplotlib does not link those texts back)."""
+    fig = t.figure
+    for a in (fig.axes if fig is not None else []):
+        texts = [getattr(a, n, None) for n in ("title", "_left_title", "_right_title")]
+        texts += [a.xaxis.label, a.yaxis.label]
+        if getattr(a, "zaxis", None) is not None:
+            texts.append(a.zaxis.label)
+        if any(x is t for x in texts):
+            return a
+    return None
+
+
 def set_text_units(h, v, convert: bool = True) -> None:
     """Change the units of a text position; with ``convert`` the text stays where it is drawn."""
     u = text(v).lower()
     if u not in ("data", "normalized", "pixels", "inches", "centimeters", "points", "characters"):
         raise MatlabError("Units of a text object must be 'data', 'normalized', 'pixels', 'inches', "
                           "'centimeters', 'points' or 'characters'.")
-    ax = h.obj.axes
+    ax = h.obj.axes or _owning_axes(h.obj)
     if ax is None:
         raise MatlabError("This text is not inside an axes; its position is in figure units.")
     old = str(h.extra.get("Units", "data"))

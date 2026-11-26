@@ -148,11 +148,14 @@ def keep2d(r: np.ndarray, axis: int, ndim: int = 2) -> np.ndarray:
 
 
 def flag_present(args: list, *flags: str) -> tuple[list, set[str]]:
-    """Split trailing option strings (e.g. 'descend', 'omitnan') from args."""
+    """Split trailing option strings (e.g. 'descend', 'omitnan') from args.
+
+    The first argument is always the data, never an option: sum('all') adds the character codes
+    of 'all', and any('all') is true."""
     found: set[str] = set()
     rest = []
-    for a in args:
-        if is_text(a) and text(a).lower() in flags:
+    for i, a in enumerate(args):
+        if i > 0 and is_text(a) and text(a).lower() in flags:
             found.add(text(a).lower())
         else:
             rest.append(a)

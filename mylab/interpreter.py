@@ -149,6 +149,10 @@ def _reads_an_argument(e: BaseException) -> bool:
     line = frames[-1].line if frames else ""
     return bool(line and re.search(r"\b(args|rest|argv|arguments|inputs)\s*\[", line))
 
+_TRUE_1x1 = np.array([[True]])
+_FALSE_1x1 = np.array([[False]])
+_TRUE_1x1.setflags(write=False)
+_FALSE_1x1.setflags(write=False)
 _STACK_HOP = 32  # every this many nested calls, a call continues on a fresh stack
 _HOP_THREADS = sys.platform != "emscripten"  # (no threads in the browser)
 _HOP_STACK_BYTES = 64 * 1024 * 1024
@@ -387,7 +391,7 @@ class Interpreter:
             self.exec_assign(stmt, frame)
         elif t is A.If:
             for cond, body in stmt.clauses:
-                if is_true(self.eval(cond, frame)):
+                if is_true(self._cond(cond, frame)):
                     self.exec_block(body, frame)
                     return
             if stmt.orelse is not None:
@@ -398,7 +402,7 @@ class Interpreter:
             if self.jit_enabled and self.trace_hook is None and type(frame) is Frame \
                     and jit.run_while(self, stmt, frame):
                 return
-            while is_true(self.eval(stmt.cond, frame)):
+            while is_true(self._cond(stmt.cond, frame)):
                 try:
                     self.exec_block(stmt.body, frame)
                 except BreakSignal:
@@ -602,6 +606,25 @@ class Interpreter:
     def _check_missing_input(self, name: str, frame: Frame) -> None:
         if name in frame.missing_inputs:
             raise MatlabError("Not enough input arguments.", "MATLAB:minrhs")
+
+    def _cond(self, node: A.Node, frame: Frame) -> Any:
+        """The value of an if, elseif or while condition.
+
+        There the element-wise | and & short-circuit, as in MATLAB: when the left operand is a scalar
+        that decides the result, the right one is not evaluated. Old code relies on it, e.g.
+        if (exist('ht') ~= 1) | (ht == 'auto') when ht was not passed.
+        """
+        if type(node) is A.BinOp and node.op in ("|", "&"):
+            left = self._cond(node.left, frame)
+            if type(left) is np.ndarray and left.size == 1 and left.dtype.kind in "biuf":
+                v = left.flat[0]
+                if v == v:  # (NaN cannot be converted to logical: the full evaluation reports it)
+                    if node.op == "|" and v:
+                        return _TRUE_1x1
+                    if node.op == "&" and not v:
+                        return _FALSE_1x1
+            return self.binop_values(node.op, left, self._cond(node.right, frame))
+        return self.eval(node, frame)
 
     def exec_for(self, stmt: A.For, frame: Frame) -> None:
         if self.jit_enabled and type(stmt.iterable) is A.Range and self.trace_hook is None \

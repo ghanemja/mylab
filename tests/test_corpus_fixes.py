@@ -210,3 +210,28 @@ def test_graphics_functions_take_a_structure_of_properties():
               "h2 = patch([0 1 1], [0 0 1], 'g', o); hold on; h3 = plot(1:3, struct('LineWidth', 4));")
     assert num(m, "h2.FaceAlpha").item() == 0.5 and num(m, "h2.EdgeColor").tolist() == [[0, 0, 1]]
     assert num(m, "h3.LineWidth").item() == 4
+
+
+# -- the data argument is never an option; voronoin --------------------------------------------------
+
+def test_text_data_named_like_an_option():
+    m = Interpreter(out=lambda s: None)
+    assert num(m, "sum('all')").item() == 313 and num(m, "any('all')").item() and num(m, "all('all')").item()
+    assert num(m, "max('all')").item() == 108 and num(m, "prod('ab')").item() == 97 * 98
+    assert num(m, "sum([1 2; 3 4], 'all')").item() == 10  # still the option after the data
+    m.execute("v = {'all', 'mostVertices'}; p = inputParser;"
+              "addOptional(p, 'components', 'mostVertices', @(x) any(validatestring(x, v)));"
+              "parse(p, 'all'); r = p.Results.components;")
+    assert to_str(m.eval_expression("r")) == "all"
+
+
+def test_voronoin():
+    m = Interpreter(out=lambda s: None)
+    m.execute("x = [0 0; 1 0; 0 1; 1 1; 0.5 0.5]; [V, C] = voronoin(x);")
+    V = num(m, "V")
+    assert V.shape == (5, 2) and np.isinf(V[0]).all()
+    inner = num(m, "sort(C{5})").ravel().astype(int)
+    assert inner.tolist() == [2, 3, 4, 5]  # the bounded centre cell: all four finite vertices
+    corners = sorted(map(tuple, V[inner - 1].round(9).tolist()))
+    assert corners == [(0.0, 0.5), (0.5, 0.0), (0.5, 1.0), (1.0, 0.5)]
+    assert all(1 in num(m, f"C{{{k}}}").ravel() for k in range(1, 5))  # the corner cells are unbounded

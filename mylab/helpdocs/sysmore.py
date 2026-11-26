@@ -248,6 +248,10 @@ HELP = {
               "60-by-60 sparse adjacency matrix (each atom has three neighbours, 90 edges in all) and V the "
               "60-by-3 coordinates of the atoms, on the unit sphere. The atoms are numbered in another order "
               "than MATLAB's (by height, then around), so the same graph has a permuted B."),
+    "voronoin": (["[V, C] = voronoin(X)"],
+                 "The Voronoi diagram of the points in the rows of X (two or more dimensions). V lists the "
+                 "Voronoi vertices, the first row being Inf for the point at infinity; C{k} lists the rows of "
+                 "V around the cell of point k, with 1 where the cell is unbounded. Computed with Qhull."),
     "randg": (["r = randg", "R = randg(A)", "R = randg(A, m, n, ...)", "R = randg(A, [m n ...])",
                "R = randg(..., 'single')"],
               "Gamma-distributed random numbers with shape A and scale 1. A can be a scalar or an array "
