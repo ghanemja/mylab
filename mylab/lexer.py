@@ -90,7 +90,8 @@ class Lexer:
         self.in_classdef = bool(re.search(r"^\s*classdef\b", self.text, re.MULTILINE))
         self.in_arguments = False
         # 'do ... until cond' (Octave): 'do' is only a keyword in a text that also has an 'until' line
-        self.has_until = bool(re.search(r"(^|[\n;,])[ \t]*until\b", self.text))
+        # (comments are left out, so "% repeat, until done" in a comment does not count)
+        self.has_until = bool(re.search(r"(^|[\n;,])[ \t]*until\b", re.sub(r"[%#][^\n]*", "", self.text)))
         self.do_depth = 0
 
     # -- helpers ---------------------------------------------------------------

@@ -71,3 +71,20 @@ def test_writetable_row_names_append_and_unknown_options(m, tmp_path):
 def test_delete_of_empty_values_and_figure_numbers(m):
     m.run("delete(gcp('nocreate')); delete([]); figure(7); delete(7); n = numel(findobj('Type', 'figure'));")
     assert m.num("n") == 0
+
+
+def test_do_is_not_a_keyword_because_of_a_comment(m, tmp_path):
+    # a function named 'do', called as a statement, in a file whose comment says ", until"
+    (tmp_path / "do.m").write_text("function do()\nglobal DONE\nDONE = 1;\nend\n")
+    (tmp_path / "script.m").write_text("% repeat, until done\nglobal DONE\nDONE = 0;\ndo\n")
+    m.run(f"addpath('{tmp_path}'); script; global DONE; x = DONE;")
+    assert m.num("x") == 1
+
+
+def test_persistent_store_belongs_to_its_definition(m, tmp_path):
+    f = tmp_path / "counter_p.m"
+    f.write_text("function r = counter_p()\npersistent n\nif isempty(n), n = 0; end\nn = n + 1; r = n;\nend\n")
+    m.run(f"addpath('{tmp_path}'); counter_p(); counter_p();")
+    assert m.num("counter_p()") == 3
+    m.run("clear counter_p")
+    assert m.num("counter_p()") == 1

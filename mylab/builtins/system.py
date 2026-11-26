@@ -364,11 +364,13 @@ def _clear_functions(interp, frame, patterns) -> None:
     locked = interp.state.get("mlocked", set())
     stores = interp.persistent_vars
     owners = interp.state.get("persistent_owners", {})
+    nodes = interp.state.get("persistent_nodes", {})
     if patterns is None:
         for key in list(stores):
             if owners.get(key) not in locked:
                 del stores[key]
                 owners.pop(key, None)
+                nodes.pop(key, None)
         return
     import fnmatch
     for key in list(stores):
@@ -376,6 +378,7 @@ def _clear_functions(interp, frame, patterns) -> None:
         if name is not None and name not in locked and any(fnmatch.fnmatchcase(name, p) for p in patterns):
             del stores[key]
             owners.pop(key, None)
+            nodes.pop(key, None)
 
 
 @builtin("who")

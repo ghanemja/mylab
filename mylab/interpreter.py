@@ -136,6 +136,15 @@ class SharedFrame(Frame):
             super().set(name, value)
 
 
+
+def _reads_an_argument(e: BaseException) -> bool:
+    """Whether an IndexError was raised by a line that indexes the argument list (args[k], rest[k])."""
+    import re
+    import traceback
+    frames = traceback.extract_tb(e.__traceback__)
+    line = frames[-1].line if frames else ""
+    return bool(line and re.search(r"\b(args|rest|argv|arguments|inputs)\s*\[", line))
+
 class Interpreter:
     """Runs MATLAB-language code.
 
@@ -364,11 +373,15 @@ class Interpreter:
         elif t is A.Global:
             if getattr(stmt, "persistent", False):
                 # One store per function definition: survives between calls, private to that function.
-                key = id(getattr(frame, "fn_node", None) or frame)
+                node = getattr(frame, "fn_node", None) or frame
+                key = id(node)
                 store = self.persistent_vars.get(key)
                 if store is None:
                     store = self.persistent_vars[key] = {}
                     self.state.setdefault("persistent_owners", {})[key] = frame.name  # for clear name
+                    # keep the definition alive while its store exists, so that a re-parsed file can
+                    # never get a new definition at the same id() and inherit the old values
+                    self.state.setdefault("persistent_nodes", {})[key] = node
             else:
                 store = self.global_vars
             for name in stmt.names:
@@ -1461,8 +1474,9 @@ class Interpreter:
             raise MatlabError("Maximum recursion limit reached.")
         except (ValueError, TypeError, IndexError, np.linalg.LinAlgError, ZeroDivisionError,
                 OverflowError, KeyError) as e:
-            if isinstance(e, IndexError) and str(e) == "list index out of range" and len(args) < 3:
-                # a built-in that read an argument the caller did not pass
+            if isinstance(e, IndexError) and str(e) == "list index out of range" and _reads_an_argument(e):
+                # a built-in that read an argument the caller did not pass (any other index error is a
+                # bug in the built-in and is reported as such, not disguised as the caller's mistake)
                 raise MatlabError("Not enough input arguments.", "MATLAB:minrhs") from e
             raise MatlabError(f"Error using {name}: {e}") from e
         if result is None:
