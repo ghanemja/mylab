@@ -1032,7 +1032,8 @@ def _local_regression(xs: np.ndarray, y: np.ndarray, sel_of, degree: int, robust
             break
         resid = y - out
         scale = np.nanmedian(np.abs(resid[ok]))
-        if not scale > 0:
+        # residuals at rounding level mean the fit is already exact: nothing to reweight
+        if not scale > 1e-12 * max(float(np.nanmax(np.abs(y[ok]))), 1e-300):
             break
         r = resid / (6.0 * scale)
         extra = np.where(np.abs(r) < 1, (1 - r ** 2) ** 2, 0.0)

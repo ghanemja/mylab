@@ -438,26 +438,74 @@ def _standardize_missing(interp, args, nargout):
 
 @builtin("uniquetol")
 def _uniquetol(interp, args, nargout):
-    nargs(args, 1, 2, "uniquetol")
+    nargs(args, 1, None, "uniquetol")
     a = _numeric(args[0], "uniquetol")
     if a.dtype.kind not in "f":
         raise MatlabError("uniquetol: the input must be a real floating-point array.")
-    tol = float(num(args[1]).flat[0]) if len(args) > 1 else (1e-6 if a.dtype == np.float32 else 1e-12)
-    flat = a.flatten(order="F")
-    order = np.argsort(flat, kind="stable")
-    vals = flat[order]
-    scale = float(np.max(np.abs(flat[np.isfinite(flat)]))) if np.isfinite(flat).any() else 1.0
-    bound = tol * scale
-    keep: list[int] = []
-    group = np.zeros(flat.size, dtype=float)
-    for k, v in enumerate(vals):
-        if np.isnan(v) or not keep or not abs(v - vals[keep[-1]]) <= bound:
-            keep.append(k)
-        group[order[k]] = len(keep)
-    c = vals[keep]
-    as_row = a.ndim == 2 and a.shape[0] == 1 and a.shape[1] != 1
-    c = c.reshape(1, -1) if as_row else c.reshape(-1, 1)
+    rest = list(args[1:])
+    tol = 1e-6 if a.dtype == np.float32 else 1e-12
+    if rest and not is_text(rest[0]):
+        tol = float(np.real(num(rest.pop(0))).flat[0])
+        if tol < 0:
+            raise MatlabError("uniquetol: the tolerance must be nonnegative.")
+    if len(rest) % 2:
+        raise MatlabError("uniquetol: options must be name-value pairs.")
+    by_rows = False
+    all_idx = False
+    scale = None
+    for k in range(0, len(rest), 2):
+        key = text(rest[k]).lower() if is_text(rest[k]) else ""
+        val = rest[k + 1]
+        if key == "byrows":
+            by_rows = bool(np.all(num(val) != 0))
+        elif key == "outputallindices":
+            all_idx = bool(np.all(num(val) != 0))
+        elif key == "datascale":
+            scale = np.real(num(val)).astype(float).reshape(-1)
+        else:
+            raise MatlabError(f"uniquetol: unknown option '{text(rest[k]) if is_text(rest[k]) else '?'}'.")
+    if by_rows:
+        if a.ndim != 2:
+            raise MatlabError("uniquetol: with ByRows the input must be a matrix.")
+        rows = a.astype(float)
+        fin = np.where(np.isfinite(rows), np.abs(rows), 0.0)
+        ds = fin.max(axis=0) if scale is None and rows.size else \
+            (np.broadcast_to(scale, (rows.shape[1],)).astype(float) if scale is not None else np.zeros(0))
+    else:
+        rows = a.reshape(-1, 1, order="F").astype(float)
+        fin = np.abs(rows[np.isfinite(rows)])
+        ds = np.array([float(fin.max()) if fin.size else 1.0]) if scale is None else scale[:1].astype(float)
+    bound = tol * ds
+    n = rows.shape[0]
+    order = np.lexsort(tuple(rows[:, c] for c in range(rows.shape[1] - 1, -1, -1))) if n else np.zeros(0, int)
+    group = np.zeros(n, dtype=float)
+    reps: list[int] = []        # index (into the original rows) of the representative of each group
+    members: list[list[int]] = []
+    done = np.zeros(n, dtype=bool)
+    for k in order:
+        if done[k]:
+            continue
+        row = rows[k]
+        if np.isnan(row).any():
+            close = np.zeros(n, dtype=bool)
+            close[k] = True  # NaN is not within tolerance of anything, not even of another NaN
+        else:
+            with np.errstate(invalid="ignore"):
+                close = np.all(np.abs(rows - row) <= bound, axis=1) & ~done
+            close[k] = True
+        idx = np.nonzero(close)[0]
+        done[idx] = True
+        reps.append(int(k))
+        members.append([int(i) for i in idx])
+        group[idx] = len(reps)
+    c = a[reps, :] if by_rows else a.reshape(-1, order="F")[reps]
+    if not by_rows:
+        as_row = a.ndim == 2 and a.shape[0] == 1 and a.shape[1] != 1
+        c = c.reshape(1, -1) if as_row else c.reshape(-1, 1)
     if nargout <= 1:
         return c
-    ia = (order[keep] + 1.0).reshape(-1, 1)
+    if all_idx:
+        ia = Cell.from_list([np.array([i + 1.0 for i in mem]).reshape(-1, 1) for mem in members], column=True)
+    else:
+        ia = np.array([r + 1.0 for r in reps]).reshape(-1, 1)
     return c, ia, group.reshape(-1, 1)

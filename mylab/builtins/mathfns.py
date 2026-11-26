@@ -112,7 +112,7 @@ _ELEMENTWISE = {
     "asinh": np.arcsinh, "acosh": _acosh,
     "atanh": lambda a: 0.5 * np.emath.log((1 + a) / (1 - a)),
     "sec": lambda a: 1 / np.cos(a), "csc": lambda a: 1 / np.sin(a), "cot": lambda a: 1 / np.tan(a),
-    "sind": lambda a: _sind(a), "cosd": lambda a: _cosd(a), "tand": lambda a: _tand(a),
+    "sind": lambda a: _deg(_sind, a), "cosd": lambda a: _deg(_cosd, a), "tand": lambda a: _deg(_tand, a),
     "asind": lambda a: np.degrees(_asin(a)), "acosd": lambda a: np.degrees(_acos(a)),
     "atand": lambda a: np.degrees(np.arctan(a)),
     "deg2rad": np.radians, "rad2deg": np.degrees,
@@ -121,6 +121,14 @@ _ELEMENTWISE = {
     "gamma": _gamma, "gammaln": sp.gammaln, "erf": sp.erf, "erfc": sp.erfc,
     "erfinv": sp.erfinv, "erfcinv": sp.erfcinv,
 }
+
+
+def _deg(fn, a):
+    """Apply a degree-based function in double precision and keep a single input single."""
+    r = fn(a)
+    if np.asarray(a).dtype in (np.float32, np.complex64):
+        r = np.asarray(r).astype(np.complex64 if np.iscomplexobj(r) else np.float32)
+    return r
 
 
 def _sind(a):

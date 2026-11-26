@@ -2082,20 +2082,36 @@ def _real_if_close(a: np.ndarray, force: bool) -> np.ndarray:
     return simplify(a)
 
 
+def _cluster_poles(poles: np.ndarray, tol: float, real_coeffs: bool):
+    """Sort poles as mpoles does and move every group of nearly equal poles to its mean.
+
+    Returns the poles and the start index of each group. For a polynomial with real coefficients
+    a group that lies on the real axis (up to the tolerance) gets a real location.
+    """
+    mult, idx = mpoles_groups(poles, tol)
+    p = poles[idx].astype(complex)
+    starts = np.nonzero(mult == 1)[0]
+    for gi, s0 in enumerate(starts):
+        e = starts[gi + 1] if gi + 1 < starts.size else p.size
+        p0 = np.mean(p[s0:e])
+        if real_coeffs and abs(p0.imag) <= tol * max(abs(p0), 1.0) and (e - s0 > 1 or p0.imag == 0):
+            p0 = complex(p0.real, 0.0)
+        if e - s0 > 1:
+            p[s0:e] = p0
+        elif real_coeffs and p0.imag == 0:
+            p[s0] = p0
+    return p, starts
+
+
 def _pf_expand(b_rem: np.ndarray, a: np.ndarray, tol: float = 1e-3):
     """Residues and poles of b_rem/a (deg b_rem < deg a), both in descending powers."""
-    poles = np.roots(a).astype(complex)
-    mult, idx = mpoles_groups(poles, tol)
-    p_sorted = poles[idx]
-    # use the mean of each cluster as the location of a repeated pole
-    starts = np.nonzero(mult == 1)[0]
+    real_coeffs = not (np.any(np.imag(a) != 0) or np.any(np.imag(b_rem) != 0))
+    p_sorted, starts = _cluster_poles(np.roots(a).astype(complex), tol, real_coeffs)
     res = np.zeros(p_sorted.size, dtype=complex)
     for gi, s in enumerate(starts):
         e = starts[gi + 1] if gi + 1 < starts.size else p_sorted.size
         m = e - s
-        p0 = np.mean(p_sorted[s:e])
-        if m > 1:
-            p_sorted[s:e] = p0
+        p0 = p_sorted[s]
         others = np.concatenate([p_sorted[:s], p_sorted[e:]])
         q = a[0] * np.poly(others) if others.size else np.array([a[0]], dtype=complex)
         num_t = _taylor_shift(b_rem, p0) if b_rem.size else np.zeros(1, dtype=complex)
@@ -2110,6 +2126,8 @@ def _pf_expand(b_rem: np.ndarray, a: np.ndarray, tol: float = 1e-3):
         # coefficient of (s - p0)^(-j) is coef[m - j]
         for j in range(1, m + 1):
             res[s + j - 1] = coef[m - j]
+        if real_coeffs and p0.imag == 0:
+            res[s:e] = res[s:e].real  # a real pole of a real fraction has real residues
     return res, p_sorted
 
 
@@ -2192,17 +2210,13 @@ def _residuez(interp, args, nargout):
             r, p = np.zeros(0), np.zeros(0)
         else:
             # B(x)/A(x) with A(x) = a0 * prod(1 - p_i x): poles of the x-fraction are 1/p_i
-            poles = np.roots(a).astype(complex)
-            mult, idx = mpoles_groups(poles, 1e-3)
-            p = poles[idx]
-            starts = np.nonzero(mult == 1)[0]
+            real_coeffs = a.dtype.kind != "c" and b.dtype.kind != "c"
+            p, starts = _cluster_poles(np.roots(a).astype(complex), 1e-3, real_coeffs)
             r = np.zeros(p.size, dtype=complex)
             for gi, s in enumerate(starts):
                 e = starts[gi + 1] if gi + 1 < starts.size else p.size
                 m = e - s
-                p0 = np.mean(p[s:e])
-                if m > 1:
-                    p[s:e] = p0
+                p0 = p[s]
                 others = np.concatenate([p[:s], p[e:]])
                 q = np.array([a[0]], dtype=complex)
                 for o in others:
@@ -2220,6 +2234,8 @@ def _residuez(interp, args, nargout):
                     g[kk] = acc / den_t[0]
                 for j in range(1, m + 1):
                     r[s + j - 1] = g[m - j]
+                if real_coeffs and p0.imag == 0:
+                    r[s:e] = r[s:e].real
         r = simplify(np.asarray(r).reshape(-1, 1))
         p = simplify(np.asarray(p).reshape(-1, 1))
         kk = simplify(np.asarray(k).reshape(1, -1)) if np.asarray(k).size else np.zeros((0, 0))
