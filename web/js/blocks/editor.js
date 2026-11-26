@@ -775,6 +775,12 @@ export class DiagramEditor {
 
   onDown(e) {
     this.svg.focus({ preventScroll: true });
+    // Selecting redraws the block under the pointer. Some browsers then give the focus to the element
+    // that was clicked, which is no longer in the page, and the focus falls to the page itself: keys
+    // would stop reaching the diagram. Take the focus back once the browser is done with the event.
+    setTimeout(() => {
+      if (document.activeElement === document.body && this.svg.isConnected) this.svg.focus({ preventScroll: true });
+    }, 0);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
       // second finger: pinch to zoom

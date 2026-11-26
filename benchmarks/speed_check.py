@@ -8,7 +8,8 @@ Times differ between machines, so every case is stored relative to a calibration
 the same machine in the same run: a pure-Python loop for cases bound by the interpreter, a NumPy
 workload for cases bound by numerical libraries, and the same LAPACK/BLAS operations called from
 NumPy for the dense linear-algebra cases. A case fails when its relative time is
-more than --limit (default 25%) above the baseline; failing cases are timed again before they count.
+more than --limit (default 25%) above the baseline and still is when timed again twice, each time
+against a freshly measured calibration (shared machines have slow spells).
 """
 
 from __future__ import annotations
@@ -56,21 +57,21 @@ def calibrate() -> dict:
         np.fft.fft(x)
         np.sort(x)
 
-    big = np.random.default_rng(2).random((1500, 1500)) + 1500 * np.eye(1500)
-    rhs = np.arange(1.0, 1501.0)
-    e5 = np.random.default_rng(3).random((500, 500))
-    s6 = np.random.default_rng(4).random((600, 600))
-
-    def linalg():
-        big @ big.T
-        np.linalg.solve(big, rhs)
-        np.linalg.eigvals(e5)
-        np.linalg.svd(s6, compute_uv=False)
+    def linalg():  # the operations of b21-b24, done directly in NumPy
+        a = np.ones((1500, 1500)) + np.eye(1500)
+        a @ a.T.copy()  # two different arrays, as in the case: a full product (A @ A.T alone would use syrk)
+        k = np.arange(1, 1500 ** 2 + 1, dtype=float)
+        m = np.mod(k * 7919, 1009).reshape(1500, 1500, order="F") + 2000 * np.eye(1500)
+        np.linalg.solve(m, np.arange(1.0, 1501.0))
+        k = np.arange(1, 500 ** 2 + 1, dtype=float)
+        np.linalg.eigvals(np.mod(k * 7919, 1009).reshape(500, 500, order="F"))
+        k = np.arange(1, 600 ** 2 + 1, dtype=float)
+        np.linalg.svd(np.mod(k * 7919, 1009).reshape(600, 600, order="F"), compute_uv=False)
 
     out = {}
     for name, fn in (("python", py), ("numpy", lib), ("linalg", linalg)):
         best = float("inf")
-        for _ in range(5):
+        for _ in range(15):  # the best of many: on shared machines single timings vary by +-30%
             t0 = time.perf_counter()
             fn()
             best = min(best, time.perf_counter() - t0)
@@ -78,7 +79,7 @@ def calibrate() -> dict:
     return out
 
 
-def run_case(name: str, repeats: int = 3) -> float:
+def run_case(name: str, repeats: int = 5) -> float:
     """Best wall time of the case inside mylab (the case's own tic/toc), over ``repeats`` runs."""
     code = f"best = Inf; for rep = 1:{repeats}, t0 = tic; feval('{name}'); best = min(best, toc(t0)); end; " \
            "fprintf('TIME %.6f\\n', best);"
@@ -123,6 +124,8 @@ def main() -> None:
     for n in names:
         now[n] = run_case(n)
         print(f"{n:28s} {now[n]:8.3f} s  ({now[n] / cal[unit(n)]:.2f} units)", flush=True)
+    again = calibrate()  # once more after the cases: the machine's best state of the two
+    cal = {k: min(cal[k], again[k]) for k in cal}
     start = startup()
     print(f"{'startup':28s} {start:8.3f} s  ({start / cal['python']:.2f} units)")
     if a.update:
@@ -147,14 +150,19 @@ def main() -> None:
             continue
         ref = base["cases"][n]["relative"]
         rel = now[n] / cal[unit(n)]
-        if rel > ref * (1 + a.limit):  # confirm with more runs before failing
-            rel = min(rel, run_case(n, repeats=5) / cal[unit(n)])
+        for _ in range(2):  # a slowdown counts only if it is still there twice more, against a fresh yardstick
+            if rel <= ref * (1 + a.limit):
+                break
+            fresh = calibrate()
+            rel = min(rel, run_case(n, repeats=9) / min(cal[unit(n)], fresh[unit(n)]))
         verdict = "SLOWER" if rel > ref * (1 + a.limit) else "ok"
         if verdict != "ok":
             failed.append(n)
         rows.append((n, ref, rel, verdict))
     ref = base.get("startup")
     rel = start / cal["python"]
+    if ref is not None and rel > ref * (1 + a.limit):
+        rel = min(rel, startup(repeats=9) / cal["python"])
     if ref is not None:
         verdict = "SLOWER" if rel > ref * (1 + a.limit) else "ok"
         if verdict != "ok":
