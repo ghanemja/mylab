@@ -47,8 +47,9 @@ def dims_from_args(args: list, name: str) -> tuple[tuple[int, ...], str | None]:
         if is_text(a):
             s = text(a)
             if s == "like":
-                like = args[i + 1]
-                cls = like.dtype.name if isinstance(like, np.ndarray) else None
+                if i + 1 >= len(args):
+                    raise MatlabError(f"{name}: 'like' must be followed by a prototype value.")
+                cls = LikeClass.of(args[i + 1])
                 i += 2
                 continue
             cls = s
@@ -77,16 +78,43 @@ def dims_from_args(args: list, name: str) -> tuple[tuple[int, ...], str | None]:
     return tuple(dims), cls
 
 
+class LikeClass(str):
+    """The class named by a prototype in zeros(..., 'like', p): also keeps p's complexity and sparsity."""
+
+    is_complex = False
+    is_sparse = False
+
+    @classmethod
+    def of(cls, like: Any) -> "LikeClass | None":
+        from ..values import class_name
+        name = class_name(like)
+        if name not in INT_TYPES and name not in ("double", "single", "logical"):
+            raise MatlabError(f"'like' needs a numeric or logical prototype; a value of class '{name}' "
+                              "is not supported.")
+        out = cls(name)
+        out.is_complex = getattr(getattr(like, "dtype", None), "kind", "") == "c"
+        out.is_sparse = not isinstance(like, np.ndarray)
+        return out
+
+
 def cast_class(a: np.ndarray, cls: str | None) -> np.ndarray:
     if cls is None or cls == "double":
-        return a.astype(float) if a.dtype != float else a
-    if cls == "single":
-        return a.astype(np.float32)
-    if cls == "logical":
-        return a.astype(bool)
-    if cls in INT_TYPES:
-        return saturate_int(a, INT_TYPES[cls])
-    raise MatlabError(f"Unsupported class '{cls}'.")
+        out = a.astype(float) if a.dtype != float else a
+    elif cls == "single":
+        out = a.astype(np.float32)
+    elif cls == "logical":
+        out = a.astype(bool)
+    elif cls in INT_TYPES:
+        out = saturate_int(a, INT_TYPES[cls])
+    else:
+        raise MatlabError(f"Unsupported class '{cls}'.")
+    if isinstance(cls, LikeClass):
+        if cls.is_complex and out.dtype.kind == "f":
+            out = out.astype(np.complex64 if out.dtype == np.float32 else complex)
+        if cls.is_sparse:
+            from .sparse import SparseMatrix
+            out = SparseMatrix(out)
+    return out
 
 
 def default_dim(a: np.ndarray) -> int:

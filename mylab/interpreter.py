@@ -65,6 +65,8 @@ class Frame:
         self.file = file
         self.missing_inputs: frozenset[str] = frozenset()
         self.owner_class: Any = None  # ClassInfo when running a class method
+        self.line = 0  # line of the statement being run
+        self.arg_names: list | None = None  # variable names of the caller's arguments (inputname)
 
     def has(self, name: str) -> bool:
         store = self.globals.get(name)
@@ -161,6 +163,9 @@ class Interpreter:
         self.jit_enabled = os.environ.get("MYLAB_JIT", "1") != "0"  # loop compiler (see jit.py)
         self.input_func: Callable[[str], str] = input
         self.cleanup_count = 0  # live onCleanup objects; non-zero makes function exit look for them
+        # Whether MATLAB code may call into Python (py.*, pyrun, pyrunfile). Hosts that run code
+        # they do not trust set this to False (or start mylab with MYLAB_PYTHON=0).
+        self.python_enabled = os.environ.get("MYLAB_PYTHON", "1") != "0"
 
     # -- public API -------------------------------------------------------------------
     @property
@@ -243,6 +248,7 @@ class Interpreter:
             self.exec_stmt(stmt, frame)
 
     def exec_stmt(self, stmt: A.Node, frame: Frame) -> None:
+        frame.line = stmt.line  # where this workspace is running (dbstack)
         if self.trace_hook is not None:
             self.trace_hook(stmt, frame)  # debuggers and tracers; may raise to stop the run
         try:
@@ -1032,6 +1038,8 @@ class Interpreter:
                 return self.call_handle(base_val, args, nargout)
             args = self.eval_index_args(node.args, base_val, frame)
             if isinstance(base_val, MObject):
+                if hasattr(base_val, "call_object"):
+                    return base_val.call_object(self, args, nargout)
                 return [base_val.index_get(self, args)]
             if type(base_val) is np.ndarray:
                 pos = _scalar_index(base_val, args)
@@ -1098,6 +1106,9 @@ class Interpreter:
         if builtin is not None:
             return self.call_builtin(dotted, builtin, get_args(), nargout)
         head, _, rest = dotted.partition(".")
+        prefix = self.builtins.get(head + ".*")  # one built-in for a whole family (py.module.name)
+        if prefix is not None:
+            return self.call_builtin(dotted, prefix, [dotted, *get_args()], nargout)
         cls = self.find_class(head) if "." not in rest else None
         if cls is not None:
             return cls.static_access(self, rest, get_args(), nargout)
@@ -1283,6 +1294,8 @@ class Interpreter:
         """Call a function handle or a function given by name (used by builtins)."""
         if isinstance(f, FunctionHandle):
             return self.call_handle(f, args, nargout)
+        if hasattr(f, "call_object"):
+            return f.call_object(self, args, nargout)
         name = to_str(f, "function name")
         return self.call_named(name, args, nargout, self.frame)
 
@@ -1381,6 +1394,7 @@ class Interpreter:
         else:
             frame = Frame(self, functions, name=fn.name, nargin=len(args), nargout=nargout, file=file)
         frame.fn_node = fn
+        frame.arg_names = self.state.pop("call_arg_names", None)
         if fn.subfunctions:
             frame.functions = {**functions, **{n: NestedRef(f, frame) for n, f in fn.subfunctions.items()}}
         for i, p in enumerate(fixed):

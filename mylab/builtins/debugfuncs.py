@@ -84,14 +84,34 @@ def _dbstatus(interp, args, nargout):
 
 @builtin("dbstack")
 def _dbstack(interp, args, nargout):
-    frames = list(reversed(interp.frames))
+    """dbstack, dbstack(n), dbstack('-completenames'), [st, i] = dbstack: the functions being run."""
+    import os
+    omit = 0
+    complete = False
+    for a in args:
+        if is_text(a):
+            word = text(a)
+            if word.lower() == "-completenames":
+                complete = True
+            elif word.isdigit():
+                omit = int(word)
+            else:
+                from ..errors import MatlabError
+                raise MatlabError(f"dbstack: unknown option '{word}'.")
+        else:
+            omit = int(np.asarray(a).flat[0])
+    frames = [f for f in reversed(interp.frames) if f is not interp.base][omit:]
     if nargout:
         data = np.empty((len(frames), 1), dtype=object)
         for k, f in enumerate(frames):
-            data[k, 0] = {"file": char(f.file or ""), "name": char(f.name), "line": np.array([[0.0]])}
-        return Struct(data, ["file", "name", "line"])
-    for f in frames:
-        interp.out(f"  In {f.name}\n")
+            file = f.file or ""
+            data[k, 0] = {"file": char(file if complete else os.path.basename(file)), "name": char(f.name),
+                          "line": np.array([[float(getattr(f, "line", 0))]])}
+        st = Struct(data, ["file", "name", "line"])
+        return (st, np.array([[1.0]])) if nargout > 1 else st
+    for k, f in enumerate(frames):
+        where = f" (line {f.line})" if getattr(f, "line", 0) else ""
+        interp.out(f"{'>' if k == 0 else ' '} In {f.name}{where}\n")
     return None
 
 

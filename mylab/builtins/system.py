@@ -13,7 +13,7 @@ from .. import __version__
 from ..display import FORMAT, display_lines, format_display, function_handle_text
 from ..errors import MatlabError
 from ..values import (
-    Cell, FunctionHandle, MString, Struct, char, class_name, is_char, shape_of, to_int, to_str,
+    Cell, FunctionHandle, MString, Struct, char, is_char, to_int, to_str,
 )
 from ._registry import BUILTINS, builtin
 from ._util import bool_scalar, is_text, nargs, num, text
@@ -80,33 +80,131 @@ def _mexception(interp, args, nargout):
     return MExceptionObject(ident, msg)
 
 
+_WARNING_MODES = ("backtrace", "verbose")
+
+
+def _warning_state(interp, ident: str) -> str:
+    """'on', 'off' or 'error' for one warning identifier ('all' for the default state)."""
+    if ident in _WARNING_MODES:
+        return interp.state.get("warning_modes", {}).get(ident, "on" if ident == "backtrace" else "off")
+    if ident != "all":
+        if ident in interp.state.get("warning_errors", ()):
+            return "error"
+        if ident in interp.disabled_warnings:
+            return "off"
+        if ident in interp.state.get("warnings_on", ()):
+            return "on"
+    return "on" if interp.warnings_enabled else "off"
+
+
+def _state_struct(rows: list) -> Struct:
+    data = np.empty((len(rows), 1), dtype=object)
+    for k, (ident, state) in enumerate(rows):
+        data[k, 0] = {"identifier": char(ident), "state": char(state)}
+    return Struct(data, ["identifier", "state"])
+
+
+def _all_warning_states(interp) -> Struct:
+    idents = sorted(set(interp.disabled_warnings) | set(interp.state.get("warnings_on", ()))
+                    | set(interp.state.get("warning_errors", ())))
+    return _state_struct([("all", _warning_state(interp, "all"))] + [(i, _warning_state(interp, i)) for i in idents])
+
+
+def _set_warning_state(interp, state: str, ident: str) -> None:
+    on_set = interp.state.setdefault("warnings_on", set())
+    errors = interp.state.setdefault("warning_errors", set())
+    if ident in _WARNING_MODES:
+        if state == "error":
+            raise MatlabError(f"warning: '{ident}' can only be turned 'on' or 'off'.")
+        interp.state.setdefault("warning_modes", {})[ident] = state
+        return
+    if ident == "all":
+        interp.disabled_warnings.clear()
+        on_set.clear()
+        errors.clear()
+        if state == "error":
+            raise MatlabError("warning: turning every warning into an error with warning('error', 'all') is "
+                              "not supported; name the warning identifier.")
+        interp.warnings_enabled = state == "on"
+        return
+    interp.disabled_warnings.discard(ident)
+    on_set.discard(ident)
+    errors.discard(ident)
+    if state == "off":
+        interp.disabled_warnings.add(ident)
+    elif state == "error":
+        errors.add(ident)
+    elif not interp.warnings_enabled:
+        on_set.add(ident)  # on although the default is off
+
+
+def _issue_warning(interp, msg: str, ident: str) -> None:
+    state = _warning_state(interp, ident) if ident else _warning_state(interp, "all")
+    if state == "error":
+        raise MatlabError(msg, ident)
+    interp.last_warning = msg
+    interp.last_warning_id = ident
+    if state == "on":
+        interp.out(f"Warning: {msg}\n")
+
+
 @builtin("warning")
 def _warning(interp, args, nargout):
+    """Issue a warning, or query and change which warnings are shown (returning the old state)."""
     if not args:
+        states = _all_warning_states(interp)
+        if nargout:
+            return states
+        interp.out(f"By default, warnings are {_warning_state(interp, 'all')}.\n")
+        for d in states.data.flat[1:]:
+            interp.out(f"  {to_str(d['state']):>5}  {to_str(d['identifier'])}\n")
         return None
-    first = text(args[0])
-    if first.lower() in ("off", "on") and len(args) <= 2:
-        enable = first.lower() == "on"
-        if len(args) == 1 or text(args[1]).lower() == "all":
-            interp.warnings_enabled = enable
-            if enable:
-                interp.disabled_warnings.clear()
-        elif enable:
-            interp.disabled_warnings.discard(text(args[1]))
-        else:
-            interp.disabled_warnings.add(text(args[1]))
+    if isinstance(args[0], Struct):
+        s = args[0]
+        if "state" in s.fields and "identifier" in s.fields:  # warning(w): restore saved states
+            before = _all_warning_states(interp)
+            for d in s.data.flatten(order="F"):
+                state = to_str(d["state"]).lower()
+                if state not in ("on", "off", "error"):
+                    raise MatlabError("warning: the state in the structure must be 'on', 'off' or 'error'.")
+                _set_warning_state(interp, state, to_str(d["identifier"]))
+            return before if nargout else None
+        if "message" in s.fields and s.data.size == 1:  # warning(struct with message and identifier)
+            d = s.data.flat[0]
+            _issue_warning(interp, to_str(d["message"]), to_str(d["identifier"]) if "identifier" in d else "")
+            return None
+        raise MatlabError("warning: the structure must have the fields 'identifier' and 'state' (as returned "
+                          "by warning) or 'message'.")
+    if getattr(args[0], "is_message", False):  # warning(message('pkg:id', ...))
+        _issue_warning(interp, args[0].text(), args[0].identifier)
         return None
-    if first.lower() == "query":
-        ident = text(args[1]) if len(args) > 1 else "all"
-        on = interp.warnings_enabled and ident not in interp.disabled_warnings
-        return Struct.scalar({"identifier": char(ident), "state": char("on" if on else "off")}) if nargout else None
+    first = text(args[0], "the warning message")
+    low = first.lower()
+    if low in ("on", "off", "error", "query") and len(args) <= 2:
+        ident = text(args[1], "the warning identifier") if len(args) > 1 else "all"
+        if ident == "last":
+            ident = getattr(interp, "last_warning_id", "") or "all"
+        if low == "query":
+            if nargout:
+                return _all_warning_states(interp) if ident == "all" else \
+                    _state_struct([(ident, _warning_state(interp, ident))])
+            if ident == "all":
+                return _warning(interp, [], 0)
+            interp.out(f"The state of warning '{ident}' is '{_warning_state(interp, ident)}'.\n")
+            return None
+        before = _all_warning_states(interp) if ident == "all" else \
+            _state_struct([(ident, _warning_state(interp, ident))])
+        _set_warning_state(interp, low, ident)
+        return before if nargout else None
     rest = list(args[1:])
     ident = ""
-    if rest and ":" in first and " " not in first:
+    if rest and ":" in first and " " not in first and not first.endswith(":"):
         ident = first
-        first = text(rest[0])
+        first = text(rest[0], "the warning message")
         rest = rest[1:]
-    interp.warn(matlab_sprintf(first, rest) if (rest or ident) else first, ident)
+    if first == "" and not ident:
+        return None  # warning('') does nothing
+    _issue_warning(interp, matlab_sprintf(first, rest) if (rest or ident) else first, ident)
     return None
 
 
@@ -259,8 +357,9 @@ def _clear(interp, args, nargout):
 
 @builtin("who")
 def _who(interp, args, nargout):
-    frame = interp.frame
-    names = sorted(set(frame.vars) | {n for n, store in frame.globals.items() if n in store})
+    """who, who a* b, who -regexp pat, who global, who -file name: the variable names."""
+    from .fileformats import listing_rows
+    names = [r["name"] for r in listing_rows(interp, args, "who")]
     if nargout > 0:
         return Cell.from_list([char(n) for n in names], column=True)
     if names:
@@ -270,20 +369,12 @@ def _who(interp, args, nargout):
 
 @builtin("whos")
 def _whos(interp, args, nargout):
-    frame = interp.frame
-    rows = []
-    for n in sorted(frame.vars):
-        v = frame.vars[n]
-        r, c = shape_of(v)
-        nbytes = v.nbytes if isinstance(v, np.ndarray) else 0
-        rows.append((n, f"{r}x{c}", nbytes, class_name(v)))
-    if not rows:
-        return None
-    w = max(4, max(len(r[0]) for r in rows))
-    lines = [f"  {'Name':<{w}}      Size            Bytes  Class", ""]
-    for n, size, nbytes, cls in rows:
-        lines.append(f"  {n:<{w}}      {size:<12}{nbytes:>9}  {cls}")
-    interp.out("\n".join(lines) + "\n\n")
+    """whos with the same selections as who; s = whos(...) returns a struct array instead of printing."""
+    from .fileformats import listing_rows, whos_struct, whos_text
+    rows = listing_rows(interp, args, "whos")
+    if nargout > 0:
+        return whos_struct(rows)
+    interp.out(whos_text(rows))
     return None
 
 
@@ -494,7 +585,7 @@ def _format(interp, args, nargout):
     return None
 
 
-@builtin("more", "beep", "commandwindow", "pack", "dbstop", "profile")
+@builtin("more", "beep", "commandwindow", "pack", "dbstop")
 def _noop(interp, args, nargout):
     return None
 
@@ -573,9 +664,29 @@ def _isunix(interp, args, nargout):
     return bool_scalar(os.name == "posix")
 
 
+def _architecture() -> str:
+    import platform
+    machine = platform.machine().lower()
+    if sys.platform.startswith("win"):
+        return "win64"
+    if sys.platform == "darwin":
+        return "maca64" if machine in ("arm64", "aarch64") else "maci64"
+    if sys.platform == "emscripten":
+        return "wasm32"
+    return "glnxa64" if machine in ("x86_64", "amd64", "") else f"glnx{machine}"
+
+
 @builtin("computer")
 def _computer(interp, args, nargout):
-    return char(sys.platform)
+    """computer, computer('arch'), [name, maxsize, endian] = computer."""
+    arch = _architecture()
+    if args:
+        if text(args[0]).lower() != "arch":
+            raise MatlabError("computer: the only option is 'arch'.")
+        return char(arch)
+    name = {"win64": "PCWIN64", "maci64": "MACI64", "maca64": "MACA64", "glnxa64": "GLNXA64"}.get(arch, arch.upper())
+    outs = (char(name), float(2 ** 48 - 1), char("L" if sys.byteorder == "little" else "B"))
+    return outs[:nargout] if nargout > 1 else outs[0]
 
 
 @builtin("getenv")
@@ -1222,49 +1333,7 @@ def _fflush(interp, args, nargout):
     return None
 
 
-@builtin("save")
-def _save(interp, args, nargout):
-    fname = text(args[0]) if args else "matlab.mat"
-    names = [text(a) for a in args[1:] if not text(a).startswith("-")]
-    frame = interp.frame
-    from scipy.io import savemat
-    if not fname.endswith(".mat"):
-        fname += ".mat"
-    data = {}
-    for n in names or list(frame.vars):
-        v = frame.vars.get(n)
-        if isinstance(v, np.ndarray):
-            data[n] = v if not is_char(v) else to_str(v)
-        elif isinstance(v, MString):
-            data[n] = str(v)
-    savemat(fname, data)
-    return None
-
-
-@builtin("load")
-def _load(interp, args, nargout):
-    fname = text(args[0])
-    from scipy.io import loadmat
-    if fname.endswith((".csv", ".txt", ".dat")):
-        data = np.atleast_2d(np.loadtxt(fname, delimiter="," if fname.endswith(".csv") else None))
-        if nargout:
-            return data
-        interp.frame.set(os.path.splitext(os.path.basename(fname))[0], data)
-        return None
-    raw = loadmat(fname if fname.endswith(".mat") else fname + ".mat")
-    loaded = {}
-    for k, v in raw.items():
-        if k.startswith("__"):
-            continue
-        if isinstance(v, np.ndarray) and v.dtype.kind == "U":
-            loaded[k] = char(str(v[0]) if v.size else "")
-        elif isinstance(v, np.ndarray) and v.dtype.kind in "biufc":
-            loaded[k] = np.atleast_2d(v).astype(float) if v.dtype.kind != "c" else np.atleast_2d(v)
-    if nargout:
-        return Struct.scalar(loaded)
-    for k, v in loaded.items():
-        interp.frame.set(k, v)
-    return None
+# save and load live in fileformats.py (MAT-files) with the rest of the data file formats.
 
 
 @builtin("run")
