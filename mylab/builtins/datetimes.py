@@ -138,19 +138,124 @@ def local_offset(posix: float | None = None) -> float:
 
 def now_seconds(zone: str = "") -> float:
     t = time.time()
-    return t if zone == "UTC" else t + local_offset(t)
+    if zone in ("", "local"):
+        return t + local_offset(t)
+    return t + zone_offset_utc(zone, t)
+
+
+_FIXED_ZONE = re.compile(r"^(?:UTC|GMT)?\s*([+-])(\d{1,2})(?::?(\d{2}))?$", re.IGNORECASE)
+
+
+@lru_cache(maxsize=64)
+def _zoneinfo(name: str):
+    """The IANA time zone called ``name`` (through Python's zoneinfo)."""
+    try:
+        import zoneinfo
+    except ImportError:  # pragma: no cover - Python without zoneinfo
+        raise MatlabError("Time zones other than 'UTC' and 'local' need Python's zoneinfo module.",
+                          "MATLAB:datetime:UnsupportedTimeZone") from None
+    try:
+        return zoneinfo.ZoneInfo(name)
+    except Exception:  # noqa: BLE001 - unknown name, or no time zone database on this system
+        try:
+            wanted = name.lower()
+            for known in zoneinfo.available_timezones():
+                if known.lower() == wanted:
+                    return zoneinfo.ZoneInfo(known)
+        except Exception:  # noqa: BLE001
+            pass
+        raise MatlabError(f"'{name}' is not a recognized time zone. Use an IANA name such as "
+                          "'America/New_York' or 'Europe/London', 'UTC', 'local', or an offset such as "
+                          "'+05:30'. (Named zones need the time zone database: the tzdata package where "
+                          "the system has none.)", "MATLAB:datetime:UnrecognizedTimeZone") from None
 
 
 def _zone(name: str) -> str:
+    """The canonical name of a time zone: '', 'UTC', 'local', '+HH:MM' or an IANA name."""
     key = name.strip()
     if key == "":
         return ""
-    if key.upper() in ("UTC", "Z", "GMT", "ETC/UTC", "UTC+0", "+00:00"):
+    if key.upper() in ("UTC", "Z", "GMT", "ETC/UTC", "UTC+0", "+00:00", "UTCLEAPSECONDS"):
         return "UTC"
     if key.lower() == "local":
         return "local"
-    raise MatlabError(f"Time zone '{name}' is not supported: only 'UTC' and 'local' are available "
-                      "(or '' for no time zone).", "MATLAB:datetime:UnsupportedTimeZone")
+    m = _FIXED_ZONE.match(key)
+    if m:
+        hh, mm = int(m.group(2)), int(m.group(3) or 0)
+        if hh > 18 or mm > 59:
+            raise MatlabError(f"'{name}' is not a valid time zone offset.", "MATLAB:datetime:UnrecognizedTimeZone")
+        return f"{m.group(1)}{hh:02d}:{mm:02d}"
+    return _zoneinfo(key).key
+
+
+def _py_datetime(secs: float):
+    """A naive Python datetime for seconds since 1970 (None outside the years 1..9999)."""
+    import datetime as _dt
+    try:
+        return _dt.datetime(1970, 1, 1) + _dt.timedelta(seconds=float(secs))
+    except (OverflowError, ValueError):
+        return None
+
+
+def zone_offset_wall(zone: str, wall: float) -> float:
+    """Seconds a zone's wall clock is ahead of UTC when that wall clock shows ``wall``."""
+    if zone in ("", "UTC") or wall != wall or math.isinf(wall):
+        return 0.0
+    if zone == "local":
+        return local_offset(wall - local_offset())
+    if zone[0] in "+-":
+        sign = -1.0 if zone[0] == "-" else 1.0
+        return sign * (int(zone[1:3]) * 3600.0 + int(zone[4:6]) * 60.0)
+    d = _py_datetime(wall)
+    if d is None:
+        return 0.0
+    off = d.replace(tzinfo=_zoneinfo(zone)).utcoffset()
+    return off.total_seconds() if off is not None else 0.0
+
+
+def zone_offset_utc(zone: str, utc: float) -> float:
+    """Seconds a zone's wall clock is ahead of UTC at the instant ``utc`` (POSIX seconds)."""
+    if zone in ("", "UTC") or utc != utc or math.isinf(utc):
+        return 0.0
+    if zone == "local":
+        return local_offset(utc)
+    if zone[0] in "+-":
+        return zone_offset_wall(zone, utc)
+    import datetime as _dt
+    d = _py_datetime(utc)
+    if d is None:
+        return 0.0
+    off = d.replace(tzinfo=_dt.timezone.utc).astimezone(_zoneinfo(zone)).utcoffset()
+    return off.total_seconds() if off is not None else 0.0
+
+
+def to_utc(data: np.ndarray, zone: str) -> np.ndarray:
+    """POSIX seconds for wall-clock seconds in a zone (unzoned values are taken as UTC)."""
+    if zone in ("", "UTC"):
+        return data
+    data = np.asarray(data, dtype=float)
+    return data - np.vectorize(lambda w: zone_offset_wall(zone, w), otypes=[float])(data) if data.size else data
+
+
+def from_utc(utc: np.ndarray, zone: str) -> np.ndarray:
+    """Wall-clock seconds in a zone for POSIX seconds."""
+    if zone in ("", "UTC"):
+        return utc
+    utc = np.asarray(utc, dtype=float)
+    return utc + np.vectorize(lambda u: zone_offset_utc(zone, u), otypes=[float])(utc) if utc.size else utc
+
+
+def _zone_abbreviation(zone: str, wall: float) -> str:
+    if zone == "UTC":
+        return "UTC"
+    if zone == "local":
+        return time.tzname[0]
+    if zone and zone[0] in "+-":
+        return "UTC" + zone
+    d = _py_datetime(wall)
+    if not zone or d is None:
+        return ""
+    return d.replace(tzinfo=_zoneinfo(zone)).tzname() or zone
 
 
 # -- format strings ------------------------------------------------------------------------------------
@@ -197,7 +302,7 @@ def _has_time(fmt: str) -> bool:
 
 
 def _offset_text(zone: str, s: float, colon: bool) -> str:
-    off = 0.0 if zone != "local" else local_offset(s - local_offset())
+    off = zone_offset_wall(zone, s)
     sign = "-" if off < 0 else "+"
     off = abs(off)
     hh, mm = int(off // 3600), int(off % 3600 // 60)
@@ -259,7 +364,8 @@ def format_datetime(s: float, fmt: str, zone: str = "") -> str:
         elif kind in "xX":
             out.append("Z" if (kind == "X" and zone == "UTC") else (_offset_text(zone, s, n >= 3) if zone else ""))
         elif kind == "z":
-            out.append("UTC" if zone == "UTC" else (time.tzname[0] if zone == "local" else ""))
+            out.append(_zone_abbreviation(zone, s) if n < 4 else (zone if zone not in ("local",) else
+                                                                    time.tzname[0]))
         else:
             out.append(kind * n)
     return "".join(out)
@@ -658,7 +764,7 @@ class DatetimeArray(_TimeArray):
         if name == "TimeZone":
             return char(self.zone)
         if name == "SystemTimeZone":
-            return char(time.tzname[0])
+            return char(_system_zone())
         raise MatlabError(f"Unrecognized property '{name}' for class 'datetime'.", "MATLAB:noSuchMethodOrField")
 
     def set_field(self, interp, name: str, value: Any) -> "DatetimeArray":
@@ -699,10 +805,25 @@ class DatetimeArray(_TimeArray):
 
 
 def _rezone(data: np.ndarray, old: str, new: str) -> np.ndarray:
+    """Wall-clock seconds in the zone ``new`` for the instants that ``data`` shows in the zone ``old``."""
     if old == new or old == "" or new == "":
         return data
-    off = local_offset()
-    return data - off if (old, new) == ("local", "UTC") else data + off
+    return from_utc(to_utc(data, old), new)
+
+
+def _system_zone() -> str:
+    """The IANA name of the system time zone when it can be found, else its abbreviation."""
+    import os
+    name = os.environ.get("TZ", "")
+    if name and "/" in name:
+        return name.lstrip(":")
+    try:
+        target = os.path.realpath("/etc/localtime")
+        if "zoneinfo/" in target:
+            return target.split("zoneinfo/", 1)[1]
+    except OSError:
+        pass
+    return "UTC" if local_offset() == 0 else time.tzname[0]
 
 
 def _check_datetime_format(f: str) -> None:
@@ -994,7 +1115,7 @@ def _other_datetime(v: Any, like: DatetimeArray) -> np.ndarray:
         if (v.zone == "") != (like.zone == ""):
             raise MatlabError("Cannot combine or compare a datetime array with a time zone with one without "
                               "a time zone.", "MATLAB:datetime:IncompatibleTZ")
-        return _rezone(v.data, v.zone, like.zone)
+        return to_utc(v.data, v.zone) if like.zone else v.data
     items = _text_items(v)
     if items is not None:
         vals, _ = parse_texts(items[0], None)
@@ -1016,19 +1137,19 @@ def _datetime_binop(op: str, left: Any, right: Any) -> Any:
     ld, rd = isinstance(left, DatetimeArray), isinstance(right, DatetimeArray)
     if op in _CMP:
         ref = left if ld else right
-        a = left.data if ld else _other_datetime(left, ref)
-        b = _other_datetime(right, ref) if ld else right.data
+        a = to_utc(left.data, left.zone) if ld else _other_datetime(left, ref)
+        b = _other_datetime(right, ref) if ld else to_utc(right.data, right.zone)
         return _compare(op, a, b)
     if op == "+" or op == "-":
         if ld and rd:
             if op == "+":
                 raise MatlabError("Addition is not defined between datetime arrays.",
                                   "MATLAB:datetime:DatetimeAdditionNotDefined")
-            a, b = _bc(left.data, _other_datetime(right, left), op)
+            a, b = _bc(to_utc(left.data, left.zone), _other_datetime(right, left), op)
             return DurationArray(as_2d(np.asarray(a - b)), "hh:mm:ss")
         if rd and op == "-":
             if _text_items(left) is not None:
-                a, b = _bc(_other_datetime(left, right), right.data, op)
+                a, b = _bc(_other_datetime(left, right), to_utc(right.data, right.zone), op)
                 return DurationArray(as_2d(np.asarray(a - b)), "hh:mm:ss")
             raise MatlabError("Subtracting a datetime from a duration or number is not defined.")
         dt, other = (left, right) if ld else (right, left)
@@ -1040,11 +1161,15 @@ def _datetime_binop(op: str, left: Any, right: Any) -> Any:
         elif isinstance(other, np.ndarray) and other.dtype.kind in "biuf":
             delta = other.astype(float) * DAY  # numbers count as days
         elif op == "-" and _text_items(other) is not None:
-            a, b = _bc(dt.data, _other_datetime(other, dt), op)
+            a, b = _bc(to_utc(dt.data, dt.zone), _other_datetime(other, dt), op)
             return DurationArray(as_2d(np.asarray(a - b)), "hh:mm:ss")
         else:
             raise MatlabError(f"Operator '{op}' is not defined between a datetime array and a "
                               f"{getattr(other, 'class_name', lambda: type(other).__name__)()} value.")
+        if dt.zone not in ("", "UTC"):
+            # a length of time is added to the instant, so the wall clock follows daylight saving changes
+            a, b = _bc(to_utc(dt.data, dt.zone), delta, op)
+            return dt.like(as_2d(np.asarray(from_utc(a + sign * b, dt.zone))))
         a, b = _bc(dt.data, delta, op)
         return dt.like(as_2d(np.asarray(a + sign * b)))
     return NotImplemented
@@ -1153,7 +1278,7 @@ def _datetime(interp, args, nargout):
             secs, shown = (v - EPOCH_DATENUM) * DAY, DEFAULT_FULL
             secs = np.round(secs * 1e6) / 1e6
         elif kind == "posixtime":
-            secs, shown = v + (local_offset() if zone == "local" else 0.0), DEFAULT_FULL
+            secs, shown = np.asarray(from_utc(v, zone), dtype=float), DEFAULT_FULL
         elif kind == "excel":
             secs, shown = (v - 25569.0) * DAY, DEFAULT_FULL
             secs = np.round(secs * 1e6) / 1e6
@@ -1725,7 +1850,7 @@ def _posixtime(interp, args, nargout):
     v = args[0]
     if not isinstance(v, DatetimeArray):
         raise MatlabError("posixtime: the input must be a datetime array.")
-    return v.data - (local_offset() if v.zone == "local" else 0.0)
+    return np.asarray(to_utc(v.data, v.zone), dtype=float)
 
 
 builtin("posixtime")(_posixtime)

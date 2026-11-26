@@ -366,6 +366,9 @@ def binop(op: str, a: Any, b: Any) -> Any:
                           "MATLAB:UndefinedFunction")
     if op in COMPARE:
         return compare(op, a, b)
+    if op == "|" and (_is_str(a) or _is_str(b)):
+        from .builtins.patterns import as_pattern  # "cat" | "dog" is a pattern that matches either text
+        return as_pattern(a).binary_op(None, "|", a, b)
     if op in ("&", "|"):
         x, y = align(_logical_operand(a), _logical_operand(b))
         _check_broadcast(x, y, op)
@@ -522,7 +525,14 @@ def concat(items: list[Any], axis: int) -> Any:
         raise MatlabError(f"Objects of class {', '.join(kinds)} cannot be concatenated into an array; "
                           "store them in a cell array instead, e.g. {obj1, obj2}.")
     if any(isinstance(i, Cell) for i in items):
-        return _concat_cells([_to_cell(i) for i in items], axis)
+        if any(_is_str(i) for i in items):
+            # a string array joined with a cell array of text gives a string array
+            try:
+                items = [StringArray(string_data(i)) if isinstance(i, Cell) and i.data.size else i for i in items]
+            except MatlabError:
+                pass
+        if any(isinstance(i, Cell) for i in items):
+            return _concat_cells([_to_cell(i) for i in items], axis)
     if any(isinstance(i, Struct) for i in items):
         real = [i for i in items if not (isinstance(i, np.ndarray) and i.size == 0)]
         if not all(isinstance(i, Struct) for i in real):

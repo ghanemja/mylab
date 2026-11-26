@@ -498,7 +498,7 @@ def _textscan(interp, args, nargout):
         repeat = None if np.isinf(r) else int(r)
     _, opts = _name_value(rest, {"Delimiter", "HeaderLines", "EndOfLine", "MultipleDelimsAsOne",
                                  "CollectOutput", "Whitespace", "CommentStyle", "ReturnOnError",
-                                 "EmptyValue", "TextType"})
+                                 "EmptyValue", "TextType", "TreatAsEmpty"})
     fh = None
     if is_text(src):
         content = text(src)
@@ -519,6 +519,11 @@ def _textscan(interp, args, nargout):
     collapse = "multipledelimsasone" in opts and bool(num(opts["multipledelimsasone"]).flat[0])
     empty_value = float(fnum(opts["emptyvalue"]).flat[0]) if "emptyvalue" in opts else np.nan
     as_string = "texttype" in opts and text(opts["texttype"]).lower() == "string"
+    treat_empty: set[str] = set()
+    if "treatasempty" in opts:
+        te = opts["treatasempty"]
+        treat_empty = {to_str(x) for x in te.values_f()} if isinstance(te, Cell) else \
+            ({x for x in te.values_f() if x is not None} if isinstance(te, StringArray) else {text(te)})
     specs = _parse_ts_format(fmt)
     tokens: list[str] = []
     for ln in lines:
@@ -546,6 +551,8 @@ def _textscan(interp, args, nargout):
             if literal and tok.startswith(literal):
                 tok = tok[len(literal):]
             if kind in ("f", "d", "u", "n"):
+                if tok.strip() in treat_empty:
+                    tok = ""
                 v = _parse_number(tok)
                 if v is None:
                     stop = True

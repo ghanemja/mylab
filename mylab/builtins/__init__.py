@@ -52,8 +52,8 @@ def _make_string_aware(names):
 
     for name in names:
         fn = BUILTINS.get(name)
-        if fn is None:
-            continue
+        if fn is None or getattr(fn, "__module__", "").rsplit(".", 1)[-1] in ("patterns", "text_more"):
+            continue  # those modules handle string arrays themselves
 
         def wrapped(interp, args, nargout, _fn=fn):
             was_string = bool(args) and isinstance(args[0], (MString, StringArray))

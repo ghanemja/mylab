@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import numpy as np
@@ -474,3 +475,263 @@ def _isglobal(interp, args, nargout):
     name = text(args[0], "variable name")
     frame = interp.frame
     return bool_scalar(frame.globals.get(name) is interp.global_vars)
+
+
+# -- regular expression helpers -------------------------------------------------------------------
+
+@builtin("regexptranslate")
+def _regexptranslate(interp, args, nargout):
+    """regexptranslate(op, text[, replacement]): 'escape', 'wildcard' or 'flexible'."""
+    nargs(args, 2, 3, "regexptranslate")
+    op = text(args[0]).lower()
+    as_string = isinstance(args[1], MString)
+    s = text(args[1])
+    if op == "escape":
+        out = "".join("\\" + c if c in "\\^$.|?*+()[]{}" else c for c in s)
+    elif op == "wildcard":
+        out = s.replace(".", "\\.").replace("*", ".*").replace("?", ".")
+    elif op == "flexible":
+        if len(args) < 3:
+            raise MatlabError("Not enough input arguments.", "MATLAB:minrhs")
+        rep = text(args[2])
+        out = "".join(rep if not (c.isalnum() or c == "_") else c for c in s)
+    else:
+        raise MatlabError(f"Unknown regexptranslate operation '{text(args[0])}'. Use 'escape', 'wildcard' or "
+                          "'flexible'.", "MATLAB:regexptranslate:InvalidOption")
+    return MString(out) if as_string else char(out)
+
+
+# -- validatestring -------------------------------------------------------------------------------------
+
+@builtin("validatestring")
+def _validatestring(interp, args, nargout):
+    """validatestring(str, validStrings[, funcName, varName, argIndex]): the valid text that str abbreviates."""
+    nargs(args, 2, 5, "validatestring")
+    s = args[0]
+    if not (isinstance(s, MString) or (is_char(s) and (s.size == 0 or (s.ndim == 2 and s.shape[0] == 1)))):
+        raise MatlabError("Expected input to be a character vector or string scalar.",
+                          "MATLAB:validatestring:invalidStringInput")
+    want = to_str(s)
+    valid = args[1]
+    if isinstance(valid, StringArray):
+        options = [x for x in valid.values_f() if x is not None]
+    elif isinstance(valid, MString):
+        options = [str(valid)]
+    elif isinstance(valid, Cell):
+        options = [to_str(x) for x in valid.values_f()]
+    elif is_char(valid):
+        options = ["".join(r).rstrip() for r in valid] if valid.ndim == 2 and valid.shape[0] > 1 else [to_str(valid)]
+    else:
+        raise MatlabError("The valid strings must be a cell array of character vectors or a string array.",
+                          "MATLAB:validatestring:invalidStringList")
+    extra = list(args[2:])
+    func = text(extra[0]) if extra and is_text(extra[0]) else ""
+    var = text(extra[1]) if len(extra) > 1 and is_text(extra[1]) else ""
+    position = next((int(to_numeric(a).flat[0]) for a in extra if not is_text(a)), None)
+    subject = "input" if not var else f"input '{var}'"
+    if position is not None:
+        subject = f"input number {position}, {var}," if var else f"input number {position}"
+    listing = ", ".join(f"'{o}'" for o in options)
+    head = f"{func}: " if func else ""
+    low = want.lower()
+    exact = [o for o in options if o.lower() == low]
+    matches = [o for o in options if o.lower().startswith(low)] if want else []
+    if exact:
+        pick = exact[0]
+    elif len(matches) == 1:
+        pick = matches[0]
+    elif matches:
+        shortest = min(matches, key=len)
+        if not all(m.lower().startswith(shortest.lower()) for m in matches):
+            raise MatlabError(f"{head}Expected {subject} to match one of these values:\n\n{listing}\n\n"
+                              f"The input, '{want}', matched more than one valid value.",
+                              "MATLAB:ambiguousStringChoice")
+        pick = shortest
+    else:
+        raise MatlabError(f"{head}Expected {subject} to match one of these values:\n\n{listing}\n\n"
+                          f"The input, '{want}', did not match any of the valid values.",
+                          "MATLAB:unrecognizedStringChoice")
+    return MString(pick) if isinstance(valid, (MString, StringArray)) else char(pick)
+
+
+# -- compose ------------------------------------------------------------------------------------------------
+
+_CONVERSION = re.compile(r"%[-+ 0#]*(?:\*|\d+)?(?:\.(?:\*|\d+))?[a-zA-Z]+")
+
+
+@builtin("compose")
+def _compose(interp, args, nargout):
+    """compose(format, A1, ..., An): one text per row of the data (or per format), as sprintf writes it."""
+    nargs(args, 1, None, "compose")
+    from ..values import string_data, string_result
+    from .strings import matlab_sprintf
+    fmt_v = args[0]
+    if isinstance(fmt_v, (MString, StringArray)):
+        kind = "string"
+    elif isinstance(fmt_v, Cell) or (is_char(fmt_v) and (fmt_v.size == 0 or (fmt_v.ndim == 2 and fmt_v.shape[0] == 1))):
+        kind = "cell"
+    else:
+        raise MatlabError("compose: the format must be text.", "MATLAB:compose:InvalidFormat")
+    fdata = string_data(fmt_v)
+    formats = list(fdata.flatten(order="F"))
+    data = list(args[1:])
+
+    def out_text(items: list, shape: tuple):
+        arr = np.empty(len(items), dtype=object)
+        for k, x in enumerate(items):
+            arr[k] = x if kind == "string" else char(x)
+        arr = arr.reshape(shape, order="F")
+        return string_result(arr) if kind == "string" else Cell(arr)
+
+    if not data:
+        return out_text([matlab_sprintf(f or "", []) for f in formats], fdata.shape)
+
+    def grid_of(a):
+        """The elements of a data argument, each as a value that sprintf takes."""
+        if isinstance(a, Cell):
+            return a.data
+        d: np.ndarray
+        if isinstance(a, StringArray):
+            d = np.empty(a.data.shape, dtype=object)
+            for idx in np.ndindex(a.data.shape):
+                d[idx] = MString(a.data[idx] if a.data[idx] is not None else "<missing>")
+        elif isinstance(a, MString) or (is_char(a) and (a.size == 0 or a.shape[0] == 1)):
+            d = np.empty((1, 1), dtype=object)
+            d[0, 0] = a
+        elif isinstance(a, np.ndarray):
+            d = np.empty(a.shape, dtype=object)
+            for idx in np.ndindex(a.shape):
+                d[idx] = a[idx].reshape(1, 1) if isinstance(a[idx], np.ndarray) else np.array([[a[idx]]])
+        else:
+            raise MatlabError("compose: unsupported data argument.", "MATLAB:compose:InvalidInput")
+        if d.ndim > 2:
+            raise MatlabError("compose: the data arguments must be matrices.", "MATLAB:compose:InvalidInput")
+        return d
+
+    grids = [grid_of(a) for a in data]
+    nrows = max([g.shape[0] for g in grids] + [fdata.shape[0]])
+    for g in grids:
+        if g.shape[0] not in (1, nrows):
+            raise MatlabError("compose: the data arguments must have the same number of rows.",
+                              "MATLAB:compose:SizeMismatch")
+
+    def row_values(i: int) -> list:
+        return [g[i if g.shape[0] > 1 else 0, c] for g in grids for c in range(g.shape[1])]
+
+    if len(formats) > 1:
+        # one text per format (and per row of data)
+        out = np.empty((nrows, fdata.shape[1]), dtype=object)
+        for idx in np.ndindex(out.shape):
+            f = fdata[idx[0] if fdata.shape[0] > 1 else 0, idx[1]]
+            out[idx] = matlab_sprintf(f or "", row_values(idx[0]))
+        return out_text(list(out.flatten(order="F")), out.shape)
+    # one format: each row of the data gives one row of texts; when a row has more values than
+    # the format has conversions, the format is used again for the next column of the result
+    fmt = formats[0] or ""
+    nops = max(len(_CONVERSION.findall(fmt.replace("%%", ""))), 1)
+    rows = [row_values(i) for i in range(nrows)]
+    ncols = max(1, -(-len(rows[0]) // nops)) if rows else 1
+    out = np.empty((nrows, ncols), dtype=object)
+    for i, vals in enumerate(rows):
+        for j in range(ncols):
+            out[i, j] = matlab_sprintf(fmt, vals[j * nops:(j + 1) * nops])
+    return out_text(list(out.flatten(order="F")), out.shape)
+
+
+# -- rearranging string arrays ---------------------------------------------------------------------------------
+
+def _string_shim(name: str) -> None:
+    """Let a function that rearranges array elements (repmat, fliplr ...) work on string arrays."""
+    original = BUILTINS.get(name)
+    if original is None:
+        return
+
+    def f(interp, args, nargout, _fn=original):
+        if not args or not isinstance(args[0], (MString, StringArray)):
+            return _fn(interp, args, nargout)
+        from ..values import string_data, string_result
+        data = string_data(args[0])
+        index = np.arange(1.0, data.size + 1).reshape(data.shape, order="F")
+        moved = _fn(interp, [index, *args[1:]], 1)
+        if isinstance(moved, tuple):
+            moved = moved[0]
+        flat = data.flatten(order="F")
+        out = np.empty(moved.shape, dtype=object)
+        for idx in np.ndindex(moved.shape):
+            out[idx] = flat[int(moved[idx]) - 1]
+        return string_result(out) if out.size != 0 else StringArray(out)
+
+    f.__module__ = __name__
+    BUILTINS[name] = f
+
+
+for _name in ("repmat", "fliplr", "flipud", "flip", "rot90", "circshift", "permute", "squeeze", "repelem",
+              "reshape", "transpose", "ctranspose"):
+    _string_shim(_name)
+
+
+_classic_num2cell = BUILTINS.get("num2cell")
+
+
+@builtin("num2cell")
+def _num2cell(interp, args, nargout):
+    if args and isinstance(args[0], (MString, StringArray)) and len(args) == 1:
+        from ..values import string_data
+        data = string_data(args[0])
+        out = np.empty(data.shape, dtype=object)
+        for idx in np.ndindex(data.shape):
+            x = data[idx]
+            if x is None:
+                d = np.empty((1, 1), dtype=object)
+                d[0, 0] = None
+                out[idx] = StringArray(d)
+            else:
+                out[idx] = MString(x)
+        return Cell(out)
+    return _classic_num2cell(interp, args, nargout)
+
+
+def _string_extreme(name: str, pick_last: bool) -> None:
+    """max / min of string arrays: the text that sorts last / first."""
+    original = BUILTINS.get(name)
+    if original is None:
+        return
+
+    def f(interp, args, nargout, _fn=original):
+        if not args or not isinstance(args[0], (MString, StringArray)):
+            return _fn(interp, args, nargout)
+        from ..values import string_data, string_result
+        choose = max if pick_last else min
+        if len(args) > 1 and isinstance(args[1], (MString, StringArray)):
+            a, b = np.broadcast_arrays(string_data(args[0]), string_data(args[1]))
+            out = np.empty(a.shape, dtype=object)
+            for idx in np.ndindex(a.shape):
+                x, y = a[idx], b[idx]
+                out[idx] = None if x is None or y is None else choose(x, y)
+            return string_result(out)
+        data = string_data(args[0])
+        dim = None
+        if len(args) > 2 and not is_text(args[2]):
+            dim = int(to_numeric(args[2]).flat[0]) - 1
+        if dim is None:
+            dim = next((k for k, d in enumerate(data.shape) if d != 1), 0)
+        moved = np.moveaxis(data, dim, 0)
+        res = np.empty(moved.shape[1:], dtype=object)
+        where = np.zeros(moved.shape[1:])
+        for idx in np.ndindex(moved.shape[1:]):
+            col = [(x, k) for k, x in enumerate(moved[(slice(None),) + idx]) if x is not None]
+            if not col:
+                res[idx], where[idx] = None, 1
+                continue
+            best = choose(col, key=lambda p: p[0])
+            first = next(p for p in col if p[0] == best[0])
+            res[idx], where[idx] = first[0], first[1] + 1
+        out = string_result(np.expand_dims(res, dim))
+        return (out, np.expand_dims(where, dim)) if nargout > 1 else out
+
+    f.__module__ = __name__
+    BUILTINS[name] = f
+
+
+_string_extreme("max", True)
+_string_extreme("min", False)

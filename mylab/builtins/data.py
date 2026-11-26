@@ -322,8 +322,9 @@ def _deal(interp, args, nargout):
 def _split_options(args, names):
     opts = {}
     rest = list(args)
-    while len(rest) >= 2 and is_text(rest[-2]) and text(rest[-2]) in names:
-        opts[text(rest[-2])] = rest[-1]
+    lower = {n.lower(): n for n in names}
+    while len(rest) >= 3 and is_text(rest[-2]) and text(rest[-2]).lower() in lower:
+        opts[lower[text(rest[-2]).lower()]] = rest[-1]  # option names are not case sensitive
         rest = rest[:-2]
     return rest, opts
 
@@ -467,6 +468,16 @@ def _elements(v):
         return out, v.shape
     if isinstance(v, (MString, FunctionHandle)):
         return [v], (1, 1)
+    if isinstance(v, StringArray):
+        out = []
+        for x in v.data.flatten(order="F"):
+            if x is None:
+                d = np.empty((1, 1), dtype=object)
+                d[0, 0] = None
+                out.append(StringArray(d))
+            else:
+                out.append(MString(x))
+        return out, v.data.shape
     if hasattr(v, "field_list"):  # an array of classdef objects
         return v.elements(), v.data.shape
     if hasattr(v, "isa_class") and not hasattr(v, "flatten"):
@@ -496,7 +507,7 @@ def _structfun(interp, args, nargout):
     fn, s = rest[0], rest[1]
     vals = [s.data.flat[0][f] for f in s.fields]
     uniform = bool(num(opts["UniformOutput"]).flat[0]) if "UniformOutput" in opts else True
-    res = _apply_elementwise(interp, fn, [vals], nargout, uniform, None, (len(vals), 1))
+    res = _apply_elementwise(interp, fn, [vals], nargout, uniform, opts.get("ErrorHandler"), (len(vals), 1))
     if not uniform and isinstance(res, Cell):
         return Struct.scalar(dict(zip(s.fields, res.values_f())))
     return res
