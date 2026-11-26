@@ -3,6 +3,7 @@
 import struct
 
 import numpy as np
+from matplotlib.colors import to_rgb
 import pytest
 
 from mylab.errors import MatlabError
@@ -104,12 +105,12 @@ def test_plot_returns_line_handle(m):
     m.run("h.LineWidth = 3; h.Color = 'r'; h.LineStyle = '--'; h.Marker = 'square';")
     line = _ax(m).lines[0]
     assert line.get_linewidth() == 3
-    assert line.get_color() == "r"
+    assert to_rgb(line.get_color()) == (1.0, 0.0, 0.0)
     assert line.get_linestyle() == "--"
     assert line.get_marker() == "s"
     assert m.num("h.LineWidth") == 3
     np.testing.assert_allclose(m.num("h.Color"), [[1, 0, 0]])
-    assert m.str("h.Marker") == "s"
+    assert m.str("h.Marker") == "square"
     np.testing.assert_allclose(m.num("h.YData"), [[1, 2, 3]])
     m.run("h.YData = [3 2 1];")
     assert list(line.get_ydata()) == [3, 2, 1]
@@ -259,7 +260,7 @@ def test_title_and_legend_handles(m):
     m.run("l.Location = 'southwest';")
     assert m.str("l.Location") == "southwest"
     m.run("xl.Color = 'r';")
-    assert ax.xaxis.label.get_color() == "r"
+    assert to_rgb(ax.xaxis.label.get_color()) == (1.0, 0.0, 0.0)
 
 
 def test_title_with_subtitle(m):

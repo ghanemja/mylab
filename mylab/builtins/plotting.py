@@ -32,9 +32,10 @@ from ._util import fnum, is_text, num, text, unknown_option_error
 
 _MPL = None
 
-# A new figure is 640 x 480 pixels at 100 pixels per inch, whatever matplotlib's own defaults are.
+# A new figure is 560 x 420 pixels (MATLAB's default) at 100 pixels per inch, whatever matplotlib's own
+# defaults are.
 FIG_DPI = 100.0
-FIG_SIZE_INCHES = (6.4, 4.8)
+FIG_SIZE_INCHES = (5.6, 4.2)
 
 
 def _plt():
@@ -48,6 +49,9 @@ def _plt():
                 matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         plt.rcParams["figure.max_open_warning"] = 0  # a script may keep any number of figures open
+        # MATLAB's colour order for new axes (and for matplotlib's 'C0', 'C1', ... in mylab's own code).
+        from cycler import cycler
+        plt.rcParams["axes.prop_cycle"] = cycler(color=list(MATLAB_COLOR_ORDER))
         _MPL = plt
     return _MPL
 
@@ -500,6 +504,15 @@ def _mpl_marker(s: str) -> str:
     return _MARKER_NAMES.get(s.lower(), s)
 
 
+# A marker as MATLAB reports it: the letters s, d, p and h read back as their names, as in MATLAB.
+_MARKER_OUT = {"None": "none", "": "none", " ": "none", "none": "none", "s": "square", "d": "diamond",
+               "D": "diamond", "p": "pentagram", "h": "hexagram", "H": "hexagram"}
+
+
+def marker_name(m) -> np.ndarray:
+    return char(_MARKER_OUT.get(str(m), str(m)))
+
+
 def _is_marker_text(a) -> bool:
     s = text(a)
     return (len(s) == 1 and s in "o+*.x_|sd^v<>ph") or s.lower() in _MARKER_NAMES
@@ -540,11 +553,39 @@ def _mpl_kwargs(opts) -> dict:
 _COLOR_NAMES = {"red": "r", "green": "g", "blue": "b", "cyan": "c", "magenta": "m",
                 "yellow": "y", "black": "k", "white": "w", "none": "none"}
 
+# MATLAB's colour letters. matplotlib's own g, c, m and y are other colours ([0 0.5 0], [0 0.75 0.75], ...) and
+# matplotlib looks a letter up only when it draws, so a letter is turned into its triplet before it gets there.
+LETTER_RGB = {"r": (1.0, 0.0, 0.0), "g": (0.0, 1.0, 0.0), "b": (0.0, 0.0, 1.0), "c": (0.0, 1.0, 1.0),
+              "m": (1.0, 0.0, 1.0), "y": (1.0, 1.0, 0.0), "k": (0.0, 0.0, 0.0), "w": (1.0, 1.0, 1.0)}
+
+# MATLAB's default colour order (the 'gem' palette).
+MATLAB_COLOR_ORDER = ((0.0, 0.4470, 0.7410), (0.8500, 0.3250, 0.0980), (0.9290, 0.6940, 0.1250),
+                      (0.4940, 0.1840, 0.5560), (0.4660, 0.6740, 0.1880), (0.3010, 0.7450, 0.9330),
+                      (0.6350, 0.0780, 0.1840))
+
+
+def spec_color(spec: str | None):
+    """The colour of a line specification ('r--o') as an RGB triplet, or None."""
+    m = re.search(r"[rgbcmykw]", spec or "")
+    return LETTER_RGB[m.group(0)] if m else None
+
+
+def split_spec(spec: str, kw: dict) -> tuple[str, dict]:
+    """A line specification without its colour letter, and the plot options with that colour added (a 'Color'
+    option given as well wins, as in MATLAB)."""
+    m = re.search(r"[rgbcmykw]", spec or "")
+    if not m:
+        return spec, kw
+    kw = dict(kw)
+    kw.setdefault("color", LETTER_RGB[m.group(0)])
+    return spec[:m.start()] + spec[m.end():], kw
+
 
 def _color(v):
     if is_text(v):
         s = text(v)
-        return _COLOR_NAMES.get(s.lower(), s)
+        letter = _COLOR_NAMES.get(s.lower(), s)
+        return LETTER_RGB.get(letter, letter)
     c = np.real(fnum(v)).flatten()
     if c.size not in (3, 4):
         raise MatlabError("Color must be a color name or an RGB triplet such as [1 0 0].")
@@ -1370,9 +1411,7 @@ def _set_label(h, v):
 
 
 def _marker_get(h):
-    m = h.obj.get_marker()
-    inv = {"None": "none", "": "none", " ": "none"}
-    return char(inv.get(str(m), str(m)))
+    return marker_name(h.obj.get_marker())
 
 
 def _ls_get(h):
@@ -1607,6 +1646,27 @@ _LINE_PROPS: dict[str, tuple] = {
     "ZData": (_line_zdata, lambda h, v: _set_line_data(h, "z", v)),
     "DisplayName": (lambda h: _get_label(h.obj), _set_label),
 }
+
+
+def _polar_data(which: str, name: str):
+    """ThetaData and RData, which a line has only in polar axes (they are its x and y data there)."""
+    def check(h):
+        ax = getattr(h.obj, "axes", None)
+        if ax is None or getattr(ax, "name", "") != "polar":
+            raise MatlabError(f"Unrecognized property '{name}' for class 'Line'.", "MATLAB:class:InvalidProperty")
+
+    def get(h):
+        check(h)
+        return _row(h.obj.get_xdata() if which == "x" else h.obj.get_ydata())
+
+    def set_(h, v):
+        check(h)
+        _set_line_data(h, which, v)
+    return get, set_
+
+
+_LINE_PROPS["ThetaData"] = _polar_data("x", "ThetaData")
+_LINE_PROPS["RData"] = _polar_data("y", "RData")
 
 
 def _sc_offsets(h):
@@ -3023,12 +3083,29 @@ _PATCH_PROPS: dict[str, tuple] = {
 }
 
 
+def keep_cdata(im, value) -> None:
+    """Remember the CData an image was given (uint8, logical, ...): matplotlib draws a double copy of it."""
+    im._mylab_cdata = (value, im.get_array())
+
+
 def _image_cdata(h):
+    kept = getattr(h.obj, "_mylab_cdata", None)
+    if kept is not None and kept[1] is h.obj.get_array():
+        return kept[0]
     return np.asarray(h.obj.get_array(), dtype=float)
 
 
+def _image_cdata_set(h, v):
+    c = np.real(fnum(v))
+    if c.ndim == 3 and isinstance(v, np.ndarray) and v.dtype.kind in "iu":  # truecolour integers: 0..intmax
+        c = c / float(np.iinfo(v.dtype).max)
+    h.obj.set_data(c)
+    if isinstance(v, np.ndarray):
+        keep_cdata(h.obj, v)
+
+
 _IMAGE_PROPS: dict[str, tuple] = {
-    "CData": (_image_cdata, lambda h, v: h.obj.set_data(np.real(fnum(v)))),
+    "CData": (_image_cdata, _image_cdata_set),
     "AlphaData": (lambda h: _num_val(1 if h.obj.get_alpha() is None else h.obj.get_alpha()),
                   lambda h, v: h.obj.set_alpha(_scalar(v))),
 }
@@ -3054,7 +3131,7 @@ _STEM_PROPS: dict[str, tuple] = {
               lambda h, v: (h.obj.markerline.set_color(_color(v)), h.obj.stemlines.set_color(_color(v)))),
     "LineWidth": (lambda h: _num_val(np.asarray(h.obj.stemlines.get_linewidth()).flat[0]),
                   lambda h, v: h.obj.stemlines.set_linewidth(_scalar(v))),
-    "Marker": (lambda h: char(str(h.obj.markerline.get_marker())),
+    "Marker": (lambda h: marker_name(h.obj.markerline.get_marker()),
                lambda h, v: h.obj.markerline.set_marker(_mpl_marker(text(v)))),
     "MarkerSize": (lambda h: _num_val(h.obj.markerline.get_markersize()),
                    lambda h, v: h.obj.markerline.set_markersize(_scalar(v))),
@@ -3222,10 +3299,14 @@ def _set_prop(h: GraphicsHandle, name: str, value: Any) -> None:
         raise MatlabError(f"Unrecognized property '{name}' for class '{_short(h.kind)}'.")
     if not _alive(h):
         raise MatlabError("Invalid or deleted object.")
-    if isinstance(value, GraphicsHandle) and entry is not None:
-        # Nested assignment such as h.Parent.Title.String = 'x' writes the (same) handle back.
+    if isinstance(value, (GraphicsHandle, GraphicsArray)) and entry is not None:
+        # Nested assignment such as h.Parent.Title.String = 'x' or ax.YAxis(2).Color = 'r' writes the (same)
+        # handle or handles back.
         try:
-            if entry[0](h) is value:
+            cur = entry[0](h)
+            if cur is value or (isinstance(cur, GraphicsArray) and isinstance(value, GraphicsArray)
+                                and len(cur.items) == len(value.items)
+                                and all(a is b for a, b in zip(cur.items, value.items))):
                 return
         except (MatlabError, AttributeError, ValueError, TypeError):
             pass
@@ -3476,7 +3557,8 @@ def _do_plot(interp, args, method: str, nargout: int):
     for x, y, spec in _xy_groups(args):
         x, y = _prep_xy(x, y)
         fn = getattr(ax, method)
-        lines.extend(fn(x, y, spec, **kw) if spec else fn(x, y, **kw))
+        sp, kws = split_spec(spec, kw)
+        lines.extend(fn(x, y, sp, **kws) if sp else fn(x, y, **kws))
     _tag_lines(interp, lines, opts)
     _redraw(interp)
     return _ret(interp, "line", lines, nargout)
@@ -3525,8 +3607,9 @@ def _plot3(interp, args, nargout):
             cols = [(x[:, j], y[:, j], z[:, j]) for j in range(x.shape[1])]
         else:
             cols = [(x.flatten(), y.flatten(), z.flatten())]
+        sp, kws = split_spec(spec, kw)
         for xs, ys, zs in cols:
-            lines.extend(ax.plot(xs, ys, zs, spec, **kw) if spec else ax.plot(xs, ys, zs, **kw))
+            lines.extend(ax.plot(xs, ys, zs, sp, **kws) if sp else ax.plot(xs, ys, zs, **kws))
     if not lines:
         raise MatlabError("plot3 needs x, y and z data.")
     _tag_lines(interp, lines, opts)
@@ -3610,6 +3693,7 @@ def _fplot(interp, args, nargout):
     else:
         xs, ys = t, evaluate(funcs[0])
     ys = np.where(np.isfinite(ys), ys, np.nan)
+    spec, kw = split_spec(spec, kw)
     lines = ax.plot(xs, ys, spec, **kw) if spec else ax.plot(xs, ys, **kw)
     if len(funcs) == 1:
         ax.set_xlim(lims[0], lims[1])
@@ -3636,7 +3720,7 @@ def _polarplot(interp, args, nargout):
         if rho.size == 1 and theta.size > 1:
             rho = np.full(theta.size, rho[0])
     ax = _axes(interp, projection="polar")
-    kw = _mpl_kwargs(opts)
+    spec, kw = split_spec(spec, _mpl_kwargs(opts))
     lines = ax.plot(theta, rho, spec, **kw) if spec else ax.plot(theta, rho, **kw)
     _tag_lines(interp, lines, opts)
     _redraw(interp)
@@ -3683,7 +3767,7 @@ def _scatter_core(interp, args, nargout, three_d: bool):
                                                  else _color(c))
         if isinstance(kw["c"], np.ndarray):
             kw["cmap"] = _current_cmap(interp)
-    marker = next((_mpl_marker(text(a)) for a in args[k + 1:] if is_text(a) and not _is_color_text(a)), "o")
+    marker = next((_mpl_marker(text(a)) for a in args[k:] if is_text(a) and not _is_color_text(a)), "o")
     if "c" not in kw:
         import matplotlib as mpl
         colors = mpl.rcParams["axes.prop_cycle"].by_key().get("color", ["C0"])
@@ -3998,7 +4082,11 @@ def _stem(interp, args, nargout):
     spec = next((_norm_spec(text(a)) for a in args if is_text(a) and _is_linespec(text(a))), "")
     ax = _axes(interp, projection="rectilinear")
     x, y = _xy_simple([a for a in args if not is_text(a)])
+    spec, scol = split_spec(spec, {})
     cont = ax.stem(x, y, linefmt=spec or None)
+    if "color" in scol:
+        cont.markerline.set_color(scol["color"])
+        cont.stemlines.set_color(scol["color"])
     if not filled:
         cont.markerline.set_markerfacecolor("none")
     for k, v in _mpl_kwargs(opts).items():
@@ -4221,7 +4309,7 @@ def _errorbar(interp, args, nargout):
     elif orient == "both":
         xneg, xpos = neg, pos
     ax = _axes(interp, projection="rectilinear")
-    kw = _mpl_kwargs(opts)
+    spec, kw = split_spec(spec, _mpl_kwargs(opts))
     cap = _scalar(opts["capsize"]) if "capsize" in opts else 6.0
     fmt = spec or "-"
     hs = []
@@ -4253,15 +4341,56 @@ def _errorbar(interp, args, nargout):
 @builtin("pie")
 @_with_axes_arg
 def _pie(interp, args, nargout):
+    """pie(X), pie(X, explode), pie(X, labels), pie(X, explode, labels).
+
+    As in MATLAB: values summing to more than 1 are shared out as fractions of the whole, otherwise each value is
+    the fraction of a slice itself (a partial pie when they sum to less than 1). Slices start at 12 o'clock and go
+    anticlockwise, take their colours from the colormap, and are labelled with their percentages unless labels are
+    given. The output is the patches and texts, one pair per slice: [patch1 text1 patch2 text2 ...].
+    """
+    if not args:
+        raise MatlabError("Not enough input arguments.", "MATLAB:narginchk:notEnoughInputs")
+    x = np.real(fnum(args[0])).flatten().astype(float)
+    rest = list(args[1:])
+    labels = None
+    if rest and (isinstance(rest[-1], (Cell, StringArray)) or is_text(rest[-1])):
+        labels = _text_list(rest.pop())
+    explode = None
+    if rest:
+        explode = np.real(fnum(rest.pop(0))).flatten()
+        if explode.size != x.size:
+            raise MatlabError("Explode must be the same size as X.")
+    if rest:
+        raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
+    if x.size == 0 or np.any(~np.isfinite(x)) or np.any(x < 0):
+        raise MatlabError("Data for a pie chart must be finite, nonnegative numbers.")
+    if labels is not None and len(labels) != x.size:
+        raise MatlabError("Cell array of strings must be the same length as X.")
+    total = float(x.sum())
+    frac = x / total if total > 1 else x
+    if labels is None:
+        labels = []
+        for f in frac:
+            pct = 100.0 * f
+            labels.append("<1%" if 0 < pct < 0.5 else f"{round(pct):d}%")
     ax = _axes(interp, projection="rectilinear")
-    x = fnum(args[0]).flatten()
-    labels = _text_list(args[-1]) if len(args) > 1 and isinstance(args[-1], (Cell, StringArray)) else None
-    res = ax.pie(x, labels=labels, autopct="%1.0f%%" if labels is None else None)
-    ax.axis("equal")
+    import matplotlib as mpl
+    cmap = _current_cmap(interp)
+    cmap = mpl.colormaps[cmap] if isinstance(cmap, str) else cmap
+    n = x.size
+    colors = [cmap(k / (n - 1) if n > 1 else 0.0) for k in range(n)]
+    wedges, texts = ax.pie(frac, explode=None if explode is None else np.where(explode != 0, 0.1, 0.0),
+                           labels=labels, labeldistance=1.15, startangle=90, counterclock=True,
+                           normalize=False, colors=colors, wedgeprops={"edgecolor": "k", "linewidth": 0.5})
+    ax.set_aspect("equal")
+    ax.set_axis_off()
     _redraw(interp)
-    h = _wrap(interp, "pie", list(res[0]))
-    h.extra.update({"axes": ax, "figure": ax.figure})
-    return (h) if nargout > 0 else None
+    if nargout <= 0:
+        return None
+    hs = []
+    for w, t in zip(wedges, texts):
+        hs.extend([_wrap(interp, "patch", w), _wrap(interp, "text", t)])
+    return GraphicsArray(hs, row=True)
 
 
 @builtin("quiver")
@@ -4306,8 +4435,7 @@ def _quiver(interp, args, nargout):
     kw: dict = {}
     color = None
     if spec:
-        m = re.search(r"[rgbcmykw]", spec)
-        color = m.group(0) if m else None
+        color = spec_color(spec)
     if "color" in opts:
         color = _color(opts["color"])
     kw["color"] = color if color is not None else "C0"
@@ -4661,6 +4789,8 @@ def _image_core(interp, args, nargout, scaled: bool):
             else getattr(_current_cmap(interp), "N", 256)
         kw["vmin"], kw["vmax"] = (0.0, float(n - 1)) if integer else (1.0, float(n))
     im = ax.imshow(C, **kw)
+    if isinstance(raw, np.ndarray):
+        keep_cdata(im, raw)
     h = _wrap(interp, "image", im)
     h.extra["CDataMapping"] = "scaled" if scaled else "direct"
     if "alphadata" in opts:
@@ -9016,6 +9146,7 @@ def _imshow(interp, args, nargout):
             raise MatlabError("imshow: 'Interpolation' must be 'nearest' or 'bilinear'.")
         kw["interpolation"] = how
     im = ax.imshow(data, **kw)
+    keep_cdata(im, img)
     ax.set_xticks([])
     ax.set_yticks([])
     _redraw(interp)

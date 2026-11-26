@@ -733,8 +733,18 @@ P._PROPS["ruler"] = {
 P._DISPLAY["ruler"] = ["Limits", "Scale", "Direction", "TickValues", "TickLabelFormat", "Exponent", "Color",
                        "FontSize", "Visible"]
 
-for _w in "xyz":
+def _yaxis_get(h):
+    """ax.YAxis: one ruler, or after yyaxis the left and right rulers (a 2-by-1 array, as in MATLAB)."""
+    base = getattr(h.obj, "_mylab_yybase", None) or h.obj
+    right = getattr(base, "_mylab_yyright", None)
+    if right is None:
+        return ruler_handle(h.interp, h.obj, "y")
+    return P.GraphicsArray([ruler_handle(h.interp, base, "y"), ruler_handle(h.interp, right, "y")])
+
+
+for _w in "xz":
     P._AXES_PROPS[f"{_w.upper()}Axis"] = (lambda h, _w=_w: ruler_handle(h.interp, h.obj, _w), None)
+P._AXES_PROPS["YAxis"] = (_yaxis_get, None)
 P._AXES_PROPS["XTickLabelFormat"] = (lambda h: char(tick_format_get(h.obj, "x")),
                                      lambda h, v: tick_format_set(h.obj, "x", text(v)))
 P._AXES_PROPS["YTickLabelFormat"] = (lambda h: char(tick_format_get(h.obj, "y")),

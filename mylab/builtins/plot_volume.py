@@ -727,11 +727,9 @@ def _contour3(interp, args, nargout):
     ax, _ = _lead_axes(interp, lead, projection="3d")
     cmap = _cmap(interp)
     lo, hi = (float(levels.min()), float(levels.max())) if levels.size else (0.0, 1.0)
-    import re
     fixed = None
     if spec_text:
-        m = re.search(r"[rgbcmykw]", spec_text[0])
-        fixed = m.group(0) if m else None
+        fixed = P.spec_color(spec_text[0])
     if "linecolor" in opts and not (is_text(opts["linecolor"]) and text(opts["linecolor"]).lower() == "flat"):
         fixed = P._color(opts["linecolor"])
     lw = P._scalar(opts["linewidth"]) if "linewidth" in opts else 0.8
@@ -957,7 +955,7 @@ def _fplot3(interp, args, nargout):
     t = np.linspace(lims[0], lims[1], max(n, 2)).reshape(1, -1)
     xs, ys, zs = (P._eval_fn(interp, f, [t]).flatten() for f in funcs)
     ax, _ = _lead_axes(interp, lead, projection="3d")
-    kw = P._mpl_kwargs(opts)
+    spec, kw = P.split_spec(spec, P._mpl_kwargs(opts))
     lines = ax.plot(xs, ys, zs, spec, **kw) if spec else ax.plot(xs, ys, zs, **kw)
     P._tag_lines(interp, lines, opts)
     P._redraw(interp)

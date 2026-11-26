@@ -8,7 +8,7 @@ import re
 import numpy as np
 
 from ..errors import MatlabError
-from ..values import Cell, MString, StringArray, is_char, to_str
+from ..values import Cell, MString, StringArray, char, is_char, to_str
 from ._registry import builtin
 from ._util import fnum, is_text, text
 from .plotting import (
@@ -22,8 +22,8 @@ def _reals(args: list) -> list[np.ndarray]:
 
 
 def _spec_color(spec: str):
-    m = re.search(r"[rgbcmykw]", spec or "")
-    return m.group(0) if m else None
+    from .plotting import spec_color
+    return spec_color(spec)
 
 
 # -- 3-D arrows --------------------------------------------------------------------------------------
@@ -345,17 +345,113 @@ def _ref_line(interp, args, nargout, vertical: bool):
         lines.append(ln)
         label = texts[k] if k < len(texts) else (texts[0] if len(texts) == 1 else "")
         if label:
-            if vertical:
-                note = ax.annotate(label, xy=(value, 1), xycoords=("data", "axes fraction"), xytext=(3, -3),
-                                   textcoords="offset points", rotation=90, va="top", ha="left", fontsize=9)
-            else:
-                note = ax.annotate(label, xy=(1, value), xycoords=("axes fraction", "data"), xytext=(-3, 3),
-                                   textcoords="offset points", va="bottom", ha="right", fontsize=9)
-            note._mylab_internal = True  # part of the line, not a text object of its own
-            ln._mylab_label = note
+            _constant_label(ln, label)
     _redraw(interp)
-    hs = [_wrap(interp, "line", ln) for ln in lines]
+    hs = [_wrap(interp, "constantline", ln) for ln in lines]
+    for h in hs:
+        for key, prop in (("labelhorizontalalignment", "LabelHorizontalAlignment"),
+                          ("labelverticalalignment", "LabelVerticalAlignment"),
+                          ("labelorientation", "LabelOrientation")):
+            if key in opts:
+                _CONSTANT_PROPS[prop][1](h, opts[key])
     return (hs[0] if len(hs) == 1 else GraphicsArray(hs)) if nargout > 0 else None
+
+
+def _constant_label(ln, label: str) -> None:
+    """Draw (or redraw) the label of an xline/yline next to it."""
+    old = getattr(ln, "_mylab_label", None)
+    if old is not None:
+        old.remove()
+        ln._mylab_label = None
+    if not label:
+        return
+    ax = ln.axes
+    axis, value = ln._mylab_constant
+    halign = getattr(ln, "_mylab_label_h", "right")
+    valign = getattr(ln, "_mylab_label_v", "top")
+    horizontal = getattr(ln, "_mylab_label_o", "aligned") == "horizontal"
+    if axis == "x":  # the label runs along the line, at its top, middle or bottom
+        frac = {"top": 1.0, "middle": 0.5, "bottom": 0.0}[valign]
+        side = -3 if halign == "left" else 3
+        note = ax.annotate(label, xy=(value, frac), xycoords=("data", "axes fraction"),
+                           xytext=(side, -3 if frac == 1.0 else 3 if frac == 0.0 else 0), textcoords="offset points",
+                           rotation=0 if horizontal else 90, fontsize=9,
+                           va={"top": "top", "middle": "center", "bottom": "bottom"}[valign],
+                           ha="right" if halign == "left" else "center" if halign == "center" else "left")
+    else:
+        frac = {"right": 1.0, "center": 0.5, "left": 0.0}[halign]
+        up = valign != "bottom"
+        note = ax.annotate(label, xy=(frac, value), xycoords=("axes fraction", "data"),
+                           xytext=(-3 if frac == 1.0 else 3 if frac == 0.0 else 0, 3 if up else -3),
+                           textcoords="offset points", va="bottom" if up else "top",
+                           ha={"right": "right", "center": "center", "left": "left"}[halign], fontsize=9)
+    note._mylab_internal = True  # part of the line, not a text object of its own
+    ln._mylab_label = note
+    ln._mylab_label_text = label
+
+
+def _constant_value_set(h, v):
+    x = np.real(fnum(v)).flatten()
+    if x.size != 1 or not np.isfinite(x[0]):
+        raise MatlabError("Value must be a finite scalar.")
+    axis, _ = h.obj._mylab_constant
+    if axis == "x":
+        h.obj.set_xdata([x[0], x[0]])
+    else:
+        h.obj.set_ydata([x[0], x[0]])
+    h.obj._mylab_constant = (axis, float(x[0]))
+    _constant_label(h.obj, getattr(h.obj, "_mylab_label_text", ""))
+
+
+def _constant_choice(attr: str, prop: str, choices: tuple, default: str):
+    def get(h):
+        return char(getattr(h.obj, attr, default))
+
+    def set_(h, v):
+        s = text(v).lower() if is_text(v) else ""
+        if s not in choices:
+            raise MatlabError(f"{prop} must be one of: {', '.join(repr(c) for c in choices)}.")
+        setattr(h.obj, attr, s)
+        _constant_label(h.obj, getattr(h.obj, "_mylab_label_text", ""))
+    return get, set_
+
+
+def _constant_label_set(h, v):
+    texts = [to_str(x) for x in v.data.flatten(order="F")] if isinstance(v, Cell) else \
+        [x or "" for x in v.data.flatten(order="F")] if isinstance(v, StringArray) else [to_str(v)]
+    _constant_label(h.obj, "\n".join(texts))
+
+
+def _constant_props():
+    from . import plotting as P
+    base = {k: P._LINE_PROPS[k] for k in ("Color", "LineWidth", "LineStyle", "DisplayName")}
+    return {
+        **base,
+        "Value": (lambda h: P._num_val(h.obj._mylab_constant[1]), _constant_value_set),
+        "InterceptAxis": (lambda h: char(h.obj._mylab_constant[0]), None),
+        "Label": (lambda h: char(getattr(h.obj, "_mylab_label_text", "")), _constant_label_set),
+        "LabelHorizontalAlignment": _constant_choice("_mylab_label_h", "LabelHorizontalAlignment",
+                                                     ("left", "center", "right"), "right"),
+        "LabelVerticalAlignment": _constant_choice("_mylab_label_v", "LabelVerticalAlignment",
+                                                   ("top", "middle", "bottom"), "top"),
+        "LabelOrientation": _constant_choice("_mylab_label_o", "LabelOrientation",
+                                             ("aligned", "horizontal"), "aligned"),
+        "Alpha": (lambda h: P._num_val(1.0 if h.obj.get_alpha() is None else h.obj.get_alpha()),
+                  lambda h, v: h.obj.set_alpha(_scalar(v))),
+    }
+
+
+_CONSTANT_PROPS = _constant_props()
+
+
+def _register_constant_line():
+    from . import plotting as P
+    P._PROPS["constantline"] = _CONSTANT_PROPS
+    P._CLASS["constantline"] = "matlab.graphics.chart.decoration.ConstantLine"
+    P._TYPE["constantline"] = "constantline"
+
+
+_register_constant_line()
 
 
 builtin("xline")(_with_axes_arg(lambda interp, args, nargout: _ref_line(interp, args, nargout, True)))

@@ -31,17 +31,17 @@ def test_getframe_figure_and_axes(m):
     m.run("plot(1:10); F = getframe(gcf); G = getframe; H = getframe(gca);")
     F = m.val("F")
     cdata = F.get_field(0, "cdata")
-    assert cdata.dtype == np.uint8 and cdata.shape == (480, 640, 3)
+    assert cdata.dtype == np.uint8 and cdata.shape == (420, 560, 3)
     assert F.get_field(0, "colormap").size == 0
     g = m.val("G").get_field(0, "cdata")
     assert g.shape == m.val("H").get_field(0, "cdata").shape
-    assert g.shape[2] == 3 and g.shape[0] < 480 and g.shape[1] < 640  # only the axes area
+    assert g.shape[2] == 3 and g.shape[0] < 420 and g.shape[1] < 560  # only the axes area
     assert cdata.min() < 100 and cdata.max() == 255  # something was drawn on a white page
 
 
 def test_getframe_by_number_and_rect(m):
     m.run("figure(3); plot(rand(4)); F = getframe(3); R = getframe(gcf, [10 20 100 50]);")
-    assert m.val("F").get_field(0, "cdata").shape == (480, 640, 3)
+    assert m.val("F").get_field(0, "cdata").shape == (420, 560, 3)
     assert m.val("R").get_field(0, "cdata").shape == (50, 100, 3)
     with pytest.raises(MatlabError):
         m.run("getframe(99)")
@@ -59,7 +59,7 @@ def test_frame_array_and_conversions(m):
     movie(F); movie(F, 2, 10); movie(gcf, F);
     """)
     assert m.num("n") == 3
-    assert m.val("img").shape == (480, 640, 3)
+    assert m.val("img").shape == (420, 560, 3)
     assert m.val("X").shape == (4, 6, 3) and m.val("map").size == 0
     assert m.val("D").get_field(0, "cdata").dtype == np.uint8
     assert int(m.val("D").get_field(0, "cdata")[0, 0, 0]) == 128
@@ -87,12 +87,12 @@ def test_videowriter_gif(m, tmp_path):
     c = class(v);
     v
     """)
-    assert m.num("n") == 6 and m.num("w") == 640 and m.num("h") == 480
+    assert m.num("n") == 6 and m.num("w") == 560 and m.num("h") == 420
     assert m.num("d") == pytest.approx(1.2)
     assert m.str("name") == "anim.gif" and m.str("c") == "VideoWriter"
     assert "FrameRate: 5" in text
     im = gif(out)
-    assert im.format == "GIF" and im.size == (640, 480) and im.n_frames == 6
+    assert im.format == "GIF" and im.size == (560, 420) and im.n_frames == 6
     assert im.info["duration"] == 200
 
 
@@ -190,7 +190,7 @@ def test_session_returns_animation():
     r = s.run(LOOP)
     assert r.ok and len(r.figures) == 1 and len(r.animations) == 1
     im = gif(r.animations[0])
-    assert im.format == "GIF" and im.n_frames == 8 and im.size == (640, 480)
+    assert im.format == "GIF" and im.n_frames == 8 and im.size == (560, 420)
     assert im.info["duration"] == 80  # about 12 frames per second
     d = r.to_dict()
     assert base64.b64decode(d["animations"][0]) == r.animations[0]

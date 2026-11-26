@@ -75,7 +75,7 @@ def test_scatter3_options_and_mapped_open_markers():
     plt.gcf().canvas.draw()
     assert len(coll.get_facecolors()) == 0 and len(coll.get_edgecolors()) == 10  # open, coloured edges
     m.execute("figure; h2 = scatter3(x, x, x, 20, 'r', 's', 'filled', 'MarkerEdgeColor', 'k');")
-    assert to_str(m.eval_expression("h2.Marker")) == "s"
+    assert to_str(m.eval_expression("h2.Marker")) == "square"  # MATLAB reads s back as square
     with pytest.raises(MatlabError, match="'MarkerSize' is not supported"):
         m.execute("scatter3(x, x, x, 'MarkerSize', 3)")
     plt.close("all")

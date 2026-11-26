@@ -1814,9 +1814,8 @@ def _arrow_xy(x0, y0, x1, y1, head: float = 0.08):
 def _spec_kw(spec: str) -> dict:
     import re
     kw: dict = {}
-    m = re.search(r"[rgbcmykw]", spec)
-    if m:
-        kw["color"] = m.group(0)
+    if P.spec_color(spec) is not None:
+        kw["color"] = P.spec_color(spec)
     style = re.sub(r"[rgbcmykwo+*.xsd^v<>ph]", "", spec)
     if style in ("-", "--", ":", "-."):
         kw["linestyle"] = style
@@ -3122,8 +3121,7 @@ def _plotmatrix_core(interp, lead: list, X, Y, group, colors, markers, sizes, sh
         gidx, gnames = np.ones(n), [""]
     from .plot_objects import default_colors
     palette = default_colors()
-    import re
-    spec_color = re.search(r"[rgbcmykw]", spec)
+    spec_color = P.spec_color(spec)
     spec_marker = "".join(ch for ch in spec if ch in "o+*.xsd^v<>ph") or "."
     S, H, HAx = [], [], []
     for r in range(rows):
@@ -3132,7 +3130,7 @@ def _plotmatrix_core(interp, lead: list, X, Y, group, colors, markers, sizes, sh
             if same and r == c and diag != "none":
                 for g in range(len(gnames)):
                     col = _group_color(colors, g, palette) if group is not None else (
-                        spec_color.group(0) if spec_color else tuple(palette[0]))
+                        spec_color if spec_color else tuple(palette[0]))
                     data = X[gidx == g + 1, c]
                     data = data[np.isfinite(data)]
                     if diag == "stairs" or (diag == "auto" and len(gnames) > 1):
@@ -3149,7 +3147,7 @@ def _plotmatrix_core(interp, lead: list, X, Y, group, colors, markers, sizes, sh
             for g in range(len(gnames)):
                 pick = gidx == g + 1
                 col = _group_color(colors, g, palette) if group is not None else (
-                    spec_color.group(0) if spec_color else tuple(palette[0]))
+                    spec_color if spec_color else tuple(palette[0]))
                 mk = P._mpl_marker(markers[g % len(markers)]) if markers else spec_marker
                 ms = sizes[g % len(sizes)] if sizes else 6.0
                 ln = a.plot(X[pick, c], Y[pick, r], linestyle="None", marker=mk, markersize=ms, color=col,
@@ -3220,7 +3218,7 @@ def _color_list(v) -> list | None:
     if is_text(v):
         s = text(v)
         if all(ch in "rgbcmykw" for ch in s):
-            return [P._COLOR_NAMES.get(ch, ch) for ch in s]
+            return [P.LETTER_RGB[ch] for ch in s]
         return [P._color(v)]
     if isinstance(v, (Cell, StringArray)):
         return [P._color(char(s)) for s in P._text_list(v)]
@@ -3938,7 +3936,8 @@ def _geoplot(interp, args, nargout):
             pending = []
     for la, lo, sp in groups:
         lat, lon = _check_latlon(la, lo, "geoplot")
-        lines.extend(ax.plot(lon, lat, sp, **kw) if sp else ax.plot(lon, lat, **kw))
+        sp, kws = P.split_spec(sp, kw)
+        lines.extend(ax.plot(lon, lat, sp, **kws) if sp else ax.plot(lon, lat, **kws))
         _geo_fit(ax, lat, lon)
         k += 1
     P._tag_lines(interp, lines, opts)

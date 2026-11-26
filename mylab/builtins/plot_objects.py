@@ -308,7 +308,7 @@ def _scatter_edge_alpha_set(h, v):
 
 
 P._SCATTER_PROPS.update({
-    "Marker": (lambda h: char(h.extra.get("Marker", "o")), _scatter_marker_set),
+    "Marker": (lambda h: P.marker_name(h.extra.get("Marker", "o")), _scatter_marker_set),
     "ZData": (_scatter_z, None),
     "MarkerEdgeAlpha": (lambda h: h.extra.get("MarkerEdgeAlpha", P._num_val(1)), _scatter_edge_alpha_set),
     "XDataSource": _state("XDataSource", ""),
@@ -2636,7 +2636,7 @@ P._ERRORBAR_PROPS.update({
                   lambda h, v: h.obj.lines[0].set_linestyle(P._mpl_linestyle(text(v)))
                   if h.obj.lines[0] is not None else None),
     "Marker": _eb_line_prop("get_marker", "set_marker", lambda v: P._mpl_marker(text(v)),
-                            lambda m: char({"None": "none", "": "none", "none": "none"}.get(str(m), str(m)))),
+                            P.marker_name),
     "MarkerSize": _eb_line_prop("get_markersize", "set_markersize", P._scalar,
                                 lambda v: P._num_val(6 if v is None else v)),
     "MarkerFaceColor": _eb_line_prop("get_markerfacecolor", "set_markerfacecolor", P._color,
@@ -2873,7 +2873,7 @@ _FACTORY = {"defaultlinelinewidth": 0.5, "defaultlinemarkersize": 6.0, "defaulta
             "defaultlinemarker": "none", "defaulttextinterpreter": "tex", "defaultlegendinterpreter": "tex",
             "defaultaxesticklabelinterpreter": "tex", "defaultfigurecolor": [0.94, 0.94, 0.94],
             "defaultaxescolor": [1.0, 1.0, 1.0], "defaultaxesbox": "off", "defaultaxesxgrid": "off",
-            "defaultaxesygrid": "off", "defaultaxestickdir": "in", "defaultfigureposition": [100, 100, 640, 480],
+            "defaultaxesygrid": "off", "defaultaxestickdir": "in", "defaultfigureposition": [100, 100, 560, 420],
             "defaultfigurevisible": "on", "defaultaxesfontname": "Helvetica", "defaulttextfontname": "Helvetica",
             "defaultlegendbox": "on", "defaultlegendlocation": "northeast", "defaultaxesunits": "normalized",
             "defaultfigureunits": "pixels", "defaultfigurepaperunits": "inches",
