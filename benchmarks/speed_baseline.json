@@ -1,161 +1,171 @@
 {
  "calibration": {
-  "linalg": 0.21013680800024304,
-  "numpy": 0.054257356001471635,
-  "python": 0.07114032799654524
+  "b20_vec_elementwise": 0.25374093700156664,
+  "b21_matmul_1500": 0.04375496799912071,
+  "b22_solve_1500": 0.06203138600176317,
+  "b23_eig_500": 0.05945211499783909,
+  "b24_svd_600": 0.05837361100202543,
+  "b25_fft_4m": 0.2666783700005908,
+  "b26_sort_unique_5m": 0.2294899059997988,
+  "b27_logical_index_1e7": 0.20771256100124447,
+  "b28_sparse_tridiag_solve": 0.09756954200202017,
+  "b30_accumarray_interp": 0.04599538800175651,
+  "b31_csv_write_read": 0.1475566249973781,
+  "b32_plot_to_png": 0.11344332100270549,
+  "python": 0.07568498500040732
  },
  "cases": {
   "b01_scalar_loop": {
-   "relative": 0.9728659109269361,
-   "seconds": 0.06921,
+   "relative": 0.895170951010103,
+   "seconds": 0.067751,
    "unit": "python"
   },
   "b02_array_fill": {
-   "relative": 2.9178527263759664,
-   "seconds": 0.207577,
+   "relative": 2.5723992678197956,
+   "seconds": 0.194692,
    "unit": "python"
   },
   "b03_while_if": {
-   "relative": 3.574751581302098,
-   "seconds": 0.254309,
+   "relative": 3.352117992738383,
+   "seconds": 0.253705,
    "unit": "python"
   },
   "b04_nested_matrix": {
-   "relative": 0.6466233892291575,
-   "seconds": 0.046001,
+   "relative": 0.6387924896825943,
+   "seconds": 0.048347,
    "unit": "python"
   },
   "b05_recursion_fib22": {
-   "relative": 0.07794453801603612,
-   "seconds": 0.005545,
+   "relative": 0.07440049040070094,
+   "seconds": 0.005631,
    "unit": "python"
   },
   "b06_call_user_function": {
-   "relative": 0.34627335428079964,
-   "seconds": 0.024634,
+   "relative": 0.32985406550408436,
+   "seconds": 0.024965,
    "unit": "python"
   },
   "b07_call_anonymous": {
-   "relative": 0.2751041575314415,
-   "seconds": 0.019571,
+   "relative": 0.2711502155928227,
+   "seconds": 0.020522,
    "unit": "python"
   },
   "b08_struct_fields": {
-   "relative": 1.1413076420443682,
-   "seconds": 0.081193,
+   "relative": 1.2932155565529049,
+   "seconds": 0.097877,
    "unit": "python"
   },
   "b09_cell_and_string_build": {
-   "relative": 3.301502911420452,
-   "seconds": 0.23487,
+   "relative": 2.9796002469814367,
+   "seconds": 0.225511,
    "unit": "python"
   },
   "b10_small_array_ops": {
-   "relative": 3.028324525161904,
-   "seconds": 0.215436,
+   "relative": 2.8761847544638934,
+   "seconds": 0.217684,
    "unit": "python"
   },
   "b11_object_methods": {
-   "relative": 14.131140919800364,
-   "seconds": 1.005294,
+   "relative": 13.957286243689087,
+   "seconds": 1.056357,
    "unit": "python"
   },
   "b12_map_inserts": {
-   "relative": 5.719582850668889,
-   "seconds": 0.406893,
+   "relative": 5.123605428446779,
+   "seconds": 0.38778,
    "unit": "python"
   },
   "b13_ode45_vdp": {
-   "relative": 11.362486268537513,
-   "seconds": 0.808331,
+   "relative": 11.202737240358005,
+   "seconds": 0.847879,
    "unit": "python"
   },
   "b14_fminsearch_rosen": {
-   "relative": 1.2569101453164837,
-   "seconds": 0.089417,
+   "relative": 1.2359650992795541,
+   "seconds": 0.093544,
    "unit": "python"
   },
   "b15_bubble_sort": {
-   "relative": 9.961087050855504,
-   "seconds": 0.708635,
+   "relative": 9.766587124196718,
+   "seconds": 0.739184,
    "unit": "python"
   },
   "b16_text_parsing": {
-   "relative": 6.772768886072584,
-   "seconds": 0.481817,
+   "relative": 6.112573055243523,
+   "seconds": 0.46263,
    "unit": "python"
   },
   "b20_vec_elementwise": {
-   "relative": 1.7903010238347281,
-   "seconds": 0.097137,
-   "unit": "numpy"
+   "relative": 0.44619918779326084,
+   "seconds": 0.113219,
+   "unit": "b20_vec_elementwise"
   },
   "b21_matmul_1500": {
-   "relative": 0.20162579037533965,
-   "seconds": 0.042369,
-   "unit": "linalg"
+   "relative": 0.9124221048636645,
+   "seconds": 0.039923,
+   "unit": "b21_matmul_1500"
   },
   "b22_solve_1500": {
-   "relative": 0.28936862884073916,
-   "seconds": 0.060807,
-   "unit": "linalg"
+   "relative": 0.9236614509688923,
+   "seconds": 0.057296,
+   "unit": "b22_solve_1500"
   },
   "b23_eig_500": {
-   "relative": 0.3110878128496384,
-   "seconds": 0.065371,
-   "unit": "linalg"
+   "relative": 1.1837762206198725,
+   "seconds": 0.070378,
+   "unit": "b23_eig_500"
   },
   "b24_svd_600": {
-   "relative": 0.26846795921604916,
-   "seconds": 0.056415,
-   "unit": "linalg"
+   "relative": 0.9373070992319038,
+   "seconds": 0.054714,
+   "unit": "b24_svd_600"
   },
   "b25_fft_4m": {
-   "relative": 3.3502185398615754,
-   "seconds": 0.181774,
-   "unit": "numpy"
+   "relative": 0.6373295291988753,
+   "seconds": 0.169962,
+   "unit": "b25_fft_4m"
   },
   "b26_sort_unique_5m": {
-   "relative": 3.614127455725659,
-   "seconds": 0.196093,
-   "unit": "numpy"
+   "relative": 0.7854942430459579,
+   "seconds": 0.180263,
+   "unit": "b26_sort_unique_5m"
   },
   "b27_logical_index_1e7": {
-   "relative": 4.569076310929637,
-   "seconds": 0.247906,
-   "unit": "numpy"
+   "relative": 0.958887604292774,
+   "seconds": 0.199173,
+   "unit": "b27_logical_index_1e7"
   },
   "b28_sparse_tridiag_solve": {
-   "relative": 2.1785433111925685,
-   "seconds": 0.118202,
-   "unit": "numpy"
+   "relative": 1.2350165587279793,
+   "seconds": 0.1205,
+   "unit": "b28_sparse_tridiag_solve"
   },
   "b29_arrayfun_cellfun": {
-   "relative": 16.487258816925323,
-   "seconds": 1.172909,
+   "relative": 16.82224023686003,
+   "seconds": 1.273191,
    "unit": "python"
   },
   "b30_accumarray_interp": {
-   "relative": 3.2809560420742145,
-   "seconds": 0.178016,
-   "unit": "numpy"
+   "relative": 3.7138940972402823,
+   "seconds": 0.170822,
+   "unit": "b30_accumarray_interp"
   },
   "b31_csv_write_read": {
-   "relative": 2.2020055676277233,
-   "seconds": 0.119475,
-   "unit": "numpy"
+   "relative": 0.9514313573009314,
+   "seconds": 0.14039,
+   "unit": "b31_csv_write_read"
   },
   "b32_plot_to_png": {
-   "relative": 2.692243241562269,
-   "seconds": 0.146074,
-   "unit": "numpy"
+   "relative": 1.2973086357061967,
+   "seconds": 0.147171,
+   "unit": "b32_plot_to_png"
   },
   "b33_regexprep_cellstr": {
-   "relative": 24.715334459596328,
-   "seconds": 1.758257,
+   "relative": 23.517134871473132,
+   "seconds": 1.779894,
    "unit": "python"
   }
  },
  "note": "Times relative to the calibration workloads of benchmarks/speed_check.py, recorded with --update.",
- "startup": 3.1384319595974355
+ "startup": 3.128281679653686
 }

@@ -5,9 +5,9 @@
     python benchmarks/speed_check.py --only b0    # some cases only
 
 Times differ between machines, so every case is stored relative to a calibration workload timed on
-the same machine in the same run: a pure-Python loop for cases bound by the interpreter, a NumPy
-workload for cases bound by numerical libraries, and the same LAPACK/BLAS operations called from
-NumPy for the dense linear-algebra cases. A case fails when its relative time is
+the same machine in the same run: a pure-Python loop for cases bound by the interpreter, and for
+each case bound by numerical libraries the same work done directly with NumPy/SciPy/Matplotlib (so
+the ratio is what mylab adds, whatever the hardware). A case fails when its relative time is
 more than --limit (default 25%) above the baseline and still is when timed again twice, each time
 against a freshly measured calibration (shared machines have slow spells).
 """
@@ -33,14 +33,109 @@ LIBRARY_BOUND = {"b20_vec_elementwise", "b21_matmul_1500", "b22_solve_1500", "b2
                  "b30_accumarray_interp", "b31_csv_write_read", "b32_plot_to_png"}
 
 
-# dense linear algebra: timed against the same LAPACK/BLAS operations called from NumPy, so the number
-# of cores and the BLAS library (which change these far more than anything else) cancel out
-LINALG_BOUND = {"b21_matmul_1500", "b22_solve_1500", "b23_eig_500", "b24_svd_600"}
+def _equivalents() -> dict:
+    """For each library-bound case, the same work done directly with NumPy, SciPy and Matplotlib.
 
+    A case's time divided by its equivalent's is what mylab adds on top of the libraries it calls; that
+    ratio hardly depends on the machine, unlike one shared calibration (GitHub's runners are 25-80%
+    faster than a developer machine on FFT and indexing but slower on matrix products and sorting).
+    """
+    import tempfile
 
-def calibrate() -> dict:
-    """Best of five timings of three fixed workloads, in seconds."""
     import numpy as np
+
+    def mod_seq(n, m):
+        return np.mod(np.arange(1, n + 1, dtype=float) * 7919, m)
+
+    def square(n):
+        return mod_seq(n * n, 1009).reshape(n, n, order="F")
+
+    def b20():
+        x = np.linspace(0, 1, 10 ** 7)
+        return float((np.sin(x) ** 2 + np.cos(x) ** 2 + x * x - 2 * x).sum())
+
+    def b21():
+        a = np.ones((1500, 1500)) + np.eye(1500)
+        return float((a @ a.T.copy())[0, 0])
+
+    def b22():
+        return float(np.linalg.solve(square(1500) + 2000 * np.eye(1500), np.arange(1.0, 1501.0))[0])
+
+    def b23():
+        return float(abs(np.linalg.eigvals(square(500))[0]))
+
+    def b24():
+        return float(np.linalg.svd(square(600), compute_uv=False)[0])
+
+    def b25():
+        return float(abs(np.fft.fft(mod_seq(2 ** 22, 1009))[1]))
+
+    def b26():
+        x = mod_seq(5 * 10 ** 6, 1000003)
+        return float(np.sort(x)[0] + np.unique(np.mod(x, 1000)).size)
+
+    def b27():
+        x = mod_seq(10 ** 7, 1009)
+        y = x[x > 500]
+        return float(y.size + np.flatnonzero(x == 7).size + (np.cumsum(y) > 0).sum())
+
+    def b28():
+        import scipy.sparse as sp
+        import scipy.sparse.linalg as spl
+        e = np.ones(200000)
+        a = sp.diags([-e[:-1], 2 * e, -e[:-1]], [-1, 0, 1], format="csc")
+        return float(spl.spsolve(a, e)[0])
+
+    def b30():
+        idx = mod_seq(2 * 10 ** 6, 1000).astype(np.int64)
+        a = np.bincount(idx, minlength=1000).astype(float)
+        return float(np.interp(np.linspace(1, 1000, 2 * 10 ** 6), np.arange(1.0, 1001.0), a).sum())
+
+    def b31():
+        m = mod_seq(300000, 1009).reshape(100000, 3, order="F") / 7
+        fd, fn = tempfile.mkstemp(suffix=".csv")
+        os.close(fd)
+        try:
+            np.savetxt(fn, m, fmt="%.10g", delimiter=",")
+            return float(np.loadtxt(fn, delimiter=",")[-1, -1])
+        finally:
+            os.remove(fn)
+
+    def b32():
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        fig = plt.figure(figsize=(6.4, 4.8), dpi=100)
+        ax = fig.add_subplot()
+        x = np.linspace(0, 10, 2000)
+        for k in range(1, 11):
+            ax.plot(x, np.sin(k * x))
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_title("benchmark")
+        ax.legend(["a"])
+        fd, fn = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            fig.savefig(fn)
+            return float(os.path.getsize(fn))
+        finally:
+            plt.close(fig)
+            os.remove(fn)
+
+    fns = {"b20": b20, "b21": b21, "b22": b22, "b23": b23, "b24": b24, "b25": b25, "b26": b26, "b27": b27,
+           "b28": b28, "b30": b30, "b31": b31, "b32": b32}
+    return {n: fns[n.split("_")[0]] for n in LIBRARY_BOUND}
+
+
+_EQUIV: dict = {}
+
+
+def calibrate(units=None) -> dict:
+    """Best of several timings of the calibration workloads (or of the ``units`` named), in seconds:
+    a pure-Python loop for the interpreter-bound cases, and each library-bound case's own equivalent."""
+    if not _EQUIV:
+        _EQUIV.update(_equivalents())
 
     def py():
         s = 0
@@ -48,30 +143,12 @@ def calibrate() -> dict:
             s += i * i
         return s
 
-    a = np.random.default_rng(0).random((500, 500))
-    x = np.random.default_rng(1).random(1 << 20)
-
-    def lib():
-        for _ in range(4):
-            a @ a
-        np.fft.fft(x)
-        np.sort(x)
-
-    def linalg():  # the operations of b21-b24, done directly in NumPy
-        a = np.ones((1500, 1500)) + np.eye(1500)
-        a @ a.T.copy()  # two different arrays, as in the case: a full product (A @ A.T alone would use syrk)
-        k = np.arange(1, 1500 ** 2 + 1, dtype=float)
-        m = np.mod(k * 7919, 1009).reshape(1500, 1500, order="F") + 2000 * np.eye(1500)
-        np.linalg.solve(m, np.arange(1.0, 1501.0))
-        k = np.arange(1, 500 ** 2 + 1, dtype=float)
-        np.linalg.eigvals(np.mod(k * 7919, 1009).reshape(500, 500, order="F"))
-        k = np.arange(1, 600 ** 2 + 1, dtype=float)
-        np.linalg.svd(np.mod(k * 7919, 1009).reshape(600, 600, order="F"), compute_uv=False)
-
     out = {}
-    for name, fn in (("python", py), ("numpy", lib), ("linalg", linalg)):
+    for name, fn in {"python": py, **_EQUIV}.items():
+        if units is not None and name not in units:
+            continue
         best = float("inf")
-        for _ in range(15):  # the best of many: on shared machines single timings vary by +-30%
+        for _ in range(15 if name == "python" else 5):  # the best of many: single timings vary by +-30%
             t0 = time.perf_counter()
             fn()
             best = min(best, time.perf_counter() - t0)
@@ -103,9 +180,8 @@ def startup(repeats: int = 5) -> float:
 
 
 def unit(name: str) -> str:
-    if name in LINALG_BOUND:
-        return "linalg"
-    return "numpy" if name in LIBRARY_BOUND else "python"
+    """What a case's time is divided by: its own NumPy equivalent, or the Python loop."""
+    return name if name in LIBRARY_BOUND else "python"
 
 
 def main() -> None:
@@ -118,8 +194,8 @@ def main() -> None:
     if a.only:
         names = [n for n in names if re.search(a.only, n)]
     cal = calibrate()
-    print(f"calibration: python loop {cal['python']:.3f} s, numpy workload {cal['numpy']:.3f} s, "
-          f"linear algebra {cal['linalg']:.3f} s", flush=True)
+    print(f"calibration: python loop {cal['python']:.3f} s; library cases against their NumPy equivalents",
+          flush=True)
     now = {}
     for n in names:
         now[n] = run_case(n)
@@ -153,7 +229,7 @@ def main() -> None:
         for _ in range(2):  # a slowdown counts only if it is still there twice more, against a fresh yardstick
             if rel <= ref * (1 + a.limit):
                 break
-            fresh = calibrate()
+            fresh = calibrate({unit(n)})
             rel = min(rel, run_case(n, repeats=9) / min(cal[unit(n)], fresh[unit(n)]))
         verdict = "SLOWER" if rel > ref * (1 + a.limit) else "ok"
         if verdict != "ok":
