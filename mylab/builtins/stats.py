@@ -8,7 +8,7 @@ from .._lazy import lazy_module
 from ..errors import MatlabError
 from ..values import char, to_int
 from ._registry import builtin
-from ._util import default_dim, dims_from_args, fnum, get_dim, is_text, keep2d, nargs, text
+from ._util import default_dim, fnum, get_dim, is_text, keep2d, nargs, text
 
 st = lazy_module("scipy.stats", globals(), "st")  # imported on first use: keeps start-up fast
 
@@ -61,23 +61,6 @@ def _vec_out(values, like: np.ndarray) -> np.ndarray:
 
 
 # -- probability distributions --------------------------------------------------------
-
-def _rnd(name, nparams, sampler):
-    def f(interp, args, nargout):
-        nargs(args, nparams, None, name)
-        params = _bcast(name, *args[:nparams]) if nparams else []
-        if len(args) > nparams:
-            shape, _ = dims_from_args(list(args[nparams:]), name)
-        elif params:
-            shape = params[0].shape
-        else:
-            shape = (1, 1)
-        params = [np.broadcast_to(p, shape) if p.size == 1 else p for p in params]
-        if any(p.shape != tuple(shape) for p in params):
-            raise MatlabError(f"{name}: size arguments must match the size of the parameters.")
-        return np.asarray(sampler(_rng(interp), shape, *params), dtype=float).reshape(shape)
-    return f
-
 
 @builtin("randsample")
 def _randsample(interp, args, nargout):

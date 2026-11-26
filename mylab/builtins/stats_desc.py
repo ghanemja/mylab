@@ -37,7 +37,7 @@ def reduce_over(x: np.ndarray, dim: Any, fn: Callable) -> np.ndarray:
         return np.asarray(fn(a), dtype=float).reshape(x.shape)
     moved = np.moveaxis(x, axes, list(range(len(axes))))
     rest = moved.shape[len(axes):]
-    a = moved.reshape(-1, int(np.prod(rest)) if rest else 1)
+    a = moved.reshape(int(np.prod(moved.shape[:len(axes)])), int(np.prod(rest)) if rest else 1)
     r = np.asarray(fn(a), dtype=float)
     shape = list(x.shape)
     for ax in axes:
@@ -83,8 +83,8 @@ def _mean_like(name: str, core: Callable) -> None:
         if not 1 <= len(rest) <= 2:
             raise MatlabError(f"{name}: expected {name}(X), {name}(X, dim), {name}(X, 'all') or {name}(X, vecdim).")
         x = np.asarray(fnum(rest[0]), dtype=float)
-        if x.size == 0:
-            return np.array([[np.nan]])
+        if x.shape == (0, 0) and len(rest) == 1:
+            return np.array([[np.nan]])  # like mean([]); other empties reduce along their dimension
         return reduce_over(x, dim_arg(rest, 1), _nanfn(lambda a: core(a, omit)))
 
 

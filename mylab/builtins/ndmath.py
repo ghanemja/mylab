@@ -307,41 +307,6 @@ def _mvnpdf(interp, args, nargout):
     return np.exp(logp).reshape(-1, 1)
 
 
-def _more_samplers() -> None:
-    from .stats import _rnd
-
-    def guard(ok, values):
-        return np.where(ok, values, np.nan)
-
-    samplers = {
-        "gamrnd": (2, lambda g, s, a, b: guard((a > 0) & (b > 0), g.gamma(np.where(a > 0, a, 1), 1.0, s)
-                                               * np.where(b > 0, b, 1))),
-        "betarnd": (2, lambda g, s, a, b: guard((a > 0) & (b > 0),
-                                                g.beta(np.where(a > 0, a, 1), np.where(b > 0, b, 1), s))),
-        "chi2rnd": (1, lambda g, s, v: guard(v > 0, g.chisquare(np.where(v > 0, v, 1), s))),
-        "trnd": (1, lambda g, s, v: guard(v > 0, g.standard_t(np.where(v > 0, v, 1), s))),
-        "frnd": (2, lambda g, s, a, b: guard((a > 0) & (b > 0),
-                                             g.f(np.where(a > 0, a, 1), np.where(b > 0, b, 1), s))),
-        "lognrnd": (2, lambda g, s, mu, sg: guard(sg >= 0, np.exp(mu + np.where(sg >= 0, sg, 0)
-                                                                  * g.standard_normal(s)))),
-        "wblrnd": (2, lambda g, s, a, b: guard((a > 0) & (b > 0),
-                                               a * g.weibull(np.where(b > 0, b, 1), s))),
-        "raylrnd": (1, lambda g, s, b: guard(b > 0, g.rayleigh(np.where(b > 0, b, 1), s))),
-        "geornd": (1, lambda g, s, p: guard((p > 0) & (p <= 1),
-                                            g.geometric(np.where((p > 0) & (p <= 1), p, 1), s) - 1.0)),
-        "nbinrnd": (2, lambda g, s, r, p: guard((r > 0) & (p > 0) & (p <= 1), g.negative_binomial(
-            np.where(r > 0, r, 1), np.where((p > 0) & (p <= 1), p, 1), s))),
-        "unidrnd": (1, lambda g, s, n: guard(n >= 1, np.floor(g.random(s) * np.where(n >= 1, n, 1)) + 1)),
-    }
-    from . import BUILTINS
-    for name, (count, fn) in samplers.items():
-        if name not in BUILTINS:
-            builtin(name)(_rnd(name, count, fn))
-
-
-_more_samplers()
-
-
 # -- nan-aware and other means -----------------------------------------------------------------------
 
 def _reduce(name: str, fn):
@@ -363,8 +328,6 @@ def _reduce(name: str, fn):
 
 _reduce("nanmedian", lambda a, ax: np.nanmedian(a, axis=ax))
 _reduce("nanvar", lambda a, ax: np.nanvar(a, axis=ax, ddof=1) if a.shape[ax] > 1 else np.nanvar(a, axis=ax))
-_reduce("geomean", lambda a, ax: np.where(np.any(a < 0, axis=ax), np.nan, np.exp(np.mean(np.log(a), axis=ax))))
-_reduce("harmmean", lambda a, ax: a.shape[ax] / np.sum(1.0 / a, axis=ax))
 
 
 # -- pca, grp2idx, ksdensity --------------------------------------------------------------------------
