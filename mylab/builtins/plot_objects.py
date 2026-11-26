@@ -2187,7 +2187,9 @@ def redraw_surface(h) -> None:
     X, Y, Z = (np.asarray(h.extra[k], dtype=float) for k in ("XData", "YData", "ZData"))
     C = h.extra.get("CData")
     wire = old.__class__.__name__ == "Line3DCollection"
-    if wire:
+    if getattr(old, "_mylab_mesh", False):
+        new = P.draw_mesh(h.interp, ax, X, Y, Z)
+    elif wire:
         new = ax.plot_wireframe(X, Y, Z, linewidth=np.asarray(old.get_linewidth()).flat[0],
                                 colors=old.get_edgecolor())
     else:

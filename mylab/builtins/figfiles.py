@@ -148,7 +148,8 @@ def describe_object(interp, h) -> dict | None:
         if h.extra.get("CData") is not None:
             props["CData"] = _f(h.extra["CData"])
         name = obj.__class__.__name__
-        extra["style"] = "pcolor" if name == "QuadMesh" else "mesh" if name == "Line3DCollection" else "surf"
+        extra["style"] = "pcolor" if name == "QuadMesh" else "mesh" if (
+            name == "Line3DCollection" or getattr(obj, "_mylab_mesh", False)) else "surf"
         if hasattr(obj, "get_edgecolor") and name != "QuadMesh":
             ec = _f(obj.get_edgecolor())
             extra["edge"] = ec[0] if ec.ndim == 2 and len(ec) else np.zeros(0)
@@ -171,7 +172,7 @@ def describe_object(interp, h) -> dict | None:
             k += len(q)
         props.update(Vertices=verts, Faces=faces)
         arts = P._artists(obj)
-        fc = _f(arts[0].get_facecolor()) if arts else np.zeros((0, 4))
+        fc = P.face_colors(arts[0]) if arts else np.zeros((0, 4))
         ec = _f(arts[0].get_edgecolor()) if arts else np.zeros((0, 4))
         extra["facecolors"] = np.atleast_2d(fc) if len(arts) == 1 else np.array(
             [np.atleast_2d(_f(a.get_facecolor()))[0] for a in arts])

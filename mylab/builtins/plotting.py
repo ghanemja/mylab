@@ -168,6 +168,11 @@ def _replace_axes(interp, ax, projection: str):
     new = fig.add_subplot(spec, **kw) if spec is not None else fig.add_axes(pos, **kw)
     if layout is not None:
         layout.replace(ax, new)
+    known = st.handles.pop(id(ax), None)
+    if known is not None:  # a handle to the axes stays valid when the axes changes between 2-D, 3-D and polar
+        known.obj = new
+        known.kind = _axes_kind(new)
+        st.handles[id(new)] = known
     st.hold[id(new)] = hold
     if st.override_ax is ax:
         st.override_ax = new
@@ -341,18 +346,53 @@ def close_all(interp) -> None:
     st.current = None
 
 
+_AXES_KINDS = ("axes", "polaraxes", "geoaxes")
+_GROUP_KINDS = ("hggroup", "hgtransform")
+
+
 def _with_axes_arg(fn: Callable) -> Callable:
-    """Let a builtin take an axes handle as its first argument, e.g. plot(ax, x, y)."""
+    """Let a builtin take an axes handle as its first argument, e.g. plot(ax, x, y), or as 'Parent'.
+
+    The parent may also be a group (hggroup, hgtransform): the new objects are drawn in the group's axes,
+    without clearing it, and become children of the group.
+    """
     def wrapper(interp, args, nargout):
-        if args and isinstance(args[0], GraphicsHandle) and args[0].kind in ("axes", "polaraxes", "geoaxes"):
-            st = _state(interp)
-            prev = st.override_ax
-            st.override_ax = args[0].obj
-            try:
-                return fn(interp, list(args[1:]), nargout)
-            finally:
-                st.override_ax = prev
-        return fn(interp, args, nargout)
+        st = _state(interp)
+        target = None
+        if args and isinstance(args[0], GraphicsHandle) and args[0].kind in _AXES_KINDS + _GROUP_KINDS:
+            target, args = args[0], list(args[1:])
+        else:
+            for k in range(len(args) - 1):
+                if isinstance(args[k + 1], GraphicsHandle) and is_text(args[k]) \
+                        and text(args[k]).lower() == "parent":
+                    if args[k + 1].kind not in _AXES_KINDS + _GROUP_KINDS:
+                        raise MatlabError("The parent of a plot object must be an axes or a group "
+                                          "(hggroup, hgtransform).")
+                    target, args = args[k + 1], list(args[:k]) + list(args[k + 2:])
+                    break
+        if target is None:
+            return fn(interp, args, nargout)
+        if not _alive(target):
+            raise MatlabError("Invalid or deleted object.")
+        group = target if target.kind in _GROUP_KINDS else None
+        ax = target.obj.axes if group is not None else target.obj
+        prev = st.override_ax
+        st.override_ax = ax
+        held = st.hold.get(id(ax), False)
+        if group is not None:
+            st.hold[id(ax)] = True
+        try:
+            res = fn(interp, args, max(nargout, 1) if group is not None else nargout)
+        finally:
+            st.override_ax = prev
+            if group is not None:
+                st.hold[id(ax)] = held
+        if group is not None:
+            first = res[0] if isinstance(res, tuple) else res
+            for h in _handles_of(first):
+                group.obj.adopt(h)
+            return res if nargout > 0 else None
+        return res
     wrapper.__name__ = fn.__name__
     wrapper.__doc__ = fn.__doc__
     return wrapper
@@ -1291,11 +1331,36 @@ def _parent_get(h):
         return np.zeros((0, 0))
     if h.kind == "legend" or h.kind == "colorbar":
         return _wrap(interp, "figure", _obj_figure(h))
+    if h.extra.get("_part_of") is not None and _alive(h.extra["_part_of"]):
+        return h.extra["_part_of"]
     ax = _obj_axes(h)
     if ax is not None:
         return _wrap(interp, _axes_kind(ax), ax)
     fig = _obj_figure(h)
     return _wrap(interp, "figure", fig) if fig is not None else np.zeros((0, 0))
+
+
+def _parent_set(h, v):
+    hs = _handles_of(v)
+    if len(hs) != 1:
+        raise MatlabError("Parent must be one graphics object.")
+    new = hs[0]
+    if h.kind in ("figure", "root", "legend", "colorbar") + _AXES_KINDS:
+        raise MatlabError(f"The parent of a {_short(h.kind)} cannot be changed.")
+    old = h.extra.get("_part_of")
+    if new.kind in _GROUP_KINDS:
+        if _obj_axes(h) is not new.obj.axes:
+            raise MatlabError("An object can only join a group in the same axes.")
+        new.obj.adopt(h)
+        return
+    if new.kind in _AXES_KINDS:
+        if _obj_axes(h) is not new.obj:
+            raise MatlabError("Moving an object to another axes is not supported; use copyobj(h, ax) and "
+                              "delete the original.")
+        if old is not None:
+            old.obj.release(h)
+        return
+    raise MatlabError("The parent of a plot object must be an axes or a group (hggroup, hgtransform).")
 
 
 def _axes_kind(ax) -> str:
@@ -1318,7 +1383,8 @@ def _guess_kind(artist) -> str:
         return "image"
     if name in ("Text", "Annotation", "Text3D"):
         return "text"
-    if getattr(artist, "_mylab_surface", False) or name == "Line3DCollection":
+    if getattr(artist, "_mylab_surface", False) or getattr(artist, "_mylab_mesh", False) \
+            or name == "Line3DCollection":
         return "surface"
     if name in ("QuadContourSet", "ContourSet"):
         return "contour"
@@ -1347,11 +1413,11 @@ def _axes_children(interp, ax, hidden: bool = True) -> list:
             arts = _artists(g.obj)
             if id(g.obj) not in present and not any(id(a) in present for a in arts):
                 continue
-        if g.extra.get("_part_of") is not None:  # belongs to a larger chart object
-            continue
-        groups.append(g)
         owned.update(id(a) for a in arts)
         owned.add(id(g.obj))
+        if g.extra.get("_part_of") is not None:  # a child of a group: listed under the group, not here
+            continue
+        groups.append(g)
         for extra_art in g.extra.get("_artists", ()):
             owned.add(id(extra_art))
     for key, a in present.items():
@@ -2078,7 +2144,7 @@ _AXES_STATE = ("_mylab_rulers", "_mylab_tickfmt", "_mylab_geo", "_mylab_geo_lat"
                "_mylab_subtitle", "_mylab_minor_grid", "_mylab_colororder", "_mylab_styleorder",
                "_mylab_cycle_start", "_mylab_cycle_lines", "_mylab_zoom_reset", "_mylab_secondary",
                "_mylab_bubblelegend", "_mylab_tickinterp", "_mylab_lights", "_mylab_camera",
-               "_mylab_pos_before_legend")
+               "_mylab_pos_before_legend", "_mylab_mappable")
 
 
 def _clear_rulers(ax) -> None:
@@ -2137,6 +2203,9 @@ def _set_lim(ax, which: str, lo: float, hi: float) -> None:
         setter(hi, lo)
     else:
         setter(lo, hi)
+    if which in "xy" and getattr(ax, "name", "") == "rectilinear" and ax.get_aspect() != "auto" \
+            and ax.get_adjustable() == "datalim":
+        ax.set_adjustable("box")
 
 
 def _title_text(h, which: str):
@@ -2397,8 +2466,27 @@ def _cmap_prop_set(h, v):
 
 
 def _mappables(ax) -> list:
-    return [m for m in list(ax.collections) + list(ax.images) if getattr(m, "get_array", lambda: None)()
-            is not None]
+    out = [m for m in list(ax.collections) + list(ax.images) if getattr(m, "get_array", lambda: None)()
+           is not None]
+    extra = getattr(ax, "_mylab_mappable", None)  # colour scale of objects drawn with explicit face colours
+    if extra is not None and not out:
+        out.append(extra)
+    return out
+
+
+def face_colors(coll) -> np.ndarray:
+    """RGBA face colours of a collection in the order of its faces.
+
+    A 3-D collection reports its colours sorted by depth once it has been drawn, so they are taken
+    from the colour data (or the colours it was given) instead.
+    """
+    arr = coll.get_array() if hasattr(coll, "get_array") else None
+    if arr is not None and np.size(arr):
+        return np.atleast_2d(np.asarray(coll.to_rgba(np.asarray(arr, dtype=float)), dtype=float))
+    fc = getattr(coll, "_facecolor3d", None)
+    if fc is None:
+        fc = coll.get_facecolor()
+    return np.atleast_2d(np.asarray(fc, dtype=float))
 
 
 def _clim_get(h):
@@ -2957,7 +3045,7 @@ _IGNORED: dict[str, set] = {"axes": _AXES_IGNORED, "polaraxes": _AXES_IGNORED, "
 _COMMON_PROPS: dict[str, tuple] = {
     "Type": (lambda h: char(_TYPE.get(h.kind, h.kind)), None),
     "Visible": (_visible_get, _visible_set),
-    "Parent": (_parent_get, None),
+    "Parent": (_parent_get, _parent_set),
     "Tag": (lambda h: char(h.extra.get("Tag", "")), lambda h, v: h.extra.__setitem__("Tag", text(v))),
     "UserData": (lambda h: h.extra.get("UserData", np.zeros((0, 0))),
                  lambda h, v: h.extra.__setitem__("UserData", v)),
@@ -3875,6 +3963,16 @@ def _patch(interp, args, nargout):
         if is_text(a):
             break
         lead.append(a)
+    if lead and isinstance(lead[0], Struct):  # patch(fv): a structure with faces and vertices
+        fv = lead[0]
+        low = {f.lower(): f for f in fv.fields}
+        if "faces" not in low or "vertices" not in low:
+            raise MatlabError("patch(S): the structure needs the fields faces and vertices.")
+        named = [char("Faces"), fv.get_field(0, low["faces"]), char("Vertices"), fv.get_field(0, low["vertices"])]
+        if "facevertexcdata" in low and np.asarray(fv.get_field(0, low["facevertexcdata"])).size:
+            named += [char("FaceVertexCData"), fv.get_field(0, low["facevertexcdata"]),
+                      char("FaceColor"), char("flat")]
+        return _patch_named(interp, named + list(args[1:]), nargout)
     names = {text(a).lower() for a in args[len(lead)::2] if is_text(a)}
     if "faces" in names or "vertices" in names or "xdata" in names:
         return _patch_named(interp, args[len(lead):], nargout)
@@ -4208,12 +4306,72 @@ def _surface(interp, args, kind: str, nargout: int, handle_first: bool = False):
                                         text(opts["facecolor"]).lower() in ("flat", "interp")):
             coll.set_facecolor(_color(opts["facecolor"]))
         coll._mylab_surface = True
+        if "linestyle" in opts and text(opts["linestyle"]).lower() == "none":
+            coll.set_edgecolor("none")
     else:
-        coll = ax.plot_wireframe(X, Y, Z, linewidth=0.5, rcount=rc, ccount=cc)
+        coll = draw_mesh(interp, ax, X, Y, Z)
+        if "edgecolor" in opts and not (is_text(opts["edgecolor"])
+                                        and text(opts["edgecolor"]).lower() in ("flat", "interp")):
+            coll.set_edgecolor(_color(opts["edgecolor"]))
+        if "facecolor" in opts and not (is_text(opts["facecolor"])
+                                        and text(opts["facecolor"]).lower() in ("flat", "interp")):
+            coll.set_facecolor(_color(opts["facecolor"]))
+        if "facealpha" in opts:
+            coll.set_alpha(_scalar(opts["facealpha"]))
+        if "linewidth" in opts:
+            coll.set_linewidth(_scalar(opts["linewidth"]))
     _redraw(interp)
     h = _wrap(interp, "surface", coll)
     h.extra.update({"XData": X, "YData": Y, "ZData": Z})
+    for key, name in (("tag", "Tag"), ("visible", "Visible"), ("displayname", "DisplayName")):
+        if key in opts:
+            _set_prop(h, name, opts[key])
+    hook = interp.state.get("relight_hook")
+    if hook is not None:
+        hook(interp, ax)
     return (h) if nargout > 0 else None
+
+
+def face_values(Z: np.ndarray, rcount: int, ccount: int):
+    """Mean height of each face that plot_surface draws for a grid, in the order it draws them."""
+    rows, cols = Z.shape
+    rstride = max(int(np.ceil(rows / rcount)), 1)
+    cstride = max(int(np.ceil(cols / ccount)), 1)
+    ri = list(range(0, rows - 1, rstride)) + [rows - 1]
+    ci = list(range(0, cols - 1, cstride)) + [cols - 1]
+    vals = []
+    for r0, r1 in zip(ri[:-1], ri[1:]):
+        for c0, c1 in zip(ci[:-1], ci[1:]):
+            block = Z[r0:r1 + 1, c0:c1 + 1]
+            if np.isnan(block).any():
+                continue
+            vals.append((Z[r0, c0] + Z[r1, c0] + Z[r0, c1] + Z[r1, c1]) / 4.0)
+    return np.array(vals, dtype=float)
+
+
+def draw_mesh(interp, ax, X, Y, Z, hidden: bool | None = None):
+    """A wireframe surface the way MATLAB draws a mesh: lines coloured by height over opaque faces."""
+    import matplotlib as mpl
+    rc, cc = min(Z.shape[0], 200), min(Z.shape[1], 200)
+    if hidden is None:
+        hidden = interp.state.get("mesh_hidden", True)
+    face = ax.get_facecolor() if hidden else "none"
+    coll = ax.plot_surface(X, Y, Z, rcount=rc, ccount=cc, color="w", shade=False, linewidth=0.5,
+                           edgecolor="k")
+    vals = face_values(np.asarray(Z, dtype=float), rc, cc)
+    cmap = _current_cmap(interp)
+    cmap = mpl.colormaps[cmap] if isinstance(cmap, str) else cmap
+    try:
+        n_faces = len(coll.get_facecolor()) if len(coll.get_facecolor()) > 1 else vals.size
+        if vals.size and vals.size == n_faces:
+            lo, hi = float(vals.min()), float(vals.max())
+            coll.set_edgecolor(cmap((vals - lo) / (hi - lo) if hi > lo else np.full(vals.shape, 0.5)))
+    except (ValueError, TypeError):
+        pass
+    coll.set_facecolor(face)
+    coll._mylab_surface = False
+    coll._mylab_mesh = True
+    return coll
 
 
 builtin("surf", "surfc")(_with_axes_arg(lambda interp, args, nargout: _surface(interp, args, "surf", nargout)))
@@ -8256,6 +8414,9 @@ def _add_polys(interp, ax, polys: list, opts: dict, color, nargout: int):
     _redraw(interp)
     h = _wrap(interp, "patch", coll)
     h.extra.update({"axes": ax, "figure": ax.figure, "_polys": [np.asarray(q, dtype=float) for q in polys]})
+    hook = interp.state.get("relight_hook")
+    if hook is not None and three_d:
+        hook(interp, ax)
     return (h) if nargout > 0 else None
 
 
