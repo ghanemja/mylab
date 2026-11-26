@@ -21,7 +21,7 @@ from ..errors import MatlabError
 from ..values import Cell, MString, StringArray, char, is_char, to_str
 from . import BUILTINS
 from ._registry import builtin
-from ._util import is_text, text
+from ._util import cast_class, is_text, parse_options, text
 
 
 def escape(text, entities=None):
@@ -491,16 +491,9 @@ def _xlsfinfo(interp, args, nargout):
 
 # -- Excel files in readtable, readmatrix, readcell and their write counterparts ----------------------
 
-def _file_options(args: list, names: tuple[str, ...]) -> dict:
-    opts: dict = {}
-    k = 0
-    while k + 1 < len(args):
-        if is_text(args[k]) and text(args[k]).lower() in names:
-            opts[text(args[k]).lower()] = args[k + 1]
-            k += 2
-        else:
-            k += 1
-    return opts
+def _file_options(args: list, names: tuple[str, ...], fname: str) -> dict:
+    """Strict name-value options for the spreadsheet readers and writers (keys are lower case)."""
+    return parse_options(args, names, fname)
 
 
 def _flag(opts: dict, name: str, default: bool) -> bool:
@@ -518,7 +511,8 @@ def _read_table(interp, args, nargout):
     from .table import TableObject
     fname = text(args[0])
     opts = _file_options(list(args[1:]), ("sheet", "range", "readvariablenames", "texttype",
-                                          "readrownames", "variablenamingrule"))
+                                          "readrownames", "variablenamingrule"), "readtable")
+    preserve = "variablenamingrule" in opts and text(opts["variablenamingrule"]).lower() == "preserve"
     rows = read_sheet(fname, opts.get("sheet"), _range_opt(opts), "readtable")
     if not rows:
         return TableObject([], [])
@@ -529,8 +523,8 @@ def _read_table(interp, args, nargout):
     names: list[str] = []
     for k in range(len(rows[0])):
         raw = rows[0][k] if header and isinstance(rows[0][k], str) else f"Var{k + 1}"
-        clean = re.sub(r"\W", "_", raw.strip()) or f"Var{k + 1}"
-        if not clean[0].isalpha():
+        clean = (raw if preserve else re.sub(r"\W", "_", raw.strip())) or f"Var{k + 1}"
+        if not preserve and not clean[0].isalpha():
             clean = "x" + clean
         while clean in names:
             clean += "_1"
@@ -560,7 +554,7 @@ def _write_table(interp, args, nargout):
     t = args[0]
     fname = text(args[1])
     opts = _file_options(list(args[2:]), ("sheet", "range", "writevariablenames", "writerownames",
-                                          "writemode"))
+                                          "writemode"), "writetable")
     header: list = []
     columns: list[list[list]] = []
     for name, c in zip(t.names, t.columns):
@@ -601,15 +595,23 @@ def _plain_table_cell(x: Any) -> Any:
 
 
 def _read_matrix(interp, args, nargout):
-    opts = _file_options(list(args[1:]), ("sheet", "range", "numheaderlines", "outputtype"))
+    opts = _file_options(list(args[1:]), ("sheet", "range", "numheaderlines", "outputtype"),
+                         "readmatrix")
     rows = read_sheet(text(args[0]), opts.get("sheet"), _range_opt(opts), "readmatrix")
     if "numheaderlines" in opts:
         rows = rows[int(np.asarray(opts["numheaderlines"]).flat[0]):]
-    return rows_to_numeric(rows)
+    out = rows_to_numeric(rows)
+    if "outputtype" in opts:
+        cls = text(opts["outputtype"]).lower()
+        if cls not in ("double", "single", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32",
+                       "uint64"):
+            raise MatlabError(f"readmatrix: the 'OutputType' '{text(opts['outputtype'])}' is not supported.")
+        out = cast_class(out, cls)
+    return out
 
 
 def _read_cell(interp, args, nargout):
-    opts = _file_options(list(args[1:]), ("sheet", "range", "numheaderlines"))
+    opts = _file_options(list(args[1:]), ("sheet", "range", "numheaderlines"), "readcell")
     rows = read_sheet(text(args[0]), opts.get("sheet"), _range_opt(opts), "readcell")
     if "numheaderlines" in opts:
         rows = rows[int(np.asarray(opts["numheaderlines"]).flat[0]):]
@@ -620,7 +622,7 @@ def _read_cell(interp, args, nargout):
 
 def _write_values(name: str):
     def fn(interp, args, nargout):
-        opts = _file_options(list(args[2:]), ("sheet", "range", "writemode"))
+        opts = _file_options(list(args[2:]), ("sheet", "range", "writemode"), name)
         if name == "writecell" and not isinstance(args[0], Cell):
             raise MatlabError("writecell expects a cell array.")
         replace = "writemode" in opts and text(opts["writemode"]).lower() == "replacefile"

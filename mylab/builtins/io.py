@@ -21,7 +21,7 @@ from ..values import (
 )
 from . import _fastcsv
 from ._registry import builtin
-from ._util import bool_scalar, is_text, nargs, num, text
+from ._util import bool_scalar, is_text, nargs, num, parse_options, text
 from .system import file_handle
 
 _DELIM_NAMES = {"tab": "\t", "\\t": "\t", "space": " ", "comma": ",", "semi": ";", "bar": "|"}
@@ -32,19 +32,21 @@ def _delimiter(v) -> str:
     return _DELIM_NAMES.get(d.lower(), d) if len(d) != 1 or d in _DELIM_NAMES else d
 
 
-def _name_value(args: list, names: set[str]) -> tuple[list, dict]:
-    """Split case-insensitive name-value options (keys are returned lower-case)."""
-    lower = {n.lower() for n in names}
-    rest, opts, i = [], {}, 0
-    while i < len(args):
-        a = args[i]
-        if is_text(a) and text(a).lower() in lower and i + 1 < len(args):
-            opts[text(a).lower()] = args[i + 1]
-            i += 2
-            continue
-        rest.append(a)
-        i += 1
-    return rest, opts
+def _name_value(args: list, names: set[str], fname: str) -> dict:
+    """Strict case-insensitive name-value options (keys are returned lower-case)."""
+    return parse_options(args, sorted(n.lower() for n in names), fname)
+
+
+def _check_text_file_opts(opts: dict, fname: str) -> None:
+    """Options the plain-text readers and writers accept only with their default meaning."""
+    if "filetype" in opts and text(opts["filetype"]).lower() not in ("text", "delimitedtext"):
+        raise MatlabError(f"{fname}: the file type '{text(opts['filetype'])}' is not supported for this file; "
+                          "give an .xlsx file name to write a spreadsheet.")
+    if "encoding" in opts and text(opts["encoding"]).upper().replace("-", "") not in ("UTF8", "SYSTEM"):
+        raise MatlabError(f"{fname}: only UTF-8 text files are supported.")
+    if "lineending" in opts and fname == "readlines" and \
+            text(opts["lineending"]) not in ("\\n", "\\r\\n", "\\r", "\n", "\r\n", "\r"):
+        raise MatlabError(f"{fname}: 'LineEnding' must be '\\n', '\\r\\n' or '\\r'.")
 
 
 def _read_text(fname: str) -> str:
@@ -254,7 +256,8 @@ def _writematrix(interp, args, nargout):
     rest = list(args[1:])
     fname = text(rest.pop(0)) if rest and is_text(rest[0]) and \
         text(rest[0]).lower() not in ("delimiter", "writemode", "filetype") else "matrix.txt"
-    _, opts = _name_value(rest, {"Delimiter", "WriteMode", "FileType", "QuoteStrings"})
+    opts = _name_value(rest, {"Delimiter", "WriteMode", "FileType"}, "writematrix")
+    _check_text_file_opts(opts, "writematrix")
     delim = _delimiter(opts["delimiter"]) if "delimiter" in opts else _default_delim(fname)
     append = "writemode" in opts and text(opts["writemode"]).lower() == "append"
     _write_matrix(fname, a, delim, None, append)
@@ -295,7 +298,7 @@ def _dlmwrite(interp, args, nargout):
         if len(rest) >= 2 and not is_text(rest[0]):
             a = _pad_offset(num(a), rest[:2])
             rest = rest[2:]
-    _, opts = _name_value(rest, {"delimiter", "precision", "newline", "roffset", "coffset"})
+    opts = _name_value(rest, {"delimiter", "precision", "newline", "roffset", "coffset"}, "dlmwrite")
     if "delimiter" in opts:
         delim = _delimiter(opts["delimiter"])
     fmt = "%.5g"
@@ -324,7 +327,8 @@ def _writecell(interp, args, nargout):
     rest = list(args[1:])
     fname = text(rest.pop(0)) if rest and is_text(rest[0]) and \
         text(rest[0]).lower() not in ("delimiter", "writemode", "filetype") else "cell.txt"
-    _, opts = _name_value(rest, {"Delimiter", "WriteMode", "FileType", "QuoteStrings"})
+    opts = _name_value(rest, {"Delimiter", "WriteMode", "FileType"}, "writecell")
+    _check_text_file_opts(opts, "writecell")
     delim = _delimiter(opts["delimiter"]) if "delimiter" in opts else _default_delim(fname)
     append = "writemode" in opts and text(opts["writemode"]).lower() == "append"
     _write_rows(fname, _matrix_rows(c, delim, None), delim, append)
@@ -341,7 +345,8 @@ def _readcell(interp, args, nargout):
 @builtin("readlines")
 def _readlines(interp, args, nargout):
     nargs(args, 1, None, "readlines")
-    _, opts = _name_value(list(args[1:]), {"EmptyLineRule", "WhitespaceRule", "LineEnding", "Encoding"})
+    opts = _name_value(list(args[1:]), {"EmptyLineRule", "WhitespaceRule", "LineEnding", "Encoding"}, "readlines")
+    _check_text_file_opts(opts, "readlines")
     lines = _lines_of(_read_text(text(args[0])))
     rule = text(opts["emptylinerule"]).lower() if "emptylinerule" in opts else "read"
     ws = text(opts["whitespacerule"]).lower() if "whitespacerule" in opts else "preserve"
@@ -363,7 +368,8 @@ def _readlines(interp, args, nargout):
 def _writelines(interp, args, nargout):
     nargs(args, 2, None, "writelines")
     v, fname = args[0], text(args[1])
-    _, opts = _name_value(list(args[2:]), {"WriteMode", "LineEnding", "Encoding"})
+    opts = _name_value(list(args[2:]), {"WriteMode", "LineEnding", "Encoding"}, "writelines")
+    _check_text_file_opts(opts, "writelines")
     if isinstance(v, StringArray):
         lines = ["" if x is None else x for x in v.data.flatten(order="F")]
     elif isinstance(v, Cell):
@@ -582,7 +588,7 @@ def _textread(interp, args, nargout):
         fmt = text(rest.pop(0))
     content = _read_text(path)
     if fmt == "":
-        _, opts = _name_value(rest, {"delimiter", "headerlines"})
+        opts = _name_value(rest, {"delimiter", "headerlines"}, "textread")
         lines = _lines_of(content)
         skip = to_int(opts["headerlines"], "headerlines") if "headerlines" in opts else 0
         delim = _delimiter(opts["delimiter"]) if "delimiter" in opts else _sniff_delimiter(lines[skip:])
