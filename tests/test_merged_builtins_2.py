@@ -99,3 +99,18 @@ def test_text_predicates_options_are_strict(m, name):
     assert m.num(f"{name}('ABC', {{'x', 'a', 'c'}}, 'ignorecase', 1)")
     with pytest.raises(MatlabError, match="Bogus"):
         m.run(f"{name}('abc', 'b', 'Bogus', 1)")
+
+
+def test_anynan_allfinite_accept_char(m):
+    # char input is allowed and never NaN/Inf (one copy raised an error for it)
+    assert not m.num("anynan('abc')") and m.num("allfinite('abc')")
+    assert m.num("anynan([1 NaN])") and not m.num("allfinite([1 Inf])")
+    with pytest.raises(MatlabError):
+        m.run("anynan({1})")
+
+
+def test_e_takes_sizes(m):
+    # e(n) and e(m, n) are arrays (one copy ignored its arguments and always returned the scalar)
+    assert m.num("e") == pytest.approx(np.e)
+    assert m.num("size(e(2))").tolist() == [[2, 2]] and m.num("size(e(1, 3))").tolist() == [[1, 3]]
+    assert m.str("class(e(2, 'single'))") == "single"

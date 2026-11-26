@@ -484,7 +484,6 @@ def _float_const(attr):
 builtin("realmax")(_float_const("max"))
 builtin("realmin")(_float_const("tiny"))
 builtin("flintmax")(lambda interp, args, nargout: 2.0 ** 53)
-builtin("e")(lambda interp, args, nargout: np.e)
 
 
 @builtin("eps")

@@ -116,17 +116,22 @@ def _numeric(v, name: str) -> np.ndarray:
     return v
 
 
+def _numeric_or_char(v, name: str) -> np.ndarray:
+    """anynan/allfinite input: numeric, logical or char (char never holds NaN or Inf)."""
+    return v if isinstance(v, np.ndarray) and v.dtype.kind == "U" else _numeric(v, name)
+
+
 @builtin("anynan")
 def _anynan(interp, args, nargout):
     nargs(args, 1, 1, "anynan")
-    a = _numeric(args[0], "anynan")
+    a = _numeric_or_char(args[0], "anynan")
     return bool_scalar(a.dtype.kind in "fc" and bool(np.isnan(a).any()))
 
 
 @builtin("allfinite")
 def _allfinite(interp, args, nargout):
     nargs(args, 1, 1, "allfinite")
-    a = _numeric(args[0], "allfinite")
+    a = _numeric_or_char(args[0], "allfinite")
     return bool_scalar(a.dtype.kind not in "fc" or bool(np.isfinite(a).all()))
 
 

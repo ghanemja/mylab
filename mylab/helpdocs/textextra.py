@@ -56,8 +56,9 @@ HELP = {
     "lasterror": (["s = lasterror", "lasterror('reset')"],
                   "Struct with the message, identifier and stack of the most recent error. It is reliable inside "
                   "a catch block; prefer 'catch err' in new code."),
-    "anynan": ("tf = anynan(A)", "True if any element of A is NaN."),
-    "allfinite": ("tf = allfinite(A)", "True if no element of A is NaN or infinite."),
+    "anynan": ("tf = anynan(A)", "True if any element of A is NaN. A is numeric, logical or char."),
+    "allfinite": ("tf = allfinite(A)", "True if no element of A is NaN or infinite. A is numeric, logical or "
+                  "char."),
     "isoutlier": (["tf = isoutlier(A)", "tf = isoutlier(A, method)", "tf = isoutlier(..., dim)",
                    "tf = isoutlier(..., 'ThresholdFactor', f)"],
                   "Marks the outliers of A along its first non-singleton dimension. The default method 'median' "

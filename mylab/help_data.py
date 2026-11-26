@@ -95,7 +95,6 @@ HELP: dict = {
              "Example: diag([1 2]) is [1 0; 0 2]."),
     # -- constants --------------------------------------------------------------------------
     "pi": ("p = pi", "The ratio of a circle's circumference to its diameter, 3.14159..., in double precision."),
-    "e": ("x = e", "Euler's number 2.71828..., the base of the natural logarithm. Same as exp(1)."),
     "i": ("z = i", "The imaginary unit, sqrt(-1). Can be overwritten by a variable named i; writing 1i is safer."),
     "realmax": (["x = realmax", "x = realmax('single')"],
                 "Largest finite double-precision number, about 1.7977e308. realmax('single') is the "

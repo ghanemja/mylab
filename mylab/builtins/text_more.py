@@ -938,5 +938,7 @@ def _must_be_vector(interp, args, nargout):
 def _euler(interp, args, nargout):
     """Octave's constant e (the base of the natural logarithm); e(n) and e(m, n) give arrays of it."""
     from ._util import dims_from_args
-    dims, _cls = dims_from_args(list(args), "e")
-    return np.full(dims, np.e)
+    dims, cls = dims_from_args(list(args), "e")
+    if cls not in (None, "double", "single"):
+        raise MatlabError("e: the class must be 'double' or 'single'.")
+    return np.full(dims, np.e, dtype=np.float32 if cls == "single" else float)
