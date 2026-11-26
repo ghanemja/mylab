@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import os
 from typing import Any
 
 import numpy as np
@@ -1711,19 +1712,39 @@ def _readtable(interp, args, nargout):
 def _writetable(interp, args, nargout):
     t = args[0]
     fname = text(args[1]) if len(args) > 1 else "table.csv"
-    _, opts = _split_opts(list(args[2:]), {"Delimiter", "WriteVariableNames"})
+    known = {"delimiter": "Delimiter", "writevariablenames": "WriteVariableNames", "writerownames": "WriteRowNames",
+             "writemode": "WriteMode", "filetype": "FileType", "encoding": "Encoding"}
+    rest = list(args[2:])
+    if len(rest) % 2:
+        raise MatlabError("writetable: options must come in name-value pairs.")
+    opts = {}
+    for k in range(0, len(rest), 2):
+        key = text(rest[k], "an option name").lower()
+        if key not in known:
+            raise MatlabError(f"writetable: the option '{text(rest[k])}' is not supported for text files.",
+                              "MATLAB:table:write:UnknownParameter")
+        opts[known[key]] = rest[k + 1]
+    if "FileType" in opts and text(opts["FileType"]).lower() not in ("text", "delimitedtext"):
+        raise MatlabError(f"writetable: file type '{text(opts['FileType'])}' is not supported here.")
+    if "Encoding" in opts and text(opts["Encoding"]).upper().replace("-", "") not in ("UTF8", "SYSTEM"):
+        raise MatlabError("writetable: only UTF-8 text files can be written.")
+    mode = text(opts["WriteMode"]).lower() if "WriteMode" in opts else "overwrite"
+    if mode not in ("overwrite", "append"):
+        raise MatlabError("writetable: 'WriteMode' must be 'overwrite' or 'append' for text files.")
     delim = text(opts["Delimiter"]) if "Delimiter" in opts else ","
-    delim = {"tab": "\t", "comma": ",", "semi": ";", "space": " "}.get(delim, delim)
-    header = []
+    delim = {"tab": "\t", "\\t": "\t", "comma": ",", "semi": ";", "space": " "}.get(delim, delim)
+    with_rows = "WriteRowNames" in opts and bool(num(opts["WriteRowNames"]).flat[0]) and bool(t.row_names)
+    header = ["Row"] if with_rows else []
     for n, c in zip(t.names, t.columns):
         width = c.shape[1] if isinstance(c, np.ndarray) and not is_char(c) else 1
         header += [n] if width == 1 else [f"{n}_{k + 1}" for k in range(width)]
-    with open(fname, "w", newline="", encoding="utf-8") as fh:
+    appending = mode == "append" and os.path.isfile(fname) and os.path.getsize(fname) > 0
+    with open(fname, "a" if mode == "append" else "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh, delimiter=delim)
-        if not ("WriteVariableNames" in opts and not bool(num(opts["WriteVariableNames"]).flat[0])):
+        if not appending and not ("WriteVariableNames" in opts and not bool(num(opts["WriteVariableNames"]).flat[0])):
             w.writerow(header)
         for i in range(t.nrows):
-            row = []
+            row = [t.row_names[i]] if with_rows else []
             for c in t.columns:
                 if isinstance(c, Cell):
                     x = c.data[i, 0]

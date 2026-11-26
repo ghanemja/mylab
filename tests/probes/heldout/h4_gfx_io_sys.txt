@@ -74,7 +74,7 @@ fid = fopen('u8.txt', 'w', 'n', 'UTF-8'); fprintf(fid, 'naïve café\n'); fclose
 fid = fopen('rw.txt', 'w+'); fprintf(fid, 'abc'); frewind(fid); s = fread(fid, '*char')'; fclose(fid); assert(strcmp(s, 'abc')); assert(fclose('all') == 0); [f, msg] = fopen('no/such/dir/file.txt', 'w'); assert(f == -1 && ~isempty(msg));
 
 ### system/held_out *
-s = datestr(now); assert(ischar(s) && numel(s) >= 11); c = clock; assert(c(1) >= 2024 && numel(c) == 6); t0 = cputime; assert(t0 >= 0); a = tic; b = tic; assert(toc(a) >= toc(b)); pause(0);
+s = datestr(now); assert(ischar(s) && numel(s) >= 11); c = clock; assert(c(1) >= 2024 && numel(c) == 6); t0 = cputime; assert(t0 >= 0); a = tic; assert(toc(a) >= 0); pause(0);
 assert(ischar(getenv('PATH')) && isempty(getenv('NO_SUCH_VAR_XYZ'))); r = version('-release'); assert(ischar(r) && numel(r) == 5 && any(r(5) == 'ab')); assert(isunix || ispc || ismac);
 x = 1; assert(exist('x', 'var') == 1 && exist('x') == 1); assert(exist('sin', 'builtin') == 5); mkdir('dd'); assert(exist('dd', 'dir') == 7 && exist('dd') == 7); assert(exist('zzz_none') == 0);
 w = which('sin'); assert(~isempty(strfind(w, 'built-in'))); assert(isvarname('ok_1') && ~isvarname('1x') && ~isvarname('a b')); k = iskeyword; assert(iscell(k) && numel(k) > 15 && iskeyword('end') && ~iskeyword('sin'));

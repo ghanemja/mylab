@@ -444,12 +444,17 @@ def _importdata(interp, args, nargout):
 def _fscanf(interp, args, nargout):
     nargs(args, 2, 3, "fscanf")
     fh = file_handle(interp, to_int(args[0], "file identifier"))
+    start = fh.raw.tell()
     content = fh.read()
     from ._registry import BUILTINS
-    res = BUILTINS["sscanf"](interp, [char(content), *args[1:]], max(nargout, 1))
-    if nargout > 1 and isinstance(res, tuple):
-        return res[:2]
-    return res
+    res = BUILTINS["sscanf"](interp, [char(content), *args[1:]], 4)
+    nxt = int(res[3].flat[0]) if isinstance(res[3], np.ndarray) else int(res[3])
+    if nxt <= len(content):  # stopped before the end: leave the file just after what was read
+        fh.raw.seek(start + len(fh.encode(content[:nxt - 1])))
+        fh.hit_eof = False
+    if nargout > 1:
+        return res[0], res[1]
+    return res[0]
 
 
 @builtin("textscan")

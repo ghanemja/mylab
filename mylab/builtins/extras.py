@@ -254,7 +254,11 @@ def _parse_scan_format(fmt: str) -> list[tuple]:
     return toks
 
 
-def _scan(s: str, fmt: str):
+def _scan(s: str, fmt: str, limit: int | None = None):
+    """Scan ``s`` with a scanf format: (values, kinds, fields read, error message, next index).
+
+    ``limit`` stops after that many fields (a number, or a whole %s word, each count as one); the
+    next index (1-based) then points just after the last field read."""
     toks = _parse_scan_format(fmt)
     values: list[float] = []
     kinds: list[str] = []
@@ -262,7 +266,8 @@ def _scan(s: str, fmt: str):
     pos = 0
     errmsg = ""
     if not any(t[0] == "conv" for t in toks):
-        return values, kinds, count, errmsg
+        return values, kinds, count, errmsg, len(s) + 1
+    stopped_early = False
     while pos < len(s):
         start = pos
         stop = False
@@ -296,6 +301,9 @@ def _scan(s: str, fmt: str):
                     values.extend(float(ord(ch)) for ch in word)
                     kinds.extend("s" * len(word))
                     count += 1
+                    if limit is not None and count >= limit:
+                        stopped_early = True
+                        break
             elif kind == "c":
                 w = width or 1
                 chunk = s[pos:pos + w]
@@ -304,6 +312,9 @@ def _scan(s: str, fmt: str):
                     values.extend(float(ord(ch)) for ch in chunk)
                     kinds.extend("c" * len(chunk))
                     count += 1
+                    if limit is not None and count >= limit:
+                        stopped_early = True
+                        break
             elif kind.startswith("["):
                 body = kind[1:-1]
                 cls = "[" + body + "]+"
@@ -316,6 +327,9 @@ def _scan(s: str, fmt: str):
                     values.extend(float(ord(ch)) for ch in m.group(0))
                     kinds.extend("s" * m.end())
                     count += 1
+                    if limit is not None and count >= limit:
+                        stopped_early = True
+                        break
             else:
                 m = re.match(_NUM_RE[kind], seg)
                 if not m or m.group(0) in ("+", "-"):
@@ -338,9 +352,13 @@ def _scan(s: str, fmt: str):
                     values.append(v)
                     kinds.append("n")
                     count += 1
-        if stop or pos == start:
+                    if limit is not None and count >= limit:
+                        stopped_early = True
+                        break
+        if stop or stopped_early or pos == start:
             break
-    return values, kinds, count, errmsg
+    nxt = pos + 1 if (stopped_early or errmsg) else len(s) + 1
+    return values, kinds, count, errmsg, nxt
 
 
 @builtin("sscanf")
@@ -350,14 +368,20 @@ def _sscanf(interp, args, nargout):
     fmt = text(args[1], "format")
     from .strings import process_escapes
     fmt = process_escapes(fmt)
-    values, kinds, count, errmsg = _scan(s, fmt)
+    limit = None
+    if len(args) > 2:  # a finite size limits the number of fields read
+        sz0 = fnum(args[2]).flatten()
+        if sz0.size == 1 and np.isfinite(sz0[0]):
+            limit = int(sz0[0])
+        elif sz0.size == 2 and np.isfinite(sz0[1]):
+            limit = int(sz0[0]) * int(sz0[1])
+    values, kinds, count, errmsg, nxt = _scan(s, fmt, limit)
     all_text = bool(kinds) and all(k in "sc" for k in kinds)
     arr = np.array(values, dtype=float)
     if len(args) > 2:
         sz = fnum(args[2]).flatten()
         if sz.size == 1:
-            n = arr.size if np.isinf(sz[0]) else int(sz[0])
-            out = arr[:n].reshape(-1, 1)
+            out = arr.reshape(1, -1) if all_text else arr.reshape(-1, 1)  # already limited to the field count
         else:
             m = int(sz[0])
             ncol = int(np.ceil(arr.size / m)) if np.isinf(sz[1]) else int(sz[1])
@@ -373,7 +397,7 @@ def _sscanf(interp, args, nargout):
         out = codes_to_char(out)
     elif arr.size == 0:
         out = np.zeros((0, 0))
-    outs = (out, float(count), char(errmsg), float(len(s) + 1))
+    outs = (out, float(count), char(errmsg), float(nxt))
     return outs[:max(nargout, 1)] if nargout > 1 else out
 
 
@@ -405,6 +429,16 @@ def _cell_texts(v) -> list[str]:
     raise MatlabError("Expected a cell array of character vectors.")
 
 
+# error identifiers of failed checks, by attribute (others are MATLAB:expected<Attribute>)
+_VALIDATE_IDS = {
+    "2d": "MATLAB:expected2D", "3d": "MATLAB:expected3D", "nonnan": "MATLAB:expectedNonNaN",
+    "nonzero": "MATLAB:expectedNonZero", ">": "MATLAB:notGreater", ">=": "MATLAB:notGreaterEqual",
+    "<": "MATLAB:notLess", "<=": "MATLAB:notLessEqual", "numel": "MATLAB:incorrectNumel",
+    "size": "MATLAB:incorrectSize", "ncols": "MATLAB:incorrectNumcols", "nrows": "MATLAB:incorrectNumrows",
+    "ndims": "MATLAB:incorrectNumdims",
+}
+
+
 @builtin("validateattributes")
 def _validateattributes(interp, args, nargout):
     nargs(args, 3, 6, "validateattributes")
@@ -416,9 +450,12 @@ def _validateattributes(interp, args, nargout):
     if len(args) > 5:
         var = f"input number {to_int(args[5])}, {var},"
     prefix = f"{func}: " if func else ""
+    current = {"attr": None}
 
     def fail(msg):
-        raise MatlabError(f"{prefix}Expected {var} to be {msg}.")
+        attr = current["attr"]
+        ident = "MATLAB:invalidType" if attr is None else _VALIDATE_IDS.get(attr, "MATLAB:expected" + attr.capitalize())
+        raise MatlabError(f"{prefix}Expected {var} to be {msg}.", ident)
 
     cls_list = _cell_texts(classes) if not (isinstance(classes, Cell) and classes.data.size == 0) else []
     if cls_list and not any(_class_ok(v, c) for c in cls_list):
@@ -439,6 +476,7 @@ def _validateattributes(interp, args, nargout):
 
     while k < len(items):
         name = to_str(items[k]).lower()
+        current["attr"] = name
         k += 1
         if name in (">", ">=", "<", "<=", "numel", "size", "ncols", "nrows", "ndims"):
             if k >= len(items):

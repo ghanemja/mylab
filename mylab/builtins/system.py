@@ -593,11 +593,18 @@ def _evalc(interp, args, nargout):
     captured: list[str] = []
     old = interp.out
     interp.out = captured.append
+    extra: tuple = ()
     try:
-        interp.run_program(parse(text(args[0])), interp.frame)
+        program = parse(text(args[0]))
+        if nargout > 1:  # [text, out1, ..., outN] = evalc(expression)
+            if not (len(program.body) == 1 and type(program.body[0]).__name__ == "ExprStmt"):
+                raise MatlabError("evalc: outputs other than the captured text need an expression, not a statement.")
+            extra = tuple(interp.eval_multi(program.body[0].expr, interp.frame, nargout - 1))
+        else:
+            interp.run_program(program, interp.frame)
     finally:
         interp.out = old
-    return char("".join(captured))
+    return (char("".join(captured)), *extra) if extra else char("".join(captured))
 
 
 @builtin("input")
@@ -902,9 +909,26 @@ def _delete(interp, args, nargout):
         from .objfuncs import delete_object
         delete_object(interp, args[0])
         return None
+    import glob
     for a in args:
-        if is_text(a) and os.path.isfile(text(a)):
-            os.remove(text(a))
+        if isinstance(a, np.ndarray) and a.size == 0 and not is_text(a):
+            continue  # delete([]) and delete(gcp('nocreate')) with no pool do nothing
+        if isinstance(a, np.ndarray) and a.dtype.kind in "fiu" and not is_text(a):
+            from ._registry import BUILTINS
+            for h in a.flatten():  # figure numbers, as close accepts them
+                BUILTINS["close"](interp, [np.array([[float(h)]])], 0)
+            continue
+        if isinstance(a, Struct) and "NumWorkers" in a.fields:
+            continue  # the pool from parpool: there are no worker processes to shut down
+        if not is_text(a):
+            raise MatlabError("delete: the argument must be a file name or a handle object.")
+        name = text(a)
+        matches = [p for p in glob.glob(name) if os.path.isfile(p)] if any(c in name for c in "*?[") \
+            else ([name] if os.path.isfile(name) else [])
+        if not matches:
+            interp.warn(f"File '{name}' not found.", "MATLAB:DELETE:FileNotFound")
+        for path in matches:
+            os.remove(path)
     return None
 
 
