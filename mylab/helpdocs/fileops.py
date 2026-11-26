@@ -260,9 +260,6 @@ HELP = {
     "gpuDevice": (["g = gpuDevice", "gpuDevice(index)"],
                   "Describes the GPU in use. mylab has none, so the struct reports DeviceAvailable false and "
                   "no memory; selecting or resetting a device does nothing."),
-    "blkdiag": (["B = blkdiag(A1, A2, ...)"],
-                "Block-diagonal matrix with the given matrices along its diagonal and zeros elsewhere. "
-                "Example: blkdiag([1 2; 3 4], 5) is a 3-by-3 matrix."),
     "getfield": (["v = getfield(s, name)", "v = getfield(s, name1, name2, ...)",
                   "v = getfield(s, {i, j}, name, {k})"],
                  "Value of a field, the same as s.name. Several names follow nested structs (s.a.b), and a "

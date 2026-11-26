@@ -272,12 +272,6 @@ def _cputime(interp, args, nargout):
     return time.process_time()
 
 
-@builtin("datestr")
-def _datestr(interp, args, nargout):
-    t = time.time() if not args else (float(num(args[0]).flat[0]) - 719529.0) * 86400.0
-    return char(time.strftime("%d-%b-%Y %H:%M:%S", time.localtime(t)))
-
-
 # -- workspace -------------------------------------------------------------------------
 
 @builtin("clc", "home")

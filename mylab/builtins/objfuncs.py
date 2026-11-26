@@ -49,8 +49,6 @@ _check("mustBeNumericOrLogical", lambda a: isinstance(a, np.ndarray) and a.dtype
        "Value must be numeric or logical.", need_numeric=False)
 _check("mustBeNonempty", lambda a: not (hasattr(a, "size") and a.size == 0) and
        not (isinstance(a, (Cell, StringArray)) and a.data.size == 0), "Value must not be empty.", need_numeric=False)
-_check("mustBeVector", lambda a: len(np.shape(getattr(a, "data", a))) == 2 and 1 in np.shape(getattr(a, "data", a)),
-       "Value must be a vector.", need_numeric=False)
 _check("mustBeText", lambda a: isinstance(a, (MString, StringArray)) or is_char(a) or
        (isinstance(a, Cell) and all(is_char(x) for x in a.data.flat)), "Value must be text.", need_numeric=False)
 _check("mustBeTextScalar", lambda a: isinstance(a, MString) or (is_char(a) and a.ndim == 2 and a.shape[0] <= 1),
@@ -65,27 +63,6 @@ _check("mustBeLessThanOrEqual", lambda a, c: bool(np.all(np.real(a) <= num(c))),
        "Value must be less than or equal to the limit.")
 
 
-def _in_range(a, lo, hi, *flags) -> bool:
-    """mustBeInRange(value, lower, upper, flags...): flags move the boundaries out of the range."""
-    lower_open = upper_open = False
-    for f in flags:
-        key = text(f, "boundary flag").lower()
-        if key == "exclusive":
-            lower_open = upper_open = True
-        elif key == "exclude-lower":
-            lower_open = True
-        elif key == "exclude-upper":
-            upper_open = True
-        elif key != "inclusive":
-            raise MatlabError(f"mustBeInRange: unknown boundary flag '{key}'; use 'inclusive', 'exclusive', "
-                              "'exclude-lower' or 'exclude-upper'.")
-    v = np.real(a)
-    low = (v > num(lo)) if lower_open else (v >= num(lo))
-    high = (v < num(hi)) if upper_open else (v <= num(hi))
-    return bool(np.all(low & high))
-
-
-_check("mustBeInRange", _in_range, "Value must be within the allowed range.")
 _check("mustBeFile", lambda a: os.path.isfile(to_str(a)), "The file must exist.", need_numeric=False)
 _check("mustBeFolder", lambda a: os.path.isdir(to_str(a)), "The folder must exist.", need_numeric=False)
 

@@ -163,7 +163,6 @@ HELP = {
     "plotbrowser": ("plotbrowser", _NOOP),
     "propertyeditor": ("propertyeditor", _NOOP),
     "plottools": ("plottools", _NOOP),
-    "brush": ("brush on", _NOOP),
     "linkdata": ("linkdata on", _NOOP),
     "linkprop": (["link = linkprop(handles, name)", "link = linkprop(handles, {name1, name2})"],
                  "Keeps the named properties of the graphics objects equal: all start from the values of "

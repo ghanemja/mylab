@@ -1114,30 +1114,6 @@ def _swapbytes(interp, args, nargout):
     return a.byteswap()
 
 
-@builtin("blkdiag")
-def _blkdiag(interp, args, nargout):
-    blocks = []
-    for a in args:
-        m = num(a) if not isinstance(a, np.ndarray) or a.dtype.kind == "U" else a
-        if m.ndim > 2:
-            raise MatlabError("blkdiag: the inputs must be matrices.")
-        blocks.append(m)
-    if not blocks:
-        return np.zeros((0, 0))
-    rows = sum(b.shape[0] for b in blocks)
-    cols = sum(b.shape[1] for b in blocks)
-    dtype = np.result_type(*[b.dtype if b.dtype != bool else np.float64 for b in blocks])
-    if all(b.dtype == bool for b in blocks):
-        dtype = np.dtype(float)
-    out = np.zeros((rows, cols), dtype=dtype)
-    r = c = 0
-    for b in blocks:
-        out[r:r + b.shape[0], c:c + b.shape[1]] = b
-        r += b.shape[0]
-        c += b.shape[1]
-    return out
-
-
 def _field_path(interp, args: list, name: str) -> tuple[str, dict]:
     """Source text for a chain of fields and {subscripts}, plus the variables it refers to."""
     code = ""

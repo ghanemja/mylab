@@ -181,6 +181,9 @@ HELP = {
     "material": ("material name", _NOOP),
     "zoom": (["zoom on", "zoom off", "zoom(factor)"], _NOOP),
     "pan": (["pan on", "pan off"], _NOOP),
+    "brush": (["brush on", "brush off", "brush toggle", "s = brush"],
+              "Turns data brushing on or off for the current figure. The state is recorded on the figure and "
+              "returned by s = brush; selecting data needs a mouse, so nothing can be brushed."),
     "rotate3d": (["rotate3d on", "rotate3d off"], _NOOP + " Use view(az, el) to turn a 3-D plot."),
     "datacursormode": (["datacursormode on", "datacursormode off"], _NOOP),
     "refreshdata": ("refreshdata", _NOOP + " Update a plot by setting XData and YData on its handle."),

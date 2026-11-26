@@ -4492,20 +4492,6 @@ def _rssq(interp, args, nargout):
     return _keep(np.sqrt(np.sum(np.abs(x) ** 2, axis=axis)), axis)
 
 
-def _rms(interp, args, nargout):
-    nargs(args, 1, 3, "rms")
-    rest, flags = _split_flags(list(args))
-    x = fnum(rest[0])
-    if "all" in flags:
-        return float(np.sqrt(np.mean(np.abs(x) ** 2))) if x.size else float("nan")
-    axis = _reduce_dim(x, rest, 1)
-    if axis >= x.ndim:
-        return np.abs(x).astype(float)
-    fn = np.nanmean if "omitnan" in flags else np.mean
-    return _keep(np.sqrt(fn(np.abs(x) ** 2, axis=axis)), axis)
-
-
-_maybe_register("rms", _rms)
 
 
 # -- peaks ------------------------------------------------------------------------------------------------

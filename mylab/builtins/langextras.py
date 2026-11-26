@@ -757,7 +757,7 @@ def _message(interp, args, nargout):
 # -- harmless environment functions ---------------------------------------------------------------------
 
 @builtin("movegui", "workspace", "figurepalette", "plotbrowser", "propertyeditor", "plottools",
-         "brush", "linkdata")
+         "linkdata")
 def _ignored(interp, args, nargout):
     return np.zeros((0, 0)) if nargout else None
 

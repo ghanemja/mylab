@@ -1110,10 +1110,21 @@ def _spdiags(interp, args, nargout):
 def _blkdiag(interp, args, nargout):
     if any(isinstance(a, SparseMatrix) for a in args):
         return SparseMatrix(sp.block_diag([_num_csc(a) for a in args], format="csc"))
-    mats = [_dense(a) for a in args]
+    mats = []
+    for a in args:
+        m = _dense(a) if not isinstance(a, np.ndarray) else a
+        if m.ndim > 2:
+            raise MatlabError("blkdiag: the inputs must be matrices.")
+        mats.append(m.astype(float) if m.dtype.kind in "bU" else m)  # logical and char blocks give double
+    if not mats:
+        return np.zeros((0, 0))
     r = sum(x.shape[0] for x in mats)
     c = sum(x.shape[1] for x in mats)
-    out = np.zeros((r, c), dtype=complex if any(x.dtype.kind == "c" for x in mats) else float)
+    dtype = np.result_type(*[x.dtype for x in mats])  # double with int8 gives int8, as concatenation does
+    ints = [x.dtype for x in mats if x.dtype.kind in "iu"]
+    if ints:
+        dtype = ints[0]
+    out = np.zeros((r, c), dtype=dtype)
     i = j = 0
     for x in mats:
         out[i:i + x.shape[0], j:j + x.shape[1]] = x

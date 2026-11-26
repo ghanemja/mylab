@@ -442,8 +442,6 @@ HELP = {
     "peak2rms": (["y = peak2rms(x)", "y = peak2rms(x, dim)"],
                  "Ratio of the largest magnitude to the root-mean-square value (the crest factor)."),
     "rssq": (["y = rssq(x)", "y = rssq(x, dim)"], "Square root of the sum of squared magnitudes."),
-    "rms": (["y = rms(x)", "y = rms(x, dim)", "y = rms(x, 'all')", "y = rms(..., 'omitnan')"],
-            "Root-mean-square value along the first dimension that is not one, along dim, or of all elements."),
     "findpeaks": (["pks = findpeaks(y)", "[pks, locs] = findpeaks(y)", "[pks, locs] = findpeaks(y, x)",
                    "[pks, locs] = findpeaks(y, fs)", "[pks, locs, w, p] = findpeaks(...)",
                    "[...] = findpeaks(..., Name, Value)", "findpeaks(...)"],

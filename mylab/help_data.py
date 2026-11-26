@@ -693,9 +693,6 @@ HELP: dict = {
             "'Elapsed time is ... seconds.'"),
     "cputime": ("t = cputime",
                 "Processor time used by mylab so far, in seconds. Differences between two calls time code."),
-    "datestr": (["s = datestr", "s = datestr(t)"],
-                "Formats a serial day number (now if omitted) as text like '05-Mar-2024 14:07:30' in local "
-                "time. A format argument is not supported."),
     # -- workspace ---------------------------------------------------------------------------------
     "clc": ("clc", "Clears the command window when the host program supports it; otherwise does nothing."),
     "clear": (["clear", "clear name1 name2 ...", "clear pattern*", "clear all", "clear global", "clear global name"],
