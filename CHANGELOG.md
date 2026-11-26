@@ -208,6 +208,23 @@ may have relied on.
   no other variable shares are made in place instead of copying the array: a
   loop that fills the rows of a large matrix is no longer quadratic.
   `regexprep` on cell arrays is about twice as fast.
+- Loops over integer-class values (`int8` ... `uint64`) are compiled, with
+  MATLAB's rounding and saturation: a 200,000-step `int32` loop runs in
+  about 0.05 s (was 2 s). Elements of 3-D arrays and of integer arrays are
+  compiled too, and hot `if`/`while` conditions in loops that stay
+  interpreted.
+- `s.f(i) = v` and `s(k).f(i) = v` store in place when nothing else shares
+  the struct, and so do stores into global and persistent arrays. Functions
+  with several outputs are compiled when called for one.
+- Sparse matrices: `bsxfun` keeps them sparse, a sparse matrix times a sparse
+  vector stays sparse, rows and columns are extracted directly, and products
+  of integer-valued sparse matrices are exact.
+- Real programs from the corpus: DGCNN's `demo_p2k` 371 s -> 39 s and
+  `demo_grid` 31 s -> 11 s, WEC-Sim's bemio 413 s -> 226 s, PRMLT's
+  `mrf_demo` 44 s -> 34 s. `svd`, `eig`, `expm` and the other factorisations
+  of matrices up to 2000 rows run on one BLAS thread, which is faster for
+  them; for matrices above about 100 rows, results can differ from 1.0.0's
+  in the last bit.
 
 ### Fixed
 - **Python 3.14:** `b = a; b(2) = 5` also changed `a` (Python 3.14 lends
