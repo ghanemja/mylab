@@ -401,7 +401,7 @@ _TEXT_SLOT = "the unknown name lands in a positional slot that takes text ({}) a
 _TODO = "not fixed yet: {}"
 LOUD_REASONS = {
     **{n: "owned by the parallel merge of the text and table functions"
-       for n in ("addvars", "contains", "endsWith", "startsWith")},
+       for n in ("addvars",)},
     **{n: _TODO.format("the unknown name is counted as an extra positional argument")
        for n in ("array2timetable", "blockproc", "count", "datasample", "donutchart", "eraseBetween",
                  "extractBetween", "imfuse", "imresize3", "imshowpair", "imtransform", "matches", "piechart",

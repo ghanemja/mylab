@@ -9,7 +9,7 @@ import numpy as np
 
 from ..errors import MatlabError
 from ..values import Cell, MString, StringArray, Struct, char, is_char, string_result, to_str
-from ._registry import BUILTINS, builtin
+from ._registry import builtin
 from ._util import bool_scalar, default_dim, is_text, nargs, num, text
 
 
@@ -133,30 +133,6 @@ def _allfinite(interp, args, nargout):
     nargs(args, 1, 1, "allfinite")
     a = _numeric_or_char(args[0], "allfinite")
     return bool_scalar(a.dtype.kind not in "fc" or bool(np.isfinite(a).all()))
-
-
-def _array_size(dim: int, name: str):
-    table_fn = BUILTINS.get(name)
-
-    def f(interp, args, nargout):
-        nargs(args, 1, 1, name)
-        v = args[0]
-        if isinstance(v, (Cell, Struct, StringArray)):
-            shape = v.data.shape
-        elif isinstance(v, np.ndarray):
-            shape = v.shape
-        elif isinstance(v, MString):
-            shape = (1, 1)
-        elif table_fn is not None:
-            return table_fn(interp, args, nargout)
-        else:
-            raise MatlabError(f"{name}: unsupported input.")
-        return np.array([[float(shape[dim])]])
-    return f
-
-
-builtin("height")(_array_size(0, "height"))
-builtin("width")(_array_size(1, "width"))
 
 
 _MAD_SCALE = 1.4826022185056018  # -1 / (sqrt(2) * erfcinv(3/2))

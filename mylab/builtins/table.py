@@ -1709,19 +1709,19 @@ _TABLE_FUNCS = {
 def _size_or_table(fn, axis):
     def f(interp, args, nargout):
         if len(args) != 1:
-            raise MatlabError("height and width take one input.")
+            raise MatlabError(f"{'height' if axis == 0 else 'width'} takes one input.")
         if isinstance(args[0], TableObject):
             return fn(interp, args, nargout)
         from ..values import shape_of
-        return float(shape_of(args[0])[axis])  # plain arrays: number of rows / columns
+        return float(shape_of(args[0])[axis])  # arrays, cells, structs, strings: number of rows / columns
     return f
 
 
 builtin("height")(_size_or_table(_height_fn, 0))
 builtin("width")(_size_or_table(_width_fn, 1))
 
-for _name in ("table2array", "table2struct", "removevars", "addvars", "renamevars",
-              "varfun", "rows2vars", "innerjoin", "outerjoin", "table2cell", "movevars"):
+# addvars, rows2vars, table2struct and varfun are registered by tables_more.py (a superset)
+for _name in ("table2array", "removevars", "renamevars", "innerjoin", "outerjoin", "table2cell", "movevars"):
     builtin(_name)(lambda interp, args, nargout, _f=_TABLE_FUNCS[_name]: _f(interp, args, nargout))
 builtin("istable")(_istable)
 
