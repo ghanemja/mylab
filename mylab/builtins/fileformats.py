@@ -356,6 +356,8 @@ class MatSource:
                               "Use load(filename, '-ascii') for text files.", "MATLAB:load:notBinaryFile")
         self._mat5 = None
         self._v4: dict | None = None
+        self.made_handles = False  # whether the last read made handle objects (each read makes new ones)
+        self.made_objects = False  # whether the last read made objects of classes
         if self.kind == "5":
             from . import _matio
             with open(path, "rb") as fh:
@@ -378,36 +380,57 @@ class MatSource:
         from . import _mat73
         return _mat73.names(self.path)
 
-    def read(self, names: list[str]) -> tuple[dict, set[str]]:
-        """({name: value}, names stored as global) for the given variables."""
+    def read(self, names: list[str], passive: bool = False) -> tuple[dict, set[str]]:
+        """({name: value}, names stored as global) for the given variables. ``passive``: only to describe
+        them, so no code of the classes of stored objects runs (see Decoder)."""
         from ._matcodec import Decoder
         wanted = set(names)
         out: dict = {}
         is_global: set[str] = set()
+        # The stored values are kept for the whole call: a variable that refers to a handle object
+        # written in full in another variable makes the decoder look through all of them (everything).
+        stored: dict = {}
         if self._mat5 is not None:
             from . import _matio
             mf = self._mat5
+
+            def stored_value(e: dict) -> Any:
+                if e["name"] not in stored:
+                    stored[e["name"]] = mf.read(e)
+                return stored[e["name"]]
+
             dec = None
             for e in mf.variables():
                 if e["name"] not in wanted:
                     continue
-                raw = mf.read(e)
+                raw = stored_value(e)
                 if dec is None:
-                    dec = Decoder(self.interp, mf.subsystem() if mf.subsys_offset else None)
+                    dec = Decoder(self.interp, mf.subsystem() if mf.subsys_offset else None,
+                                  lambda: [stored_value(x) for x in mf.variables()], passive)
                 dec.var = e["name"]
                 out[e["name"]] = dec.decode(raw)
                 if e["flags"] & _matio.FLAG_GLOBAL:
                     is_global.add(e["name"])
+            self.made_handles = dec is not None and dec.made_handles
+            self.made_objects = dec is not None and dec.made_objects
             return out, is_global
         if self._v4 is not None:
             return {k: v for k, v in self._v4.items() if k in wanted}, is_global
         from . import _mat73
-        raw = _mat73.read(self.path, lambda n: n in wanted,
-                          lambda msg: self.interp.warn(f"load: {msg}", "MATLAB:load:classNotFound"))
-        dec = Decoder(self.interp)
-        for k, v in raw.items():
+        stored.update(_mat73.read(self.path, lambda n: n in wanted,
+                                  lambda msg: self.interp.warn(f"load: {msg}", "MATLAB:load:classNotFound")))
+        chosen = list(stored)
+
+        def everything() -> list:
+            # the other variables are only searched: what cannot be read in them is not warned about
+            stored.update(_mat73.read(self.path, lambda n: n not in stored, lambda msg: None))
+            return list(stored.values())
+
+        dec = Decoder(self.interp, None, everything, passive)
+        for k in chosen:
             dec.var = k
-            out[k] = dec.decode(v)
+            out[k] = dec.decode(stored[k])
+        self.made_handles, self.made_objects = dec.made_handles, dec.made_objects
         return out, is_global
 
 
@@ -574,7 +597,7 @@ def file_rows(interp, args: list, fn: str) -> list[dict]:
         raise MatlabError(f"Unable to find file or directory '{words[k + 1]}'.", "MATLAB:whos:fileNotFound")
     src = MatSource(interp, path)
     chosen, _ = select_names(src.names(), opts["names"], opts["regexp"])
-    values, is_global = src.read(chosen)
+    values, is_global = src.read(chosen, passive=True)
     return [whos_row(n, values[n], n in is_global) for n in sorted(chosen) if n in values]
 
 
@@ -653,9 +676,12 @@ class MatFileObject(MObject):
         if src is None or name not in src.names():
             raise MatlabError(f"The variable '{name}' does not exist in '{self.path}'.",
                               "MATLAB:MatFile:VariableNotInFile")
-        if name not in self._cache:
-            self._cache[name] = src.read([name])[0][name]
-        return self._cache[name]
+        if name in self._cache:
+            return self._cache[name]
+        value = src.read([name])[0][name]
+        if not src.made_handles:  # handle objects are read anew each time, as from a file
+            self._cache[name] = value
+        return value
 
     def get_field(self, interp, name: str) -> Any:
         if name == "Properties":
@@ -771,16 +797,29 @@ class MatFileObject(MObject):
             return [np.array([[x]]) for x in vals]
         return super().call_method(interp, name, args, nargout)
 
+    def _described_value(self, interp, name: str) -> Any:
+        """The variable as whos and size see it: read without running code of the classes of objects
+        in it (see Decoder), unless it has been read already."""
+        if name in self._cache:
+            return self._cache[name]
+        src = self._open(interp)
+        if src is None or name not in src.names():
+            return self.value(interp, name)  # the error for a missing variable
+        value = src.read([name], passive=True)[0][name]
+        if not src.made_objects:  # then reading it the ordinary way gives the same value
+            self._cache[name] = value
+        return value
+
     def _whos_row(self, interp, name: str) -> dict:
         info = self._describe(interp, name)
         if info is None:
-            return whos_row(name, self.value(interp, name))
+            return whos_row(name, self._described_value(interp, name))
         return {"name": name, "size": tuple(info["size"]), "bytes": info["bytes"], "class": info["class"],
                 "global": False, "sparse": info["sparse"], "persistent": False, "complex": info["complex"]}
 
     def _size(self, interp, name: str) -> tuple:
         info = self._describe(interp, name)
-        return tuple(info["size"]) if info is not None else tuple(shape_of(self.value(interp, name)))
+        return tuple(info["size"]) if info is not None else tuple(shape_of(self._described_value(interp, name)))
 
     def display_lines(self) -> list[str]:
         from ..interpreter import current_interpreter

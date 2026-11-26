@@ -865,6 +865,38 @@ class UserObject(MObject):
             property_event(interp, self, name, "PostSet")
         return target
 
+    def validated(self, interp, name: str, value: Any) -> Any:
+        """``value`` after the size, class and validation functions of declared property ``name``
+        (converted as an assignment converts it); raises their error."""
+        prop, owner = self.cls.prop_defs[name]
+        attrs = prop.attrs
+        if "_class" in attrs or "_size" in attrs or "_validators" in attrs:
+            value = validate_value(interp, attrs, value, name, owner.functions,
+                                   f"Error setting property '{name}' of class '{self.cls.name}'.")
+        return value
+
+    def restore_field(self, interp, name: str, value: Any) -> "UserObject":
+        """Give a declared property its saved (and :meth:`validated`) value while load rebuilds this
+        object: its set method runs, as for an assignment, but access attributes do not apply and no
+        listeners exist yet. Raises the error of a set method that fails. Returns the object (a new
+        one for a value class whose set method returns it).
+        """
+        cls = self.cls
+        setter = "set." + name
+        if setter not in cls.methods:
+            self.props[name] = value  # the object is still being built: nothing else refers to it yet
+            return self
+        self._in_accessor.add(name)
+        try:
+            res = cls.call(interp, setter, [self, value], 1 if cls.methods[setter][0].outputs else 0)
+        finally:
+            self._in_accessor.discard(name)
+        if cls.is_handle:
+            return self
+        if not res or not isinstance(res[0], UserObject):
+            raise MatlabError(f"Set method for '{name}' must return the object.")
+        return res[0]
+
     def _set_other(self, interp, name: str, value: Any) -> "UserObject":
         cls = self.cls
         if self._dynprops and name in self._dynprops:
@@ -2499,6 +2531,20 @@ def old_style_class(interp, name: str, ctor_path: str) -> ClassInfo:
     return cls
 
 
+def adopt_old_style_parent(owner: ClassInfo, parent: ClassInfo) -> None:
+    """Make ``parent`` a parent class of the old-style class ``owner``: it inherits its methods."""
+    if parent in owner.parents:
+        return
+    owner.parents.append(parent)
+    for mname, entry in parent.methods.items():
+        if mname != parent.name:
+            owner.methods.setdefault(mname, entry)
+    owner.inferior |= parent.inferior
+    owner.superior_to_me |= parent.superior_to_me
+    owner.overloads_ref = owner.overloads_ref or parent.overloads_ref
+    owner.overloads_asgn = owner.overloads_asgn or parent.overloads_asgn
+
+
 def make_old_style(interp, s: Any, name: str, parents: list) -> Any:
     """``class(s, 'name', parent1, ...)``: turn the struct ``s`` into an object of class ``name``."""
     from .values import Struct
@@ -2516,15 +2562,7 @@ def make_old_style(interp, s: Any, name: str, parents: list) -> Any:
     for p in parents:
         if not isinstance(p, UserObject):
             raise MatlabError("Parent arguments of class(s, 'name', parent) must be objects.")
-        if p.cls not in owner.parents:
-            owner.parents.append(p.cls)
-            for mname, entry in p.cls.methods.items():
-                if mname != p.cls.name:
-                    owner.methods.setdefault(mname, entry)
-            owner.inferior |= p.cls.inferior
-            owner.superior_to_me |= p.cls.superior_to_me
-            owner.overloads_ref = owner.overloads_ref or p.cls.overloads_ref
-            owner.overloads_asgn = owner.overloads_asgn or p.cls.overloads_asgn
+        adopt_old_style_parent(owner, p.cls)
 
     def one(fields: dict) -> UserObject:
         obj = UserObject(owner)
