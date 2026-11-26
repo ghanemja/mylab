@@ -123,6 +123,45 @@ class SparseMatrix(MObject):
         m = self.m
         return m.astype(np.float64) if m.dtype == bool else m
 
+    _csr_cache: Any = None
+
+    def _rows(self) -> sp.csr_matrix:
+        """The matrix in compressed-row form, converted once per value of the compressed-column storage.
+
+        (Storage is replaced, never changed in place, while it is in compressed-column form: index_set
+        works on a LIL copy, and the m property converts that back to a new CSC matrix.)
+        """
+        m = self.m
+        cache = self._csr_cache
+        if cache is not None and cache[0] is m:
+            return cache[1]
+        rows = m.tocsr()
+        if not rows.has_sorted_indices:
+            rows.sort_indices()
+        self._csr_cache = (m, rows)
+        return rows
+
+    def _column(self, j: int) -> "SparseMatrix":
+        """A(:, j), straight from the compressed columns (SciPy's indexing costs far more for one column)."""
+        m = self.m
+        lo, hi = m.indptr[j], m.indptr[j + 1]
+        out = sp.csc_matrix((m.data[lo:hi].copy(), m.indices[lo:hi].copy(), np.array([0, hi - lo], m.indptr.dtype)),
+                            shape=(m.shape[0], 1))
+        return SparseMatrix(out, canonical=True)  # (a column of canonical storage is canonical)
+
+    def _row(self, i: int) -> "SparseMatrix":
+        """A(i, :), from the compressed rows kept by _rows."""
+        rows = self._rows()
+        lo, hi = rows.indptr[i], rows.indptr[i + 1]
+        cols = rows.indices[lo:hi]
+        n = rows.shape[1]
+        indptr = np.zeros(n + 1, dtype=rows.indptr.dtype)
+        indptr[cols + 1] = 1
+        np.cumsum(indptr, out=indptr)
+        out = sp.csc_matrix((rows.data[lo:hi].copy(), np.zeros(cols.size, dtype=rows.indices.dtype), indptr),
+                            shape=(1, n))
+        return SparseMatrix(out, canonical=True)
+
     def to_dense(self) -> np.ndarray:
         r, c = self._m.shape
         if r * c > DENSE_LIMIT:
@@ -254,9 +293,15 @@ class SparseMatrix(MObject):
             sub = self.m
         if sub.format == "csc":
             if cp is not None:
+                if rp is None and cp.size == 1:
+                    return self._column(int(cp[0]))
                 sub = sub[:, cp]
-            if rp is not None:
-                sub = sub.tocsr()[rp, :]
+                if rp is not None:
+                    sub = sub.tocsr()[rp, :]
+            elif rp is not None:
+                if rp.size == 1:
+                    return self._row(int(rp[0]))
+                sub = self._rows()[rp, :]  # A(i, :): rows of the compressed-row form, kept for the next call
         else:  # small block of a matrix that is being assembled
             sub = sub[rp.reshape(-1, 1), cp.reshape(1, -1)]
         return SparseMatrix(sub)

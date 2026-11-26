@@ -415,6 +415,16 @@ def _run_check(family: str) -> bool:
 
 
 def _f_sum(args, nargout):
+    if len(args) == 2:  # sum(a, 1) and sum(a, 2) of a plain double matrix: the general code's own reduction
+        a, d = args
+        if type(a) is _ND and a.dtype is _F64 and a.ndim == 2 and type(d) is _ND and d.shape == _S11 \
+                and d.dtype is _F64:
+            k = d.item()
+            if k == 2.0:
+                return np.sum(a, axis=-1).reshape(a.shape[0], 1)
+            if k == 1.0:
+                return np.sum(a.T, axis=-1).reshape(1, a.shape[1])
+        return None
     if len(args) != 1:
         return None
     v = _tiny_vec(args[0])

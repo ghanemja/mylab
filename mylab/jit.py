@@ -1661,7 +1661,8 @@ def _compile_function(interp, fn, functions: dict, sig: tuple) -> _Function:
     if not _COMPILING:
         _SESSION.clear()
     state["sigs"][sig] = None  # until proven otherwise
-    if fn.subfunctions or fn.arguments or len(fn.outputs) != 1 or len(sig) > len(fn.params) \
+    # (a function with several outputs is compiled for one: callers that want more use the interpreter)
+    if fn.subfunctions or fn.arguments or not fn.outputs or len(sig) > len(fn.params) \
             or len(set(fn.params)) != len(fn.params) or "varargin" in fn.params or "~" in fn.params \
             or fn.outputs[0] == "varargout":
         raise Reject

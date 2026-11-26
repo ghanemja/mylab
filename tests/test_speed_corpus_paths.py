@@ -339,3 +339,64 @@ def test_conditions_are_compiled():
     info = cond._jit_cond
     assert info and info["bails"] == 0 and any(c is not None for c in info["compiled"].values())
     assert np.asarray(val(m, "n")).item() == 20
+
+
+# -- smaller pieces ---------------------------------------------------------------------------------
+
+def test_small_cholupdate_is_bit_identical_to_the_general_rotations(monkeypatch):
+    from mylab.builtins import linalg_more as L
+    from mylab.values import char
+    m = Interpreter(out=lambda s: None)
+    rng = np.random.default_rng(4)
+    small_path = L._cholupdate_small
+
+    def both(args, nout):
+        out = []
+        for small in (True, False):
+            monkeypatch.setattr(L, "_cholupdate_small", small_path if small else (lambda *a: None))
+            try:
+                r = L._cholupdate(m, args, nout)
+                out.append(tuple(np.asarray(x).tobytes() + bytes(str(np.shape(x)), "ascii")
+                                 for x in (r if isinstance(r, tuple) else (r,))))
+            except Exception as e:  # noqa: BLE001 - errors must match too
+                out.append(("error", str(e)))
+        return out
+
+    for trial in range(400):
+        n = int(rng.integers(1, 7))
+        a = rng.standard_normal((n, n))
+        r = np.linalg.cholesky(a @ a.T + n * np.eye(n)).T
+        if trial % 9 == 0:
+            r[0, 0] = -1.0
+        x = rng.standard_normal((n, 1)) * rng.choice([0.01, 1.0, 30.0])
+        for sign in ("+", "-"):
+            for nout in (1, 2):
+                first, second = both([r, x, char(sign)], nout)
+                assert first == second, (trial, sign, nout)
+
+
+def test_sparse_single_rows_and_columns_match_scipy():
+    m = run("n = 40; i1 = [1:n-1, 1:n-5]; j1 = [2:n, 6:n]; A = sparse([i1 j1], [j1 i1], 1:2*numel(i1), n, n);"
+            "A(3, :) = 0; B = A; B(7, 9) = 0.5;")
+    a = np.asarray(val(m, "full(A)"))
+    for i in (1, 3, 7, 40):
+        assert np.array_equal(np.asarray(val(m, f"full(A({i}, :))")), a[i - 1:i, :])
+        assert np.array_equal(np.asarray(val(m, f"full(A(:, {i}))")), a[:, i - 1:i])
+        assert val(m, f"issparse(A({i}, :)) && issparse(A(:, {i}))").item()
+        assert np.asarray(val(m, f"nnz(A({i}, :))")).item() == np.count_nonzero(a[i - 1])
+    assert np.asarray(val(m, "full(B(7, 9))")).item() == 0.5 and np.asarray(val(m, "full(A(7, 9))")).item() == 0
+    assert np.asarray(val(m, "full(B(7, :))"))[0, 8] == 0.5  # the row form of B is B's, not A's
+    m.execute("[~, j, e] = find(A(5, :)); [r2, ~, e2] = find(A(:, 5));")
+    assert np.asarray(val(m, "j")).ravel().tolist() == (np.nonzero(a[4])[0] + 1).tolist()
+    assert np.asarray(val(m, "r2")).ravel().tolist() == (np.nonzero(a[:, 4])[0] + 1).tolist()
+
+
+def test_functions_with_several_outputs_are_compiled_for_one(tmp_path):
+    (tmp_path / "nrm_.m").write_text("function [Y, s] = nrm_(X, dim)\nif nargin == 1\n  dim = find(size(X) ~= 1, 1);\n"
+                                     "  if isempty(dim), dim = 1; end\nend\ns = sum(X, dim);\nY = X ./ s;\n")
+    code = ("r = zeros(2, 30); for k = 1:30, r(:, k) = nrm_([k; 2 * k + 1]); end;"
+            "[y, s] = nrm_([1 2; 3 4]); q = nrm_([1 2 3], 2); w = nrm_(5);")
+    check_all([code], [str(tmp_path)])
+    m = run(code, [str(tmp_path)])
+    fn = m.find_file_function("nrm_")[0].functions["nrm_"]
+    assert any(rec is not None for rec in fn._jit_fn["sigs"].values())
