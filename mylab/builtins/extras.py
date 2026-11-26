@@ -271,7 +271,7 @@ def _scan(s: str, fmt: str, limit: int | None = None):
     while pos < len(s):
         start = pos
         stop = False
-        for t in toks:
+        for ti, t in enumerate(toks):
             if t[0] == "ws":
                 while pos < len(s) and s[pos].isspace():
                     pos += 1
@@ -302,7 +302,7 @@ def _scan(s: str, fmt: str, limit: int | None = None):
                     kinds.extend("s" * len(word))
                     count += 1
                     if limit is not None and count >= limit:
-                        stopped_early = True
+                        stopped_early, stop_at = True, ti
                         break
             elif kind == "c":
                 w = width or 1
@@ -313,7 +313,7 @@ def _scan(s: str, fmt: str, limit: int | None = None):
                     kinds.extend("c" * len(chunk))
                     count += 1
                     if limit is not None and count >= limit:
-                        stopped_early = True
+                        stopped_early, stop_at = True, ti
                         break
             elif kind.startswith("["):
                 body = kind[1:-1]
@@ -328,7 +328,7 @@ def _scan(s: str, fmt: str, limit: int | None = None):
                     kinds.extend("s" * m.end())
                     count += 1
                     if limit is not None and count >= limit:
-                        stopped_early = True
+                        stopped_early, stop_at = True, ti
                         break
             else:
                 m = re.match(_NUM_RE[kind], seg)
@@ -353,8 +353,20 @@ def _scan(s: str, fmt: str, limit: int | None = None):
                     kinds.append("n")
                     count += 1
                     if limit is not None and count >= limit:
-                        stopped_early = True
+                        stopped_early, stop_at = True, ti
                         break
+        if stopped_early:
+            # The field limit is reached, but the rest of this pass of the format is still matched up
+            # to its next conversion: fscanf(f, '%f ', [3 n]) also reads the line end after the last
+            # number, as MATLAB and Octave do, so a following fgetl gets the next line.
+            for t in toks[stop_at + 1:]:
+                if t[0] == "ws":
+                    while pos < len(s) and s[pos].isspace():
+                        pos += 1
+                elif t[0] == "lit" and s.startswith(t[1], pos):
+                    pos += len(t[1])
+                else:
+                    break
         if stop or stopped_early or pos == start:
             break
     nxt = pos + 1 if (stopped_early or errmsg) else len(s) + 1

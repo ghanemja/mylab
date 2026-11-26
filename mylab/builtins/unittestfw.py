@@ -1875,8 +1875,8 @@ def _class_suite(interp, cls: ClassInfo, only: str | None = None) -> list:
 
 
 def _script_suite(interp, path: str, program) -> list:
-    with open(path, encoding="utf-8") as fh:
-        lines = fh.read().split("\n")
+    from ..sourcefile import read_source
+    lines = read_source(path).split("\n")
     stop = len(lines)
     if program.functions:
         stop = min(getattr(fn, "line", stop + 1) for fn in program.functions.values()) - 1

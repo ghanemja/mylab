@@ -1681,6 +1681,38 @@ def _pagelsqminnorm(interp, args, nargout):
 
 # -- test matrices -----------------------------------------------------------------------------------
 
+def _bucky_geometry():
+    """Vertices and edges of the truncated icosahedron (C60): the even permutations of
+    (0, +-1, +-3p), (+-1, +-(2+p), +-2p) and (+-p, +-2, +-(2p+1)), p the golden ratio; edges join
+    the vertices at the smallest distance (2)."""
+    import itertools
+    phi = (1 + 5 ** 0.5) / 2
+    base = [(0.0, 1.0, 3 * phi), (1.0, 2 + phi, 2 * phi), (phi, 2.0, 2 * phi + 1)]
+    even = [(0, 1, 2), (1, 2, 0), (2, 0, 1)]
+    pts = set()
+    for b in base:
+        for perm in even:
+            v = [b[i] for i in perm]
+            for signs in itertools.product((1, -1), repeat=3):
+                pts.add(tuple(round(s * x, 12) for s, x in zip(signs, v)))
+    V = np.array(sorted(pts, key=lambda q: (-q[2], np.arctan2(q[1], q[0]))))
+    d = np.linalg.norm(V[:, None, :] - V[None, :, :], axis=2)
+    A = (np.abs(d - 2.0) < 1e-9).astype(float)
+    return A, V / np.linalg.norm(V[0])
+
+
+@builtin("bucky")
+def _bucky(interp, args, nargout):
+    """[B, V] = bucky: the graph of the C60 molecule (a soccer ball)."""
+    if args:
+        raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
+    from .sparse import SparseMatrix
+    import scipy.sparse as sp
+    A, V = _bucky_geometry()
+    B = SparseMatrix(sp.csc_matrix(A))
+    return (B, V) if nargout > 1 else B
+
+
 @builtin("gallery")
 def _gallery(interp, args, nargout):
     if not args:

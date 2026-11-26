@@ -154,7 +154,11 @@ def _dlmread(interp, args, nargout):
     nargs(args, 1, 4, "dlmread")
     lines = _lines_of(_read_text(text(args[0])))
     rest = list(args[1:])
-    delim = _delimiter(rest.pop(0)) if rest and is_text(rest[0]) else _sniff_delimiter(lines)
+    given = text(rest.pop(0)) if rest and is_text(rest[0]) else ""  # '' also means: work it out
+    if len(rest) >= 2:  # dlmread(file, delim, R1, C1): rows before R1 are not read at all (they may be text)
+        lines = lines[to_int(rest[0], "row offset"):]
+        rest = [np.array([[0.0]]), rest[1]]
+    delim = _delimiter(given) if given else _sniff_delimiter(lines)
     data, _, _ = _numeric_table(lines, delim, 0)
     data = np.where(np.isnan(data), 0.0, data)
     return _offset(data, rest)

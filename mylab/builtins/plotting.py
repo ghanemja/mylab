@@ -28,7 +28,7 @@ from ..errors import MatlabError
 from ..objects import MObject
 from ..values import Cell, FunctionHandle, MString, StringArray, Struct, char, is_char, to_int, to_str
 from ._registry import builtin
-from ._util import fnum, is_text, num, text
+from ._util import fnum, is_text, num, text, unknown_option_error
 
 _MPL = None
 
@@ -415,7 +415,13 @@ def _split_name_values(args, known: set[str], kind: str | None = None):
         elif _TEXT_OPTS <= known:
             kind = "text"
     opts: dict = {}
-    rest = list(args)
+    rest = []
+    for a in args:  # a structure stands for its fields as Name,Value pairs (p.Unmatched, set(h, s))
+        if isinstance(a, Struct) and a.data.size == 1:
+            for f in a.fields:
+                rest += [char(f), a.get_field(0, f)]
+        else:
+            rest.append(a)
     k = 0
     out = []
     while k < len(rest):
@@ -479,6 +485,11 @@ _MARKER_NAMES = {"circle": "o", "square": "s", "diamond": "d", "pentagram": "p",
 
 def _mpl_marker(s: str) -> str:
     return _MARKER_NAMES.get(s.lower(), s)
+
+
+def _is_marker_text(a) -> bool:
+    s = text(a)
+    return (len(s) == 1 and s in "o+*.x_|sd^v<>ph") or s.lower() in _MARKER_NAMES
 
 
 def _mpl_linestyle(s: str) -> str:
@@ -599,10 +610,25 @@ def _label_text(v) -> str:
     return text(v)
 
 
+_SPEC_COLOR_NAMES = {"black": "k", "white": "w", "red": "r", "green": "g", "blue": "b", "cyan": "c",
+                     "magenta": "m", "yellow": "y"}
+
+
+def _norm_spec(s: str) -> str:
+    """A line specification with a colour name ('black', '--red') written as its letter ('k', '--r')."""
+    low = s.lower()
+    for name, letter in _SPEC_COLOR_NAMES.items():
+        i = low.find(name)
+        if i >= 0:
+            return s[:i] + letter + s[i + len(name):]
+    return s
+
+
 def _is_linespec(s: str) -> bool:
-    """True for a line specification such as 'r--o', 'o-', ':' or 'k*'."""
+    """True for a line specification such as 'r--o', 'o-', ':', 'k*' or 'black'."""
     if not s:
         return False
+    s = _norm_spec(s)
     seen = set()
     k = 0
     while k < len(s):
@@ -660,7 +686,7 @@ def _xy_groups(args):
             k += 1
         spec = ""
         if k < len(args) and is_text(args[k]) and _is_linespec(text(args[k])):
-            spec = text(args[k])
+            spec = _norm_spec(text(args[k]))
             k += 1
         groups.append((x, y, spec))
     return groups
@@ -790,6 +816,31 @@ def _wrap(interp, kind: str, obj) -> "GraphicsHandle":
     return h
 
 
+# Numeric handles (double(h), or a handle stored into a double array as in h = zeros(1, 3);
+# h(1) = plot(...)): figures are their numbers and the root is 0; every other object gets a number
+# that is never an integer, so it can never be taken for a figure number.
+import weakref  # noqa: E402
+
+_NUMBERED: "weakref.WeakValueDictionary[float, GraphicsHandle]" = weakref.WeakValueDictionary()
+
+
+def handle_number(interp, h: "GraphicsHandle") -> float:
+    if h.kind == "figure":
+        return float(_fig_number(interp, h.obj) or 0)
+    if h.kind == "root":
+        return 0.0
+    n = h.extra.get("_number")
+    if n is None:
+        n = h.extra["_number"] = h.serial + 0.0001 * (1 + h.serial % 9999)
+        _NUMBERED[n] = h
+    return n
+
+
+def numbered_handle(x: float) -> "GraphicsHandle | None":
+    """The graphics object a non-integer numeric handle stands for (None if there is none)."""
+    return _NUMBERED.get(float(x))
+
+
 def _short(kind: str) -> str:
     return _CLASS.get(kind, kind).rsplit(".", 1)[-1]
 
@@ -856,12 +907,7 @@ class GraphicsHandle(_GraphicsBase):
                        + "\n")
             return []
         if name == "double":
-            if self.kind == "figure":
-                return [_num_val(_fig_number(interp, self.obj) or 0)]
-            if self.kind == "root":
-                return [_num_val(0)]
-            raise MatlabError(f"A {_short(self.kind)} handle is an object, not a number; only figures have a "
-                              "number (use f.Number).")
+            return [_num_val(handle_number(interp, self))]
         if name in ("eq", "ne"):
             a, b = (args + [None, None])[:2]
             if isinstance(a, np.ndarray) and a.size == 1 and isinstance(b, GraphicsHandle):
@@ -973,13 +1019,16 @@ class GraphicsArray(_GraphicsBase):
         return NotImplemented
 
     def has_method(self, name: str) -> bool:
-        return name in ("delete", "isvalid")
+        return name in ("delete", "isvalid", "double")
 
     def call_method(self, interp, name: str, args: list, nargout: int) -> list:
         if name == "delete":
             for h in self.items:
                 _delete_handle(interp, h)
             return []
+        if name == "double":  # the numeric handles, as stored by h(k) = plot(...) into a double array
+            nums = np.array([handle_number(interp, h) for h in self.items], dtype=float)
+            return [nums.reshape(self.matlab_shape(), order="F") if nums.size else np.zeros(self.matlab_shape())]
         if name == "isvalid":
             flags = np.array([_alive(h) for h in self.items], dtype=bool)
             return [flags.reshape(self.matlab_shape())]
@@ -1082,6 +1131,10 @@ def _handles_of(v) -> list[GraphicsHandle]:
         return [v]
     if isinstance(v, GraphicsArray):
         return list(v.items)
+    if isinstance(v, np.ndarray) and v.dtype.kind == "f" and v.size and not is_char(v):
+        found = [numbered_handle(x) for x in np.real(v).flatten(order="F")]
+        if all(h is not None for h in found):
+            return found
     return []
 
 
@@ -2234,9 +2287,21 @@ def _title_text(h, which: str):
         return _wrap(h.interp, "text", t)
     axis = {"XLabel": "xaxis", "YLabel": "yaxis", "ZLabel": "zaxis"}[which]
     a = getattr(ax, axis, None)
+    if a is None and which == "ZLabel":
+        return _wrap(h.interp, "text", _zlabel_2d(ax))
     if a is None:
         raise MatlabError(f"These axes have no {which}.")
     return _wrap(h.interp, "text", a.label)
+
+
+def _zlabel_2d(ax):
+    """The ZLabel of 2-D axes: a hidden text object, as MATLAB axes always have one."""
+    t = getattr(ax, "_mylab_zlabel", None)
+    if t is None:
+        t = ax.text(0, 0, "")
+        t.set_visible(False)
+        ax._mylab_zlabel = t
+    return t
 
 
 def _title_set(which: str):
@@ -3156,8 +3221,15 @@ def _resolve(interp, v) -> list[GraphicsHandle]:
     if isinstance(v, np.ndarray) and v.dtype.kind in "biuf" and v.size >= 1 and not is_char(v):
         st = _state(interp)
         out = []
-        for x in np.real(v).flatten():
-            n = int(round(float(x)))
+        for x in np.real(v).flatten(order="F"):
+            x = float(x)
+            if x != int(x):  # the number of a line, axes, ...
+                h = numbered_handle(x)
+                if h is None or not _alive(h):
+                    raise MatlabError("Invalid or deleted object.")
+                out.append(h)
+                continue
+            n = int(x)
             if n == 0:
                 out.append(_wrap(interp, "root", _ROOT))
             elif n in st.figures:
@@ -3320,6 +3392,22 @@ def _groot(interp, args, nargout):
     return _wrap(interp, "root", _ROOT)
 
 
+@builtin("handle")
+def _handle_fn(interp, args, nargout):
+    """handle(h): the graphics object(s) numeric handles stand for; objects come back unchanged."""
+    if len(args) != 1:
+        raise MatlabError("handle takes one argument.")
+    v = args[0]
+    if isinstance(v, MObject):
+        return v
+    if isinstance(v, np.ndarray) and not is_char(v) and v.dtype.kind in "biuf":
+        hs = _resolve(interp, v) if v.size else []
+        if len(hs) == 1:
+            return hs[0]
+        return GraphicsArray(hs, row=v.ndim == 2 and v.shape[0] == 1 and v.size > 1, shape=v.shape)
+    raise MatlabError("handle: the argument must be a graphics handle or a handle object.")
+
+
 @builtin("isgraphics", "ishghandle", "ishandle")
 def _isgraphics(interp, args, nargout):
     v = args[0]
@@ -3337,6 +3425,9 @@ def _isgraphics(interp, args, nargout):
             n = float(x)
             ok = (n == 0 and want in (None, "root")) or (n == int(n) and int(n) in st.figures
                                                           and want in (None, "figure"))
+            if not ok and n != int(n):
+                h = numbered_handle(n)
+                ok = h is not None and _alive(h) and (want is None or _TYPE.get(h.kind) == want)
             flags.append(ok)
         return np.array(flags, dtype=bool).reshape(v.shape, order="F")
     if isinstance(v, MObject) and v.is_handle and want is None:  # waitbar, VideoWriter, user handles
@@ -3399,7 +3490,7 @@ def _plot3(interp, args, nargout):
         k += 3
         spec = ""
         if k < len(args) and is_text(args[k]) and _is_linespec(text(args[k])):
-            spec = text(args[k])
+            spec = _norm_spec(text(args[k]))
             k += 1
         if x.shape[0] > 1 and x.shape[1] > 1:
             cols = [(x[:, j], y[:, j], z[:, j]) for j in range(x.shape[1])]
@@ -3460,7 +3551,7 @@ def _fplot(interp, args, nargout):
             raise MatlabError("The fplot interval must be a 2-element vector [a b] with a < b.")
     spec = ""
     if args and is_text(args[0]) and _is_linespec(text(args[0])):
-        spec = text(args.pop(0))
+        spec = _norm_spec(text(args.pop(0)))
     _reject_text(args, "line")
     if args:
         raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
@@ -3503,7 +3594,7 @@ def _fplot(interp, args, nargout):
 def _polarplot(interp, args, nargout):
     args, opts = _split_name_values(args, _LINE_OPTS)
     nums = [a for a in args if not is_text(a)]
-    spec = next((text(a) for a in args if is_text(a) and _is_linespec(text(a))), "")
+    spec = next((_norm_spec(text(a)) for a in args if is_text(a) and _is_linespec(text(a))), "")
     if not nums:
         raise MatlabError("polarplot needs data, e.g. polarplot(theta, rho).")
     if len(nums) == 1:
@@ -3526,34 +3617,55 @@ def _polarplot(interp, args, nargout):
 @builtin("scatter")
 @_with_axes_arg
 def _scatter(interp, args, nargout):
-    args, opts = _split_name_values(args, {"markerfacecolor", "markeredgecolor", "displayname", "linewidth",
-                                           "markerfacealpha", "markeredgealpha", "sizedata"}, "scatter")
+    return _scatter_core(interp, args, nargout, three_d=False)
+
+
+@builtin("scatter3")
+@_with_axes_arg
+def _scatter3(interp, args, nargout):
+    return _scatter_core(interp, args, nargout, three_d=True)
+
+
+def _scatter_core(interp, args, nargout, three_d: bool):
+    """scatter(x, y, sz, c, marker, 'filled', Name, Value) and scatter3 with a z before sz."""
+    name = "scatter3" if three_d else "scatter"
+    known = {"markerfacecolor", "markeredgecolor", "displayname", "linewidth", "markerfacealpha",
+             "markeredgealpha", "sizedata"}
+    args, opts = _split_name_values(args, known, "scatter")
     filled = any(is_text(a) and text(a) == "filled" for a in args)
     args = [a for a in args if not (is_text(a) and text(a) == "filled")]
-    ax = _axes(interp, projection="rectilinear")
-    x, y = np.real(fnum(args[0])).flatten(), np.real(fnum(args[1])).flatten()
+    k = 3 if three_d else 2
+    for a in args[k:]:
+        if is_text(a) and not _is_color_text(a) and not _is_marker_text(a):
+            raise unknown_option_error(name, text(a), known, None)
+    if len(args) < k or any(is_text(a) for a in args[:k]):
+        raise MatlabError(f"{name}: needs {'x, y and z' if three_d else 'x and y'} coordinates.")
+    ax = _axes(interp, projection="3d" if three_d else "rectilinear")
+    coords = [np.real(fnum(a)).flatten() for a in args[:k]]
+    x = coords[0]
     s = 36.0
-    if len(args) > 2 and isinstance(args[2], np.ndarray) and not is_char(args[2]) and args[2].size:
-        sv = np.real(fnum(args[2])).flatten()
+    if len(args) > k and isinstance(args[k], np.ndarray) and not is_char(args[k]) and args[k].size:
+        sv = np.real(fnum(args[k])).flatten()
         s = float(sv[0]) if sv.size == 1 else sv
-    kw: dict = {}
-    if len(args) > 3 and not (is_text(args[3]) and not _is_color_text(args[3])):
-        c = args[3]
+    kw: dict = {"depthshade": False} if three_d else {}
+    if len(args) > k + 1 and not (is_text(args[k + 1]) and not _is_color_text(args[k + 1])):
+        c = args[k + 1]
         kw["c"] = _color(c) if is_text(c) else (np.real(fnum(c)).flatten() if fnum(c).size == x.size
                                                  else _color(c))
         if isinstance(kw["c"], np.ndarray):
             kw["cmap"] = _current_cmap(interp)
-    marker = next((_mpl_marker(text(a)) for a in args[3:] if is_text(a) and not _is_color_text(a)), "o")
+    marker = next((_mpl_marker(text(a)) for a in args[k + 1:] if is_text(a) and not _is_color_text(a)), "o")
     if "c" not in kw:
         import matplotlib as mpl
         colors = mpl.rcParams["axes.prop_cycle"].by_key().get("color", ["C0"])
         kw["c"] = colors[len(ax.collections) % len(colors)]
+    hollow_mapped = False  # open markers whose edges take their colours from CData and the colormap
     if not filled:
         if not isinstance(kw["c"], np.ndarray):
             kw["edgecolors"] = kw.pop("c")
             kw["facecolors"] = "none"
         else:
-            kw["facecolors"] = "none"
+            hollow_mapped = True
     if "markerfacecolor" in opts:
         kw.pop("facecolors", None)
         fc = opts["markerfacecolor"]
@@ -3577,7 +3689,12 @@ def _scatter(interp, args, nargout):
         kw["label"] = text(opts["displayname"])
     if "c" in kw and not isinstance(kw["c"], np.ndarray):
         kw["color"] = kw.pop("c")  # one colour for all points
-    coll = ax.scatter(x, y, s=s, marker=marker, **kw)
+    coll = ax.scatter(*coords, s=s, marker=marker, **kw)
+    if hollow_mapped and "facecolors" not in kw:
+        # (passing facecolors='none' with c would fill the markers: c takes precedence)
+        coll.set_facecolor("none")
+        if "edgecolors" not in kw:
+            coll.set_edgecolor(None)  # edges follow the mapped colours
     h = _wrap(interp, "scatter", coll)
     h.extra["Marker"] = marker
     if "markeredgealpha" in opts:
@@ -3590,24 +3707,6 @@ def _scatter(interp, args, nargout):
 def _is_color_text(a) -> bool:
     s = text(a)
     return s.lower() in _COLOR_NAMES or (len(s) == 1 and s in "rgbcmykw") or s.startswith("#")
-
-
-@builtin("scatter3")
-@_with_axes_arg
-def _scatter3(interp, args, nargout):
-    filled = any(is_text(a) and text(a) == "filled" for a in args)
-    nums = [a for a in args if not is_text(a)]
-    ax = _axes(interp, projection="3d")
-    x, y, z = (np.real(fnum(a)).flatten() for a in nums[:3])
-    s = np.real(fnum(nums[3])).flatten() if len(nums) > 3 and fnum(nums[3]).size else 36
-    kw = {}
-    if len(nums) > 4:
-        c = np.real(fnum(nums[4])).flatten()
-        kw["c"] = c if c.size == x.size else _color(nums[4])
-    coll = ax.scatter(x, y, z, s=s, depthshade=False, **kw) if filled else \
-        ax.scatter(x, y, z, s=s, facecolors="none", edgecolors=kw.pop("c", "C0"), depthshade=False)
-    _redraw(interp)
-    return _ret(interp, "scatter", [coll], nargout)
 
 
 @builtin("bar")
@@ -3867,7 +3966,7 @@ def _xy_simple(args):
 def _stem(interp, args, nargout):
     args, opts = _split_name_values(args, _LINE_OPTS)
     filled = any(is_text(a) and text(a).lower() == "filled" for a in args)
-    spec = next((text(a) for a in args if is_text(a) and _is_linespec(text(a))), "")
+    spec = next((_norm_spec(text(a)) for a in args if is_text(a) and _is_linespec(text(a))), "")
     ax = _axes(interp, projection="rectilinear")
     x, y = _xy_simple([a for a in args if not is_text(a)])
     cont = ax.stem(x, y, linefmt=spec or None)
@@ -3894,7 +3993,7 @@ def _stem(interp, args, nargout):
 @_with_axes_arg
 def _stairs(interp, args, nargout):
     args, opts = _split_name_values(args, _LINE_OPTS)
-    spec = next((text(a) for a in args if is_text(a) and _is_linespec(text(a))), "")
+    spec = next((_norm_spec(text(a)) for a in args if is_text(a) and _is_linespec(text(a))), "")
     ax = _axes(interp, projection="rectilinear")
     x, y = _xy_simple(args)
     kw = _mpl_kwargs(opts)
@@ -4043,7 +4142,7 @@ def _errorbar(interp, args, nargout):
             if low in ("horizontal", "vertical", "both"):
                 orient = low
             elif _is_linespec(text(a)) and not spec:
-                spec = text(a)
+                spec = _norm_spec(text(a))
             else:
                 raise MatlabError(f"errorbar: unknown option '{text(a)}'.")
         else:
@@ -4142,7 +4241,7 @@ def _quiver(interp, args, nargout):
     args, opts = _split_name_values(args, {"color", "linewidth", "autoscale", "autoscalefactor",
                                            "displayname", "maxheadsize"}, kind="quiver")
     _reject_text(args, "quiver", flags=("filled",))
-    spec = next((text(a) for a in args if is_text(a) and _is_linespec(text(a))), "")
+    spec = next((_norm_spec(text(a)) for a in args if is_text(a) and _is_linespec(text(a))), "")
     nums = [a for a in args if not is_text(a)]
     scale = 1.0
     if len(nums) in (3, 5):
@@ -4717,7 +4816,15 @@ def _colormap(interp, args, nargout):
     else:
         axes = None
     if args:
-        _apply_colormap(interp, args[0], axes)
+        spec = args[0]
+        if is_text(spec) and "(" in text(spec):
+            # colormap('gray(256)'), or colormap gray(256): MATLAB evaluates the text
+            name = text(spec).split("(", 1)[0].strip()
+            if name.isidentifier() and (name in interp.builtins or interp.find_file_function(name) is not None):
+                spec = interp.eval_expression(text(spec))
+            else:
+                raise MatlabError(f"Unknown colormap '{text(spec)}'.")
+        _apply_colormap(interp, spec, axes)
     if nargout > 0:
         return _cmap_query(interp)
     return None
@@ -5584,8 +5691,8 @@ def _label(method):
         finally:
             st.override_ax = prev
         if method == "set_zlabel" and not hasattr(ax, "set_zlabel"):
-            t = ax.text(0, 0, "")  # 2-D axes: nothing to label, return a dummy text
-            t.set_visible(False)
+            t = _zlabel_2d(ax)  # 2-D axes: the label is kept, and shows nowhere until the axes are 3-D
+            set_text(interp, t, s, interp_name)
         else:
             if method == "set_title" and "fontweight" not in kw:
                 kw["fontweight"] = "bold"
@@ -5850,8 +5957,8 @@ def _legend(interp, args, nargout):
     args = list(args)
     if args and isinstance(args[0], GraphicsHandle) and args[0].kind in ("axes", "polaraxes", "geoaxes"):
         target = args.pop(0).obj
-    if args and isinstance(args[0], (GraphicsHandle, GraphicsArray)):
-        hs = _handles_of(args.pop(0))
+    if args and (isinstance(args[0], (GraphicsHandle, GraphicsArray)) or _handles_of(args[0])):
+        hs = _handles_of(args.pop(0))  # (numeric handles too: h = zeros(1, 2); h(1) = plot(...))
         handles = []
         for h in hs:
             o = h.obj

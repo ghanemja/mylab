@@ -412,6 +412,10 @@ def _exist(interp, args, nargout):
             return 7.0
         if kind != "dir" and os.path.isfile(name):
             return 2.0
+    if kind in ("", "file") and name and not os.path.isabs(name):
+        for d in interp._search_dirs():  # any file on the search path, data files included (MATLAB's 2)
+            if os.path.isfile(os.path.join(d, name)):
+                return 2.0
     if kind in ("", "file", "builtin"):
         if interp.find_file_function(name) is not None:
             return 2.0
@@ -877,8 +881,12 @@ def _delete(interp, args, nargout):
             continue  # delete([]) and delete(gcp('nocreate')) with no pool do nothing
         if isinstance(a, np.ndarray) and a.dtype.kind in "fiu" and not is_text(a):
             from ._registry import BUILTINS
-            for h in a.flatten():  # figure numbers, as close accepts them
-                BUILTINS["close"](interp, [np.array([[float(h)]])], 0)
+            from .plotting import _delete_handle, numbered_handle
+            for h in a.flatten():
+                if float(h) != int(h) and numbered_handle(h) is not None:  # a line, axes, ... by number
+                    _delete_handle(interp, numbered_handle(h))
+                else:  # figure numbers, as close accepts them
+                    BUILTINS["close"](interp, [np.array([[float(h)]])], 0)
             continue
         if isinstance(a, Struct) and "NumWorkers" in a.fields:
             continue  # the pool from parpool: there are no worker processes to shut down
@@ -1566,8 +1574,8 @@ def _run(interp, args, nargout):
             raise MatlabError(f"run: file '{path}' not found.")
         path = found[1]
     path = os.path.abspath(path)
-    with open(path, encoding="utf-8") as fh:
-        program = parse(fh.read())
+    from ..sourcefile import read_source
+    program = parse(read_source(path))
     directory = os.path.dirname(path)
     if directory not in interp.path:
         interp.path.insert(0, directory)

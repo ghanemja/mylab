@@ -225,6 +225,35 @@ HELP = {
               "R = rand(..., 'like', p)"],
              "Uniformly distributed random numbers between 0 and 1. The class is double, or single when "
              "asked for by name or through a 'like' prototype." + _STREAM),
+    "echo": (["echo on", "echo off", "echo", "echo on all", "echo off all", "echo fname on", "echo fname off",
+              "echo fname"],
+             "Show the lines of scripts as they run. echo on and echo off turn it on and off for scripts, and "
+             "echo alone switches it. echo fname on shows the lines of the function fname, echo on all those "
+             "of every function, and echo off all turns all of it off."),
+    "pkg": (["pkg load name", "pkg unload name", "list = pkg('list')"],
+            "GNU Octave's package command, accepted so that code written for Octave runs. The functions of "
+            "the Octave Forge packages mylab covers (control, signal, statistics, optim, symbolic, image, "
+            "io and others) are built in, so pkg load and pkg unload do nothing for them; another package "
+            "name is an error. pkg('list') returns the names accepted."),
+    "handle": (["h = handle(n)", "h = handle(obj)"],
+               "The graphics object a numeric handle stands for. double(h) gives the number of any "
+               "graphics object (a figure's is its figure number), and storing an object into a double "
+               "array stores that number, as in h = zeros(1, 2); h(1) = plot(x, y); handle turns such "
+               "numbers back into objects. A handle object is returned unchanged."),
+    "fields": (["names = fields(s)"],
+               "The same as fieldnames: the field names of a structure, as a column cell array. An old "
+               "name MATLAB still accepts, used by some existing code."),
+    "bucky": (["B = bucky", "[B, V] = bucky"],
+              "The graph of the buckminsterfullerene molecule C60, the pattern of a soccer ball: B is the "
+              "60-by-60 sparse adjacency matrix (each atom has three neighbours, 90 edges in all) and V the "
+              "60-by-3 coordinates of the atoms, on the unit sphere. The atoms are numbered in another order "
+              "than MATLAB's (by height, then around), so the same graph has a permuted B."),
+    "randg": (["r = randg", "R = randg(A)", "R = randg(A, m, n, ...)", "R = randg(A, [m n ...])",
+               "R = randg(..., 'single')"],
+              "Gamma-distributed random numbers with shape A and scale 1. A can be a scalar or an array "
+              "the size of the result; A = 0 gives 0 and a negative or NaN shape gives NaN. Multiply by b "
+              "for scale b. The numbers come from the same generator as rand and randn (see rng), so they "
+              "are reproducible after rng(seed), but they are not the same numbers MATLAB draws."),
     "randn": (["r = randn", "R = randn(n)", "R = randn(m, n)", "R = randn([m n])", "R = randn(..., 'single')",
                "R = randn(..., 'like', p)"],
               "Normally distributed random numbers with mean 0 and standard deviation 1." + _STREAM),

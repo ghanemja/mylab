@@ -249,6 +249,33 @@ def _randn(interp, args, nargout):
     return cast_class(normal(interp, count).reshape(shape, order="F"), _float_class(cls, "randn"))
 
 
+@builtin("randg")
+def _randg(interp, args, nargout):
+    """Gamma random numbers with scale 1 (shape A): randg(A), randg(A, m, n, ...), randg(A, [m n])."""
+    a = num(args[0]) if args else np.ones((1, 1))
+    if a.dtype.kind == "c":
+        raise MatlabError("randg: the shape parameter A must be real.")
+    rest = list(args[1:])
+    cls = None
+    if any(not is_text(x) for x in rest):
+        shape, cls = dims_from_args(rest, "randg")
+        if a.size != 1 and tuple(a.shape) != tuple(shape):
+            raise MatlabError("randg: Size information is inconsistent.")
+    else:
+        shape = a.shape
+        if rest:
+            _, cls = dims_from_args(rest, "randg")
+    a = np.broadcast_to(a.astype(float).reshape(-1)[:1].reshape(1, 1) if a.size == 1 else a.astype(float), shape)
+    flat = np.asarray(a).ravel(order="F")
+    out = np.full(flat.shape, np.nan)
+    ok = (flat > 0) & np.isfinite(flat)
+    if ok.any():
+        out[ok] = _rng(interp).standard_gamma(flat[ok])
+    out[flat == 0] = 0.0
+    out[flat == np.inf] = np.inf
+    return cast_class(out.reshape(shape, order="F"), _float_class(cls, "randg"))
+
+
 @builtin("randi")
 def _randi(interp, args, nargout):
     nargs(args, 1, None, "randi")
@@ -276,6 +303,35 @@ def _randperm(interp, args, nargout):
     return p[:k].reshape(1, -1)
 
 
+def _linspace_values(a, b, n: int) -> np.ndarray:
+    """MATLAB's linspace: a + (0:n-1).*(b - a)./(n - 1), with the first and last points exactly a and b.
+
+    The end points matter when the range is infinite: linspace(0, Inf, 5) is [0 Inf Inf Inf Inf]
+    (NumPy's formula gives NaN first), and linspace(-Inf, Inf, 3) is [-Inf NaN Inf].
+    """
+    dtype = complex if isinstance(a, complex) or isinstance(b, complex) else float
+    if n <= 0:
+        return np.zeros(0, dtype=dtype)
+    n1 = n - 1
+    k = np.arange(n, dtype=float)
+    with np.errstate(all="ignore"):
+        c = (b - a) * (n1 - 1)
+        if np.isinf(c):
+            if np.isinf(b - a):  # opposite infinities, or a span that overflows
+                y = a + (b / n1) * k - (a / n1) * k
+            else:
+                y = a + k * ((b - a) / n1)
+        else:
+            y = a + k * (b - a) / n1
+    y = np.asarray(y, dtype=dtype)
+    if a == b:
+        y[:] = a
+    else:
+        y[0] = a
+        y[-1] = b
+    return y
+
+
 @builtin("linspace")
 def _linspace(interp, args, nargout):
     nargs(args, 2, 3, "linspace")
@@ -294,7 +350,7 @@ def _linspace(interp, args, nargout):
     if n == 1:
         r = np.array([[b]], dtype=complex if isinstance(b, complex) else float)
     else:
-        r = np.linspace(a, b, max(n, 0)).reshape(1, -1)
+        r = _linspace_values(a, b, max(n, 0)).reshape(1, -1)
     if single:
         r = r.astype(np.complex64 if r.dtype.kind == "c" else np.float32)
     return r

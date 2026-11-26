@@ -172,7 +172,7 @@ def _struct(interp, args, nargout):
     return Struct(data, names)
 
 
-@builtin("fieldnames")
+@builtin("fieldnames", "fields")
 def _fieldnames(interp, args, nargout):
     s = args[0]
     if not isinstance(s, Struct) and hasattr(s, "cls") and getattr(s, "cls", None) is not None:
@@ -333,11 +333,18 @@ def _deal(interp, args, nargout):
 
 
 def _split_options(args, names):
+    """Trailing Name,Value pairs. Names are not case sensitive and may be shortened to any unambiguous
+    start, as MATLAB allows: cellfun(f, c, 'uni', 0) is 'UniformOutput', false."""
     opts = {}
     rest = list(args)
-    lower = {n.lower(): n for n in names}
-    while len(rest) >= 3 and is_text(rest[-2]) and text(rest[-2]).lower() in lower:
-        opts[lower[text(rest[-2]).lower()]] = rest[-1]  # option names are not case sensitive
+
+    def match(word: str):
+        low = word.lower()
+        hits = [n for n in names if n.lower().startswith(low)] if low else []
+        return hits[0] if len(hits) == 1 else None
+
+    while len(rest) >= 3 and is_text(rest[-2]) and match(text(rest[-2])) is not None:
+        opts[match(text(rest[-2]))] = rest[-1]
         rest = rest[:-2]
     return rest, opts
 

@@ -20,18 +20,18 @@ def _entries() -> dict:
 
 def _leading_comments(path: str) -> str:
     """The comment block at the top of a user .m file (its help text)."""
+    from .sourcefile import read_source
     lines = []
-    with open(path, encoding="utf-8") as fh:
-        started = False
-        for raw in fh:
-            s = raw.strip()
-            if s.startswith("function") and not started:
-                continue
-            if s.startswith("%"):
-                started = True
-                lines.append(re.sub(r"^%+ ?", "", s))
-            elif started or s:
-                break
+    started = False
+    for raw in read_source(path).splitlines():
+        s = raw.strip()
+        if s.startswith("function") and not started:
+            continue
+        if s.startswith("%"):
+            started = True
+            lines.append(re.sub(r"^%+ ?", "", s))
+        elif started or s:
+            break
     return "\n".join(lines)
 
 

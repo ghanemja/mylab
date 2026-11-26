@@ -22,6 +22,7 @@ from .display import FORMAT, format_display, function_handle_text, unparse
 from .errors import BreakSignal, ContinueSignal, MatlabError, ReturnSignal
 from .objects import MObject
 from .parser import parse
+from .sourcefile import read_source
 from .values import (
     Cell, FunctionHandle, MString, StringArray, Struct, char, class_name, codes_to_char,
     string_data, string_result,
@@ -287,8 +288,7 @@ class Interpreter:
         directory = os.path.dirname(path)
         if directory not in self.path:
             self.path.insert(0, directory)
-        with open(path, encoding="utf-8") as fh:
-            code = fh.read()
+        code = read_source(path)
         program = parse(code)
         if not program.body and program.functions:
             # A function file: run its main function with no arguments.
@@ -1323,10 +1323,7 @@ class Interpreter:
         Returns (program, path, qualified name, remaining parts) or None.
         """
         parts = dotted.split(".")
-        dirs = list(self.path)
-        cwd = os.getcwd()
-        if cwd not in dirs:
-            dirs.append(cwd)
+        dirs = self._search_dirs()
         for d in dirs:
             folder = d
             for k in range(len(parts) - 1):
@@ -1503,10 +1500,7 @@ class Interpreter:
 
     def _call_type_method(self, name: str, args: list[Any], nargout: int) -> list[Any] | None:
         """A function kept in an ``@double``-style folder on the path, for a built-in type."""
-        dirs = list(self.path)
-        cwd = os.getcwd()
-        if cwd not in dirs:
-            dirs.append(cwd)
+        dirs = self._search_dirs()
         kinds: list[str] = []
         for a in args:
             k = class_name(a)
@@ -1795,6 +1789,14 @@ class Interpreter:
             self._lookup_state = state
             self._lookup_cache.clear()
 
+    def _search_dirs(self) -> list[str]:
+        """Folders to look for functions in, in MATLAB's order: the current folder, then the path."""
+        try:
+            cwd = os.getcwd()
+        except OSError:
+            return list(self.path)
+        return [cwd, *(d for d in self.path if d != cwd)]
+
     def find_file_function(self, name: str) -> tuple[A.Program, str] | None:
         now = _monotonic()
         if now - self._lookup_checked > LOOKUP_RECHECK:
@@ -1805,10 +1807,7 @@ class Interpreter:
         return found
 
     def _find_file_function(self, name: str) -> tuple[A.Program, str] | None:
-        dirs = list(self.path)
-        cwd = os.getcwd()
-        if cwd not in dirs:
-            dirs.append(cwd)
+        dirs = self._search_dirs()
         for d in dirs:
             listing = self._dir_listing(d)
             if name + ".m" in listing:
@@ -1832,8 +1831,7 @@ class Interpreter:
         cached = self._file_cache.get(path)
         if cached and cached[0] == mtime:
             return cached[1]
-        with open(path, encoding="utf-8") as fh:
-            program = parse(fh.read())
+        program = parse(read_source(path))
         self._dir_listing(os.path.dirname(path))  # notes a private subfolder next to the file
         for fn in program.functions.values():
             fn.file = path  # type: ignore[attr-defined]  # so calls through a handle know their file

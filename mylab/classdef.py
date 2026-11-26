@@ -25,6 +25,7 @@ import numpy as np
 from . import ast as A
 from .errors import MatlabError
 from .objects import MObject
+from .sourcefile import read_source
 
 
 class BaseSpec:
@@ -209,8 +210,7 @@ class ClassInfo:
             if ext != ".m" or stem == self.name or stem in self.cd.methods:
                 continue
             try:
-                with open(os.path.join(folder, entry), encoding="utf-8", errors="replace") as fh:
-                    program = parse(fh.read())
+                program = parse(read_source(os.path.join(folder, entry)))
             except MatlabError as e:
                 raise MatlabError(f"Error in method file {os.path.join(folder, entry)}: {e.message}") from None
             if not program.functions:
@@ -1977,6 +1977,11 @@ def object_to_builtin(interp, value: Any, kind: str) -> Any:
                 return res[0]
         if type(value) is UserObject and (value._data is not None or value._enum_value is not None):
             return _plain(value)
+    if kind == "double" and getattr(value, "is_handle", False) and hasattr(value, "has_method") \
+            and value.has_method("double") and type(value).__name__ in ("GraphicsHandle", "GraphicsArray"):
+        res = value.call_method(interp, "double", [value], 1)  # graphics objects stored as numeric handles
+        if res and isinstance(res[0], np.ndarray):
+            return res[0]
     raise MatlabError(f"The following error occurred converting from {_class_name(value)} to {kind}: "
                       f"Conversion to {kind} from {_class_name(value)} is not possible.",
                       "MATLAB:UnableToConvert")

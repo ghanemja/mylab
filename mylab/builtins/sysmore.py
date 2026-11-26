@@ -574,6 +574,110 @@ def _profiler(interp) -> _Profiler:
     return p
 
 
+class _Echo:
+    """echo: show the lines of scripts (and chosen functions) as they run."""
+
+    def __init__(self, interp):
+        self.interp = interp
+        self.scripts = False
+        self.all = False
+        self.functions: set[str] = set()
+        self.prev = None
+        self.installed = False
+        self.lines: dict[str, list[str]] = {}
+
+    def active(self) -> bool:
+        return self.scripts or self.all or bool(self.functions)
+
+    def hook(self, stmt, frame) -> None:
+        fn = getattr(frame, "fn_node", None)
+        show = self.scripts if fn is None else (self.all or fn.name in self.functions)
+        line = getattr(stmt, "line", 0)
+        if show and frame.file and line:
+            src = self._line(frame.file, line)
+            if src is not None:
+                self.interp.out(src + "\n")
+        if self.prev is not None:
+            self.prev(stmt, frame)
+
+    def _line(self, file: str, line: int) -> str | None:
+        lines = self.lines.get(file)
+        if lines is None:
+            from ..sourcefile import read_source
+            try:
+                lines = read_source(file).split("\n")
+            except OSError:
+                lines = []
+            self.lines[file] = lines
+        return lines[line - 1] if 0 < line <= len(lines) else None
+
+    def sync(self) -> None:
+        self.lines.clear()  # files may have changed since the last echo command
+        it = self.interp
+        if self.active() and not self.installed:
+            self.prev, it.trace_hook, self.installed = it.trace_hook, self.hook, True
+        elif not self.active() and self.installed:
+            if it.trace_hook == self.hook:
+                it.trace_hook = self.prev
+            self.installed = False
+
+
+@builtin("echo")
+def _echo(interp, args, nargout):
+    """echo, echo on/off, echo on all/off all, echo fname, echo fname on/off."""
+    if any(not is_text(a) for a in args) or len(args) > 2:
+        raise MatlabError("Use echo, echo on, echo off, echo on all, echo off all or echo fname on/off.")
+    e = interp.state.get("echo")
+    if e is None:
+        e = interp.state["echo"] = _Echo(interp)
+    words = [text(a) for a in args]
+    low = [w.lower() for w in words]
+    if not words:
+        e.scripts = not e.scripts
+    elif low == ["on"]:
+        e.scripts = True
+    elif low == ["off"]:
+        e.scripts = False
+    elif low == ["on", "all"]:
+        e.all = True
+    elif low == ["off", "all"]:
+        e.all = False
+        e.functions.clear()
+    elif len(words) == 1:
+        e.functions ^= {words[0]}  # echo fname: toggle
+    elif low[1] in ("on", "off"):
+        (e.functions.add if low[1] == "on" else e.functions.discard)(words[0])
+    else:
+        raise MatlabError(f"echo: unknown option '{words[1]}'.")
+    e.sync()
+    return None
+
+
+# Octave Forge packages whose functions mylab provides without loading anything
+_OCTAVE_PACKAGES = {"control", "signal", "statistics", "optim", "symbolic", "image", "io", "communications",
+                    "datatypes", "financial", "geometry", "interval", "linear-algebra", "mapping", "miscellaneous",
+                    "nan", "netcdf", "odepkg", "specfun", "splines", "strings", "struct", "tisean", "video"}
+
+
+@builtin("pkg")
+def _pkg(interp, args, nargout):
+    """Octave's package command, so code written for Octave runs: pkg load NAME is accepted for the
+    packages whose functions mylab has built in."""
+    if not args or any(not is_text(a) for a in args):
+        raise MatlabError("pkg: use pkg load NAME (pkg is GNU Octave's package manager).")
+    action = text(args[0]).lower()
+    names = [text(a) for a in args[1:]]
+    if action in ("load", "unload"):
+        missing = [n for n in names if n.lower() not in _OCTAVE_PACKAGES]
+        if missing:
+            raise MatlabError(f"pkg: the Octave package '{missing[0]}' is not available in mylab.")
+        return None
+    if action == "list":
+        return Cell.from_list([char(n) for n in sorted(_OCTAVE_PACKAGES)]) if nargout else None
+    raise MatlabError(f"pkg: '{action}' is not supported; mylab provides its packages built in "
+                      "(pkg load NAME is accepted).")
+
+
 @builtin("profile")
 def _profile(interp, args, nargout):
     words = [text(a, "profile option") for a in args]
