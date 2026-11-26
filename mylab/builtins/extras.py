@@ -6,8 +6,8 @@ import itertools
 import re
 
 import numpy as np
-import scipy.special as sp
 
+from .._lazy import lazy_function, lazy_module
 from ..errors import MatlabError
 from ..values import (
     INT_TYPES, Cell, MString, Struct, char, class_name, codes_to_char, is_char,
@@ -15,6 +15,8 @@ from ..values import (
 )
 from ._registry import builtin
 from ._util import bool_scalar, fnum, get_dim, is_text, nargs, num, text
+
+sp = lazy_module("scipy.special", globals(), "sp")  # imported on first use: keeps start-up fast
 
 
 def _given(args: list, i: int) -> bool:
@@ -950,10 +952,14 @@ def _neg_any(nu, z):
     return bool(np.any(np.real(z) < 0))
 
 
-builtin("besselj")(_bessel("besselj", sp.jv, sp.jve, _neg_noninteger))
-builtin("bessely")(_bessel("bessely", sp.yv, sp.yve, _neg_any))
-builtin("besseli")(_bessel("besseli", sp.iv, sp.ive, _neg_noninteger))
-builtin("besselk")(_bessel("besselk", sp.kv, sp.kve, _neg_any))
+def _sp(name):
+    return lazy_function("scipy.special", name)
+
+
+builtin("besselj")(_bessel("besselj", _sp("jv"), _sp("jve"), _neg_noninteger))
+builtin("bessely")(_bessel("bessely", _sp("yv"), _sp("yve"), _neg_any))
+builtin("besseli")(_bessel("besseli", _sp("iv"), _sp("ive"), _neg_noninteger))
+builtin("besselk")(_bessel("besselk", _sp("kv"), _sp("kve"), _neg_any))
 
 
 @builtin("airy")

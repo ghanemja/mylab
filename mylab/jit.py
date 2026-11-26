@@ -1,30 +1,45 @@
-"""Loop compiler: runs simple numeric loops as plain Python instead of interpreting them.
+"""Loop and function compiler: runs simple loops and numeric functions as plain Python.
 
-Most of the time in loop-heavy scripts goes to interpreter overhead: every
-scalar is a 1x1 array and every statement walks the syntax tree. For loops
-that only do scalar arithmetic and element reads/writes on numeric arrays,
-this module generates an equivalent Python function that works on raw floats,
-which is typically 20-60x faster.
+Most of the time in loop-heavy scripts goes to interpreter overhead: every scalar is a 1x1 array
+and every statement walks the syntax tree.  This module generates an equivalent Python function
+that works on raw floats where it can, which is typically 20-60x faster.
+
+What is compiled
+----------------
+* ``for k = a:s:b`` and ``while`` loops whose body is made of ``x = <expr>;``, ``A(i) = <expr>;``,
+  ``A(i, j) = <expr>;``, ``s.field = <expr>;``, ``s.field(i) = <expr>;``, ``c{i} = <expr>;``,
+  ``c{end + 1} = <expr>;``, ``if/elseif/else``, ``break`` and ``continue``.
+* Whole functions (one output, no nested functions) built from the same statements plus nested
+  ``for``/``while`` loops and ``return`` - provided they are *pure*: they only compute a result
+  from their inputs.  They are compiled when called from a compiled loop, from each other
+  (recursion included), or for the second time from the interpreter.
+* Expressions built from real scalars, element reads of double arrays, arithmetic, comparisons,
+  logical operators, a fixed list of side-effect-free math functions, small matrix literals,
+  text literals, cell and struct-field reads, calls to compiled user functions and calls to a
+  list of built-ins that are known to have no side effects (``sum``, ``numel``, ``sprintf``,
+  ``strrep``, ``strsplit``, ``str2double`` ...).
+
+Values come in two forms.  Real scalars are Python floats and bools; everything else stays a
+normal MATLAB value ("boxed") and is handled by the same routines the interpreter uses, so the
+results are the interpreter's results.
 
 Safety model
 ------------
-* A loop is compiled only if every statement in its body is one of:
-  ``x = <expr>;``, ``A(i) = <expr>;``, ``A(i, j) = <expr>;``, ``if/elseif/else``,
-  ``break``, ``continue`` - with expressions built from real scalars, element
-  reads of double arrays, arithmetic, comparisons, logical operators and a
-  fixed list of side-effect-free math functions.
-* Variable kinds (double scalar, logical scalar, double array and its
-  orientation) are checked on entry; the compiled code is specialised for them.
-* Anything unusual at run time (an index out of range or not an integer, a
-  result that would be complex, division by zero, NaN used as a condition, a
-  Python error of any kind) makes the compiled code *bail out*: the variables
-  are written back and the interpreter resumes at exactly the statement that
-  bailed, so the user sees the normal result or the normal error message.
-  Bail-outs can only happen while evaluating an expression, before the
-  statement has changed anything, so resuming is exact.
+* Variable kinds (double scalar, logical scalar, double array and its orientation, row cell,
+  scalar struct and the kinds of its fields, other) are checked on entry; the compiled code is
+  specialised for them.  The functions a loop calls are part of that check: if a file changes or
+  a new file shadows a name, the loop is compiled again.
+* Anything unusual at run time (an index out of range or not an integer, a result that would be
+  complex, division by zero, NaN used as a condition, a value that is not the scalar the code
+  expected, an error inside a built-in or a called function, too deep a recursion, a Python error
+  of any kind) makes the compiled code *bail out*: the variables are written back and the
+  interpreter resumes at exactly the statement that bailed, so the user sees the normal result or
+  the normal error message.  Bail-outs can only happen while evaluating an expression, before the
+  statement has changed anything, so resuming is exact.  A compiled function that bails is simply
+  run again by the interpreter: it is pure, so nothing has to be undone.
 
-Set the environment variable ``MYLAB_JIT=0`` (or ``interp.jit_enabled = False``)
-to turn the compiler off.
+Set the environment variable ``MYLAB_JIT=0`` (or ``interp.jit_enabled = False``) to turn the
+compiler off.
 """
 
 from __future__ import annotations
@@ -36,13 +51,20 @@ from typing import Any
 import numpy as np
 
 from . import ast as A
+from . import fastnum
+from . import indexing as ix
+from . import ops
 from .errors import BreakSignal, ContinueSignal
-from .values import FunctionHandle
+from .values import Cell, FunctionHandle, MString, StringArray, Struct, char, is_true, to_matlab, to_numeric
 
 _F64 = np.dtype(float)
-_UNSET = object()
+_BOOL = np.dtype(bool)
+_ND = np.ndarray
+_S11 = (1, 1)
 MIN_ITERATIONS = 4
 MAX_BAILS = 3
+FUNCTION_CALLS_BEFORE_COMPILE = 2
+_PLAIN = (np.ndarray, Cell, Struct, MString, StringArray, FunctionHandle)
 
 
 class Bail(Exception):
@@ -50,7 +72,25 @@ class Bail(Exception):
 
 
 class Reject(Exception):
-    """The loop cannot be compiled."""
+    """The loop or function cannot be compiled."""
+
+
+class _Unset:
+    """Stands for a variable without a value; any use of it bails out."""
+
+    __slots__ = ()
+
+    def _bail(self, *args):
+        raise Bail
+
+    __eq__ = __ne__ = __lt__ = __le__ = __gt__ = __ge__ = _bail
+    __add__ = __radd__ = __sub__ = __rsub__ = __mul__ = __rmul__ = __truediv__ = __rtruediv__ = _bail
+    __pow__ = __rpow__ = __neg__ = __pos__ = __abs__ = __float__ = __bool__ = __int__ = _bail
+    __hash__ = None  # type: ignore[assignment]
+
+
+_UNSET = _Unset()
+_MISSING = object()
 
 
 # -- run-time helpers used by generated code ---------------------------------------------------
@@ -112,19 +152,32 @@ def _max2(a, b):
 
 
 def _mod(a, b):
-    from .builtins.mathfns import _mod_scalar
-    r = _mod_scalar(a, b)
+    r = _MOD_SCALAR(a, b)
     if r is None:
         raise Bail
     return float(r)
 
 
 def _rem(a, b):
-    from .builtins.mathfns import _rem_scalar
-    r = _rem_scalar(a, b)
+    r = _REM_SCALAR(a, b)
     if r is None:
         raise Bail
     return float(r)
+
+
+def _late_mod(a, b):
+    global _MOD_SCALAR, _REM_SCALAR
+    from .builtins.mathfns import _mod_scalar, _rem_scalar
+    _MOD_SCALAR, _REM_SCALAR = _mod_scalar, _rem_scalar
+    return _mod_scalar(a, b)
+
+
+def _late_rem(a, b):
+    _late_mod(1.0, 1.0)
+    return _REM_SCALAR(a, b)
+
+
+_MOD_SCALAR, _REM_SCALAR = _late_mod, _late_rem
 
 
 def _floor(x):
@@ -139,13 +192,281 @@ def _fix(x):
     return float(math.trunc(x))
 
 
-_HELPERS = {
+def _d(v):
+    """A boxed value that must be a real scalar, as a float (logical scalars count as 0 or 1)."""
+    if type(v) is _ND and v.shape == _S11 and (v.dtype is _F64 or v.dtype is _BOOL):
+        return float(v.item())
+    raise Bail
+
+
+def _bd(x):
+    r = np.empty(_S11)
+    r[0, 0] = x
+    return r
+
+
+def _bb(x):
+    r = np.empty(_S11, _BOOL)
+    r[0, 0] = x
+    return r
+
+
+def _plain(v):
+    if type(v) not in _PLAIN:
+        raise Bail  # objects dispatch to their own methods: the interpreter handles them
+    return v
+
+
+def _truth(v):
+    return is_true(_plain(v))
+
+
+def _sc(v):
+    """Operand of && or ||, as the interpreter evaluates it."""
+    a = to_numeric(_plain(v))
+    if a.size != 1:
+        raise Bail
+    return bool(np.real(a.flat[0]) != 0)
+
+
+def _binop(op, a, b):
+    if type(a) is not _ND or type(b) is not _ND:
+        _plain(a)
+        _plain(b)
+    return ops.binop(op, a, b)
+
+
+def _unary(op, v):
+    return ops.unary(op, _plain(v))
+
+
+def _transpose(v, conjugate):
+    return ops.transpose(_plain(v), conjugate)
+
+
+def _arr(rows):
+    return np.array(rows)
+
+
+def _build(rows):
+    for row in rows:
+        for v in row:
+            if type(v) not in _PLAIN:
+                raise Bail
+    return ops.build_matrix(rows)
+
+
+def _get1(a, i):
+    """``a(i)`` for a real double array held as a boxed value."""
+    if type(a) is not _ND or a.dtype is not _F64 or a.ndim != 2:
+        raise Bail
+    k = int(i)
+    if k != i or k < 1 or k > a.size:
+        raise Bail
+    rows = a.shape[0]
+    if rows == 1 or a.shape[1] == 1:
+        return a.item(k - 1)
+    k -= 1
+    return a.item(k % rows, k // rows)
+
+
+def _get2(a, i, j):
+    if type(a) is not _ND or a.dtype is not _F64 or a.ndim != 2:
+        raise Bail
+    r, c = int(i), int(j)
+    if r != i or c != j or r < 1 or c < 1 or r > a.shape[0] or c > a.shape[1]:
+        raise Bail
+    return a.item(r - 1, c - 1)
+
+
+def _set1(a, i, x):
+    """``a(i) = x`` in place, for a local real double array that nothing else refers to."""
+    if type(a) is not _ND or a.dtype is not _F64 or a.ndim != 2 or not a.flags.writeable or a.base is not None \
+            or sys.getrefcount(a) > 3:
+        raise Bail
+    k = int(i)
+    if k != i or k < 1 or k > a.size:
+        raise Bail
+    rows = a.shape[0]
+    k -= 1
+    if rows == 1:
+        a[0, k] = x
+    else:
+        a[k % rows, k // rows] = x
+
+
+def _set2(a, i, j, x):
+    if type(a) is not _ND or a.dtype is not _F64 or a.ndim != 2 or not a.flags.writeable or a.base is not None \
+            or sys.getrefcount(a) > 3:
+        raise Bail
+    r, c = int(i), int(j)
+    if r != i or c != j or r < 1 or c < 1 or r > a.shape[0] or c > a.shape[1]:
+        raise Bail
+    a[r - 1, c - 1] = x
+
+
+def _copy(v):
+    return v.copy() if type(v) is _ND else v
+
+
+def _cellget(c, i):
+    """``c{i}`` for a cell held as a boxed value (a vector, or linear index into a matrix)."""
+    if type(c) is not Cell:
+        raise Bail
+    data = c.data
+    k = int(i)
+    if k != i or k < 1 or k > data.size or data.ndim != 2:
+        raise Bail
+    rows = data.shape[0]
+    k -= 1
+    return data[k % rows, k // rows] if rows != 1 else data[0, k]
+
+
+def _lset(lst, i, v):
+    """``c{i} = v`` on the list form of a row cell: inside it, or one past the end."""
+    n = len(lst)
+    k = int(i)
+    if k != i or k < 1 or k > n + 1:
+        raise Bail
+    if k > n:
+        lst.append(v)
+    else:
+        lst[k - 1] = v
+
+
+def _field(s, name):
+    if type(s) is not Struct or s.data.size != 1 or name not in s.fields:
+        raise Bail
+    return s.data.flat[0][name]
+
+
+def _numelf(v):
+    if type(v) is _ND:
+        return float(v.size)
+    if type(v) in (Cell, Struct, StringArray):
+        return float(v.data.size)
+    raise Bail
+
+
+def _endf(v, pos, count):
+    if type(v) is _ND:
+        return float(ix.end_value(v.shape, pos, count))
+    if type(v) in (Cell, Struct, StringArray):
+        return float(ix.end_value(v.data.shape, pos, count))
+    raise Bail
+
+
+def _index(v, args):
+    """``v(args)`` for a plain value, as the interpreter evaluates it."""
+    from .interpreter import _scalar_index, index_value
+    if type(v) is _ND:
+        pos = _scalar_index(v, args)
+        if pos is not None:
+            return v[pos].reshape(1, 1).copy()
+        return index_value(v, args)
+    if type(v) in (Cell, Struct, MString, StringArray):
+        return index_value(v, args)
+    raise Bail
+
+
+def _range(a, s, b):
+    from .interpreter import colon_range
+    return colon_range(_bd(a), None if s is None else _bd(s), _bd(b))
+
+
+def _count(a, s, b):
+    """Number of iterations of ``for k = a:s:b`` (the interpreter's formula)."""
+    if s == 0 or a != a or b != b or s != s or abs(a) == math.inf or abs(b) == math.inf:
+        raise Bail
+    span = (b - a) / s
+    if span < 0:
+        return 0
+    return int(math.floor(span + 1e-10 * max(1.0, abs(span)))) + 1
+
+
+_INTERP: list = [None]   # the interpreter running compiled code (set on every entry)
+
+
+def _callb(fn, args):
+    """Call a side-effect-free built-in with one output, as ``Interpreter.call_builtin`` does."""
+    for a in args:
+        if type(a) not in _PLAIN:
+            raise Bail  # an object argument may overload the function
+    r = fn(_INTERP[0], args, 1)
+    if type(r) is _ND and r.ndim == 2:
+        return r
+    if r is None:
+        raise Bail
+    if type(r) is tuple:
+        r = r[0]
+    return to_matlab(r)
+
+
+def _sumf(v):
+    lst = fastnum._tiny_vec(v) if fastnum.ENABLED else None
+    if lst is not None and (fastnum._CHECKED.get("sum") or fastnum._verified("sum")):
+        return fastnum._sum_list(lst)
+    return _d(_callb(_NS["_bi_sum"], [v]))
+
+
+def _prodf(v):
+    lst = fastnum._tiny_vec(v) if fastnum.ENABLED else None
+    if lst is not None and (fastnum._CHECKED.get("prod") or fastnum._verified("prod")):
+        return fastnum._prod_list(lst)
+    return _d(_callb(_NS["_bi_prod"], [v]))
+
+
+def _extreme(name, pick):
+    def f(v):
+        lst = fastnum._tiny_vec(v) if fastnum.ENABLED else None
+        if lst is not None:
+            if len(lst) == 1:
+                return lst[0]
+            r = pick(lst)
+            if r != 0.0 and r == r:
+                for x in lst:
+                    if x != x:
+                        break
+                else:
+                    return r
+        return _d(_callb(_NS["_bi_" + name], [v]))
+    return f
+
+
+def _normf(v):
+    if fastnum.ENABLED and type(v) is _ND and v.dtype is _F64 and v.ndim == 2 and v.size \
+            and (v.shape[0] == 1 or v.shape[1] == 1) and (fastnum._CHECKED.get("norm") or fastnum._verified("norm")):
+        flat = v.ravel()
+        return math.sqrt(flat.dot(flat))
+    return _d(_callb(_NS["_bi_norm"], [v]))
+
+
+_FLOAT_CALLS = {"sum": "_sumf", "prod": "_prodf", "max": "_maxf", "min": "_minf", "norm": "_normf"}
+
+# The one namespace all generated code lives in: helpers, constants and compiled functions.
+_NS: dict[str, Any] = {
     "_ix": _ix, "_lin": _lin, "_tr": _tr, "_pow": _pow, "_round": _round, "_sign": _sign,
     "_min2": _min2, "_max2": _max2, "_mod": _mod, "_rem": _rem, "_floor": _floor, "_ceil": _ceil,
     "_fix": _fix, "_math": math, "_UNSET": _UNSET, "_Bail": Bail, "_inf": math.inf, "_nan": math.nan,
+    "_d": _d, "_bd": _bd, "_bb": _bb, "_truth": _truth, "_sc": _sc, "_binop": _binop, "_unary": _unary,
+    "_transpose": _transpose, "_arr": _arr, "_build": _build, "_get1": _get1, "_get2": _get2,
+    "_set1": _set1, "_set2": _set2, "_copy": _copy, "_cellget": _cellget, "_lset": _lset, "_field": _field,
+    "_numelf": _numelf, "_endf": _endf, "_index": _index, "_range": _range, "_count": _count,
+    "_callb": _callb, "_sumf": _sumf, "_prodf": _prodf, "_maxf": _extreme("max", max),
+    "_minf": _extreme("min", min), "_normf": _normf, "_COLON": ix.COLON, "_lim": [500],
+    "_EMPTY": np.zeros((0, 0)),
 }
+_NS["_EMPTY"].setflags(write=False)
+_CONSTS: dict = {}
+_counter = [0]
 
-# MATLAB function -> (number of arguments, Python expression template, result type)
+
+def _unique(prefix: str) -> str:
+    _counter[0] += 1
+    return f"{prefix}{_counter[0]}"
+
+
+# MATLAB function -> (number of arguments, Python expression template)
 _FUNCS = {
     "sin": (1, "_math.sin({0})"), "cos": (1, "_math.cos({0})"), "tan": (1, "_math.tan({0})"),
     "atan": (1, "_math.atan({0})"), "sinh": (1, "_math.sinh({0})"), "cosh": (1, "_math.cosh({0})"),
@@ -161,113 +482,320 @@ _CONSTANTS = {"pi": ("_math.pi", "d"), "Inf": ("_inf", "d"), "inf": ("_inf", "d"
               "false": ("False", "b")}
 _ARITH = {"+": "+", "-": "-", "*": "*", ".*": "*", "/": "/", "./": "/"}
 _COMPARE = {"==": "==", "~=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">="}
+_GENERIC_OPS = frozenset(_ARITH) | frozenset(_COMPARE) | {"^", ".^", "&", "|", "\\", ".\\"}
+
+# Built-ins that only compute a result from their arguments: no output, no files, no random
+# numbers, no look at the workspace or the clock, and they do not call back into user code.
+_PURE = frozenset("""
+abs acos acosd acosh all angle any asin asind asinh atan atan2 atand atanh bitand bitor bitshift bitxor
+blanks cat ceil cell cell2mat char circshift colon columns complex conj contains cos cosd cosh
+cot cross cummax cummin cumprod cumsum deblank deg2rad det diag diff dot double endsWith eps erf
+erfc exp expm1 eye factorial false fieldnames find fix fliplr flipud floor gamma gcd horzcat hypot idivide
+imag int16 int2str int32 int64 int8 isa iscell iscellstr ischar iscolumn isempty isequal isfield isfinite
+isfloat isinf isinteger islogical ismatrix ismember isnan isnumeric isreal isrow isscalar isspace isstring
+isstruct isvector kron lcm length linspace log log10 log1p log2 logical lower mat2str max mean median min
+mod nchoosek ndims nnz norm not num2cell num2str numel ones or pi power prod rad2deg real regexp regexprep
+rem repmat reshape round sec sign sin sind single sinh size sort sprintf sqrt squeeze startsWith std
+str2double strcat strcmp strcmpi strfind strjoin strjust strlength strncmp strncmpi strrep strsplit strtrim
+sum tan tand tanh times trace transpose tril triu true uint16 uint32 uint64 uint8 unique upper var vertcat
+xor zeros plus minus rdivide ldivide mtimes and lt gt le ge eq ne uminus numel cumtrapz trapz polyval fix
+""".split())
+# ... whose result is a real scalar often enough to expect one (the code bails out if it is not)
+_LIKELY_SCALAR = frozenset("""
+sum prod max min norm dot numel length ndims nnz str2double mean median std var det trace abs sqrt exp log
+floor ceil round fix mod rem sin cos tan atan atan2 sign real imag gcd lcm factorial nchoosek strlength
+polyval trapz double
+""".split())
+# ... and those that may see a whole array that the loop also writes to (their result never shares
+# memory with the argument)
+_NO_ALIAS = frozenset("""
+sum prod max min norm dot numel length ndims nnz mean median std var any all isempty size find
+""".split())
 
 
-# -- static analysis ---------------------------------------------------------------------------
+# -- static scan --------------------------------------------------------------------------------
 
-def _collect(body: list, info: dict) -> None:
-    """Names used by the loop body; raises Reject for unsupported statements."""
-    for stmt in body:
-        t = type(stmt)
-        if t is A.Assign:
-            if stmt.show or len(stmt.targets) != 1:
-                raise Reject
-            target = stmt.targets[0]
-            if type(target) is A.Ident:
-                info["scalar_writes"].add(target.name)
-            elif type(target) is A.Index and type(target.base) is A.Ident and 1 <= len(target.args) <= 2:
-                info["array_writes"].add(target.base.name)
-                info["arrays"].add(target.base.name)
-                for a in target.args:
-                    _collect_expr(a, info)
+class _Scan:
+    """Names a piece of code uses and how; raises Reject for statements that cannot be compiled."""
+
+    def __init__(self, allow_loops: bool):
+        self.allow_loops = allow_loops
+        self.names: set[str] = set()            # every identifier
+        self.assigned: set[str] = set()         # x = ...
+        self.index_written: set[str] = set()    # x(i) = ...
+        self.brace_used: set[str] = set()       # x{i} read or written
+        self.brace_written: set[str] = set()
+        self.fields: set[tuple[str, str]] = set()          # s.f read or written
+        self.fields_written: set[tuple[str, str]] = set()  # s.f = ..., s.f(i) = ...
+        self.loop_vars: set[str] = set()
+        self.reads: dict[str, int] = {}         # occurrences as a plain identifier
+
+    def block(self, body: list) -> None:
+        for stmt in body:
+            t = type(stmt)
+            if t is A.Assign:
+                if stmt.show or len(stmt.targets) != 1:
+                    raise Reject
+                self.target(stmt.targets[0])
+                self.expr(stmt.value)
+            elif t is A.If:
+                for cond, clause in stmt.clauses:
+                    self.expr(cond)
+                    self.block(clause)
+                if stmt.orelse is not None:
+                    self.block(stmt.orelse)
+            elif t is A.Break or t is A.Continue:
+                pass
+            elif self.allow_loops and t is A.For:
+                if type(stmt.iterable) is not A.Range or type(stmt.var) is not A.Ident:
+                    raise Reject
+                self.names.add(stmt.var.name)
+                self.assigned.add(stmt.var.name)
+                self.loop_vars.add(stmt.var.name)
+                self.expr(stmt.iterable)
+                self.block(stmt.body)
+            elif self.allow_loops and t is A.While:
+                self.expr(stmt.cond)
+                self.block(stmt.body)
+            elif self.allow_loops and t is A.Return:
+                pass
             else:
                 raise Reject
-            _collect_expr(stmt.value, info)
-        elif t is A.If:
-            for cond, clause in stmt.clauses:
-                _collect_expr(cond, info)
-                _collect(clause, info)
-            if stmt.orelse is not None:
-                _collect(stmt.orelse, info)
-        elif t is A.Break or t is A.Continue:
-            pass
+
+    def target(self, target) -> None:
+        t = type(target)
+        if t is A.Ident:
+            if target.name == "~":
+                raise Reject
+            self.names.add(target.name)
+            self.assigned.add(target.name)
+        elif t is A.Index and type(target.base) is A.Ident and 1 <= len(target.args) <= 2:
+            self.names.add(target.base.name)
+            self.index_written.add(target.base.name)
+            for a in target.args:
+                self.expr(a)
+        elif t is A.Field and type(target.base) is A.Ident:
+            self.names.add(target.base.name)
+            self.fields.add((target.base.name, target.name))
+            self.fields_written.add((target.base.name, target.name))
+        elif t is A.Index and type(target.base) is A.Field and type(target.base.base) is A.Ident \
+                and 1 <= len(target.args) <= 2:
+            pair = (target.base.base.name, target.base.name)
+            self.names.add(pair[0])
+            self.fields.add(pair)
+            self.fields_written.add(pair)
+            for a in target.args:
+                self.expr(a)
+        elif t is A.CellIndex and type(target.base) is A.Ident and len(target.args) == 1:
+            self.names.add(target.base.name)
+            self.brace_used.add(target.base.name)
+            self.brace_written.add(target.base.name)
+            self.expr(target.args[0])
         else:
             raise Reject
 
-
-def _collect_expr(node, info: dict) -> None:
-    t = type(node)
-    if t is A.Number:
-        if isinstance(node.value, complex):
-            raise Reject
-    elif t is A.Ident:
-        info["scalar_reads"].add(node.name)
-    elif t is A.BinOp:
-        if node.op not in _ARITH and node.op not in _COMPARE and node.op not in ("^", ".^", "&&", "||", "&", "|"):
-            raise Reject
-        _collect_expr(node.left, info)
-        _collect_expr(node.right, info)
-    elif t is A.UnaryOp:
-        _collect_expr(node.operand, info)
-    elif t is A.Index and type(node.base) is A.Ident:
-        info["calls"].add((node.base.name, len(node.args)))
-        for a in node.args:
-            if type(a) is A.Ident and node.base.name in ("numel", "length", "size"):
-                info["arrays"].add(a.name)
+    def expr(self, node) -> None:
+        t = type(node)
+        if t is A.Number:
+            if isinstance(node.value, complex):
+                raise Reject
+        elif t is A.String or t is A.End or t is A.Colon:
+            pass
+        elif t is A.Ident:
+            self.names.add(node.name)
+            self.reads[node.name] = self.reads.get(node.name, 0) + 1
+        elif t is A.BinOp:
+            if node.op not in _GENERIC_OPS and node.op not in ("&&", "||"):
+                raise Reject
+            self.expr(node.left)
+            self.expr(node.right)
+        elif t is A.UnaryOp:
+            self.expr(node.operand)
+        elif t is A.Postfix:
+            self.expr(node.operand)
+        elif t is A.Index or t is A.CellIndex:
+            base = node.base
+            if type(base) is A.Ident:
+                self.names.add(base.name)
+                if t is A.CellIndex:
+                    self.brace_used.add(base.name)
+                elif base.name in ("numel", "length", "size") and node.args and type(node.args[0]) is A.Ident:
+                    self.names.add(node.args[0].name)  # asking for a size is not a use of the whole value
+                    for a in node.args[1:]:
+                        self.expr(a)
+                    return
+            elif type(base) is A.Field and type(base.base) is A.Ident and t is A.Index:
+                self.names.add(base.base.name)
+                self.fields.add((base.base.name, base.name))
             else:
-                _collect_expr(a, info)
-    elif t is A.End:
-        pass
-    else:
-        raise Reject
+                self.expr(base)
+            for a in node.args:
+                self.expr(a)
+        elif t is A.Field:
+            if type(node.base) is A.Ident:
+                self.names.add(node.base.name)
+                self.fields.add((node.base.name, node.name))
+            else:
+                self.expr(node.base)
+        elif t is A.Matrix:
+            for row in node.rows:
+                for e in row:
+                    self.expr(e)
+        elif t is A.Range:
+            self.expr(node.start)
+            if node.step is not None:
+                self.expr(node.step)
+            self.expr(node.stop)
+        else:
+            raise Reject
 
 
 def _static(stmt) -> dict | None:
     cached = stmt.__dict__.get("_jit_static")
     if cached is not None:
         return cached or None
-    info = {"scalar_reads": set(), "scalar_writes": set(), "arrays": set(), "array_writes": set(),
-            "calls": set(), "bails": 0, "compiled": {}}
+    scan = _Scan(allow_loops=False)
     try:
         if type(stmt) is A.While:
-            _collect_expr(stmt.cond, info)
-        _collect(stmt.body, info)
+            scan.expr(stmt.cond)
+        scan.block(stmt.body)
     except Reject:
         stmt._jit_static = False
         return None
+    info = {"scan": scan, "bails": 0, "compiled": {}}
     stmt._jit_static = info
     return info
 
 
-# -- code generation ---------------------------------------------------------------------------
+# -- name resolution ----------------------------------------------------------------------------
+
+def _resolve(interp, name: str, functions: dict):
+    """What calling ``name`` means: ('u', function, its file's functions), ('b', builtin) or (kind,)."""
+    fn = functions.get(name)
+    if fn is not None:
+        return ("u", fn, functions) if type(fn) is A.Function else ("n",)
+    if interp.private_or_imported(name, interp.frame):
+        return ("?",)  # an import or a private function may give the name another meaning
+    if name in interp.classes:
+        return ("c",)
+    found = interp.find_file_function(name)
+    if found is not None:
+        program = found[0]
+        if program.classdefs or program.body or not program.functions:
+            return ("s",)
+        return ("u", next(iter(program.functions.values())), program.functions)
+    builtin = interp.builtins.get(name)
+    if builtin is not None:
+        return ("b", builtin)
+    return ("?",)
+
+
+def _deps_valid(interp, deps: dict) -> bool:
+    for (name, _fid), (functions, kind, target) in deps.items():
+        now = _resolve(interp, name, functions)
+        if now[0] != kind or (len(now) > 1 and now[1] is not target):
+            return False
+    return True
+
+
+# -- code generation ----------------------------------------------------------------------------
+
+def _unify(types: set) -> str:
+    if len(types) == 1:
+        return next(iter(types))
+    if "O" in types:
+        return "O"
+    return "o"
+
 
 class _Gen:
-    def __init__(self, kinds: dict, scalars: set, arrays: set, funcs_ok, writes: set):
-        self.kinds = kinds          # name -> entry kind: 'd', 'b', 'r', 'c', 'm' or '-'
-        self.writes = writes        # scalar names assigned somewhere in the loop
-        self.scalars = scalars
-        self.arrays = arrays
-        self.funcs_ok = funcs_ok
+    def __init__(self, interp, functions: dict, kinds: dict, scan: _Scan, mode: str):
+        self.interp = interp
+        self.functions = functions
+        self.kinds = kinds          # name (or 'struct.field') -> entry kind
+        self.scan = scan
+        self.mode = mode            # 'loop' or 'func'
+        self.nargin = 0
+        self.arrays: set[str] = set()     # double arrays read and written element by element
+        self.lists: set[str] = set()      # row cells held as Python lists
+        self.structs: set[str] = set()    # scalar structs whose fields are held as variables
+        self.variables: set[str] = set()  # scalars and boxed values
         self.types: dict[str, set] = {}
         self.final: dict[str, str] = {}
         self.lines: list[str] = []
         self.paths: list[tuple] = []
-        self.inline = None          # callable(name, args, ctx, gen) -> (code, type) or None
-        self.consts: dict[str, tuple] = {}   # captured scalar values inside an inlined function
+        self.deps: dict = {}
+        self.inline = None
+        self.consts: dict[str, tuple] = {}
         self.blocked: frozenset = frozenset()
+        self.whole_ok = False
+        self.loop_id = 0
+        self.return_code = ""
+
+    # -- names ------------------------------------------------------------------------------
+    @staticmethod
+    def py(name: str, prefix: str = "v") -> str:
+        if "." in name:
+            s, f = name.split(".", 1)
+            return f"{prefix}f{len(s)}_{s}_{f}"
+        return f"{prefix}_{name}"
 
     def var_type(self, name: str) -> str:
-        if name in self.final:
-            return self.final[name]
+        t = self.final.get(name)
+        if t is not None:
+            return t
         k = self.kinds.get(name, "-")
-        return k if k in "db" else "d"
+        if k == "d" or k == "b":
+            return k
+        return "O" if k == "x" or k.startswith("h:") else "d"
 
-    def as_float(self, code: str, typ: str) -> str:
-        return f"float({code})" if typ == "b" else code
+    def const(self, value, key=None) -> str:
+        key = id(value) if key is None else key
+        hit = _CONSTS.get(key)
+        if hit is not None and hit[1] is (value if key == id(value) else hit[1]):
+            return hit[0]
+        name = _unique("_k")
+        _NS[name] = value
+        _CONSTS[key] = (name, value)
+        return name
 
-    def as_truth(self, code: str, typ: str) -> str:
-        return code if typ == "b" else f"_tr({code})"
+    def resolve(self, name: str):
+        res = _resolve(self.interp, name, self.functions)
+        self.deps[(name, id(self.functions))] = (self.functions, res[0], res[1] if len(res) > 1 else None)
+        return res
 
+    def is_builtin(self, name: str) -> bool:
+        return self.resolve(name)[0] == "b"
+
+    # -- conversions ------------------------------------------------------------------------
+    @staticmethod
+    def as_float(code: str, typ: str) -> str:
+        if typ == "d":
+            return code
+        return f"float({code})" if typ == "b" else f"_d({code})"
+
+    @staticmethod
+    def as_truth(code: str, typ: str) -> str:
+        if typ == "b":
+            return code
+        return f"_tr({code})" if typ == "d" else f"_truth({code})"
+
+    @staticmethod
+    def as_box(code: str, typ: str) -> str:
+        if typ == "d":
+            return f"_bd({code})"
+        return f"_bb({code})" if typ == "b" else code
+
+    def convert(self, code: str, typ: str, want: str) -> str:
+        if want in "oO":
+            return self.as_box(code, typ)
+        if want == typ:
+            return code
+        if want == "d":
+            return self.as_float(code, typ)
+        raise Reject  # a logical variable assigned something else: sorted out by the next round
+
+    # -- expressions ------------------------------------------------------------------------
     def expr(self, node, ctx=None) -> tuple[str, str]:
         t = type(node)
         if t is A.Number:
@@ -277,96 +805,263 @@ class _Gen:
             if v in (math.inf, -math.inf):
                 return ("_inf" if v > 0 else "(-_inf)"), "d"
             return repr(v), "d"
+        if t is A.String:
+            name = node.__dict__.get("_jit_const")
+            if name is None:
+                value = MString(node.value) if node.double else _readonly(char(node.value))
+                name = node._jit_const = self.const(value)
+            return name, "O"
         if t is A.Ident:
-            name = node.name
-            if name in self.consts:
-                return self.consts[name]
-            if name in self.arrays or name in self.blocked:
-                raise Reject  # whole-array use
-            if self.kinds.get(name, "-") in ("d", "b") or name in self.writes:
-                return f"v_{name}", self.var_type(name)
-            if name in _CONSTANTS and self.funcs_ok(name):
-                return _CONSTANTS[name]
-            raise Reject  # not a variable: a function call without parentheses, or undefined
+            return self.ident(node.name)
         if t is A.End:
             if ctx is None:
                 raise Reject
             return ctx, "d"
         if t is A.UnaryOp:
             code, typ = self.expr(node.operand, ctx)
+            if typ in "oO":
+                return f"_unary({node.op!r}, {code})", typ
             if node.op == "-":
                 return f"(-{self.as_float(code, typ)})", "d"
             if node.op == "+":
                 return self.as_float(code, typ), "d"
             return f"(not {self.as_truth(code, typ)})", "b"
+        if t is A.Postfix:
+            code, typ = self.expr(node.operand, ctx)
+            if typ in "db":
+                return code, typ
+            return f"_transpose({code}, {node.op == chr(39)!r})", typ
         if t is A.BinOp:
-            op = node.op
-            a, ta = self.expr(node.left, ctx)
-            b, tb = self.expr(node.right, ctx)
-            if op in _ARITH:
-                return f"({self.as_float(a, ta)} {_ARITH[op]} {self.as_float(b, tb)})", "d"
-            if op in ("^", ".^"):
-                right = node.right
-                if type(right) is A.Number and not isinstance(right.value, complex) \
-                        and float(right.value) == int(right.value) and 0 <= right.value <= 64:
-                    return f"({self.as_float(a, ta)} ** {float(right.value)!r})", "d"
-                return f"_pow({self.as_float(a, ta)}, {self.as_float(b, tb)})", "d"
-            if op in _COMPARE:
-                return f"({a} {_COMPARE[op]} {b})", "b"
-            joiner = "and" if op in ("&&", "&") else "or"
-            return f"({self.as_truth(a, ta)} {joiner} {self.as_truth(b, tb)})", "b"
-        if t is A.Index and type(node.base) is A.Ident:
-            name = node.base.name
-            if name in self.arrays:
-                if name in ("numel", "length", "size"):
-                    raise Reject
-                return f"a_{name}.item({self.index(name, node.args)})", "d"
-            if self.inline is not None and name not in self.writes and name not in self.consts:
-                inlined = self.inline(name, node.args, ctx, self)
-                if inlined is not None:
-                    return inlined
-            if self.kinds.get(name, "-") != "-" or name in self.writes or name in self.consts \
-                    or name in self.blocked:
-                raise Reject  # indexing into a scalar variable
-            if name in ("numel", "length", "size") and node.args and type(node.args[0]) is A.Ident \
-                    and node.args[0].name in self.arrays and self.funcs_ok(name):
-                arr = node.args[0].name
-                if name == "numel" and len(node.args) == 1:
-                    return f"float(n_{arr})", "d"
-                if name == "length" and len(node.args) == 1:
-                    return f"float(max(r_{arr}, c_{arr}))", "d"
-                if name == "size" and len(node.args) == 2 and type(node.args[1]) is A.Number \
-                        and node.args[1].value in (1, 2):
-                    return f"float({'r' if node.args[1].value == 1 else 'c'}_{arr})", "d"
+            return self.binop(node, ctx)
+        if t is A.Matrix:
+            return self.matrix(node, ctx)
+        if t is A.Range:
+            a = self.as_float(*self.expr(node.start, ctx))
+            s = "None" if node.step is None else self.as_float(*self.expr(node.step, ctx))
+            b = self.as_float(*self.expr(node.stop, ctx))
+            return f"_range({a}, {s}, {b})", "O"
+        if t is A.Field:
+            if type(node.base) is A.Ident and node.base.name in self.structs:
+                return self.ident(f"{node.base.name}.{node.name}")
+            code, typ = self.expr(node.base, ctx)
+            if typ not in "oO":
                 raise Reject
-            spec = _FUNCS.get(name)
-            if spec is None or spec[0] != len(node.args) or not self.funcs_ok(name):
-                raise Reject
-            args = [self.as_float(*self.expr(a, ctx)) for a in node.args]
-            return spec[1].format(*args), "d"
+            return f"_field({code}, {node.name!r})", "o"
+        if t is A.CellIndex:
+            return self.cell_read(node, ctx)
+        if t is A.Index:
+            return self.index_read(node, ctx)
         raise Reject
+
+    def ident(self, name: str) -> tuple[str, str]:
+        if name in self.consts:
+            return self.consts[name]
+        if name in self.blocked or name in self.lists or name in self.structs:
+            raise Reject
+        if name in self.arrays:
+            if name in self.written_arrays and not self.whole_ok:
+                raise Reject  # the whole array would be visible while it is being changed
+            return self.py(name, "a"), "O"
+        if name in self.variables:
+            return self.py(name), self.var_type(name)
+        if "." in name:
+            raise Reject
+        if name == "nargin" and self.mode == "func" and self.is_builtin(name):
+            return repr(float(self.nargin)), "d"
+        if name in _CONSTANTS and self.is_builtin(name):
+            return _CONSTANTS[name]
+        raise Reject  # a function call without parentheses, or undefined
+
+    def binop(self, node, ctx) -> tuple[str, str]:
+        op = node.op
+        a, ta = self.expr(node.left, ctx)
+        b, tb = self.expr(node.right, ctx)
+        if op in ("&&", "||"):
+            joiner = "and" if op == "&&" else "or"
+            left = f"_sc({a})" if ta in "oO" else self.as_truth(a, ta)
+            right = f"_sc({b})" if tb in "oO" else self.as_truth(b, tb)
+            return f"({left} {joiner} {right})", "b"
+        boxed_a, boxed_b = ta in "oO", tb in "oO"
+        if boxed_a or boxed_b:
+            if ta == "O" or tb == "O" or (boxed_a and boxed_b):
+                kind = "O" if "O" in (ta, tb) else "o"
+                return f"_binop({op!r}, {self.as_box(a, ta)}, {self.as_box(b, tb)})", kind
+            # one boxed value of unknown shape next to a scalar: expect a scalar (bails otherwise)
+            if boxed_a:
+                a, ta = f"_d({a})", "d"
+            else:
+                b, tb = f"_d({b})", "d"
+        if op in _ARITH:
+            return f"({self.as_float(a, ta)} {_ARITH[op]} {self.as_float(b, tb)})", "d"
+        if op in ("^", ".^"):
+            right = node.right
+            if type(right) is A.Number and not isinstance(right.value, complex) \
+                    and float(right.value) == int(right.value) and 0 <= right.value <= 64:
+                return f"({self.as_float(a, ta)} ** {float(right.value)!r})", "d"
+            return f"_pow({self.as_float(a, ta)}, {self.as_float(b, tb)})", "d"
+        if op in _COMPARE:
+            return f"({a} {_COMPARE[op]} {b})", "b"
+        if op in ("&", "|"):
+            joiner = "and" if op == "&" else "or"
+            return f"({self.as_truth(a, ta)} {joiner} {self.as_truth(b, tb)})", "b"
+        raise Reject  # left division of scalars: rare enough to leave to the interpreter
+
+    def matrix(self, node, ctx) -> tuple[str, str]:
+        rows = [[self.expr(e, ctx) for e in row] for row in node.rows]
+        count = sum(len(r) for r in rows)
+        if count == 0:
+            return "_EMPTY", "O"
+        if count == 1:
+            return rows[0][0] if rows[0] else next(r for r in rows if r)[0]
+        if all(typ == "d" for r in rows for _, typ in r) and len({len(r) for r in rows}) == 1:
+            body = ", ".join("[" + ", ".join(code for code, _ in r) + "]" for r in rows)
+            return f"_arr([{body}])", "O"
+        body = ", ".join("[" + ", ".join(self.as_box(code, typ) for code, typ in r) + "]" for r in rows)
+        return f"_build([{body}])", "O"
+
+    def cell_read(self, node, ctx) -> tuple[str, str]:
+        if len(node.args) != 1 or type(node.args[0]) is A.Colon:
+            raise Reject
+        base = node.base
+        if type(base) is A.Ident and base.name in self.lists:
+            lst = self.py(base.name, "l")
+            i = self.as_float(*self.expr(node.args[0], f"float(len({lst}))"))
+            return f"{lst}[_ix({i}, len({lst}))]", "o"
+        code, typ = self.expr(base, ctx)
+        if typ not in "oO":
+            raise Reject
+        i = self.as_float(*self.expr(node.args[0], f"_numelf({code})"))
+        return f"_cellget({code}, {i})", "o"
+
+    def index_read(self, node, ctx) -> tuple[str, str]:
+        base, args = node.base, node.args
+        if type(base) is A.Field and type(base.base) is A.Ident and base.base.name in self.structs:
+            name = f"{base.base.name}.{base.name}"
+        elif type(base) is A.Ident:
+            name = base.name
+        else:
+            raise Reject
+        if name in self.arrays:
+            if not 1 <= len(args) <= 2:
+                raise Reject
+            return f"{self.py(name, 'a')}.item({self.index(name, args)})", "d"
+        if name in self.lists or name in self.structs or name in self.blocked:
+            raise Reject
+        if name in self.variables or name in self.consts:
+            if self.kinds.get(name, "-") == "H":
+                raise Reject  # a captured function handle
+            if self.kinds.get(name, "-").startswith("h:"):
+                inlined = None
+                if self.inline is not None and name not in self.scan.assigned:
+                    inlined = self.inline(name, args, ctx, self)
+                if inlined is None:
+                    raise Reject  # a function handle that cannot be inlined
+                return inlined
+            code, typ = self.ident(name)
+            if typ not in "oO":
+                raise Reject  # indexing into a scalar variable
+            return self.boxed_index(code, args)
+        if "." in name:
+            raise Reject
+        return self.call(name, args, ctx)
+
+    def boxed_index(self, code: str, args: list) -> tuple[str, str]:
+        count = len(args)
+        if 1 <= count <= 2 and all(type(a) not in (A.Colon, A.Range, A.Matrix, A.String) for a in args):
+            parts = [self.expr(a, f"_endf({code}, {k}, {count})") for k, a in enumerate(args)]
+            if all(typ in "dbo" for _, typ in parts):
+                idx = ", ".join(self.as_float(c, typ) for c, typ in parts)
+                return f"_get{count}({code}, {idx})", "d"
+        items = []
+        for k, a in enumerate(args):
+            if type(a) is A.Colon:
+                items.append("_COLON")
+            else:
+                items.append(self.as_box(*self.expr(a, f"_endf({code}, {k}, {count})")))
+        return f"_index({code}, [{', '.join(items)}])", "o"
+
+    def call(self, name: str, args: list, ctx) -> tuple[str, str]:
+        res = self.resolve(name)
+        if res[0] == "u":
+            return self.user_call(res[1], res[2], args, ctx)
+        if res[0] != "b":
+            raise Reject
+        if name in ("numel", "length", "size") and args and type(args[0]) is A.Ident:
+            target = args[0].name
+            if target in self.arrays:
+                arr = self.py(target, "")
+                if name == "numel" and len(args) == 1:
+                    return f"float(n{arr})", "d"
+                if name == "length" and len(args) == 1:
+                    return f"float(max(r{arr}, c{arr}))", "d"
+                if name == "size" and len(args) == 2 and type(args[1]) is A.Number and args[1].value in (1, 2):
+                    return f"float({'r' if args[1].value == 1 else 'c'}{arr})", "d"
+            elif target in self.lists and name in ("numel", "length") and len(args) == 1:
+                return f"float(len({self.py(target, 'l')}))", "d"
+        saved = self.whole_ok
+        self.whole_ok = name in _NO_ALIAS and len(args) == 1
+        try:
+            parts = [self.expr(a, ctx) for a in args]
+        finally:
+            self.whole_ok = saved
+        spec = _FUNCS.get(name)
+        if spec is not None and spec[0] == len(parts) and all(typ != "O" for _, typ in parts):
+            return spec[1].format(*(self.as_float(c, typ) for c, typ in parts)), "d"
+        if name not in _PURE:
+            raise Reject
+        boxed = ", ".join(self.as_box(c, typ) for c, typ in parts)
+        helper = _FLOAT_CALLS.get(name)
+        if helper is not None and len(parts) == 1:
+            _NS.setdefault("_bi_" + name, res[1])
+            if _NS["_bi_" + name] is res[1]:
+                return f"{helper}({boxed})", "d"
+        fn = self.const(res[1])
+        if name in ("numel", "length", "ndims") or (name == "size" and len(parts) == 2):
+            return f"_d(_callb({fn}, [{boxed}]))", "d"
+        if name in _LIKELY_SCALAR and all(typ != "O" for _, typ in parts):
+            return f"_d(_callb({fn}, [{boxed}]))", "d"
+        return f"_callb({fn}, [{boxed}])", ("o" if name in _LIKELY_SCALAR else "O")
+
+    def user_call(self, fn, functions, args: list, ctx) -> tuple[str, str]:
+        parts = [self.expr(a, ctx) for a in args]
+        sig = tuple("o" if typ in "oO" else typ for _, typ in parts)
+        record = _compile_function(self.interp, fn, functions, sig)
+        self.deps.update(record.deps)
+        actual = "".join(f", {c}" for c, _ in parts)
+        return f"{record.name}(_dp + 1{actual})", ("o" if record.ret in "oO" else record.ret)
 
     def index(self, name: str, args: list) -> str:
         kind = self.kinds[name]
+        n = self.py(name, "")
         if len(args) == 1:
-            i = self.as_float(*self.expr(args[0], f"float(n_{name})"))
+            i = self.as_float(*self.expr(args[0], f"float(n{n})"))
             if kind in "rc":
-                return f"_ix({i}, n_{name})"
-            return f"_lin({i}, n_{name}, r_{name})"
-        i = self.as_float(*self.expr(args[0], f"float(r_{name})"))
-        j = self.as_float(*self.expr(args[1], f"float(c_{name})"))
-        return f"(_ix({i}, r_{name}), _ix({j}, c_{name}))"
+                return f"_ix({i}, n{n})"
+            return f"_lin({i}, n{n}, r{n})"
+        i = self.as_float(*self.expr(args[0], f"float(r{n})"))
+        j = self.as_float(*self.expr(args[1], f"float(c{n})"))
+        return f"(_ix({i}, r{n}), _ix({j}, c{n}))"
 
     def store_index(self, name: str, args: list) -> str:
         kind = self.kinds[name]
         if len(args) == 1 and kind in "rc":
-            i = self.as_float(*self.expr(args[0], f"float(n_{name})"))
-            k = f"_ix({i}, n_{name})"
+            n = self.py(name, "")
+            i = self.as_float(*self.expr(args[0], f"float(n{n})"))
+            k = f"_ix({i}, n{n})"
             return f"0, {k}" if kind == "r" else f"{k}, 0"
         return self.index(name, args)
 
+    # -- statements -------------------------------------------------------------------------
     def emit(self, indent: int, text: str) -> None:
         self.lines.append("    " * indent + text)
+
+    def assign_var(self, indent: int, name: str, value) -> None:
+        if name not in self.variables:
+            raise Reject
+        code, typ = self.expr(value)
+        self.types.setdefault(name, set()).add(typ)
+        want = self.var_type(name)
+        self.emit(indent, f"{self.py(name)} = {self.convert(code, typ, want)}")
 
     def block(self, body: list, indent: int, path: tuple) -> None:
         if not body:
@@ -380,23 +1075,15 @@ class _Gen:
             if t is A.Continue:
                 self.emit(indent, "continue")
                 continue
-            self.paths.append(here)
-            self.emit(indent, f"_p = {len(self.paths) - 1}")
+            if t is A.Return:
+                self.emit(indent, self.return_code)
+                continue
+            if self.mode == "loop":
+                self.paths.append(here)
+                self.emit(indent, f"_p = {len(self.paths) - 1}")
             if t is A.Assign:
-                code, typ = self.expr(stmt.value)
-                target = stmt.targets[0]
-                if type(target) is A.Ident:
-                    name = target.name
-                    if name in self.arrays or self.kinds.get(name, "-") not in "-db":
-                        raise Reject
-                    self.types.setdefault(name, set()).add(typ)
-                    self.emit(indent, f"v_{name} = {code}")
-                else:
-                    name = target.base.name
-                    if self.kinds.get(name) not in ("r", "c", "m"):
-                        raise Reject
-                    self.emit(indent, f"a_{name}[{self.store_index(name, target.args)}] = {self.as_float(code, typ)}")
-            else:  # If
+                self.assign(indent, stmt)
+            elif t is A.If:
                 for c, (cond, clause) in enumerate(stmt.clauses):
                     code, typ = self.expr(cond)
                     self.emit(indent, f"{'if' if c == 0 else 'elif'} {self.as_truth(code, typ)}:")
@@ -404,19 +1091,118 @@ class _Gen:
                 if stmt.orelse is not None:
                     self.emit(indent, "else:")
                     self.block(stmt.orelse, indent + 1, here + (len(stmt.clauses),))
+            elif t is A.For:
+                self.for_loop(indent, stmt)
+            elif t is A.While:
+                self.emit(indent, "while True:")
+                code, typ = self.expr(stmt.cond)
+                self.emit(indent + 1, f"if not {self.as_truth(code, typ)}:")
+                self.emit(indent + 2, "break")
+                self.block(stmt.body, indent + 1, ())
+            else:
+                raise Reject
+
+    def for_loop(self, indent: int, stmt) -> None:
+        self.loop_id += 1
+        k = self.loop_id
+        name = stmt.var.name
+        if name not in self.variables:
+            raise Reject
+        rng = stmt.iterable
+        a = self.as_float(*self.expr(rng.start))
+        s = "1.0" if rng.step is None else self.as_float(*self.expr(rng.step))
+        b = self.as_float(*self.expr(rng.stop))
+        self.types.setdefault(name, set()).add("d")
+        self.emit(indent, f"_a{k} = {a}")
+        self.emit(indent, f"_s{k} = {s}")
+        self.emit(indent, f"_n{k} = _count(_a{k}, _s{k}, {b})")
+        if self.read_outside(name, stmt):
+            self.emit(indent, f"if _n{k} == 0:")
+            self.emit(indent + 1, "raise _Bail")  # the loop variable becomes empty: interpreter's job
+        self.emit(indent, f"for _i{k} in range(_n{k}):")
+        self.emit(indent + 1, f"{self.py(name)} = {self.convert(f'(_a{k} + _s{k} * _i{k})', 'd', self.var_type(name))}")
+        self.block(stmt.body, indent + 1, ())
+
+    def read_outside(self, name: str, loop) -> bool:
+        inner = _Scan(allow_loops=True)
+        try:
+            inner.block(loop.body)
+        except Reject:
+            return True
+        return self.scan.reads.get(name, 0) > inner.reads.get(name, 0) or name == self.output
+
+    output = ""
+
+    def assign(self, indent: int, stmt) -> None:
+        target = stmt.targets[0]
+        t = type(target)
+        if t is A.Ident:
+            self.assign_var(indent, target.name, stmt.value)
+            return
+        if t is A.Field:
+            name = f"{target.base.name}.{target.name}"
+            if target.base.name not in self.structs or name in self.arrays:
+                raise Reject
+            self.assign_var(indent, name, stmt.value)
+            return
+        if t is A.CellIndex:
+            name = target.base.name
+            if name not in self.lists:
+                raise Reject
+            lst = self.py(name, "l")
+            value = self.as_box(*self.expr(stmt.value))
+            arg = target.args[0]
+            if type(arg) is A.BinOp and arg.op == "+" and type(arg.left) is A.End \
+                    and type(arg.right) is A.Number and arg.right.value == 1:
+                self.emit(indent, f"{lst}.append({value})")
+            else:
+                i = self.as_float(*self.expr(arg, f"float(len({lst}))"))
+                self.emit(indent, f"_lset({lst}, {i}, {value})")
+            self.emit(indent, f"{self.py(name, 'm')} = True")
+            return
+        # x(i) = value  /  s.f(i) = value
+        base = target.base
+        name = f"{base.base.name}.{base.name}" if type(base) is A.Field else base.name
+        if "." in name and base.base.name not in self.structs:
+            raise Reject
+        code, typ = self.expr(stmt.value)
+        value = self.as_float(code, typ)
+        if name in self.arrays:
+            self.emit(indent, f"{self.py(name, 'a')}[{self.store_index(name, target.args)}] = {value}")
+            return
+        if name not in self.variables or self.var_type(name) not in "oO":
+            raise Reject
+        var = self.py(name)
+        count = len(target.args)
+        idx = ", ".join(self.as_float(*self.expr(a, f"_endf({var}, {k}, {count})"))
+                        for k, a in enumerate(target.args))
+        self.emit(indent, f"_set{count}({var}, {idx}, {value})")
+
+    written_arrays: set = set()
+
+
+def _readonly(a: np.ndarray) -> np.ndarray:
+    a.setflags(write=False)
+    return a
 
 
 def _kind(value: Any) -> str:
     if value is None:
         return "-"
-    if type(value) is FunctionHandle:
+    t = type(value)
+    if t is FunctionHandle:
         if not value.is_anonymous:
             return "x"
         # anonymous function: identified by its body and the scalar values it captured
         caught = tuple(sorted((k, v.item()) for k, v in value.closure.items()
                               if type(v) is np.ndarray and v.shape == (1, 1) and v.dtype.kind in "fb"))
         return f"h:{id(value.body)}:{caught!r}"
-    if type(value) is not np.ndarray or value.ndim != 2:
+    if t is Cell:
+        shape = value.data.shape
+        return "L" if shape == (0, 0) or (len(shape) == 2 and shape[0] == 1) else "x"
+    if t is Struct:
+        return "S" if value.data.shape == (1, 1) else "x"
+    if t is not np.ndarray or value.ndim != 2:
         return "x"
     if value.shape == (1, 1):
         if value.dtype is _F64:
@@ -427,66 +1213,448 @@ def _kind(value: Any) -> str:
     return "r" if value.shape[0] == 1 else ("c" if value.shape[1] == 1 else "m")
 
 
-def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None):
-    writes = set(info["scalar_writes"]) | ({loop_var} if loop_var else set())
-    # Names indexed with parentheses are arrays if they are array variables on entry, else functions.
-    arrays = set(info["arrays"]) | {n for n, _ in info["calls"] if kinds.get(n) in ("r", "c", "m")}
-    if arrays & (info["scalar_reads"] | writes):
-        raise Reject  # a name used both as a whole value and as an indexed array
-    scalars = info["scalar_reads"] | writes
-    for name in arrays:
-        if kinds.get(name) not in ("r", "c", "m"):
-            raise Reject
-    for name in scalars:
-        if kinds.get(name, "-") not in "-db":
+def _roles(gen: _Gen, scan: _Scan, kinds: dict, declared: set) -> None:
+    """Decide how each name is held in the compiled code."""
+    structs = {s for s, _f in scan.fields}
+    for name in scan.names:
+        kind = kinds.get(name, "-")
+        if name in structs:
+            if kind != "S" or name in scan.assigned or name in scan.index_written or name in scan.brace_used \
+                    or scan.reads.get(name, 0):
+                raise Reject  # the struct is also used as a whole
+            gen.structs.add(name)
+        elif name in scan.brace_written or (name in scan.brace_used and kind == "L"):
+            if kind != "L" or name in scan.assigned or name in scan.index_written or scan.reads.get(name, 0):
+                raise Reject
+            gen.lists.add(name)
+        elif kind in ("r", "c", "m") and name not in scan.assigned:
+            gen.arrays.add(name)
+        elif kind != "-" or name in scan.assigned or name in declared:
+            if kind in ("r", "c", "m", "L", "S") or kind.startswith("h:"):
+                kinds[name] = "x" if not kind.startswith("h:") else kind
+            gen.variables.add(name)
+    for s, f in scan.fields:
+        if s not in gen.structs:
+            continue
+        name = f"{s}.{f}"
+        kind = kinds.get(name, "-")
+        if kind == "-":
+            raise Reject  # a field that does not exist yet
+        if kind in ("r", "c", "m"):
+            gen.arrays.add(name)
+        else:
+            if kind not in "db":
+                kinds[name] = "x"
+            gen.variables.add(name)
+    gen.written_arrays = {n for n in gen.arrays if n in scan.index_written} | \
+        {f"{s}.{f}" for s, f in scan.fields_written if f"{s}.{f}" in gen.arrays}
+    for name in scan.index_written:
+        if name in gen.lists or name in gen.structs:
             raise Reject
 
-    shadow_cache: dict[str, bool] = {}
 
-    def funcs_ok(name: str) -> bool:
-        ok = shadow_cache.get(name)
-        if ok is None:
-            ok = not (name in frame.functions or name in interp.classes
-                      or interp.find_file_function(name) is not None
-                      or interp.private_or_imported(name, frame))
-            shadow_cache[name] = ok
-        return ok
+def _infer(gen: _Gen, kinds: dict, generate) -> None:
+    """Run the generator until the variable types it infers stop changing."""
+    final: dict[str, str] = {}
+    for _attempt in range(12):
+        gen.final = final
+        gen.types = {}
+        gen.lines = []
+        gen.paths = []
+        gen.loop_id = 0
+        try:
+            generate()
+            ok = True
+        except Reject:
+            ok = False  # perhaps a variable had the wrong provisional type: see what was learned
+        new_final = dict(final)
+        for name, types in gen.types.items():
+            entry = kinds.get(name, "-")
+            seen = set(types)
+            if entry == "d" or entry == "b":
+                seen.add(entry)
+            elif entry != "-":
+                seen.add("O")
+            if name in final:
+                seen.add(final[name])
+            new_final[name] = _unify(seen)
+        if new_final == final:
+            if ok:
+                return
+            raise Reject
+        final = new_final
+    raise Reject
+
+
+class _Function:
+    __slots__ = ("name", "ret", "deps", "py", "bails", "sig", "captured")
+
+    def __init__(self, name: str, ret: str):
+        self.name = name
+        self.ret = ret
+        self.deps: dict = {}
+        self.py = None
+        self.bails = 0
+        self.sig = ()
+        self.captured: tuple = ()   # names of the workspace values an anonymous function captured
+
+
+_COMPILING: dict = {}
+_SESSION: list = []
+
+
+def _compile_function(interp, fn, functions: dict, sig: tuple) -> _Function:
+    """The compiled form of ``fn`` for arguments of the given types; raises Reject if not possible."""
+    state = fn.__dict__.get("_jit_fn")
+    if state is None:
+        state = fn._jit_fn = {"calls": 0, "sigs": {}}
+    key = (id(fn), sig)
+    if key in _COMPILING:
+        return _COMPILING[key]  # a recursive call: use the record being built
+    record = state["sigs"].get(sig, _MISSING)
+    if record is not _MISSING:
+        if record is None:
+            raise Reject
+        if _deps_valid(interp, record.deps):
+            return record
+    if not _COMPILING:
+        _SESSION.clear()
+    state["sigs"][sig] = None  # until proven otherwise
+    if fn.subfunctions or fn.arguments or len(fn.outputs) != 1 or len(sig) > len(fn.params) \
+            or len(set(fn.params)) != len(fn.params) or "varargin" in fn.params or "~" in fn.params \
+            or fn.outputs[0] == "varargout":
+        raise Reject
+    scan = _Scan(allow_loops=True)
+    scan.block(fn.body)
+    if scan.fields or scan.brace_written or "nargout" in scan.names:
+        raise Reject
+    out = fn.outputs[0]
+    if out not in scan.assigned:
+        raise Reject
+    done = None
+    outermost = not _COMPILING
+    for assumed in ("d", "b", "o"):  # what a recursive call is taken to return while compiling
+        record = _Function(_unique("_f"), assumed)
+        record.sig = sig
+        _COMPILING[key] = record
+        try:
+            kinds = {p: ("x" if k == "o" else k) for p, k in zip(fn.params, sig)}
+            gen = _Gen(interp, functions, kinds, scan, "func")
+            gen.nargin = len(sig)
+            gen.output = out
+            _roles(gen, scan, kinds, set(fn.params) | {out})
+            if gen.arrays or gen.lists or gen.structs:
+                raise Reject
+            gen.return_code = f"return _ret({gen.py(out)})"
+            _infer(gen, kinds, lambda gen=gen: gen.block(fn.body, 1, ()))
+        finally:
+            _COMPILING.pop(key, None)
+        actual = gen.var_type(out)
+        actual = "o" if actual in "oO" else actual
+        if actual == assumed or not any(record.name + "(" in line for line in gen.lines):
+            record.ret = actual
+            done = (gen, record)
+            break
+    if done is None:
+        raise Reject
+    gen, record = done
+    params = "".join(f", {gen.py(p)}=_UNSET" for p in fn.params)
+    src = [f"def {record.name}(_dp{params}):", "    if _dp > _lim[0]:", "        raise _Bail"]
+    for name in sorted(gen.variables):
+        if name not in fn.params:
+            src.append(f"    {gen.py(name)} = _UNSET")
+    for p, k in zip(fn.params, sig):  # arguments arrive as floats/bools; box those the body keeps boxed
+        if k in "db" and gen.var_type(p) in "oO":
+            src.append(f"    {gen.py(p)} = {gen.as_box(gen.py(p), k)}")
+        elif k == "o" and p in scan.index_written:
+            src.append(f"    {gen.py(p)} = _copy({gen.py(p)})")  # the caller keeps its own array
+    src += gen.lines
+    src.append(f"    {gen.return_code}")
+    _NS.setdefault("_ret", _ret)
+    exec(compile("\n".join(src), f"<mylab-jit {fn.name}>", "exec"), _NS)  # noqa: S102 - code generated above
+    record.py = _NS[record.name]
+    record.deps = gen.deps
+    state["sigs"][sig] = record
+    _SESSION.append(record)
+    if outermost:  # functions that call each other share what they depend on
+        merged: dict = {}
+        for r in _SESSION:
+            merged.update(r.deps)
+        for r in _SESSION:
+            r.deps = merged
+        _SESSION.clear()
+    return record
+
+
+def _ret(v):
+    if v is _UNSET:
+        raise Bail
+    return v
+
+
+def call_function(interp, fn, args: list, nargout: int, functions: dict):
+    """Run a simple numeric user function compiled; None if the interpreter must run it."""
+    state = fn.__dict__.get("_jit_fn")
+    if state is None:
+        state = fn._jit_fn = {"calls": 0, "sigs": {}}
+    if state.get("never"):
+        return None
+    state["calls"] += 1
+    if state["calls"] < FUNCTION_CALLS_BEFORE_COMPILE or nargout > 1:
+        return None
+    sig = []
+    values = []
+    for v in args:
+        if type(v) is _ND and v.shape == _S11 and v.dtype is _F64:
+            sig.append("d")
+            values.append(v.item())
+        elif type(v) is _ND and v.shape == _S11 and v.dtype is _BOOL:
+            sig.append("b")
+            values.append(v.item())
+        elif type(v) in _PLAIN:
+            sig.append("o")
+            values.append(v)
+        else:
+            return None
+    key = tuple(sig)
+    record = state["sigs"].get(key, _MISSING)
+    if record is None:
+        return None
+    if record is _MISSING or record.py is None or not _deps_valid(interp, record.deps):
+        try:
+            record = _compile_function(interp, fn, functions, key)
+        except (Reject, KeyError, SyntaxError, RecursionError):
+            state["sigs"][key] = None
+            if all(v is None for v in state["sigs"].values()) and len(state["sigs"]) >= 3:
+                state["never"] = True
+            return None
+    _NS["_lim"][0] = interp.max_depth
+    _INTERP[0] = interp
+    try:
+        r = record.py(interp.depth + 1, *values)
+    except Exception:  # noqa: BLE001 - a bail-out: the function is pure, so the interpreter just runs it
+        record.bails += 1
+        if record.bails >= MAX_BAILS:
+            state["sigs"][key] = None
+        return None
+    if record.ret == "d":
+        return [_bd(r)]
+    if record.ret == "b":
+        return [_bb(r)]
+    return [r]
+
+
+def _value_kind(v):
+    """How a value is passed to compiled code: 'd', 'b', 'o' (boxed), or None if it cannot be."""
+    t = type(v)
+    if t is _ND:
+        if v.shape == _S11:
+            if v.dtype is _F64:
+                return "d"
+            if v.dtype is _BOOL:
+                return "b"
+        return "o"
+    return "o" if t in _PLAIN else None
+
+
+def _compile_anonymous(interp, handle, sig: tuple):
+    """The compiled form of an anonymous function for arguments of the given types, or None."""
+    body = handle.body
+    state = body.__dict__.get("_jit_fn")
+    if state is None:
+        state = body._jit_fn = {"calls": 0, "sigs": {}}
+    closure = handle.closure
+    functions = closure.get("__functions__", {})
+    params = handle.params
+    captured = tuple(sorted(k for k in closure if k != "__functions__" and k not in params))
+    ckinds = []
+    for k in captured:
+        v = closure[k]
+        kind = "H" if type(v) is FunctionHandle else _value_kind(v)
+        if kind is None:
+            return None
+        ckinds.append(kind)
+    key = (sig, tuple(ckinds), id(functions))
+    record = state["sigs"].get(key, _MISSING)
+    if record is None:
+        return None
+    if record is not _MISSING and _deps_valid(interp, record.deps):
+        return record
+    state["sigs"][key] = None
+    if len(sig) > len(params) or "varargin" in params or "~" in params or len(set(params)) != len(params):
+        return None
+    try:
+        scan = _Scan(allow_loops=False)
+        scan.expr(body)
+        kinds = {p: ("x" if k == "o" else k) for p, k in zip(params, sig)}
+        kinds.update({c: ("x" if k == "o" else k) for c, k in zip(captured, ckinds)})
+        gen = _Gen(interp, functions, kinds, scan, "func")
+        gen.nargin = len(sig)
+        gen.variables = set(params) | set(captured)
+        code, typ = gen.expr(body)
+    except (Reject, KeyError, RecursionError):
+        return None
+    record = _Function(_unique("_f"), "o" if typ in "oO" else typ)
+    record.sig = sig
+    record.captured = captured
+    names = "".join(f", {gen.py(p)}=_UNSET" for p in params) + "".join(f", {gen.py(c)}=_UNSET" for c in captured)
+    src = f"def {record.name}(_dp{names}):\n    if _dp > _lim[0]:\n        raise _Bail\n    return {code}"
+    try:
+        exec(compile(src, "<mylab-jit anonymous>", "exec"), _NS)  # noqa: S102 - code generated above
+    except SyntaxError:
+        return None
+    record.py = _NS[record.name]
+    record.deps = gen.deps
+    state["sigs"][key] = record
+    state.setdefault("keep", []).append(functions)  # so that id(functions) is never reused
+    return record
+
+
+def _captured_values(handle, record) -> list:
+    out = []
+    for name in record.captured:
+        v = handle.closure[name]
+        out.append(v.item() if type(v) is _ND and v.shape == _S11 and (v.dtype is _F64 or v.dtype is _BOOL) else v)
+    return out
+
+
+def call_anonymous(interp, handle, args: list, nargout: int):
+    """Evaluate a side-effect-free anonymous function compiled; None if the interpreter must."""
+    body = handle.body
+    state = body.__dict__.get("_jit_fn")
+    if state is None:
+        state = body._jit_fn = {"calls": 0, "sigs": {}}
+    state["calls"] += 1
+    if state["calls"] < FUNCTION_CALLS_BEFORE_COMPILE or nargout > 1 or state.get("never"):
+        return None
+    sig = []
+    values = []
+    for v in args:
+        kind = _value_kind(v)
+        if kind is None:
+            return None
+        sig.append(kind)
+        values.append(v.item() if kind != "o" else v)
+    record = _compile_anonymous(interp, handle, tuple(sig))
+    if record is None:
+        state["misses"] = state.get("misses", 0) + 1
+        if state["misses"] >= 4:
+            state["never"] = True
+        return None
+    _NS["_lim"][0] = interp.max_depth
+    _INTERP[0] = interp
+    if len(values) < len(handle.params):
+        values += [_UNSET] * (len(handle.params) - len(values))
+    try:
+        r = record.py(interp.depth + 1, *values, *_captured_values(handle, record))
+    except Exception:  # noqa: BLE001 - a bail-out: the expression is pure, the interpreter evaluates it
+        record.bails += 1
+        if record.bails >= 8 * MAX_BAILS:
+            state["never"] = True
+        return None
+    if record.ret == "d":
+        return [_bd(r)]
+    if record.ret == "b":
+        return [_bb(r)]
+    return [r]
+
+
+def map_function(interp, f, columns: list, kinds: tuple):
+    """Apply a function to each element (arrayfun/cellfun): (result type, list of results) or None.
+
+    ``columns`` holds one list of values per input, floats where ``kinds`` says 'd' and MATLAB
+    values where it says 'o'.  Only compiled user functions, compiled anonymous functions and
+    side-effect-free built-ins are handled; a failure on any element gives None, and the caller
+    then does the whole job the general way (the function is pure, so nothing was changed).
+    """
+    if not interp.jit_enabled or interp.trace_hook is not None or type(f) is not FunctionHandle:
+        return None
+    extra: list = []
+    if f.is_anonymous:
+        record = _compile_anonymous(interp, f, kinds)
+        if record is None:
+            return None
+        extra = _captured_values(f, record)
+        missing = len(f.params) - len(kinds)
+        if missing:
+            extra = [_UNSET] * missing + extra
+        py, ret = record.py, record.ret
+    else:
+        res = _resolve(interp, f.name, f.closure.get("__functions__", {}))
+        if res[0] == "u":
+            try:
+                record = _compile_function(interp, res[1], res[2], kinds)
+            except (Reject, KeyError, SyntaxError, RecursionError):
+                return None
+            py, ret = record.py, record.ret
+        elif res[0] == "b" and f.name in _PURE and all(k == "o" for k in kinds):
+            fn = res[1]
+
+            def py(_dp, *args):
+                return _callb(fn, list(args))
+            ret = "o"
+        else:
+            return None
+    _NS["_lim"][0] = interp.max_depth
+    _INTERP[0] = interp
+    depth = interp.depth + 1
+    try:
+        if len(columns) == 1 and not extra:
+            out = [py(depth, x) for x in columns[0]]
+        else:
+            out = [py(depth, *xs, *extra) for xs in zip(*columns)]
+    except Exception:  # noqa: BLE001 - some element needs the interpreter: let it do them all
+        return None
+    return ret, out
+
+
+# -- loops --------------------------------------------------------------------------------------
+
+class _Loop:
+    __slots__ = ("fn", "variables", "arrays", "lists", "paths", "final", "deps", "struct_fields")
+
+
+def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None) -> _Loop:
+    scan: _Scan = info["scan"]
+    kinds = dict(kinds)
+    gen = _Gen(interp, frame.functions, kinds, scan, "loop")
+    declared = {loop_var} if loop_var else set()
+    if loop_var:
+        if kinds.get(loop_var, "-") not in "-db" or loop_var in scan.index_written \
+                or loop_var in scan.brace_used or any(s == loop_var for s, _ in scan.fields):
+            raise Reject
+        kinds[loop_var] = "d"
+    _roles(gen, scan, kinds, declared)
+    if loop_var:
+        gen.variables.add(loop_var)
+        gen.arrays.discard(loop_var)
 
     def inline_source(name: str):
-        """(parameter names, body expression, captured values) of a function simple enough to inline."""
+        """(parameter names, body expression, captured values) of an anonymous function variable."""
         kind = kinds.get(name, "-")
-        if kind.startswith("h:"):
-            handle = frame.vars.get(name)
-            if type(handle) is not FunctionHandle or not handle.is_anonymous:
-                return None
-            return list(handle.params), handle.body, handle.closure
-        if not kind.startswith("f:"):
+        if not kind.startswith("h:"):
             return None
-        fn = frame.functions.get(name)
-        if type(fn) is not A.Function or fn.subfunctions or fn.arguments or len(fn.outputs) != 1 \
-                or len(fn.body) != 1:
+        handle = frame.vars.get(name)
+        if type(handle) is not FunctionHandle or not handle.is_anonymous:
             return None
-        stmt0 = fn.body[0]
-        if type(stmt0) is not A.Assign or stmt0.show or len(stmt0.targets) != 1 \
-                or type(stmt0.targets[0]) is not A.Ident or stmt0.targets[0].name != fn.outputs[0]:
-            return None
-        return list(fn.params), stmt0.value, {}
+        return list(handle.params), handle.body, handle.closure
 
     def make_inline(depth: int):
         def inline(name, args, ctx, outer):
-            if depth > 0:
-                return None  # calls inside an inlined body must be built-in math functions
-            src = inline_source(name)
+            src = inline_source(name) if depth == 0 else None
             if src is None:
                 return None
             params, body, closure = src
             if len(params) != len(args) or "varargin" in params or "~" in params \
                     or len(set(params)) != len(params):
                 raise Reject
-            child = _Gen({p: "d" for p in params}, set(params), set(), funcs_ok, set())
+            child_scan = _Scan(allow_loops=False)
+            child_scan.expr(body)
+            child = _Gen(interp, closure.get("__functions__", {}), {p: "d" for p in params}, child_scan, "loop")
+            child.variables = set(params)
             consts, blocked = {}, set()
             for k, v in closure.items():
-                if k in params:
+                if k in params or k == "__functions__":
                     continue
                 if type(v) is np.ndarray and v.shape == (1, 1) and v.dtype.kind in "fb":
                     x = v.item()
@@ -503,28 +1671,21 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
             child.consts, child.blocked = consts, frozenset(blocked)
             child.inline = make_inline(depth + 1)
             code, typ = child.expr(body)
+            if typ in "oO" or "_dp" in code:
+                raise Reject
+            outer.deps.update(child.deps)
             actual = ", ".join(outer.as_float(*outer.expr(a, ctx)) for a in args)
             return f"(lambda {', '.join('v_' + p for p in params)}: {code})({actual})", typ
         return inline
 
-    for name, _n in info["calls"]:
-        if name in arrays or (name not in writes and inline_source(name) is not None):
-            continue
-        if kinds.get(name, "-") != "-" or name in writes or (
-                name not in _FUNCS and name not in ("numel", "length", "size")):
-            raise Reject
+    gen.inline = make_inline(0)
+    is_for = loop_var is not None
 
-    gen = None
-    final: dict[str, str] = {}
-    for _attempt in range(3):  # iterate until the inferred variable types are stable
-        gen = _Gen(kinds, scalars, arrays, funcs_ok, writes)
-        gen.final = dict(final)
-        gen.inline = make_inline(0)
-        is_for = loop_var is not None
+    def generate():
         if is_for:
             gen.types.setdefault(loop_var, set()).add("d")
             gen.emit(2, "for _i in range(_it0, _n):")
-            gen.emit(3, f"v_{loop_var} = _start + _step * _i")
+            gen.emit(3, f"{gen.py(loop_var)} = {gen.convert('(_start + _step * _i)', 'd', gen.var_type(loop_var))}")
             gen.block(stmt.body, 3, ())
         else:
             gen.emit(2, "while True:")
@@ -533,94 +1694,144 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
             gen.emit(3, f"if not {gen.as_truth(code, typ)}:")
             gen.emit(4, "break")
             gen.block(stmt.body, 3, ())
-        new_final = {}
-        for name, types in gen.types.items():
-            entry = kinds.get(name, "-")
-            all_types = set(types) | ({entry} if entry in "db" else set())
-            if len(all_types) != 1:
-                raise Reject
-            new_final[name] = next(iter(all_types))
-        if new_final == final:
-            break
-        final = new_final
-    else:
-        raise Reject
 
-    names = sorted(n for n in scalars if kinds.get(n, "-") in ("d", "b") or n in writes)
-    arr_names = sorted(arrays)
-    params = ["_it0", "_n", "_start", "_step"] + [f"v_{n}" for n in names]
+    _infer(gen, kinds, generate)
+    final = gen.final
+    names = sorted(gen.variables)
+    arr_names = sorted(gen.arrays)
+    list_names = sorted(gen.lists)
+    params = ["_it0", "_n", "_start", "_step", "_dp"] + [gen.py(n) for n in names]
     for n in arr_names:
-        params += [f"a_{n}", f"n_{n}", f"r_{n}", f"c_{n}"]
-    values = "(" + "".join(f"v_{n}, " for n in names) + ")"
-    src = [f"def _loop({', '.join(params)}):", "    _p = 0", "    _i = _it0", "    try:"]
-    src += gen.lines
+        suffix = gen.py(n, "")
+        params += [f"a{suffix}", f"n{suffix}", f"r{suffix}", f"c{suffix}"]
+    params += [gen.py(n, "l") for n in list_names]
+    values = "(" + "".join(f"{gen.py(n)}, " for n in names) + \
+        "".join(f"{gen.py(n, 'l')}, {gen.py(n, 'm')}, " for n in list_names) + ")"
+    name = _unique("_loop")
+    src = [f"def {name}({', '.join(params)}):", "    _p = 0", "    _i = _it0"]
+    src += [f"    {gen.py(n, 'm')} = False" for n in list_names]
+    src += ["    try:"] + gen.lines
     src += ["    except BaseException as _e:",
             f"        return (1, _i, _p, {values}, _e)",
             f"    return (0, _i, 0, {values}, None)"]
-    namespace = dict(_HELPERS)
-    exec(compile("\n".join(src), "<mylab-jit>", "exec"), namespace)  # noqa: S102 - code generated above
-    return namespace["_loop"], names, arr_names, gen.paths, final
+    exec(compile("\n".join(src), "<mylab-jit>", "exec"), _NS)  # noqa: S102 - code generated above
+    loop = _Loop()
+    loop.fn = _NS.pop(name)
+    loop.variables = [(n, gen.var_type(n)) for n in names]
+    loop.arrays = [(n, n in gen.written_arrays) for n in arr_names]
+    loop.lists = list_names
+    loop.paths = gen.paths
+    loop.final = final
+    loop.deps = gen.deps
+    loop.struct_fields = {f"{s}.{f}" for s, f in scan.fields_written}
+    return loop
 
 
 # -- running ----------------------------------------------------------------------------------
+
+def _entry_value(frame, name: str):
+    if "." in name:
+        s, f = name.split(".", 1)
+        struct = frame.vars.get(s)
+        if type(struct) is not Struct or struct.data.shape != _S11:
+            return None
+        return struct.data[0, 0].get(f)
+    return frame.vars.get(name)
+
 
 def _prepare(interp, stmt, frame, loop_var):
     """Compiled function and call arguments for this loop in its current state, or None."""
     info = _static(stmt)
     if info is None or info["bails"] >= MAX_BAILS:
         return None
-    names = info["scalar_reads"] | info["scalar_writes"] | info["arrays"] | {n for n, _ in info["calls"]}
-    if loop_var:
-        names = names | {loop_var}
-    if frame.globals and any(n in frame.globals for n in names):
+    scan: _Scan = info["scan"]
+    if frame.globals and (any(n in frame.globals for n in scan.names) or loop_var in frame.globals):
         return None
     fvars = frame.vars
-    kinds = {n: _kind(fvars.get(n)) for n in names}
-    for n, _nargs in info["calls"]:  # local functions are part of the signature too
-        if kinds[n] == "-":
-            fn = frame.functions.get(n)
-            if type(fn) is A.Function:
-                kinds[n] = f"f:{id(fn)}"
-                info.setdefault("keep", {})[id(fn)] = fn
-        elif kinds[n].startswith("h:"):
+    kinds = {n: _kind(fvars.get(n)) for n in scan.names}
+    for s, f in scan.fields:
+        kinds[f"{s}.{f}"] = _kind(_entry_value(frame, f"{s}.{f}")) if kinds.get(s) == "S" else "-"
+    for n, k in kinds.items():
+        if k.startswith("h:"):
             body = fvars[n].body  # keep the body alive so its id() is never reused
             info.setdefault("keep", {})[id(body)] = body
     if loop_var:
-        kinds[loop_var] = "d" if kinds[loop_var] in "-db" else kinds[loop_var]
-    sig = tuple(sorted(kinds.items()))
-    compiled = info["compiled"].get(sig, _UNSET)
-    if compiled is _UNSET:
+        k = _kind(fvars.get(loop_var))
+        kinds[loop_var] = "d" if k in "-db" else k
+    sig = (id(frame.functions), tuple(sorted(kinds.items())))
+    compiled = info["compiled"].get(sig, _MISSING)
+    if compiled is not _MISSING and compiled is not None and not _deps_valid(interp, compiled.deps):
+        compiled = _MISSING  # a function this loop calls now means something else
+    if compiled is _MISSING:
         try:
             compiled = _compile(stmt, info, kinds, interp, frame, loop_var)
         except (Reject, KeyError, SyntaxError, RecursionError):
             compiled = None
         info["compiled"][sig] = compiled
+        info.setdefault("keep_functions", []).append(frame.functions)
     if compiled is None:
         return None
-    fn, scalar_names, arr_names, paths, final = compiled
+    # structs whose fields are written get a private copy first (copy-on-write)
+    if compiled.struct_fields:
+        for s in {n.split(".", 1)[0] for n in compiled.struct_fields}:
+            struct = fvars[s]
+            if sys.getrefcount(struct) > 3 or sys.getrefcount(struct.data[0, 0]) > 2:
+                fvars[s] = struct.copy()
     args = []
-    for n in scalar_names:
-        v = fvars.get(n)
-        args.append(_UNSET if v is None else v.item())
-    for n in arr_names:
-        arr = fvars[n]
-        if n in info["array_writes"] and (not arr.flags.writeable or arr.base is not None
-                                          or sys.getrefcount(arr) > 3):
+    for n, typ in compiled.variables:
+        v = _entry_value(frame, n)
+        if v is None:
+            args.append(_UNSET)
+        elif typ in "db":
+            args.append(v.item())
+        else:
+            args.append(v)
+    for n, written in compiled.arrays:
+        arr = _entry_value(frame, n)
+        if written and (not arr.flags.writeable or arr.base is not None or sys.getrefcount(arr) > 3):
             arr = arr.copy()  # copy-on-write: this workspace gets its own array before modifying it
-            fvars[n] = arr
+            if "." in n:
+                s, f = n.split(".", 1)
+                fvars[s].data[0, 0][f] = arr
+            else:
+                fvars[n] = arr
         args += [arr, arr.size, arr.shape[0], arr.shape[1]]
-    return fn, args, scalar_names, paths, final, info
+    for n in compiled.lists:
+        data = fvars[n].data
+        args.append(data[0].tolist() if data.size else [])
+    _NS["_lim"][0] = interp.max_depth
+    _INTERP[0] = interp
+    return compiled, args, info
 
 
-def _write_back(frame, names, values, final) -> None:
+def _write_back(frame, compiled: _Loop, values) -> None:
     fvars = frame.vars
-    for n, v in zip(names, values):
+    k = 0
+    for n, typ in compiled.variables:
+        v = values[k]
+        k += 1
         if v is _UNSET:
             continue
-        if final.get(n) == "b" or type(v) is bool:
-            fvars[n] = np.array([[bool(v)]])
+        if "." in n:
+            if n not in compiled.struct_fields:
+                continue
+            s, f = n.split(".", 1)
+            store, key = fvars[s].data[0, 0], f
         else:
-            fvars[n] = np.array([[float(v)]])
+            store, key = fvars, n
+        if typ == "b" or type(v) is bool:
+            store[key] = _bb(v)
+        elif typ == "d" or type(v) is float:
+            store[key] = _bd(v)
+        else:
+            store[key] = v
+    for n in compiled.lists:
+        lst, modified = values[k], values[k + 1]
+        k += 2
+        if modified:
+            data = np.empty((1, len(lst)), dtype=object)
+            data[0, :] = np.fromiter(lst, dtype=object, count=len(lst))
+            fvars[n] = Cell(data)
 
 
 def _exec_from(interp, body: list, path: tuple, frame) -> None:
@@ -662,9 +1873,9 @@ def run_for(interp, stmt, frame) -> bool:
     prepared = _prepare(interp, stmt, frame, name)
     if prepared is None:
         return False
-    fn, args, names, paths, final, info = prepared
-    status, i, p, values, exc = fn(0, n, a, s, *args)
-    _write_back(frame, names, values, final)
+    compiled, args, info = prepared
+    status, i, p, values, exc = compiled.fn(0, n, a, s, interp.depth, *args)
+    _write_back(frame, compiled, values)
     if status == 0:
         return True
     if not isinstance(exc, Exception):
@@ -673,7 +1884,7 @@ def run_for(interp, stmt, frame) -> bool:
     info["bails"] += 1
     try:
         try:
-            _exec_from(interp, stmt.body, paths[p], frame)
+            _exec_from(interp, stmt.body, compiled.paths[p], frame)
         except ContinueSignal:
             pass
         for j in range(i + 1, n):
@@ -692,9 +1903,9 @@ def run_while(interp, stmt, frame) -> bool:
     prepared = _prepare(interp, stmt, frame, None)
     if prepared is None:
         return False
-    fn, args, names, paths, final, info = prepared
-    status, _i, p, values, exc = fn(0, 0, 0.0, 0.0, *args)
-    _write_back(frame, names, values, final)
+    compiled, args, info = prepared
+    status, _i, p, values, exc = compiled.fn(0, 0, 0.0, 0.0, interp.depth, *args)
+    _write_back(frame, compiled, values)
     if status == 0:
         return True
     if not isinstance(exc, Exception):
@@ -702,7 +1913,7 @@ def run_while(interp, stmt, frame) -> bool:
     info["bails"] += 1
     if p >= 0:  # bailed inside the body: finish this iteration first
         try:
-            _exec_from(interp, stmt.body, paths[p], frame)
+            _exec_from(interp, stmt.body, compiled.paths[p], frame)
         except BreakSignal:
             return True
         except ContinueSignal:

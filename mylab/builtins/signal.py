@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import numpy as np
-import scipy.signal as ss
 
+from .. import fastnum
+from .._lazy import lazy_module
 from ..errors import MatlabError
 from ..values import simplify, to_int
 from ._registry import builtin
 from ._util import default_dim, fnum, is_text, nargs, text
+
+ss = lazy_module("scipy.signal", globals(), "ss")  # imported on first use: keeps start-up fast
 
 
 # -- helpers --------------------------------------------------------------------------
@@ -95,10 +98,10 @@ def _fft_common(args, nargout, inverse: bool, name: str):
             return x  # a dimension of length one transforms to itself
         x = x.reshape(x.shape + (1,) * (axis + 1 - x.ndim))
     if inverse:
-        r = np.fft.ifft(x, n=n, axis=axis)
+        r = fastnum.fft(x, n, axis, inverse=True)
         r = r.real.copy() if symmetric else _real_if_tiny(r)
     else:
-        r = simplify(np.fft.fft(x, n=n, axis=axis))
+        r = simplify(fastnum.fft(x, n, axis))
     if single:
         r = r.astype(np.complex64 if np.iscomplexobj(r) else np.float32)
     return r

@@ -7,8 +7,8 @@ import math
 from typing import Any
 
 import numpy as np
-import scipy.special as sp
 
+from .._lazy import lazy_function, lazy_module
 from ..errors import MatlabError
 from ..ops import binop, unary
 from ..values import Cell, MString, StringArray, char, is_char, simplify, string_result, to_int, to_str
@@ -17,6 +17,7 @@ from ._util import (
     as_row_or_col, default_dim, flag_present, fnum, get_dim, is_text, keep2d, nargs, num, text,
 )
 
+sp = lazy_module("scipy.special", globals(), "sp")  # imported on first use: keeps start-up fast
 
 # -- elementwise ------------------------------------------------------------------------
 
@@ -118,8 +119,9 @@ _ELEMENTWISE = {
     "deg2rad": np.radians, "rad2deg": np.degrees,
     "floor": _per_part(np.floor), "ceil": _per_part(np.ceil), "fix": _per_part(np.trunc),
     "real": np.real, "imag": np.imag, "conj": np.conj, "angle": np.angle,
-    "gamma": _gamma, "gammaln": sp.gammaln, "erf": sp.erf, "erfc": sp.erfc,
-    "erfinv": sp.erfinv, "erfcinv": sp.erfcinv,
+    "gamma": _gamma, "gammaln": lazy_function("scipy.special", "gammaln"),
+    "erf": lazy_function("scipy.special", "erf"), "erfc": lazy_function("scipy.special", "erfc"),
+    "erfinv": lazy_function("scipy.special", "erfinv"), "erfcinv": lazy_function("scipy.special", "erfcinv"),
 }
 
 
@@ -444,7 +446,7 @@ def _nthroot(a, n):
 
 
 builtin("nthroot")(_binary_math(_nthroot))
-builtin("beta")(_binary_math(sp.beta))
+builtin("beta")(_binary_math(lazy_function("scipy.special", "beta")))
 
 
 @builtin("complex")

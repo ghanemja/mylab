@@ -339,6 +339,56 @@ def _split_options(args, names):
     return rest, opts
 
 
+def _map_compiled(interp, fn, inputs, shape, uniform, from_cells):
+    """arrayfun/cellfun through the function compiler (mylab/jit.py); None if it does not apply.
+
+    The function must be one the compiler accepts (side-effect free); the inputs are turned into
+    plain lists once instead of one 1x1 array per element.
+    """
+    from .. import jit
+    count = int(np.prod(shape))
+    if count < 4 or not getattr(interp, "jit_enabled", False):
+        return None
+    columns, kinds = [], []
+    for v in inputs:
+        if from_cells:
+            items = v.data.ravel(order="F").tolist()
+            if all(type(x) is np.ndarray and x.shape == (1, 1) and x.dtype is _F64 for x in items):
+                columns.append([x.item() for x in items])
+                kinds.append("d")
+            elif all(type(x) in jit._PLAIN for x in items):
+                columns.append(items)
+                kinds.append("o")
+            else:
+                return None
+        elif type(v) is np.ndarray and v.dtype is _F64:
+            columns.append(v.ravel(order="F").tolist())
+            kinds.append("d")
+        else:
+            return None
+    mapped = jit.map_function(interp, fn, columns, tuple(kinds))
+    if mapped is None:
+        return None
+    ret, out = mapped
+    if uniform and ret == "d":
+        return np.array(out, dtype=float).reshape(shape, order="F")
+    if uniform and ret == "b":
+        return np.array(out, dtype=bool).reshape(shape, order="F")
+    if ret == "d":
+        out = [jit._bd(x) for x in out]
+    elif ret == "b":
+        out = [jit._bb(x) for x in out]
+    if uniform:
+        return _uniform_output(out, shape, 0)
+    data = np.empty(count, dtype=object)
+    for k, v in enumerate(out):
+        data[k] = v
+    return Cell(data.reshape(shape, order="F"))
+
+
+_F64 = np.dtype(float)
+
+
 def _apply_elementwise(interp, fn, containers, nargout, uniform, error_handler, shape):
     n_out = max(nargout, 1)
     count = int(np.prod(shape))
@@ -456,6 +506,10 @@ def _cellfun(interp, args, nargout):
         if c.shape != shape:
             raise MatlabError("All of the input arguments must be of the same size and shape.")
     uniform = bool(num(opts["UniformOutput"]).flat[0]) if "UniformOutput" in opts else True
+    if nargout <= 1 and "ErrorHandler" not in opts:
+        fast = _map_compiled(interp, fn, cells, shape, uniform, True)
+        if fast is not None:
+            return fast
     containers = [c.data.flatten(order="F") for c in cells]
     return _apply_elementwise(interp, fn, containers, nargout, uniform, opts.get("ErrorHandler"), shape)
 
@@ -501,6 +555,12 @@ def _arrayfun(interp, args, nargout):
     nargs(args, 2, None, "arrayfun")
     rest, opts = _split_options(args, ("UniformOutput", "ErrorHandler"))
     fn = rest[0]
+    if nargout <= 1 and "ErrorHandler" not in opts and len(rest) > 1 \
+            and all(type(a) is np.ndarray and a.shape == rest[1].shape for a in rest[1:]):
+        uniform = bool(num(opts["UniformOutput"]).flat[0]) if "UniformOutput" in opts else True
+        fast = _map_compiled(interp, fn, rest[1:], rest[1].shape, uniform, False)
+        if fast is not None:
+            return fast
     split = [_elements(a) for a in rest[1:]]
     shape = split[0][1]
     for _, s in split[1:]:

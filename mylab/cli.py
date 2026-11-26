@@ -96,6 +96,41 @@ def repl(interp: Interpreter) -> int:
                 interactive_plots = True
 
 
+class _LazyAppServer:
+    """The app-window server, created only when an app needs it.
+
+    Importing the web server costs start-up time that plain scripts should not pay, so until a
+    script waits on an app window (or ends with one open) only the wait hook is in place.
+    """
+
+    def __init__(self, interp: Interpreter, open_browser: bool = True):
+        from . import ui
+        self.interp = interp
+        self.open_browser = open_browser
+        self.server = None
+        ui.state(interp).wait_hook = self.wait
+
+    def _server(self):
+        if self.server is None:
+            from .uiweb import AppServer
+            self.server = AppServer(self.interp, open_browser=self.open_browser)
+        return self.server
+
+    def wait(self, interp, fig, dialog):
+        return self._server().wait(interp, fig, dialog)
+
+    def serve(self) -> None:
+        self._server().serve()
+
+    def stop(self) -> None:
+        if self.server is not None:
+            self.server.stop()
+            return
+        st = self.interp.state.get("ui")
+        if st is not None and st.wait_hook == self.wait:
+            st.wait_hook = None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="mylab",
@@ -140,8 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.eval is None and args.script is None:
         return repl(interp)
     # App windows (uifigure, uicontrol) are shown in the web browser by a small local server.
-    from .uiweb import AppServer
-    apps = AppServer(interp, open_browser=not args.no_browser)
+    apps = _LazyAppServer(interp, open_browser=not args.no_browser)
     if args.debug:
         from .debugger import get_debugger
         interp.state["debug_interactive"] = True

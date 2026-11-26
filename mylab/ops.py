@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 
+from . import fastnum
 from .errors import MatlabError
 from .values import (
     Cell, FunctionHandle, MString, StringArray, Struct, as_2d, codes_to_char, is_char,
@@ -229,8 +230,16 @@ def left_divide(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         return elementwise(".\\", a, b)
     if a.shape[0] != b.shape[0]:
         raise MatlabError("Matrix dimensions must agree.")
-    af = a.astype(complex if a.dtype.kind == "c" else float)
-    bf = b.astype(complex if b.dtype.kind == "c" else float)
+    af = np.asarray(a, dtype=complex if a.dtype.kind == "c" else float)
+    bf = np.asarray(b, dtype=complex if b.dtype.kind == "c" else float)
+    if a.ndim == 2 and b.ndim == 2 and a.shape[0] == a.shape[1]:
+        if a.shape[0] == 0:
+            return np.zeros((0, b.shape[1]))
+        if fastnum.ENABLED:
+            # one factorisation gives the solution and the condition estimate behind the warnings
+            x = fastnum.solve(af, bf, _warn)
+            if x is not None:
+                return simplify(x)
     if a.shape[0] == a.shape[1]:
         try:
             cond = np.linalg.cond(af)
@@ -341,6 +350,7 @@ def _logical_operand(v: Any) -> np.ndarray:
 
 
 _F64 = np.dtype(float)
+_BOOL = np.dtype(bool)
 
 
 def _scalar_fast(op: str, x: float, y: float):
@@ -379,11 +389,20 @@ def _scalar_fast(op: str, x: float, y: float):
 
 
 def binop(op: str, a: Any, b: Any) -> Any:
-    if (type(a) is np.ndarray and type(b) is np.ndarray and a.shape == (1, 1) and b.shape == (1, 1)
-            and a.dtype is _F64 and b.dtype is _F64):
-        r = _scalar_fast(op, float(a[0, 0]), float(b[0, 0]))
-        if r is not None:
-            return np.array([[r]], dtype=bool if isinstance(r, bool) else float)
+    if type(a) is np.ndarray and type(b) is np.ndarray:
+        if a.dtype is _F64 and b.dtype is _F64:
+            if fastnum.ENABLED:
+                r = fastnum.binop_f64(op, a, b)  # plain doubles: scalars in Python, arrays straight to NumPy
+                if r is not None:
+                    return r
+            elif a.shape == (1, 1) and b.shape == (1, 1):
+                r = _scalar_fast(op, float(a[0, 0]), float(b[0, 0]))
+                if r is not None:
+                    return np.array([[r]], dtype=bool if isinstance(r, bool) else float)
+        elif a.dtype is _BOOL and b.dtype is _BOOL and fastnum.ENABLED:
+            r = fastnum.binop_bool(op, a, b)
+            if r is not None:
+                return r
     if isinstance(a, _NO_OPERATORS) or isinstance(b, _NO_OPERATORS):
         from .values import class_name
         bad = a if isinstance(a, _NO_OPERATORS) else b
@@ -585,6 +604,10 @@ def concat(items: list[Any], axis: int) -> Any:
 
 
 def build_matrix(rows: list[list[Any]]) -> Any:
+    if fastnum.ENABLED:
+        fast = fastnum.build_matrix(rows)  # every piece a plain double matrix: no class rules to apply
+        if fast is not None:
+            return fast
     row_values = [concat(r, 1) for r in rows]
     if not row_values:
         return np.zeros((0, 0))

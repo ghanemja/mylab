@@ -20,10 +20,9 @@ import warnings
 from typing import Any, Callable
 
 import numpy as np
-import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 
 from .. import indexing as ix
+from .._lazy import lazy_module
 from .. import ops
 from ..display import TIMES, _matrix_lines, format_scalar
 from ..errors import MatlabError
@@ -34,6 +33,9 @@ from ..values import (
 )
 from ._registry import BUILTINS, builtin
 from ._util import bool_scalar, is_text, text
+
+sp = lazy_module("scipy.sparse", globals(), "sp")  # imported on first use: keeps start-up fast
+spla = lazy_module("scipy.sparse.linalg", globals(), "spla")
 
 DENSE_LIMIT = 2 ** 28  # elements; converting more than this to a full array is refused (2 GiB)
 

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from typing import Any, Callable
 
 import numpy as np
 
 from . import ast as A
 from . import indexing as ix
+from . import fastnum
 from . import fuse
 from . import jit
 from . import ops
@@ -27,6 +29,9 @@ _F64 = np.dtype(float)
 _INPLACE = {"+": np.add, "-": np.subtract, ".*": np.multiply, "./": np.divide}
 
 _CURRENT: list["Interpreter"] = []
+_NOT_CACHED = object()
+_monotonic = time.monotonic
+LOOKUP_RECHECK = 0.02  # seconds a function lookup may be reused without looking at the disk
 
 # Class folders that add functions for a built-in type (a file @double/name.m handles double inputs).
 _TYPE_FOLDERS = frozenset("@" + t for t in (
@@ -166,6 +171,12 @@ class Interpreter:
         self._dir_cache: dict[str, tuple[int, frozenset]] = {}
         self._type_dirs: dict[str, frozenset] = {}  # folders holding @double-style method folders
         self._private_dirs: set[str] = set()  # folders known to hold a private subfolder
+        # Name -> file function, valid while the path, the folders on it and the files found are
+        # unchanged; that is re-checked at the start of each run, after built-ins that change
+        # files or the path, and at least every LOOKUP_RECHECK seconds.
+        self._lookup_cache: dict[str, tuple[A.Program, str] | None] = {}
+        self._lookup_state: tuple = ()
+        self._lookup_checked = 0.0
         self.state: dict[str, Any] = {}  # scratch space for builtins (tic, rng, figures...)
         self.classes: dict[str, Any] = {}  # classdef name -> ClassInfo
         self.trace_hook: Callable[[A.Node, Frame], None] | None = None  # called before each statement
@@ -208,6 +219,8 @@ class Interpreter:
 
     def run_program(self, program: A.Program, frame: Frame, file: str | None = None) -> None:
         _CURRENT.append(self)
+        self._lookup_checked = 0.0  # a new run: look at the disk again before trusting cached lookups
+        fastnum.quiet_enter()  # NumPy's floating-point warnings are silenced once per run, not per operation
         old_functions, old_file = frame.functions, frame.file
         try:
             if program.functions:
@@ -223,6 +236,7 @@ class Interpreter:
         except ReturnSignal:
             pass
         finally:
+            fastnum.quiet_leave()
             _CURRENT.pop()
             frame.functions, frame.file = old_functions, old_file
             if program.functions and frame is self.base and file is None:
@@ -235,9 +249,11 @@ class Interpreter:
         if len(program.body) != 1 or not isinstance(program.body[0], A.ExprStmt):
             raise MatlabError("Expected a single expression.")
         _CURRENT.append(self)
+        fastnum.quiet_enter()
         try:
             return self.eval(program.body[0].expr, self.base)
         finally:
+            fastnum.quiet_leave()
             _CURRENT.pop()
 
     def get_var(self, name: str) -> Any:
@@ -1459,6 +1475,10 @@ class Interpreter:
         params = handle.params
         if len(args) > len(params) and not (params and params[-1] == "varargin"):
             raise MatlabError("Too many input arguments.")
+        if self.jit_enabled and self.trace_hook is None:
+            compiled = jit.call_anonymous(self, handle, args, nargout)  # side-effect-free expressions
+            if compiled is not None:
+                return compiled
         frame = Frame(self, functions, name="anonymous function", nargin=len(args), nargout=nargout)
         for k, v in handle.closure.items():
             if k[:2] != "__":
@@ -1530,6 +1550,11 @@ class Interpreter:
                 has_varargout, outputs[:-1] if has_varargout else outputs,
             )
         has_varargin, fixed, takes_name_value, has_varargout, fixed_out = info
+        if self.jit_enabled and parent is None and preset is None and owner is None and self.trace_hook is None \
+                and fn.__dict__.get("_jit_fn") is not False:
+            compiled = jit.call_function(self, fn, args, nargout, functions)  # simple numeric functions
+            if compiled is not None:
+                return compiled
         if len(args) > len(fixed) and not has_varargin and not takes_name_value:
             raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
         if nargout > len(fixed_out) and not has_varargout:
@@ -1558,14 +1583,19 @@ class Interpreter:
         if preset:
             frame.vars.update(preset)
         frame.owner_class = owner
+        outermost = self.depth == 0
         self._enter()
         self.frames.append(frame)
         _CURRENT.append(self)
+        if outermost:
+            fastnum.quiet_enter()
         try:
             self.exec_block(fn.body, frame)
         except ReturnSignal:
             pass
         finally:
+            if outermost:
+                fastnum.quiet_leave()
             _CURRENT.pop()
             self.frames.pop()
             self._leave()
@@ -1623,7 +1653,50 @@ class Interpreter:
             self._private_dirs.discard(d)
         return names
 
+    def lookup_changed(self) -> None:
+        """Files or the path may have changed: the next function lookup checks again."""
+        self._lookup_checked = 0.0
+
+    def _lookup_validate(self, now: float) -> None:
+        """Empty the lookup cache if the path, a folder on it or a file found earlier has changed."""
+        self._lookup_checked = now
+        try:
+            cwd = os.getcwd()
+        except OSError:
+            cwd = ""
+        stamps = []
+        for d in (*self.path, cwd):
+            try:
+                stamps.append(os.stat(d).st_mtime_ns)
+            except OSError:
+                stamps.append(-1)
+        state = (tuple(self.path), cwd, tuple(stamps))
+        fresh = state == self._lookup_state
+        if fresh:
+            for found in self._lookup_cache.values():
+                if found is not None:
+                    cached = self._file_cache.get(found[1])
+                    try:
+                        st = os.stat(found[1])
+                    except OSError:
+                        st = None
+                    if cached is None or st is None or cached[0] != (st.st_mtime_ns, st.st_size):
+                        fresh = False
+                        break
+        if not fresh:
+            self._lookup_state = state
+            self._lookup_cache.clear()
+
     def find_file_function(self, name: str) -> tuple[A.Program, str] | None:
+        now = _monotonic()
+        if now - self._lookup_checked > LOOKUP_RECHECK:
+            self._lookup_validate(now)
+        found = self._lookup_cache.get(name, _NOT_CACHED)
+        if found is _NOT_CACHED:
+            found = self._lookup_cache[name] = self._find_file_function(name)
+        return found
+
+    def _find_file_function(self, name: str) -> tuple[A.Program, str] | None:
         dirs = list(self.path)
         cwd = os.getcwd()
         if cwd not in dirs:

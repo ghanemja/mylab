@@ -119,8 +119,9 @@ class Cell:
     @classmethod
     def from_list(cls, items: list, column: bool = False) -> "Cell":
         data = np.empty((len(items), 1) if column else (1, len(items)), dtype=object)
+        flat = data.reshape(-1)  # a view: much cheaper to fill than data.flat
         for i, v in enumerate(items):
-            data.flat[i] = v
+            flat[i] = v
         return cls(data)
 
     @property
@@ -223,7 +224,12 @@ def logical(x: Any) -> np.ndarray:
 def char(s: str) -> np.ndarray:
     if s == "":
         return np.zeros((0, 0), dtype="<U1")
-    return np.array([list(s)], dtype="<U1")
+    try:
+        # one character per element, straight from the UTF-32 bytes (the same array as
+        # np.array([list(s)], dtype="<U1"), built several times faster)
+        return np.frombuffer(s.encode("utf-32-le"), dtype="<U1").reshape(1, -1).copy()
+    except UnicodeEncodeError:  # lone surrogates
+        return np.array([list(s)], dtype="<U1")
 
 
 def to_matlab(x: Any) -> Any:
@@ -349,6 +355,12 @@ def to_str(v: Any, what: str = "argument") -> str:
             return ""
         if v.shape[0] != 1:
             return "".join(v.flatten(order="F"))
+        if v.ndim == 2 and v.dtype.str == "<U1":
+            try:
+                s = v.tobytes().decode("utf-32-le")
+            except UnicodeDecodeError:
+                return "".join(v[0])
+            return s.replace("\x00", "") if "\x00" in s else s  # (NumPy stores char(0) as an empty element)
         return "".join(v[0])
     if isinstance(v, str):
         return v
