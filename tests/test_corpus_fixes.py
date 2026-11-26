@@ -356,3 +356,15 @@ def test_2d_axes_have_a_z_range():
               "ax.ZLim = [0 5]; z1 = ax.ZLim; view(3); z2 = zlim;")
     assert num(m, "z0").tolist() == [[-1, 1]] and num(m, "b").tolist() == [[-10, 10, -10, 10, -10, 10]]
     assert num(m, "z1").tolist() == [[0, 5]] and num(m, "z2").tolist() == [[0, 5]]
+
+
+# -- a block parameter that is not numeric gives a block error naming its class ------------------------------
+
+def test_block_parameter_of_the_wrong_class_is_reported_plainly():
+    from mylab.blocks.library import BlockError, sig
+    m = Interpreter(out=lambda s: None)
+    m.execute("T = table([1; 2]); c = {1};")
+    for name, cls in (("T", "table"), ("c", "cell")):
+        with pytest.raises(BlockError, match=f"not a value of class {cls}"):
+            sig(m.get_var(name))
+    assert sig(np.array([[1.0, 2.0]])).tolist() == [1.0, 2.0]

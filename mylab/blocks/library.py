@@ -143,6 +143,13 @@ def signature(code: str) -> tuple[list[str], list[str]]:
 
 def sig(v: Any) -> np.ndarray:
     """A MATLAB value or Python number as a signal: 1-D unless it is a true matrix."""
+    if not isinstance(v, (np.ndarray, int, float, complex, np.number, bool, np.bool_)):
+        from ..values import class_name
+        try:
+            what = class_name(v)
+        except Exception:  # noqa: BLE001 - only for the message
+            what = type(v).__name__
+        raise BlockError(f"a number was expected, not a value of class {what}")
     a = np.asarray(v)
     if a.dtype.kind in "US" or a.dtype == object:
         raise BlockError("a number was expected, not text")

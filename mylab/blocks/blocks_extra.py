@@ -111,6 +111,7 @@ class LookupTableND(Node):
         n = self.n_in()
         if n < 1:
             raise BlockError("the number of dimensions must be 1 or more")
+        self.num("Table")  # a numeric table, or a clear error
         self.table = np.asarray(self.value("Table"), dtype=float)
         parts = _split_top(self.text("Breakpoints"))
         if len(parts) != n:
@@ -162,6 +163,7 @@ class DirectLookupTable(Node):
     nin = ["dlt", "NumberOfTableDimensions", "InputsSelectThisObjectFromTable"]
 
     def init(self):
+        self.num("Table")  # a numeric table, or a clear error
         self.table = np.asarray(self.value("Table"), dtype=float)
         nd = int(self.scalar("NumberOfTableDimensions"))
         if nd == 1:
