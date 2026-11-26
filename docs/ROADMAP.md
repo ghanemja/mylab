@@ -38,7 +38,8 @@ well with AI assistants.
 
 - `subsref`/`subsasgn` overloading; object arrays of mixed classes.
 - timetable; date tick labels on plots.
-- HDF5 and XML files; audio formats other than WAV.
+- XML files and the low-level HDF5 functions (`H5F`, `H5D`, …); audio
+  formats other than WAV.
 - Faster function calls, and compiling loops that call user functions.
 - Real dialogs and `input()` in the browser app; a service worker for full
   offline use.

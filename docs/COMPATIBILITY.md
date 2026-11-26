@@ -30,6 +30,10 @@ what mylab printed, and what you expected.
 - `inputParser`, `onCleanup`, `RandStream`, `timer`.
 - Image reading, writing and processing; binary file I/O; animations.
 - JSON (`jsondecode`/`jsonencode`), WAV audio files and Excel `.xlsx` files.
+- MAT-files of every version, including version 7.3 (`save -v7.3`, `load`,
+  `matfile`), and HDF5 files (`h5create`, `h5write`, `h5read`, `h5info`,
+  `h5disp`, `h5readatt`, `h5writeatt`). Both use h5py, which is installed
+  with mylab; the browser app loads it the first time a program needs it.
 - Symbolic math with `syms`, `sym`, `diff`, `int`, `solve`, `dsolve` and
   related functions, when SymPy is installed; see [SYMBOLIC.md](SYMBOLIC.md).
 - About 1,390 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
@@ -59,7 +63,8 @@ what mylab printed, and what you expected.
   can't be opened. In the browser `uiwait` and `uiconfirm` cannot wait for
   the user.
 - **Input and output:** old binary Excel files (`.xls`), audio formats other
-  than WAV, HDF5 and XML files, bit-field precisions (`'ubitN'`) in
+  than WAV, XML files, the low-level HDF5 functions (`H5F.open`, `H5D.read`
+  and the like), NetCDF-4 files, bit-field precisions (`'ubitN'`) in
   `fread`/`fwrite`. `textscan` and `fscanf` handle common formats only.
 - **Toolboxes:** only the parts listed in FUNCTIONS.md (image processing,
   signal processing, statistics, optimization, symbolic math). Simulink,
@@ -95,6 +100,11 @@ what mylab printed, and what you expected.
   optional positional argument could take it.
 - **Random streams:** `RandStream` accepts every generator name but always
   uses the same generator. `s = rng` and `rng(s)` save and restore the state.
+- **Version 7.3 MAT-files:** `matfile` reads and writes whole variables, so
+  `m.x(1:10)` reads all of `x` first. String arrays, tables, `datetime` and
+  other objects are stored as structs that mylab turns back into objects;
+  MATLAB sees them as structs. Like MATLAB, `matfile` creates a version 7.3
+  file when the file does not exist yet.
 - **Sound:** `sound`, `soundsc` and `audioplayer` play nothing. `audioread`
   and `audiowrite` handle WAV files only.
 - **Excel:** `xlsread`, `xlswrite`, `readtable`, `writetable`, `readmatrix`,

@@ -1,4 +1,4 @@
-"""Version 7.3 MAT-files: HDF5 files laid out the way MATLAB does, through the optional h5py package.
+"""Version 7.3 MAT-files: HDF5 files laid out the way MATLAB does, through the h5py package.
 
 Layout (public knowledge about the format): every variable is a dataset or group carrying a
 ``MATLAB_class`` attribute. Arrays are stored with their dimensions reversed. Char data is uint16
@@ -6,7 +6,10 @@ and logical data uint8, both marked with ``MATLAB_int_decode``. An empty array s
 data and has ``MATLAB_empty``. Complex numbers are a compound type with ``real`` and ``imag``.
 A cell is a dataset of object references into the group ``#refs#``. A scalar struct is a group
 with one member per field; a struct array stores each field as a dataset of references. A sparse
-matrix is a group with ``data``, ``ir`` and ``jc`` and the attribute ``MATLAB_sparse``.
+matrix is a group with ``data``, ``ir`` and ``jc`` and the attribute ``MATLAB_sparse``. The file starts
+with a 512-byte user block holding a MAT-file header text.
+
+h5py is installed with mylab. In the browser app it is loaded when a program first uses HDF5.
 """
 
 from __future__ import annotations
@@ -26,8 +29,13 @@ def h5py_module(what: str = "Version 7.3 MAT-files (they are HDF5 files)"):
     try:
         import h5py
     except ImportError:
-        raise MatlabError(f"{what} need the optional Python package 'h5py', which is not "
-                          "installed. Install it with 'pip install h5py'.", "mylab:hdf5:notInstalled") from None
+        import sys
+        if sys.platform == "emscripten":
+            raise MatlabError(f"{what} need the Python package 'h5py', which the browser version of mylab could "
+                              "not load.", "mylab:hdf5:notInstalled") from None
+        raise MatlabError(f"{what} need the Python package 'h5py', which is normally installed with mylab but "
+                          "is missing from this Python installation. Install it with 'pip install h5py'.",
+                          "mylab:hdf5:notInstalled") from None
     return h5py
 
 
@@ -65,7 +73,7 @@ class _Writer:
         return refs[name].ref
 
     def _attrs(self, obj, cls: str, **more) -> None:
-        obj.attrs["MATLAB_class"] = np.bytes_(cls)
+        _class_attribute(self.h5, obj, cls)
         for k, v in more.items():
             obj.attrs[k] = v
 
@@ -104,6 +112,9 @@ class _Writer:
             return
         if isinstance(v, Struct):
             fields = list(v.fields)
+            if v.data.size == 1 and not fields:  # struct(): a scalar struct without fields is an empty group
+                self._attrs(parent.create_group(name), "struct")
+                return
             if v.data.size == 0 or not fields:
                 self._empty(parent, name, "struct", v.data.shape)
                 if fields:
@@ -146,6 +157,18 @@ class _Writer:
             ds = parent.create_dataset(name, data=t, **({"compression": "gzip", "compression_opts": 3,
                                                          "chunks": True} if big else {}))
             self._attrs(ds, cls)
+
+
+def _class_attribute(h5, obj, cls: str) -> None:
+    """MATLAB_class as MATLAB writes it: a scalar fixed-length ASCII string, null-terminated type."""
+    raw = cls.encode("ascii")
+    tid = h5.h5t.C_S1.copy()
+    tid.set_size(len(raw))
+    tid.set_strpad(h5.h5t.STR_NULLTERM)
+    if "MATLAB_class" in obj.attrs:
+        del obj.attrs["MATLAB_class"]
+    aid = h5.h5a.create(obj.id, b"MATLAB_class", tid, h5.h5s.create(h5.h5s.SCALAR))
+    aid.write(np.array(raw, dtype=f"S{len(raw)}"), mtype=tid)  # the same type in memory: no conversion
 
 
 def _split_complex(a: np.ndarray) -> np.ndarray:
@@ -227,7 +250,11 @@ class _Reader:
             if cls == "cell":
                 return Cell(np.empty(shape, dtype=object))
             if cls == "struct":
-                return Struct(np.empty(shape, dtype=object), self._fields(obj) or [])
+                fields = self._fields(obj) or []
+                data = np.empty(shape, dtype=object)
+                for idx in np.ndindex(shape):  # a struct array without fields that is not empty
+                    data[idx] = {f: np.zeros((0, 0)) for f in fields}
+                return Struct(data, fields)
             if cls == "char":
                 return np.zeros(shape, dtype="<U1")
             if cls == "logical":

@@ -330,7 +330,7 @@ def test_exchange_with_octave(w, tmp_path):
 
 
 def test_version_73(w, tmp_path):
-    h5py = pytest.importorskip("h5py")
+    import h5py  # installed with mylab: these tests must not be skipped
     w.run("a = 2; M = [1 2 3; 4 5 6]; st = struct('q', {1, 'x'}); c = {1, 'two'; [1 2], {3}}; ch = 'text';"
           "L = [true false]; z = 1 + 2i; sp = sparse([1 0 2; 0 0 3]); e = []; s1.m = magic(3); i8 = int8(-5);"
           "str = [\"a\" \"bb\"]; t = table([1; 2]); big = reshape(1:20000, 100, 200);"
@@ -364,5 +364,6 @@ def test_version_73_without_h5py_says_what_is_missing(w, monkeypatch):
         return real(name, *a, **k)
 
     monkeypatch.setattr(builtins, "__import__", fake)
-    with pytest.raises(MatlabError, match="h5py"):
+    with pytest.raises(MatlabError, match="h5py") as e:
         w.run("x = 1; save('f.mat', 'x', '-v7.3')")
+    assert e.value.identifier == "mylab:hdf5:notInstalled"

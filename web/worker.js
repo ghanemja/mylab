@@ -534,7 +534,9 @@ async function init() {
     const manifest = await resp.json();
     const wheelUrl = new URL("wheels/" + manifest.wheel, self.location.href).href;
     const micropip = pyodide.pyimport("micropip");
-    await micropip.install(wheelUrl, { deps: false });
+    // deps=False must be a keyword argument (a JS object would be taken as the next positional argument):
+    // the requirements are loaded above, and h5py only when a program needs it.
+    await micropip.install.callKwargs(wheelUrl, { deps: false });
 
     progress("start", "Starting the interpreter…");
     api = await pyodide.runPythonAsync(PY_GLUE);
@@ -740,23 +742,59 @@ const SYMBOLIC_RE =
   /\b(?:syms|sym|str2sym|symfun|vpa|vpasolve|dsolve|poly2sym|piecewise|assume|assumeAlso|laplace|ilaplace|fourier|ifourier|ztrans|iztrans|symsum|symprod|taylor|solve|digits|heaviside|dirac)\b/;
 let sympyState = "none"; // none | loaded | failed
 
-function usesSymbolic(msg) {
+// h5py (HDF5 files and version 7.3 MAT-files) is also fetched on first use: by an h5* function,
+// matfile or '-v7.3' in the code, or by load/whos/... while the project holds an HDF5 file.
+const HDF5_RE = /\b(?:h5create|h5write|h5read|h5writeatt|h5readatt|h5info|h5disp|matfile)\b|v7\.3/;
+const HDF5_READERS_RE = /\b(?:load|who|whos|importdata|open|uiimport)\b/;
+const HDF5_MAGIC = [0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a];
+const hdf5Files = new Set(); // project paths whose content is an HDF5 file
+let h5pyState = "none"; // none | loaded | failed
+
+function isHdf5(bytes) {
+  if (!(bytes instanceof Uint8Array)) return false;
+  // the signature is at the start, or after the 512-byte header of a version 7.3 MAT-file
+  return [0, 512].some((at) => bytes.length >= at + 8 && HDF5_MAGIC.every((b, k) => bytes[at + k] === b));
+}
+
+function requestFiles(msg) {
+  return [...((msg.fs && msg.fs.files) || []), ...(msg.files || [])];
+}
+
+function programTexts(msg) {
   const texts = [msg.code, msg.tail];
   for (const s of msg.sections || []) texts.push(typeof s === "string" ? s : s && s.code);
-  for (const f of [...((msg.fs && msg.fs.files) || []), ...(msg.files || [])]) {
+  for (const f of requestFiles(msg)) {
     if (typeof f.content === "string" && /\.m$/i.test(f.path || "")) texts.push(f.content);
   }
-  return texts.some((t) => typeof t === "string" && SYMBOLIC_RE.test(t));
+  return texts.filter((t) => typeof t === "string");
+}
+
+function usesHdf5(msg, texts) {
+  for (const f of requestFiles(msg)) {
+    if (f.content === undefined || f.content === null) continue;
+    if (isHdf5(f.content)) hdf5Files.add(f.path);
+    else hdf5Files.delete(f.path);
+  }
+  return texts.some((t) => HDF5_RE.test(t) || (hdf5Files.size > 0 && HDF5_READERS_RE.test(t)));
+}
+
+async function loadPackageOnce(name, notice) {
+  self.postMessage({ type: "notice", text: notice });
+  try {
+    await pyodide.loadPackage(name, { messageCallback: () => {}, errorCallback: () => {} });
+    return "loaded";
+  } catch {
+    return "failed"; // the program still runs; the functions that need the package say it is missing
+  }
 }
 
 async function loadOptional(msg) {
-  if (sympyState !== "none" || !usesSymbolic(msg)) return;
-  self.postMessage({ type: "notice", text: "Loading symbolic math…" });
-  try {
-    await pyodide.loadPackage("sympy", { messageCallback: () => {}, errorCallback: () => {} });
-    sympyState = "loaded";
-  } catch {
-    sympyState = "failed"; // the program still runs; symbolic functions report that SymPy is missing
+  const texts = programTexts(msg);
+  if (sympyState === "none" && texts.some((t) => SYMBOLIC_RE.test(t))) {
+    sympyState = await loadPackageOnce("sympy", "Loading symbolic math…");
+  }
+  if (h5pyState === "none" && usesHdf5(msg, texts)) {
+    h5pyState = await loadPackageOnce("h5py", "Loading HDF5 support…");
   }
 }
 

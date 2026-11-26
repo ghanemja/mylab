@@ -142,7 +142,7 @@ def test_netcdf_scale_fill_and_errors(w, tmp_path):
 # -- HDF5 ---------------------------------------------------------------------------------------------
 
 def test_hdf5(w, tmp_path):
-    h5py = pytest.importorskip("h5py")
+    import h5py  # installed with mylab: these tests must not be skipped
     w.run("M = [1 2 3; 4 5 6]; h5create('a.h5', '/d', [2 3]); h5write('a.h5', '/d', M); R = h5read('a.h5', '/d');"
           "h5create('a.h5', '/g/i8', [1 4], 'Datatype', 'int8'); h5write('a.h5', '/g/i8', int8([1 2 3 4]));"
           "x = h5read('a.h5', '/g/i8'); h5create('a.h5', '/ext', [Inf 2], 'ChunkSize', [5 2], 'Deflate', 4);"
@@ -187,7 +187,7 @@ def test_hdf5_without_h5py_says_what_is_missing(w, monkeypatch):
         return real(name, *a, **k)
 
     monkeypatch.setattr(builtins, "__import__", fake)
-    with pytest.raises(MatlabError, match="optional Python package 'h5py'") as e:
+    with pytest.raises(MatlabError, match=r"need the Python package 'h5py'.*pip install h5py") as e:
         w.run("h5create('a.h5', '/d', [2 3])")
     assert e.value.identifier == "mylab:hdf5:notInstalled"
 
