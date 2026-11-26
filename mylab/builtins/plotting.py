@@ -6670,10 +6670,23 @@ def _text(interp, args, nargout):
 
 @builtin("annotation")
 def _annotation(interp, args, nargout):
+    fig = None
+    if args and not is_text(args[0]):  # annotation(container, type, ...): a figure, panel or tab
+        hs = _resolve(interp, args[0])
+        h = hs[0] if len(hs) == 1 else None
+        if h is not None and h.kind == "figure":
+            fig = h.obj
+        elif h is not None and h.kind in ("uipanel", "uitab") and getattr(h.obj, "figure", None) is not None:
+            fig = h.obj.figure
+        else:
+            raise MatlabError("The first argument of annotation must be a figure, panel or tab, or the "
+                              "annotation type.")
+        args = list(args[1:])
     if not args or not is_text(args[0]):
         raise MatlabError("annotation needs a type such as 'textbox', 'arrow' or 'line'.")
     kind = text(args[0]).lower()
-    fig = _figure(interp)
+    if fig is None:
+        fig = _figure(interp)
     rest = list(args[1:])
     nums = []
     while rest and not is_text(rest[0]):
