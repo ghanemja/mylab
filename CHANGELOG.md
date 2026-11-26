@@ -257,7 +257,8 @@ may have relied on.
   were unequal); `isequaln` works for `calendarDuration`.
 - `print` accepts `-tiff` (an EPS preview; the file is written without it);
   `boxplot(X, g)` takes one group value per column of a matrix; `set` on an
-  empty handle array does nothing.
+  empty handle array does nothing; `annotation(fig, ...)` puts the
+  annotation on the given figure, panel or tab.
 - **Graphics:** after `yyaxis right`, `xlabel`, `title`, `grid`, `xlim`,
   x-tick functions and `box` act on the chart's one shared x-axis, title and
   grid, and `ax.Legend` finds the legend from either side; `cla reset`
