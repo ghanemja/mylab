@@ -69,7 +69,12 @@ class _StringItem(str):
 def _flatten_args(args) -> list:
     items: list = []
     for a in args:
-        if isinstance(a, MString):
+        if type(a) is np.ndarray and a.dtype is _F64:
+            if a.shape == (1, 1):
+                items.append(a.item())
+            else:
+                items.extend(a.flatten(order="F").tolist())
+        elif isinstance(a, MString):
             items.append(_StringItem(str(a)))
         elif is_char(a):
             items.append("".join(a.flatten(order="F")))
@@ -154,10 +159,63 @@ def _shortg(x: float) -> str:
     return f"{x:e}"
 
 
+_F64 = np.dtype(float)
+_SPRINTF_PLANS: dict = {}
+
+
+def _sprintf_plan(raw: str) -> tuple:
+    """The parsed form of a format: (text with escapes resolved, conversions, single-pass steps)."""
+    plan = _SPRINTF_PLANS.get(raw)
+    if plan is None:
+        fmt = process_escapes(raw)
+        specs = list(_SPEC.finditer(fmt))
+        steps = None
+        if specs and not any(m.group("width") == "*" or m.group("prec") == "*" for m in specs):
+            pieces, last = [], 0
+            for m in specs:
+                flags = m.group("flags") or ""
+                w = m.group("width") or ""
+                p = "" if m.group("prec") is None else "." + m.group("prec")
+                conv = m.group("conv")
+                pieces.append((fmt[last:m.start()], m, conv, f"%{flags}{w}{p}d", f"%{flags}{w}{p}e",
+                               f"%{flags}{w}{p}{conv}"))
+                last = m.end()
+            steps = (pieces, fmt[last:], sum(1 for m in specs if m.group("conv") != "%"))
+        if len(_SPRINTF_PLANS) > 4096:
+            _SPRINTF_PLANS.clear()
+        plan = _SPRINTF_PLANS[raw] = (fmt, specs, steps)
+    return plan
+
+
 def matlab_sprintf(fmt: str, args) -> str:
-    fmt = process_escapes(fmt)
+    fmt, specs, steps = _sprintf_plan(fmt)
     items = _flatten_args(args)
-    specs = [m for m in _SPEC.finditer(fmt)]
+    if steps is not None and len(items) == steps[2]:
+        # one value per conversion: a single pass, with the common numeric cases formatted directly
+        out, k = [], 0
+        for literal, m, conv, as_int, as_exp, as_float in steps[0]:
+            out.append(literal)
+            if conv == "%":
+                out.append("%")
+                continue
+            value = items[k]
+            k += 1
+            if type(value) is float and value - value == 0.0:  # finite
+                if conv in "diu":
+                    out.append(as_int % int(value) if value == int(value) else as_exp % value)
+                elif conv in "feEgG":
+                    out.append(as_float % value)
+                else:
+                    out.append(_format_one(m, value, m.group("width"), m.group("prec")))
+            elif conv == "s" or not isinstance(value, str) or len(value) <= 1 or isinstance(value, _StringItem):
+                out.append(_format_one(m, value, m.group("width"), m.group("prec")))
+            else:
+                out = None  # a char vector feeding a numeric conversion: one character at a time below
+                break
+        if out is not None:
+            out.append(steps[1])
+            return "".join(out)
+    items = list(items)
     data_specs = [m for m in specs if m.group("conv") != "%"]
     out: list[str] = []
     if not data_specs:
@@ -653,6 +711,8 @@ def _find_all(s: str, pat: str) -> list[int]:
 
 def _replace_all(s: str, old: str, new: str) -> str:
     """strrep: every occurrence is replaced, also the ones that overlap an earlier one."""
+    if old and old not in s:
+        return s
     hits = _find_all(s, old)
     if not hits:
         return s
@@ -762,13 +822,16 @@ def _strsplit(interp, args, nargout):
         pattern = f"(?:{pattern})+"
     rx = re.compile(pattern)
     parts, matches, last = [], [], 0
-    for m in rx.finditer(s):
-        if m.end() == m.start():
-            continue
-        parts.append(s[last:m.start()])
-        matches.append(m.group(0))
-        last = m.end()
-    parts.append(s[last:])
+    if nargout <= 1 and rx.groups == 0 and (delim_arg is None or (not regex and "" not in delims)):
+        parts = rx.split(s)  # literal delimiters: no empty matches, no groups
+    else:
+        for m in rx.finditer(s):
+            if m.end() == m.start():
+                continue
+            parts.append(s[last:m.start()])
+            matches.append(m.group(0))
+            last = m.end()
+        parts.append(s[last:])
 
     def wrap(items):
         if want_strings:
@@ -1087,8 +1150,8 @@ def _row(values) -> np.ndarray:
     return np.array(values, dtype=float).reshape(1, -1) if values else np.zeros((1, 0))
 
 
-def _regexp_one(rx, s: str, switches: set[str]) -> dict:
-    """All seven outputs of regexp for one piece of text."""
+def _regexp_one(rx, s: str, switches: set[str], wanted=None) -> dict:
+    """The outputs of regexp for one piece of text (all seven, or only those in ``wanted``)."""
     from ..values import Struct
     matches = _regex_matches(rx, s, switches)
     ngroups = rx.groups if rx is not None else 0
@@ -1118,29 +1181,35 @@ def _regexp_one(rx, s: str, switches: set[str]) -> dict:
             sdata[0, k] = {name: char(m.group(name) or "") for name in group_names}
         return Struct(sdata, group_names)
 
-    pieces, last = [], 0
-    for m in matches:
-        pieces.append(char(s[last:m.start()]))
-        last = m.end()
-    pieces.append(char(s[last:]))
-    res = {"split": Cell.from_list(pieces), "names": names_of(matches)}
+    def split_of():
+        pieces, last = [], 0
+        for m in matches:
+            pieces.append(char(s[last:m.start()]))
+            last = m.end()
+        pieces.append(char(s[last:]))
+        return Cell.from_list(pieces)
+
     if "once" in switches:
         if matches:
             m = matches[0]
-            res.update({"start": np.array([[m.start() + 1.0]]), "end": np.array([[float(m.end())]]),
-                        "tokenextents": extents_of(m), "match": char(m.group(0)), "tokens": tokens_of(m)})
+            makers = {"start": lambda: np.array([[m.start() + 1.0]]), "end": lambda: np.array([[float(m.end())]]),
+                      "tokenextents": lambda: extents_of(m), "match": lambda: char(m.group(0)),
+                      "tokens": lambda: tokens_of(m)}
         else:
-            res.update({"start": np.zeros((0, 0)), "end": np.zeros((0, 0)), "tokenextents": np.zeros((0, 0)),
-                        "match": char(""), "tokens": Cell(np.empty((0, 0), dtype=object))})
+            makers = {"start": lambda: np.zeros((0, 0)), "end": lambda: np.zeros((0, 0)),
+                      "tokenextents": lambda: np.zeros((0, 0)), "match": lambda: char(""),
+                      "tokens": lambda: Cell(np.empty((0, 0), dtype=object))}
     else:
-        res.update({
-            "start": _row([m.start() + 1.0 for m in matches]),
-            "end": _row([float(m.end()) for m in matches]),
-            "tokenextents": Cell.from_list([extents_of(m) for m in matches]),
-            "match": Cell.from_list([char(m.group(0)) for m in matches]),
-            "tokens": Cell.from_list([tokens_of(m) for m in matches]),
-        })
-    return res
+        makers = {
+            "start": lambda: _row([m.start() + 1.0 for m in matches]),
+            "end": lambda: _row([float(m.end()) for m in matches]),
+            "tokenextents": lambda: Cell.from_list([extents_of(m) for m in matches]),
+            "match": lambda: Cell.from_list([char(m.group(0)) for m in matches]),
+            "tokens": lambda: Cell.from_list([tokens_of(m) for m in matches]),
+        }
+    makers["split"] = split_of
+    makers["names"] = lambda: names_of(matches)
+    return {key: make() for key, make in makers.items() if wanted is None or key in wanted}
 
 
 def _text_items(v, name: str):
@@ -1164,7 +1233,7 @@ def _regexp(interp, args, nargout):
     order = order[:n]
     compiled = [_compile_regex(p, switches, "regexp") for p in pats]
     if s_shape is None and p_shape is None and "forcecelloutput" not in switches:
-        res = _regexp_one(compiled[0], strs[0], switches)
+        res = _regexp_one(compiled[0], strs[0], switches, order)
         out = [res[k] for k in order]
     else:
         if s_shape is not None and p_shape is not None and len(strs) != len(pats) \
@@ -1176,7 +1245,8 @@ def _regexp(interp, args, nargout):
         count = max(len(strs), len(pats)) if strs and pats else 0
         cols = [np.empty(count, dtype=object) for _ in order]
         for k in range(count):
-            res = _regexp_one(compiled[k if len(pats) > 1 else 0], strs[k if len(strs) > 1 else 0], switches)
+            res = _regexp_one(compiled[k if len(pats) > 1 else 0], strs[k if len(strs) > 1 else 0], switches,
+                              order)
             for col, key in zip(cols, order):
                 col[k] = res[key]
         out = [Cell(col.reshape(shape, order="F")) for col in cols]

@@ -946,6 +946,8 @@ class _Gen:
         if name in self.lists or name in self.structs or name in self.blocked:
             raise Reject
         if name in self.variables or name in self.consts:
+            if self.kinds.get(name, "-") == "H":
+                raise Reject  # a captured function handle
             if self.kinds.get(name, "-").startswith("h:"):
                 inlined = None
                 if self.inline is not None and name not in self.scan.assigned:
@@ -1283,7 +1285,7 @@ def _infer(gen: _Gen, kinds: dict, generate) -> None:
 
 
 class _Function:
-    __slots__ = ("name", "ret", "deps", "py", "bails", "sig")
+    __slots__ = ("name", "ret", "deps", "py", "bails", "sig", "captured")
 
     def __init__(self, name: str, ret: str):
         self.name = name
@@ -1292,6 +1294,7 @@ class _Function:
         self.py = None
         self.bails = 0
         self.sig = ()
+        self.captured: tuple = ()   # names of the workspace values an anonymous function captured
 
 
 _COMPILING: dict = {}
@@ -1437,6 +1440,170 @@ def call_function(interp, fn, args: list, nargout: int, functions: dict):
     if record.ret == "b":
         return [_bb(r)]
     return [r]
+
+
+def _value_kind(v):
+    """How a value is passed to compiled code: 'd', 'b', 'o' (boxed), or None if it cannot be."""
+    t = type(v)
+    if t is _ND:
+        if v.shape == _S11:
+            if v.dtype is _F64:
+                return "d"
+            if v.dtype is _BOOL:
+                return "b"
+        return "o"
+    return "o" if t in _PLAIN else None
+
+
+def _compile_anonymous(interp, handle, sig: tuple):
+    """The compiled form of an anonymous function for arguments of the given types, or None."""
+    body = handle.body
+    state = body.__dict__.get("_jit_fn")
+    if state is None:
+        state = body._jit_fn = {"calls": 0, "sigs": {}}
+    closure = handle.closure
+    functions = closure.get("__functions__", {})
+    params = handle.params
+    captured = tuple(sorted(k for k in closure if k != "__functions__" and k not in params))
+    ckinds = []
+    for k in captured:
+        v = closure[k]
+        kind = "H" if type(v) is FunctionHandle else _value_kind(v)
+        if kind is None:
+            return None
+        ckinds.append(kind)
+    key = (sig, tuple(ckinds), id(functions))
+    record = state["sigs"].get(key, _MISSING)
+    if record is None:
+        return None
+    if record is not _MISSING and _deps_valid(interp, record.deps):
+        return record
+    state["sigs"][key] = None
+    if len(sig) > len(params) or "varargin" in params or "~" in params or len(set(params)) != len(params):
+        return None
+    try:
+        scan = _Scan(allow_loops=False)
+        scan.expr(body)
+        kinds = {p: ("x" if k == "o" else k) for p, k in zip(params, sig)}
+        kinds.update({c: ("x" if k == "o" else k) for c, k in zip(captured, ckinds)})
+        gen = _Gen(interp, functions, kinds, scan, "func")
+        gen.nargin = len(sig)
+        gen.variables = set(params) | set(captured)
+        code, typ = gen.expr(body)
+    except (Reject, KeyError, RecursionError):
+        return None
+    record = _Function(_unique("_f"), "o" if typ in "oO" else typ)
+    record.sig = sig
+    record.captured = captured
+    names = "".join(f", {gen.py(p)}=_UNSET" for p in params) + "".join(f", {gen.py(c)}=_UNSET" for c in captured)
+    src = f"def {record.name}(_dp{names}):\n    if _dp > _lim[0]:\n        raise _Bail\n    return {code}"
+    try:
+        exec(compile(src, "<mylab-jit anonymous>", "exec"), _NS)  # noqa: S102 - code generated above
+    except SyntaxError:
+        return None
+    record.py = _NS[record.name]
+    record.deps = gen.deps
+    state["sigs"][key] = record
+    state.setdefault("keep", []).append(functions)  # so that id(functions) is never reused
+    return record
+
+
+def _captured_values(handle, record) -> list:
+    out = []
+    for name in record.captured:
+        v = handle.closure[name]
+        out.append(v.item() if type(v) is _ND and v.shape == _S11 and (v.dtype is _F64 or v.dtype is _BOOL) else v)
+    return out
+
+
+def call_anonymous(interp, handle, args: list, nargout: int):
+    """Evaluate a side-effect-free anonymous function compiled; None if the interpreter must."""
+    body = handle.body
+    state = body.__dict__.get("_jit_fn")
+    if state is None:
+        state = body._jit_fn = {"calls": 0, "sigs": {}}
+    state["calls"] += 1
+    if state["calls"] < FUNCTION_CALLS_BEFORE_COMPILE or nargout > 1 or state.get("never"):
+        return None
+    sig = []
+    values = []
+    for v in args:
+        kind = _value_kind(v)
+        if kind is None:
+            return None
+        sig.append(kind)
+        values.append(v.item() if kind != "o" else v)
+    record = _compile_anonymous(interp, handle, tuple(sig))
+    if record is None:
+        state["misses"] = state.get("misses", 0) + 1
+        if state["misses"] >= 4:
+            state["never"] = True
+        return None
+    _NS["_lim"][0] = interp.max_depth
+    _INTERP[0] = interp
+    if len(values) < len(handle.params):
+        values += [_UNSET] * (len(handle.params) - len(values))
+    try:
+        r = record.py(interp.depth + 1, *values, *_captured_values(handle, record))
+    except Exception:  # noqa: BLE001 - a bail-out: the expression is pure, the interpreter evaluates it
+        record.bails += 1
+        if record.bails >= 8 * MAX_BAILS:
+            state["never"] = True
+        return None
+    if record.ret == "d":
+        return [_bd(r)]
+    if record.ret == "b":
+        return [_bb(r)]
+    return [r]
+
+
+def map_function(interp, f, columns: list, kinds: tuple):
+    """Apply a function to each element (arrayfun/cellfun): (result type, list of results) or None.
+
+    ``columns`` holds one list of values per input, floats where ``kinds`` says 'd' and MATLAB
+    values where it says 'o'.  Only compiled user functions, compiled anonymous functions and
+    side-effect-free built-ins are handled; a failure on any element gives None, and the caller
+    then does the whole job the general way (the function is pure, so nothing was changed).
+    """
+    if not interp.jit_enabled or interp.trace_hook is not None or type(f) is not FunctionHandle:
+        return None
+    extra: list = []
+    if f.is_anonymous:
+        record = _compile_anonymous(interp, f, kinds)
+        if record is None:
+            return None
+        extra = _captured_values(f, record)
+        missing = len(f.params) - len(kinds)
+        if missing:
+            extra = [_UNSET] * missing + extra
+        py, ret = record.py, record.ret
+    else:
+        res = _resolve(interp, f.name, f.closure.get("__functions__", {}))
+        if res[0] == "u":
+            try:
+                record = _compile_function(interp, res[1], res[2], kinds)
+            except (Reject, KeyError, SyntaxError, RecursionError):
+                return None
+            py, ret = record.py, record.ret
+        elif res[0] == "b" and f.name in _PURE and all(k == "o" for k in kinds):
+            fn = res[1]
+
+            def py(_dp, *args):
+                return _callb(fn, list(args))
+            ret = "o"
+        else:
+            return None
+    _NS["_lim"][0] = interp.max_depth
+    _INTERP[0] = interp
+    depth = interp.depth + 1
+    try:
+        if len(columns) == 1 and not extra:
+            out = [py(depth, x) for x in columns[0]]
+        else:
+            out = [py(depth, *xs, *extra) for xs in zip(*columns)]
+    except Exception:  # noqa: BLE001 - some element needs the interpreter: let it do them all
+        return None
+    return ret, out
 
 
 # -- loops --------------------------------------------------------------------------------------

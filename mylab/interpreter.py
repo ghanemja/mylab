@@ -1277,6 +1277,10 @@ class Interpreter:
         params = handle.params
         if len(args) > len(params) and not (params and params[-1] == "varargin"):
             raise MatlabError("Too many input arguments.")
+        if self.jit_enabled and self.trace_hook is None:
+            compiled = jit.call_anonymous(self, handle, args, nargout)  # side-effect-free expressions
+            if compiled is not None:
+                return compiled
         frame = Frame(self, functions, name="anonymous function", nargin=len(args), nargout=nargout)
         for k, v in handle.closure.items():
             if k != "__functions__":
