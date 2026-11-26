@@ -6,6 +6,8 @@ properties gives an empty cell.
 
 import pytest
 
+from mylab.errors import MatlabError
+
 DATETIME = ["Format", "TimeZone", "Year", "Month", "Day", "Hour", "Minute", "Second", "SystemTimeZone"]
 
 CASES = [
@@ -101,10 +103,10 @@ def test_calendar_duration_format(m):
     assert m.str("getfield(calmonths(3), 'Format')") == "ymdt"
     m.run("c = calmonths(3); c.Format = 'mdt';")
     assert m.str("c.Format") == "mdt"
-    with pytest.raises(Exception):
+    with pytest.raises(MatlabError, match="calendarDuration format"):
         m.run("c.Format = 'xyz';")
 
 
 def test_fieldnames_of_non_objects_still_fails(m):
-    with pytest.raises(Exception):
+    with pytest.raises(MatlabError, match="struct"):
         m.run("fieldnames(5)")
