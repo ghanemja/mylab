@@ -288,3 +288,23 @@ def test_optional_inputs_given_by_name():
     assert num(m, "r").tolist() == [[3, 7, 0.001]]
     assert [to_str(x) for x in m.eval_expression("d").values_f()] == ["lambda"]
     assert to_str(m.eval_expression("u")) == "cm"  # one text argument that names nothing stays positional
+
+
+# -- racy timestamps: a file written in the same clock tick as the last look ------------------------------------
+
+def test_files_written_in_the_same_clock_tick_are_seen(tmp_path, monkeypatch):
+    import time
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "first_r.m").write_text("function r = first_r()\nr = 1;\nend\n")
+    m = Interpreter(out=lambda s: None, path=[str(tmp_path)])
+    assert num(m, "first_r()").item() == 1
+    folder = os.stat(tmp_path)
+    (tmp_path / "second_r.m").write_text("function r = second_r()\nr = 2;\nend\n")
+    os.utime(tmp_path, ns=(folder.st_atime_ns, folder.st_mtime_ns))  # the folder's time does not move
+    time.sleep(0.03)  # (lookups are reused for 20 ms)
+    assert num(m, "second_r()").item() == 2
+    before = os.stat(tmp_path / "first_r.m")
+    (tmp_path / "first_r.m").write_text("function r = first_r()\nr = 7;\nend\n")  # same size
+    os.utime(tmp_path / "first_r.m", ns=(before.st_atime_ns, before.st_mtime_ns))  # and the same time
+    time.sleep(0.03)
+    assert num(m, "first_r()").item() == 7

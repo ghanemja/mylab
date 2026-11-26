@@ -103,11 +103,28 @@ ONE_ARG = ["sum", "prod", "cumsum", "max", "min", "any", "all", "abs", "round", 
            "sqrt", "log", "log2", "log10", "sort", "unique"]
 
 
+# Reductions over two or more NaNs: IEEE 754 makes the result one of the input NaNs without saying which, and
+# the order of summation (NumPy's vector loops, which depend on the CPU) decides it: sum([NaN -NaN ...]) gave
+# NaN on one path and -NaN on the other on GitHub's runners. There the result must be NaN, of either sign.
+_REDUCTIONS = {"sum", "prod", "mean", "cumsum", "cumprod", "max", "min", "median", "std", "var", "norm", "dot"}
+
+
+def _nan_blind(v):
+    if isinstance(v, np.ndarray) and v.dtype.kind in "fc":
+        return np.where(np.isnan(v), np.nan, v)
+    return v
+
+
 @pytest.mark.parametrize("name", ONE_ARG)
 def test_one_argument_functions(name):
     rng = np.random.default_rng(abs(hash(name)) % 1000)
     interp = Interpreter()
     for v in vectors(rng) + other_inputs() + [np.array([[x]]) for x in edge_values()]:
+        if name in _REDUCTIONS and isinstance(v, np.ndarray) and v.dtype.kind in "fc" \
+                and np.count_nonzero(np.isnan(v)) > 1:
+            fast, slow = on_and_off(lambda: _nan_blind(call(interp, name, [v], 1)))
+            assert describe(fast) == describe(slow), f"{name}({v!r}): fast {fast!r} != general {slow!r}"
+            continue
         same(lambda: call(interp, name, [v], 1), f"{name}({v!r})")
 
 

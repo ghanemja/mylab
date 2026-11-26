@@ -149,6 +149,19 @@ def _reads_an_argument(e: BaseException) -> bool:
     line = frames[-1].line if frames else ""
     return bool(line and re.search(r"\b(args|rest|argv|arguments|inputs)\s*\[", line))
 
+_RACY_SECONDS = 2.0
+
+
+def _racy(mtime_ns: int) -> bool:
+    """True when a modification time is too recent to vouch for a cached view of the file or folder.
+
+    File systems stamp times in clock ticks (up to about 16 ms on Windows), so a file created or
+    rewritten in the same tick as the last look leaves the time unchanged ("racy" timestamps, as git
+    calls them). Until two seconds have passed, the disk is looked at again instead.
+    """
+    return time.time() - mtime_ns / 1e9 < _RACY_SECONDS
+
+
 _TRUE_1x1 = np.array([[True]])
 _FALSE_1x1 = np.array([[False]])
 _TRUE_1x1.setflags(write=False)
@@ -248,8 +261,8 @@ class Interpreter:
         # Each MATLAB-level call uses a few dozen Python frames.
         if sys.getrecursionlimit() < 40000:
             sys.setrecursionlimit(40000)
-        self._file_cache: dict[str, tuple[Any, A.Program]] = {}
-        self._dir_cache: dict[str, tuple[int, frozenset]] = {}
+        self._file_cache: dict[str, tuple[Any, A.Program, str | None]] = {}
+        self._dir_cache: dict[str, tuple[int, frozenset, bool]] = {}
         self._type_dirs: dict[str, frozenset] = {}  # folders holding @double-style method folders
         self._private_dirs: set[str] = set()  # folders known to hold a private subfolder
         # Name -> file function, valid while the path, the folders on it and the files found are
@@ -1759,14 +1772,14 @@ class Interpreter:
         except OSError:
             return frozenset()
         cached = self._dir_cache.get(d)
-        if cached is not None and cached[0] == mtime:
+        if cached is not None and cached[0] == mtime and not cached[2]:
             return cached[1]
         try:
             # .m files, plus class folders (@Name), package folders (+name) and a private folder.
             names = frozenset(f for f in os.listdir(d) if f.endswith(".m") or f[:1] in "@+" or f == "private")
         except OSError:
             names = frozenset()
-        self._dir_cache[d] = (mtime, names)
+        self._dir_cache[d] = (mtime, names, _racy(mtime))
         typed = frozenset(n for n in names if n in _TYPE_FOLDERS)
         if typed:
             self._type_dirs[d] = typed
@@ -1796,7 +1809,7 @@ class Interpreter:
             except OSError:
                 stamps.append(-1)
         state = (tuple(self.path), cwd, tuple(stamps))
-        fresh = state == self._lookup_state
+        fresh = state == self._lookup_state and not any(_racy(t) for t in stamps if t > 0)
         if fresh:
             for found in self._lookup_cache.values():
                 if found is not None:
@@ -1805,7 +1818,8 @@ class Interpreter:
                         st = os.stat(found[1])
                     except OSError:
                         st = None
-                    if cached is None or st is None or cached[0] != (st.st_mtime_ns, st.st_size):
+                    if cached is None or st is None or cached[0] != (st.st_mtime_ns, st.st_size) \
+                            or cached[2] is not None:
                         fresh = False
                         break
         if not fresh:
@@ -1852,13 +1866,20 @@ class Interpreter:
             return None
         mtime = (st.st_mtime_ns, st.st_size)
         cached = self._file_cache.get(path)
-        if cached and cached[0] == mtime:
+        if cached and cached[0] == mtime and cached[2] is None:
             return cached[1]
-        program = parse(read_source(path))
+        source = read_source(path)
+        if cached and cached[0] == mtime and cached[2] == source:  # recently written, but still the same
+            if not _racy(st.st_mtime_ns):
+                self._file_cache[path] = (mtime, cached[1], None)
+            return cached[1]
+        program = parse(source)
         self._dir_listing(os.path.dirname(path))  # notes a private subfolder next to the file
         for fn in program.functions.values():
             fn.file = path  # type: ignore[attr-defined]  # so calls through a handle know their file
-        self._file_cache[path] = (mtime, program)
+        # A file written moments ago can be written again within the same tick of the file system's clock
+        # without its time or size changing: keep its text, and compare it on the next use.
+        self._file_cache[path] = (mtime, program, source if _racy(st.st_mtime_ns) else None)
         return program
 
 
