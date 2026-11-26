@@ -816,6 +816,10 @@ def _deval(interp, args, nargout):
 @builtin("odextend")
 def _odextend(interp, args, nargout):
     nargs(args, 3, None, "odextend")
+    for a in args[3:5]:  # odextend(sol, odefun, tfinal, yinit, options): no name-value options
+        if is_text(a):
+            raise MatlabError(f"odextend: the option '{text(a)}' is not supported; give the options as a "
+                              "structure from odeset.", "MATLAB:odextend:UnknownOption")
     sol = args[0]
     if not isinstance(sol, Struct) or "solver" not in sol.fields or "x" not in sol.fields:
         raise MatlabError("odextend: the first argument must be a solution structure from an ODE solver.")

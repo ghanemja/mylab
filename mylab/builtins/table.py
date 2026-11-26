@@ -676,10 +676,11 @@ def _pad_rows(col: Any, n: int) -> Any:
 
 def _split_opts(args: list, names: set[str]) -> tuple[list, dict]:
     opts, rest, i = {}, [], 0
+    lower = {n.lower(): n for n in names}  # option names are not case sensitive
     while i < len(args):
         a = args[i]
-        if is_text(a) and text(a) in names and i + 1 < len(args):
-            opts[text(a)] = args[i + 1]
+        if is_text(a) and text(a).lower() in lower and i + 1 < len(args):
+            opts[lower[text(a).lower()]] = args[i + 1]
             i += 2
             continue
         rest.append(a)
@@ -1094,15 +1095,19 @@ _GROUP_METHODS = {
 
 def _method_list(v: Any) -> list:
     if isinstance(v, Cell):
-        return [x if isinstance(x, FunctionHandle) else to_str(x).lower() for x in v.values_f()]
-    if isinstance(v, StringArray):
-        return [x.lower() for x in v.values_f()]
-    if isinstance(v, FunctionHandle):
+        names = [x if isinstance(x, FunctionHandle) else to_str(x) for x in v.values_f()]
+    elif isinstance(v, StringArray):
+        names = list(v.values_f())
+    elif isinstance(v, FunctionHandle):
         return [v]
-    m = text(v).lower()
-    if m == "all":
+    else:
+        names = [text(v)]
+    if len(names) == 1 and isinstance(names[0], str) and names[0].lower() == "all":
         return ["mean", "sum", "min", "max", "range", "median", "mode", "var", "std", "nummissing", "nnz"]
-    return [m]
+    for m in names:  # name an unknown method as it was written
+        if isinstance(m, str) and m.lower() not in _GROUP_METHODS:
+            raise MatlabError(f"Unknown summary method '{m}'.", "MATLAB:groupsummary:UnknownMethod")
+    return [m if isinstance(m, FunctionHandle) else m.lower() for m in names]
 
 
 def _apply_method(interp, method, piece: Any) -> Any:
@@ -1438,6 +1443,12 @@ def _rmmissing(interp, args, nargout):
         raise MatlabError("Not enough input arguments for rmmissing.")
     v = args[0]
     rest, opts = _split_opts(list(args[1:]), {"MinNumMissing", "DataVariables"})
+    for a in rest:
+        if is_text(a):
+            from ._util import unknown_option_error
+            raise unknown_option_error("rmmissing", text(a), ("MinNumMissing", "DataVariables"), None)
+    if len(rest) > 1:
+        raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
     min_missing = int(num(opts["MinNumMissing"]).flat[0]) if "MinNumMissing" in opts else 1
     if isinstance(v, TableObject):
         names = [v.names[p] for p in v.var_positions(opts["DataVariables"])] if "DataVariables" in opts \
@@ -1471,9 +1482,15 @@ def _rmmissing(interp, args, nargout):
     return (res, tf) if nargout > 1 else res
 
 
-def _fill_vector(vals: list, miss: np.ndarray, method: str, const: Any, endv: Any) -> tuple[list, np.ndarray]:
-    """Fill the missing entries of one 1-D slice. ``vals`` is a list of Python values."""
+def _fill_vector(vals: list, miss: np.ndarray, method: str, const: Any, endv: Any,
+                 sp: np.ndarray | None = None) -> tuple[list, np.ndarray]:
+    """Fill the missing entries of one 1-D slice. ``vals`` is a list of Python values.
+
+    ``sp`` holds the sample points (the position of each entry; 1, 2, 3, ... when None), used for the
+    interpolating methods and to tell which neighbour is nearest.
+    """
     n = len(vals)
+    pts = np.arange(n, dtype=float) if sp is None else np.asarray(sp, dtype=float)
     known = np.nonzero(~miss)[0]
     out = list(vals)
     filled = np.zeros(n, dtype=bool)
@@ -1517,7 +1534,7 @@ def _fill_vector(vals: list, miss: np.ndarray, method: str, const: Any, endv: An
             if q is not None:
                 out[i], filled[i] = vals[q], True
         elif method == "nearest":
-            if p is None or (q is not None and (q - i) <= (i - p)):
+            if p is None or (q is not None and (pts[q] - pts[i]) <= (pts[i] - pts[p])):
                 out[i] = vals[q]
             else:
                 out[i] = vals[p]
@@ -1525,14 +1542,14 @@ def _fill_vector(vals: list, miss: np.ndarray, method: str, const: Any, endv: An
     if method in ("linear", "spline", "pchip", "makima"):
         if known.size >= 2:
             from .numerics import _interp1_object
-            x = known.astype(float)
+            x = pts[known]
             y = np.array([vals[k] for k in known])
             f = _interp1_object(method, x, y)
             for i in np.nonzero(miss)[0]:
                 interior = first < i < last
                 if not interior and endv is not None:
                     continue  # handled above (or deliberately left missing)
-                val = f(np.array([float(i)]))[0]
+                val = f(np.array([pts[i]]))[0]
                 out[i] = complex(val) if np.iscomplexobj(y) else float(val)
                 filled[i] = True
         elif known.size == 1:
@@ -1542,16 +1559,30 @@ def _fill_vector(vals: list, miss: np.ndarray, method: str, const: Any, endv: An
     return out, filled
 
 
-def _fill_values(v: Any, method: str, const: Any, endv: Any, axis: int | None) -> tuple[Any, np.ndarray]:
-    mask = _missing_mask(v)
+def _fill_values(v: Any, method: str, const: Any, endv: Any, axis: int | None,
+                 sp: Any = None, locs: Any = None) -> tuple[Any, np.ndarray]:
+    """Fill ``v`` along ``axis``; ``sp`` are the sample points, ``locs`` a logical mask of the entries to fill
+    (in place of the standard missing values)."""
     if isinstance(v, (Cell, StringArray)):
         data = v.data
     else:
         data = num(v) if not is_char(v) else v
+    if locs is not None:
+        mask = np.asarray(locs, dtype=bool)
+        if mask.shape != data.shape:
+            raise MatlabError("fillmissing: 'MissingLocations' must be a logical array the same size as the input.",
+                              "MATLAB:fillmissing:MissingLocationsInvalid")
+    else:
+        mask = _missing_mask(v)
         if isinstance(data, np.ndarray) and data.dtype.kind in "biu":
             return v, np.zeros(data.shape, dtype=bool)
     if axis is None:
         axis = 1 if data.ndim == 2 and data.shape[0] == 1 else 0
+    if sp is not None:
+        sp = _sample_points(sp, data.shape[axis] if axis < data.ndim else 1)
+    int_class = data.dtype if isinstance(data, np.ndarray) and data.dtype.kind in "biu" else None
+    if int_class is not None:
+        data = data.astype(float)
     out = data.copy()
     filled = np.zeros(data.shape, dtype=bool)
     if method == "constant":
@@ -1570,7 +1601,7 @@ def _fill_values(v: Any, method: str, const: Any, endv: Any, axis: int | None) -
     for idx in np.ndindex(moved.shape[1:]):
         sl = (slice(None),) + idx
         vals = list(moved[sl])
-        newvals, f = _fill_vector(vals, mmask[sl], method, const, endv)
+        newvals, f = _fill_vector(vals, mmask[sl], method, const, endv, sp)
         if f.any():
             col = moved[sl]
             for k in np.nonzero(f)[0]:
@@ -1578,7 +1609,23 @@ def _fill_values(v: Any, method: str, const: Any, endv: Any, axis: int | None) -
             fmask[sl] = f
     if isinstance(v, (Cell, StringArray)):
         return type(v)(out), filled
+    if int_class is not None:
+        from ..values import saturate_int
+        out = saturate_int(np.round(out), int_class) if int_class.kind != "b" else out.astype(bool)
     return out, filled
+
+
+def _sample_points(sp: Any, n: int) -> np.ndarray:
+    """The sample points of fillmissing as floats: a vector with one increasing value per entry."""
+    data = sp if isinstance(sp, np.ndarray) else getattr(sp, "data", sp)  # datetime/duration: .data
+    pts = np.real(fnum(data)).astype(float).flatten()
+    if pts.size != n:
+        raise MatlabError("fillmissing: 'SamplePoints' must have one value for each entry along the operating "
+                          "dimension.", "MATLAB:fillmissing:SamplePointsLength")
+    if np.any(~np.isfinite(pts)) or np.any(np.diff(pts) <= 0):
+        raise MatlabError("fillmissing: 'SamplePoints' must be finite, unique and sorted in increasing order.",
+                          "MATLAB:fillmissing:SamplePointsSorted")
+    return pts
 
 
 @builtin("fillmissing")
@@ -1598,7 +1645,12 @@ def _fillmissing(interp, args, nargout):
     axis = None
     if rest and not is_text(rest[0]):
         axis = int(num(rest.pop(0)).flat[0]) - 1
-    opts = parse_options(rest, ("EndValues", "DataVariables"), "fillmissing")
+    opts = parse_options(rest, ("EndValues", "DataVariables", "SamplePoints", "MissingLocations"), "fillmissing")
+    sp = opts.get("SamplePoints")
+    locs = opts.get("MissingLocations")
+    if locs is not None and not (isinstance(locs, np.ndarray) and locs.dtype == bool):
+        raise MatlabError("fillmissing: 'MissingLocations' must be a logical array the same size as the input.",
+                          "MATLAB:fillmissing:MissingLocationsInvalid")
     endv = None
     if "EndValues" in opts:
         e = opts["EndValues"]
@@ -1613,6 +1665,13 @@ def _fillmissing(interp, args, nargout):
             else v.names
         t = v.copy()
         masks = []
+        if is_text(sp):  # the name of the table variable that holds the sample points
+            sp = t.columns[t.var_index(text(sp))]
+        elif sp is None and hasattr(v, "row_times"):  # a timetable's row times are its sample points
+            sp = v.row_times
+        if locs is not None and locs.shape != (t.nrows, len(t.names)):
+            raise MatlabError("fillmissing: 'MissingLocations' must be a logical array the same size as the input.",
+                              "MATLAB:fillmissing:MissingLocationsInvalid")
         for k, n in enumerate(t.names):
             col = t.columns[k]
             if n not in names:
@@ -1628,12 +1687,13 @@ def _fillmissing(interp, args, nargout):
             if method == "constant" and numeric_col and is_text(c):
                 masks.append(np.zeros((t.nrows, 1), dtype=bool))
                 continue
-            t.columns[k], m = _fill_values(col, method, c, endv, 0)
+            t.columns[k], m = _fill_values(col, method, c, endv, 0, sp,
+                                           None if locs is None else locs[:, k:k + 1])
             masks.append(m.reshape(t.nrows, -1).any(axis=1).reshape(-1, 1))
         if nargout > 1:
             return t, np.hstack(masks) if masks else np.zeros((t.nrows, 0), dtype=bool)
         return t
-    res, filled = _fill_values(v, method, const, endv, axis)
+    res, filled = _fill_values(v, method, const, endv, axis, sp, locs)
     return (res, filled) if nargout > 1 else res
 
 

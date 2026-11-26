@@ -440,6 +440,19 @@ TIMETABLES = [
     ("t = datetime(2024, 1, 1:3)'; TT = timetable(t, [1; NaN; 3], 'VariableNames', {'v'}); R = "
      "rmmissing(TT); assert(height(R) == 2 && istimetable(R)); F = fillmissing(TT, 'linear'); "
      'assert(F.v(2) == 2); V = varfun(@(x) x * 2, TT); assert(isequaln(V.Fun_v, [2; NaN; 6]));'),
+    # fillmissing at sample points: a timetable is filled by its row times, not by row number
+    ("a = fillmissing([1 NaN 3 NaN 10], 'linear', 'SamplePoints', [0 1 4 5 6]); "
+     "assert(isequal(a, [1 1.5 3 6.5 10])); c = fillmissing([1 NaN 3], 'nearest', 'SamplePoints', [0 2.5 3]); "
+     "assert(isequal(c, [1 3 3])); [d, tf] = fillmissing([NaN 2 NaN 4], 'linear', 'SamplePoints', [1 2 4 8]); "
+     "assert(abs(d(1) - 5/3) < 1e-12 && abs(d(3) - 8/3) < 1e-12 && isequal(tf, logical([1 0 1 0]))); "
+     "TT = timetable(seconds([0 1 4])', [1; NaN; 3]); F = fillmissing(TT, 'linear'); assert(F.Var1(2) == 1.5); "
+     "T = table([0; 1; 4], [1; NaN; 3]); F = fillmissing(T, 'linear', 'SamplePoints', 'Var1', "
+     "'DataVariables', 'Var2'); assert(F.Var2(2) == 1.5);"),
+    ("b = fillmissing([1 7 3 NaN 5], 'linear', 'MissingLocations', logical([0 1 0 0 0])); "
+     "assert(isequaln(b, [1 2 3 NaN 5])); f = fillmissing(int8([1 5 3 7]), 'previous', 'MissingLocations', "
+     "logical([0 1 0 1])); assert(isequal(f, int8([1 1 3 3]))); "
+     "try; fillmissing([1 NaN 3], 'linear', 'SamplePoints', [0 2 1]); error('x:y', 'no error'); "
+     "catch e; assert(contains(e.message, 'SamplePoints')); end"),
     ("t = datetime(2024, 1, 1:3)'; TT = timetable(t, [1; 2; 3], [4; 5; 6], 'VariableNames', {'a', "
      "'b'}); T = removevars(TT, 'a'); assert(istimetable(T) && width(T) == 1); T = renamevars(TT, "
      "'a', 'z'); assert(isequal(T.Properties.VariableNames, {'z', 'b'})); T = addvars(TT, [7; 8; "

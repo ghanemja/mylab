@@ -10,7 +10,7 @@ import numpy as np
 from ..errors import MatlabError
 from ..values import Cell, FunctionHandle, MString, Struct, char, is_char, to_str
 from ._registry import builtin
-from ._util import is_text, nargs, text
+from ._util import is_text, match_option, nargs, text, unknown_option_error
 
 EXTENSIONS = (".mlb.json", ".slx", ".json")
 
@@ -457,7 +457,9 @@ def _add_line(interp, args, nargout):
         and len(args) == 2
     ):
         raise MatlabError("add_line with a list of points is not supported; name the ports instead.")
-    _pairs(list(args[3:]), "add_line")  # 'autorouting', 'on' and friends are accepted
+    for name, _ in _pairs(list(args[3:]), "add_line"):  # 'autorouting' only changes how a line is drawn
+        if match_option(name, ("autorouting",)) is None:
+            raise unknown_option_error("add_line", name, ("autorouting",), None)
     src = _endpoint(interp, m, system, rel, args[1], True)
     dsts = args[2].values_f() if isinstance(args[2], Cell) else [args[2]]
     h = None
@@ -850,10 +852,12 @@ def _sim_config(interp, m, args: list) -> tuple[dict, dict]:
                 extra["keep_states"] = _as_text(v).lower() == "on"
         elif low in ("solvername", "solver"):
             config["Solver"] = _as_text(v)
+        elif low not in known:
+            raise unknown_option_error("sim", k, list(known.values()) + ["ExternalInput", "SaveState"], None)
         elif isinstance(v, np.ndarray) and v.size == 0 and not is_char(v):
             continue
         else:
-            config[known.get(low, k)] = _as_text(v)
+            config[known[low]] = _as_text(v)
     return config, extra
 
 
@@ -899,6 +903,11 @@ def _variant(interp, args, nargout):
     return Struct.scalar({"Condition": char(cond)})
 
 
+# simset options that sim acts on (the model configuration parameters and the workspace settings)
+_SIMSET_OPTS = ("Solver", "RelTol", "AbsTol", "MaxStep", "FixedStep", "ZeroCrossings", "StartTime", "StopTime",
+                "SaveFormat", "SrcWorkspace", "DstWorkspace", "ReturnWorkspaceOutputs", "Trace", "Debug")
+
+
 @builtin("simset")
 def _simset(interp, args, nargout):
     args = list(args)
@@ -906,7 +915,10 @@ def _simset(interp, args, nargout):
     if args and isinstance(args[0], Struct):
         base = args.pop(0).copy()
     for k, v in _pairs(args, "simset"):
-        base.set_field(0, k, v)
+        key = match_option(k, _SIMSET_OPTS)
+        if key is None:
+            raise unknown_option_error("simset", k, _SIMSET_OPTS, None)
+        base.set_field(0, key, v)
     return base
 
 

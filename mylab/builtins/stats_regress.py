@@ -497,7 +497,7 @@ def _formula_handle(interp, formula: str, pnames: list[str], all_names: list[str
 def _fitnlm(interp, args, nargout):
     known = ["CoefficientNames", "ErrorModel", "ErrorParameters", "Exclude", "Options", "PredictorVars",
              "ResponseVar", "VarNames", "Weights"]
-    pos, opts = get_opts(args, 2, known, "fitnlm")
+    pos, opts = get_opts(args, 2, known, "fitnlm", text_pos=(2,))
     if "errormodel" in opts and choice(opts["errormodel"], ["constant", "proportional", "combined"],
                                        "ErrorModel") != "constant":
         raise MatlabError("fitnlm: only the 'constant' error model is supported.")
@@ -761,7 +761,7 @@ def _lassoglm(interp, args, nargout):
         raise MatlabError("lassoglm: expected lassoglm(X, y, distr, 'Name', value, ...).")
     known = ["Alpha", "CV", "DFmax", "Lambda", "LambdaRatio", "Link", "MaxIter", "MCReps", "NumLambda", "Offset",
              "Options", "PredictorNames", "RelTol", "Standardize", "Weights"]
-    pos, opts = get_opts(args, 2, known, "lassoglm")
+    pos, opts = get_opts(args, 2, known, "lassoglm", text_pos=(2,))
     if len(pos) > 3:
         raise MatlabError("Too many input arguments for lassoglm.")
     for o in ("cv", "mcreps"):

@@ -261,9 +261,17 @@ def _waitbar(interp, args, nargout):
     if new:  # also when the bar to update was closed already
         h = DialogHandle("waitbar")
         interp.state["waitbar_last"] = h
+    msg = None
     if rest and (is_text(rest[0]) or isinstance(rest[0], Cell)):
-        h.message = _one_line(rest.pop(0))
-    _, opts = _split_name_values(rest, {"name", "createcancelbtn", "windowstyle", "tag", "visible"})
+        msg = rest.pop(0)
+    left, opts = _split_name_values(rest, {"name", "createcancelbtn", "windowstyle", "tag", "visible"})
+    if left:
+        bad = left[0] if is_text(left[0]) else (msg if is_text(msg) and len(left) == 1 else None)
+        if bad is not None:
+            raise MatlabError(f"waitbar: the option '{text(bad)}' is not supported.", "MATLAB:waitbar:UnknownOption")
+        raise MatlabError("waitbar: options must be name/value pairs.")
+    if msg is not None:
+        h.message = _one_line(msg)
     if "name" in opts:
         h.props["Name"] = char(_one_line(opts["name"]))
     if "tag" in opts:

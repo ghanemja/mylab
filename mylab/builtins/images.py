@@ -14,7 +14,7 @@ from ..errors import MatlabError
 from ..objects import MObject
 from ..values import Cell, Struct, as_2d, char, is_char, to_int
 from ._registry import BUILTINS, builtin
-from ._util import is_text, nargs, text
+from ._util import is_text, nargs, text, unknown_option_error
 
 _RANGE = {"uint8": (0.0, 255.0), "uint16": (0.0, 65535.0), "int16": (-32768.0, 32767.0),
           "int8": (-128.0, 127.0), "uint32": (0.0, 4294967295.0), "int32": (-2147483648.0, 2147483647.0)}
@@ -163,12 +163,21 @@ def _vec(v, what: str) -> np.ndarray:
     return v.astype(float).flatten(order="F")
 
 
-def _options(args: list, names: tuple[str, ...], name: str) -> tuple[list, dict]:
-    """Split trailing name-value pairs (names are matched without regard to case)."""
+def _options(args: list, names: tuple[str, ...], name: str, flags=None) -> tuple[list, dict]:
+    """Split name-value pairs (names are matched without regard to case) from the other arguments.
+
+    With ``flags`` (the text values the function takes as positional arguments, matched without
+    regard to case; ``()`` for none), any other text argument is an unknown option and raises an
+    error naming it. Without ``flags``, unknown text is left among the positional arguments.
+    """
     lower = {n.lower(): n for n in names}
+    flagset = None if flags is None else {f.lower() for f in flags}
     rest, opts, i = [], {}, 0
     while i < len(args):
         a = args[i]
+        if flagset is not None and is_text(a) and text(a).lower() not in lower \
+                and text(a).lower() not in flagset:
+            raise unknown_option_error(name, text(a), names, None)
         if is_text(a) and text(a).lower() in lower:
             if i + 1 >= len(args):
                 raise MatlabError(f"{name}: the option '{text(a)}' needs a value.")
@@ -779,7 +788,8 @@ def _gauss1d(sigma: float, radius: int) -> np.ndarray:
 @builtin("ssim")
 def _ssim(interp, args, nargout):
     nargs(args, 2, None, "ssim")
-    rest, opts = _options(list(args), ("DynamicRange", "Radius", "RegularizationConstants", "Exponents"), "ssim")
+    rest, opts = _options(list(args), ("DynamicRange", "Radius", "RegularizationConstants", "Exponents"), "ssim",
+                          flags=())
     a, b = _pair(rest, "ssim")
     lo, hi = _class_range(a)
     rng = _scalar(opts["dynamicrange"], "DynamicRange") if "dynamicrange" in opts else hi - lo
@@ -2468,7 +2478,10 @@ def _imread(interp, args, nargout):
     rest = list(args[1:])
     fmt = None
     frames = None
-    rest, opts = _options(rest, ("Frames", "Index", "BackgroundColor", "PixelRegion", "Info"), "imread")
+    if rest and is_text(rest[0]) and text(rest[0]).lower().lstrip(".") in _FORMATS:
+        fmt = text(rest.pop(0)).lower().lstrip(".")
+    rest, opts = _options(rest, ("Frames", "Index", "BackgroundColor", "PixelRegion", "Info"), "imread",
+                          flags=())
     for r in rest:
         if is_text(r):
             fmt = text(r).lower().lstrip(".")
@@ -2591,9 +2604,9 @@ def _imwrite(interp, args, nargout):
              "Resolution", "Author", "Description", "Title", "Software", "Lossless", "RowsPerStrip",
              "ColorSpace", "Interlace", "InterlaceType", "ScreenSize", "Location")
     fmt_name = None
-    if rest and is_text(rest[0]) and text(rest[0]).lower() not in {n.lower() for n in names}:
+    if rest and is_text(rest[0]) and text(rest[0]).lower().lstrip(".") in _FORMATS:
         fmt_name = text(rest.pop(0)).lower().lstrip(".")
-    rest, opts = _options(rest, names, "imwrite")
+    rest, opts = _options(rest, names, "imwrite", flags=())
     if rest:
         raise MatlabError("imwrite: options must be given as name, value pairs.")
     ext = fmt_name or os.path.splitext(fname)[1].lower().lstrip(".")

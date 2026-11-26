@@ -28,6 +28,18 @@ def _is_parent(v: Any) -> bool:
     return isinstance(v, U.UIComponent) or _is_classic_figure(v)
 
 
+def _known_pairs(args: list, what: str, known) -> dict:
+    """Name-value options keyed by lower-case name; a name not in ``known`` raises an error naming it."""
+    from ._util import match_option, unknown_option_error
+    out = {}
+    for k, v in _pairs(args, what):
+        key = match_option(k, known)
+        if key is None:
+            raise unknown_option_error(what, k, known, None)
+        out[key.lower()] = v
+    return out
+
+
 def _pairs(args: list, what: str) -> list[tuple[str, Any]]:
     out: list[tuple[str, Any]] = []
     k = 0
@@ -231,7 +243,7 @@ def _uialert(interp, args, nargout):
     fig, rest = _dialog_figure(interp, args, "uialert")
     if len(rest) < 2:
         raise MatlabError("uialert needs a message and a title: uialert(fig, 'Not a number', 'Input').")
-    opts = {k.lower(): v for k, v in _pairs(rest[2:], "uialert")}
+    opts = _known_pairs(rest[2:], "uialert", ("Icon", "CloseFcn"))
     icon = _txt(opts.get("icon", char("error"))).lower()
     U.add_dialog(interp, "alert", fig, opts.get("closefcn"), message=_message(rest[0]), title=_txt(rest[1]),
                  icon=icon if icon in ("error", "warning", "info", "success", "question") else "none",
@@ -245,7 +257,7 @@ def _uiconfirm(interp, args, nargout):
     if len(rest) < 2:
         raise MatlabError("uiconfirm needs a message and a title: uiconfirm(fig, 'Delete it?', 'Confirm').")
     message, title = _message(rest[0]), _txt(rest[1])
-    opts = {k.lower(): v for k, v in _pairs(rest[2:], "uiconfirm")}
+    opts = _known_pairs(rest[2:], "uiconfirm", ("Options", "DefaultOption", "CancelOption", "Icon", "CloseFcn"))
     options = U._text_list(opts["options"]) if "options" in opts else ["OK", "Cancel"]
     if not options:
         raise MatlabError("uiconfirm: Options must hold at least one button text.")

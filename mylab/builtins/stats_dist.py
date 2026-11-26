@@ -788,6 +788,9 @@ def _alpha(args: list, i: int) -> float:
 
 
 def _check_options(args: list, i: int, fname: str) -> None:
+    for a in args[1:]:
+        if is_text(a):  # these functions take no name-value options
+            raise MatlabError(f"{fname}: the option '{text(a)}' is not supported.", f"MATLAB:{fname}:UnknownOption")
     if len(args) > i and not is_empty_arg(args[i]) and not isinstance(args[i], Struct):
         raise MatlabError(f"{fname}: the options argument must be a structure created by statset.")
 
@@ -800,12 +803,12 @@ def _fit_fn(fam: Fam, censoring: bool) -> Callable:
         if not args:
             raise MatlabError(f"Not enough input arguments for {fname}.")
         maxargs = 5 if censoring else 3
+        _check_options(args, 4 if censoring else 2, fname)
         if len(args) > maxargs:
             raise MatlabError(f"Too many input arguments for {fname}.")
         alpha = _alpha(args, 1)
         cens = args[2] if censoring and len(args) > 2 else None
         freq = args[3] if censoring and len(args) > 3 else None
-        _check_options(args, 4 if censoring else 2, fname)
         X = np.asarray(fnum(args[0]), dtype=float)
         if fam.prefix in ("exp", "poiss") and X.ndim == 2 and min(X.shape) > 1 and cens is None and freq is None:
             cols = [fit_with_ci(fam, *clean_data(X[:, j], None, None, fname), alpha) for j in range(X.shape[1])]
@@ -848,8 +851,8 @@ def _normfit(interp, args, nargout):
     if not args or len(args) > 5:
         raise MatlabError("normfit: expected normfit(x), normfit(x, alpha) or normfit(x, alpha, censoring, freq).")
     fam = FAMILIES["normal"]
-    alpha = _alpha(args, 1)
     _check_options(args, 4, "normfit")
+    alpha = _alpha(args, 1)
     X = np.asarray(fnum(args[0]), dtype=float)
     cens = args[2] if len(args) > 2 else None
     freq = args[3] if len(args) > 3 else None

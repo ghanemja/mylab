@@ -435,6 +435,21 @@ def _split_name_values(args, known: set[str], kind: str | None = None):
     return out, opts
 
 
+def _reject_text(args, kind: str, flags=()) -> None:
+    """Raise MATLAB's error for a text argument a plotting call did not use (an unknown property).
+
+    Line specifications such as 'r--' and the text ``flags`` the call accepts are allowed.
+    """
+    allowed = {f.lower() for f in flags}
+    for a in args:
+        if is_text(a):
+            s = text(a)
+            if s.lower() in allowed or _is_linespec(s):
+                continue
+            raise MatlabError(f"Unrecognized property '{s}' for class '{_short(kind)}'.",
+                              "MATLAB:class:InvalidProperty")
+
+
 def _is_settable(kind: str, low: str) -> bool:
     for tbl in (_PROPS.get(kind, {}), _COMMON_PROPS):
         for name, entry in tbl.items():
@@ -3446,6 +3461,9 @@ def _fplot(interp, args, nargout):
     spec = ""
     if args and is_text(args[0]) and _is_linespec(text(args[0])):
         spec = text(args.pop(0))
+    _reject_text(args, "line")
+    if args:
+        raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
     n = int(_scalar(opts.pop("meshdensity"))) * 8 if "meshdensity" in opts else 401
     t = np.linspace(lims[0], lims[1], max(n, 2))
 
@@ -4122,7 +4140,8 @@ def _pie(interp, args, nargout):
 @_with_axes_arg
 def _quiver(interp, args, nargout):
     args, opts = _split_name_values(args, {"color", "linewidth", "autoscale", "autoscalefactor",
-                                           "displayname", "maxheadsize"})
+                                           "displayname", "maxheadsize"}, kind="quiver")
+    _reject_text(args, "quiver", flags=("filled",))
     spec = next((text(a) for a in args if is_text(a) and _is_linespec(text(a))), "")
     nums = [a for a in args if not is_text(a)]
     scale = 1.0
@@ -4175,6 +4194,7 @@ def _quiver(interp, args, nargout):
     h = _wrap(interp, "quiver", q)
     h.extra.update({"UData": np.asarray(U, float), "VData": np.asarray(V, float), "XData": np.asarray(X, float),
                     "YData": np.asarray(Y, float)})
+    _apply_extra(interp, [h], opts, "quiver")
     return (h) if nargout > 0 else None
 
 
@@ -4407,6 +4427,12 @@ def _shading_b(interp, args, nargout):
 
 @builtin("peaks")
 def _peaks(interp, args, nargout):
+    for a in args:
+        if is_text(a):
+            raise MatlabError(f"peaks: the option '{text(a)}' is not supported; peaks takes peaks(n), "
+                              "peaks(v) or peaks(X, Y).", "MATLAB:peaks:UnknownOption")
+    if len(args) > 2:
+        raise MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
     if not args:
         v = np.linspace(-3, 3, 49)
         X, Y = np.meshgrid(v, v)
@@ -5029,11 +5055,11 @@ def _subplot(interp, args, nargout):
         return h if nargout > 0 else None
     fig = _figure(interp)
     args, opts = _split_name_values(args, {"position"})
-    flags = [text(a).lower() for a in args if is_text(a)]
+    flags = [text(a) for a in args if is_text(a)]
     args = [a for a in args if not is_text(a)]
     for f in flags:
-        if f not in ("replace", "align"):
-            raise MatlabError(f"subplot: unknown option '{f}'.")
+        if f.lower() not in ("replace", "align"):
+            raise MatlabError(f"subplot: unknown option '{f}'.", "MATLAB:subplot:UnknownOption")
     if "position" in opts and not args:
         pos = [float(x) for x in np.real(fnum(opts["position"])).flatten()[:4]]
         if len(pos) != 4 or pos[2] <= 0 or pos[3] <= 0:
@@ -6248,9 +6274,16 @@ def _annotation(interp, args, nargout):
     nums = []
     while rest and not is_text(rest[0]):
         nums.append(np.real(fnum(rest.pop(0))).flatten())
-    _, opts = _split_name_values(rest, {"string", "fontsize", "color", "linewidth", "edgecolor",
-                                        "backgroundcolor", "fitboxtotext", "horizontalalignment", "linestyle",
-                                        "facecolor"})
+    left, opts = _split_name_values(rest, {"string", "fontsize", "color", "linewidth", "edgecolor",
+                                           "backgroundcolor", "fitboxtotext", "horizontalalignment",
+                                           "linestyle", "facecolor"})
+    if left:
+        cls = {"line": "Line", "arrow": "Arrow", "doublearrow": "DoubleEndArrow", "textarrow": "TextArrow",
+               "textbox": "TextBox", "rectangle": "Rectangle", "ellipse": "Ellipse"}.get(kind, kind)
+        bad = text(left[0]) if is_text(left[0]) else None
+        if bad is None:
+            raise MatlabError("annotation options must be name/value pairs.")
+        raise MatlabError(f"Unrecognized property '{bad}' for class '{cls}'.", "MATLAB:class:InvalidProperty")
     color = _color(opts["color"]) if "color" in opts else "k"
     lw = _scalar(opts["linewidth"]) if "linewidth" in opts else 1.0
     if kind in ("line", "arrow", "doublearrow", "textarrow"):
@@ -7655,11 +7688,7 @@ def _name_values(args, fname: str) -> list:
 
 def _apply_props(h: GraphicsHandle, pairs: list) -> None:
     for name, value in pairs:
-        key, _ = _lookup(h, name)
-        if key is None:
-            h.extra[name] = value  # unknown options are remembered but have no effect
-        else:
-            _set_prop(h, name, value)
+        _set_prop(h, name, value)  # an unknown name raises "Unrecognized property"
 
 
 @builtin("axes")
@@ -8315,8 +8344,9 @@ def _clabel(interp, args, nargout):
     for a in args:
         if isinstance(a, GraphicsHandle) and a.kind == "contour":
             cs = a.obj
-    _, opts = _split_name_values([a for a in args if is_text(a) or not isinstance(a, GraphicsHandle)],
-                                 {"fontsize", "color", "labelspacing", "fontweight", "rotation"})
+    pos, opts = _split_name_values([a for a in args if is_text(a) or not isinstance(a, GraphicsHandle)],
+                                   {"fontsize", "color", "labelspacing", "fontweight", "rotation"})
+    _reject_text(pos, "text", flags=("manual",))
     if cs is None:
         cs = getattr(_axes(interp, fresh=False), "_mylab_contour", None)
     if cs is None:
@@ -8781,6 +8811,9 @@ def _imshow(interp, args, nargout):
                                            "colormap", "interpolation"})
     if not rest:
         raise MatlabError("imshow: an image or file name is required.")
+    for a in rest[1:]:
+        if is_text(a):
+            raise MatlabError(f"imshow: the option '{text(a)}' is not supported.", "MATLAB:imshow:UnknownOption")
     img = rest[0]
     cmap = None
     limits = None
@@ -8828,6 +8861,14 @@ def _imshow(interp, args, nargout):
         if hi <= lo:
             hi = lo + 1.0
         kw.update(cmap="gray", vmin=lo, vmax=hi)
+    if "colormap" in opts and not (img.ndim == 3 and img.shape[2] == 3):
+        from matplotlib.colors import ListedColormap
+        kw["cmap"] = ListedColormap(np.clip(np.real(fnum(opts["colormap"])).reshape(-1, 3), 0, 1))
+    if "interpolation" in opts:
+        how = text(opts["interpolation"]).lower()
+        if how not in ("nearest", "bilinear"):
+            raise MatlabError("imshow: 'Interpolation' must be 'nearest' or 'bilinear'.")
+        kw["interpolation"] = how
     im = ax.imshow(data, **kw)
     ax.set_xticks([])
     ax.set_yticks([])

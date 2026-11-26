@@ -32,7 +32,7 @@ from ..values import (
     values_equal,
 )
 from ._registry import builtin
-from ._util import bool_scalar, is_text, text
+from ._util import bool_scalar, fnum, is_text, text
 
 LEVELS = {"none": 0, "terse": 1, "concise": 2, "detailed": 3, "verbose": 4}
 _LEVEL_NAMES = ["None", "Terse", "Concise", "Detailed", "Verbose"]
@@ -407,6 +407,12 @@ def _state(tc: Any) -> TestState:
     raise MatlabError("The first argument must be the test case object (testCase).")
 
 
+def _strict_options(rest: list, names: tuple, what: str) -> dict:
+    """Name-value options only (no diagnostic); an unknown name raises an error naming it."""
+    from ._util import parse_options
+    return parse_options(list(rest), names, what)
+
+
 def _split_options(rest: list, names: tuple) -> tuple[dict, Any]:
     """Name-value options (given in any letter case) and the one remaining argument: the diagnostic."""
     opts: dict[str, Any] = {}
@@ -420,6 +426,8 @@ def _split_options(rest: list, names: tuple) -> tuple[dict, Any]:
             k += 2
             continue
         if diag is not None:
+            if is_text(diag):  # 'Name', value with a name that is not an option
+                raise MatlabError(f"The option '{text(diag)}' is not supported.", "MATLAB:unittest:UnknownOption")
             raise MatlabError("Too many input arguments.", "MATLAB:maxrhs")
         diag = a
         k += 1
@@ -1212,8 +1220,11 @@ def _throws(interp, args: list) -> Constraint:
 
 @_constraint("IssuesNoWarnings")
 def _issues_no_warnings(interp, args: list) -> Constraint:
+    opts = _strict_options(args, ("WhenNargoutIs",), "IssuesNoWarnings")
+    nout = int(fnum(opts["WhenNargoutIs"]).flat[0]) if "WhenNargoutIs" in opts else 0
+
     def check(interp, actual):
-        ok, lines, _, _ = _check_warning(interp, [actual], 0, free=True)
+        ok, lines, _, _ = _check_warning(interp, [actual], nout, free=True)
         return ok, lines
 
     return Constraint("IssuesNoWarnings", check)

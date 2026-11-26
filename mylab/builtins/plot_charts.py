@@ -1503,6 +1503,9 @@ def _bubblelegend(interp, args, nargout):
     args, opts = _options(args, ("Location", "NumBubbles", "Style", "Box", "FontSize"), "bubblelegend")
     title = P._label_text(args[0]) if args else ""
     if len(args) > 1:
+        if is_text(args[0]) and len(args) == 2:  # bubblelegend('Name', value) with an unknown name
+            raise MatlabError(f"Unrecognized property '{text(args[0])}' for class 'BubbleLegend'.",
+                              "MATLAB:class:InvalidProperty")
         raise MatlabError("bubblelegend takes a title and name/value options.")
     st = _bubble_state(ax)
     if not st["charts"]:

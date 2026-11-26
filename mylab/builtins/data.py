@@ -577,7 +577,14 @@ def _arrayfun(interp, args, nargout):
 @builtin("structfun")
 def _structfun(interp, args, nargout):
     rest, opts = _split_options(args, ("UniformOutput", "ErrorHandler"))
+    if len(rest) < 2:
+        raise MatlabError("Not enough input arguments.", "MATLAB:minrhs")
+    if len(rest) > 2:
+        from ._util import parse_options
+        opts.update(parse_options(rest[2:], ("UniformOutput", "ErrorHandler"), "structfun", first_arg=3))
     fn, s = rest[0], rest[1]
+    if not isinstance(s, Struct) or s.numel() != 1:
+        raise MatlabError("structfun: the second input must be a scalar structure.")
     vals = [s.data.flat[0][f] for f in s.fields]
     uniform = bool(num(opts["UniformOutput"]).flat[0]) if "UniformOutput" in opts else True
     res = _apply_elementwise(interp, fn, [vals], nargout, uniform, opts.get("ErrorHandler"), (len(vals), 1))

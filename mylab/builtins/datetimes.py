@@ -27,7 +27,7 @@ from ..values import (
     Cell, MString, StringArray, as_2d, char, is_char, string_result, to_matlab, to_numeric, to_str,
 )
 from ._registry import builtin
-from ._util import bool_scalar, is_text, text
+from ._util import bool_scalar, is_text, text, unknown_option_error
 
 DAY = 86400.0
 EPOCH_DATENUM = 719529.0  # datenum of 1970-01-01
@@ -1360,6 +1360,9 @@ def _size_from(args: list) -> tuple:
 @builtin("NaT")
 def _nat(interp, args, nargout):
     args, opts = _split_options(args, ("Format", "TimeZone"))
+    for a in args:
+        if is_text(a):
+            raise unknown_option_error("NaT", text(a), ("Format", "TimeZone"), None)
     zone = _zone(text(opts["TimeZone"])) if "TimeZone" in opts else ""
     out = DatetimeArray(np.full(_size_from(args), np.nan), None, zone)
     return out.set_field(interp, "Format", opts["Format"]) if "Format" in opts else out

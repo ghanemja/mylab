@@ -116,7 +116,7 @@ def _metric_and_extra(v: Any, fname: str) -> tuple[Any, list]:
 def _pdist(interp, args, nargout):
     if not args:
         raise MatlabError("Not enough input arguments for pdist.")
-    pos, opts = get_opts(args, 1, ["CacheSize"], "pdist")
+    pos, opts = get_opts(args, 1, ["CacheSize"], "pdist", text_pos=(1,))
     X = np.asarray(fnum(pos[0]), dtype=float)
     if X.ndim != 2:
         raise MatlabError("pdist: X must be a matrix with one point per row.")
@@ -131,7 +131,8 @@ def _pdist(interp, args, nargout):
 def _pdist2(interp, args, nargout):
     if len(args) < 2:
         raise MatlabError("pdist2: expected pdist2(X, Y, distance, ...).")
-    pos, opts = get_opts(args, 2, ["Smallest", "Largest", "SortIndices", "CacheSize", "Radius"], "pdist2")
+    pos, opts = get_opts(args, 2, ["Smallest", "Largest", "SortIndices", "CacheSize", "Radius"], "pdist2",
+                         text_pos=(2,))
     if "radius" in opts:
         raise MatlabError("pdist2: the option 'Radius' is not supported; use rangesearch.")
     X = np.asarray(fnum(pos[0]), dtype=float)
@@ -359,7 +360,7 @@ def linkage_core(interp, data: Any, method: str, metric_arg: Any, fname: str = "
 def _linkage(interp, args, nargout):
     if not args:
         raise MatlabError("Not enough input arguments for linkage.")
-    pos, opts = get_opts(args, 1, ["savememory"], "linkage")
+    pos, opts = get_opts(args, 1, ["savememory"], "linkage", text_pos=(1, 2))
     if "savememory" in opts:
         as_bool(opts["savememory"], "savememory")   # a memory/speed switch: the result is the same either way
     if len(pos) > 3:

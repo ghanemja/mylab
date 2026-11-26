@@ -12,8 +12,8 @@ from ..values import Cell, MString, StringArray, is_char, to_str
 from ._registry import builtin
 from ._util import fnum, is_text, text
 from .plotting import (
-    GraphicsArray, GraphicsHandle, _axes, _color, _current_cmap, _is_linespec, _onoff, _redraw, _ret,
-    _scalar, _split_name_values, _state, _with_axes_arg, _wrap,
+    GraphicsArray, GraphicsHandle, _axes, _color, _current_cmap, _is_linespec, _apply_extra, _onoff,
+    _redraw, _reject_text, _ret, _scalar, _split_name_values, _state, _with_axes_arg, _wrap,
 )
 
 
@@ -32,7 +32,8 @@ def _spec_color(spec: str):
 @_with_axes_arg
 def _quiver3(interp, args, nargout):
     args, opts = _split_name_values(args, {"color", "linewidth", "autoscale", "autoscalefactor",
-                                           "displayname", "maxheadsize", "showarrowhead"})
+                                           "displayname", "maxheadsize", "showarrowhead"}, kind="quiver")
+    _reject_text(args, "quiver", flags=("filled",))
     spec = next((text(a) for a in args if is_text(a) and _is_linespec(text(a))), "")
     nums = _reals([a for a in args if not is_text(a)])
     scale = 1.0
@@ -79,6 +80,7 @@ def _quiver3(interp, args, nargout):
     _redraw(interp)
     h = _wrap(interp, "quiver", q)
     h.extra.update({"XData": X, "YData": Y, "ZData": Z, "UData": U, "VData": V, "WData": W})
+    _apply_extra(interp, [h], opts, "quiver")
     return (h) if nargout > 0 else None
 
 
@@ -204,7 +206,8 @@ def _trimesh(interp, args, nargout):
 @builtin("trisurf")
 @_with_axes_arg
 def _trisurf(interp, args, nargout):
-    args, opts = _split_name_values(args, {"edgecolor", "facecolor", "facealpha", "linewidth"})
+    args, opts = _split_name_values(args, {"edgecolor", "facecolor", "facealpha", "linewidth"}, kind="patch")
+    _reject_text(args, "patch")
     nums = [a for a in args if not is_text(a)]
     if len(nums) < 4:
         raise MatlabError("trisurf expects trisurf(T, x, y, z) with T from delaunay(x, y).")
@@ -226,6 +229,7 @@ def _trisurf(interp, args, nargout):
                                     text(opts["facecolor"]).lower() in ("flat", "interp")):
         fc = opts["facecolor"]
         coll.set_facecolor("none" if is_text(fc) and text(fc).lower() == "none" else _color(fc))
+    _apply_extra(interp, [coll], opts, "patch")
     _redraw(interp)
     return _ret(interp, "patch", [coll], nargout)
 
@@ -233,7 +237,8 @@ def _trisurf(interp, args, nargout):
 @builtin("triplot")
 @_with_axes_arg
 def _triplot(interp, args, nargout):
-    args, opts = _split_name_values(args, {"color", "linewidth"})
+    args, opts = _split_name_values(args, {"color", "linewidth"}, kind="line")
+    _reject_text(args, "line")
     spec = next((text(a) for a in args if is_text(a) and _is_linespec(text(a))), "")
     nums = [a for a in args if not is_text(a)]
     if len(nums) < 3:
@@ -254,6 +259,7 @@ def _triplot(interp, args, nargout):
     if "color" in opts:
         kw["color"] = _color(opts["color"])
     lines = ax.triplot(x, y, t, **kw)
+    _apply_extra(interp, [lines[0]], opts, "line")
     _redraw(interp)
     return _ret(interp, "line", [lines[0]], nargout)
 

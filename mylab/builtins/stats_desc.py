@@ -540,7 +540,7 @@ def _grpstats(interp, args, nargout):
         raise MatlabError("grpstats: expected grpstats(X, group, whichstats).")
     if is_table(args[0]):
         return _grpstats_table(interp, args, nargout)
-    pos, opts = get_opts(args, 1, ["Alpha"], "grpstats")
+    pos, opts = get_opts(args, 1, ["Alpha"], "grpstats", text_pos=(1, 2))
     if len(pos) > 3:
         raise MatlabError("grpstats: too many input arguments.")
     alpha = scalar(opts["alpha"], "Alpha") if "alpha" in opts else 0.05
@@ -581,7 +581,7 @@ def _grpstats(interp, args, nargout):
 
 def _grpstats_table(interp, args, nargout):
     tbl = args[0]
-    pos, opts = get_opts(args, 1, ["Alpha", "DataVars", "VarNames"], "grpstats")
+    pos, opts = get_opts(args, 1, ["Alpha", "DataVars", "VarNames"], "grpstats", text_pos=(1, 2))
     alpha = scalar(opts["alpha"], "Alpha") if "alpha" in opts else 0.05
     if len(pos) > 3:
         raise MatlabError("grpstats: too many input arguments.")

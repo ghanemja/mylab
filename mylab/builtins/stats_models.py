@@ -913,7 +913,7 @@ class LinearModel(StatObject):
         return h[0] if nargout else None
 
     def m_plotResiduals(self, interp, args, nargout):
-        pos, opts = get_opts(args, 0, ["ResidualType"], "plotResiduals")
+        pos, opts = get_opts(args, 0, ["ResidualType"], "plotResiduals", text_pos=(0,))
         kinds = ["histogram", "fitted", "caseorder", "probability", "lagged", "symmetry", "observed"]
         kind = choice(pos[0], kinds, "The plot type") if pos else "histogram"
         raw, pear, std, stud, _ = self._residual_parts()
@@ -1020,7 +1020,7 @@ def _robust_opt(opts: dict):
 
 @builtin("fitlm")
 def _fitlm(interp, args, nargout):
-    pos, opts = get_opts(args, 1, _LM_OPTS, "fitlm")
+    pos, opts = get_opts(args, 1, _LM_OPTS, "fitlm", text_pos=(1, 2))
     md, terms, intercept, weights, exclude = _lm_common(pos, opts, "fitlm")
     return LinearModel(md, terms, intercept, weights, exclude, _robust_opt(opts))
 
@@ -1039,7 +1039,7 @@ def _term_pvalue(big: LinearModel, small_sse: float, small_rank: int) -> tuple[f
 @builtin("stepwiselm")
 def _stepwiselm(interp, args, nargout):
     known = _LM_OPTS + ["Criterion", "Lower", "Upper", "NSteps", "PEnter", "PRemove", "Verbose"]
-    pos, opts = get_opts(args, 1, known, "stepwiselm")
+    pos, opts = get_opts(args, 1, known, "stepwiselm", text_pos=(1, 2))
     crit = choice(opts["criterion"], ["sse", "aic", "bic", "rsquared", "adjrsquared"], "Criterion") \
         if "criterion" in opts else "sse"
     if crit != "sse":
@@ -1671,7 +1671,7 @@ _GLM_OPTS = ["BinomialSize", "CategoricalVars", "DispersionFlag", "Distribution"
 
 @builtin("fitglm")
 def _fitglm(interp, args, nargout):
-    pos, opts = get_opts(args, 1, _GLM_OPTS, "fitglm")
+    pos, opts = get_opts(args, 1, _GLM_OPTS, "fitglm", text_pos=(1, 2))
     md, terms, intercept, weights, exclude = _lm_common(pos, opts, "fitglm")
     dist = _dist_name(opts["distribution"]) if "distribution" in opts else "normal"
     link = Link(opts.get("link"), dist)
@@ -1713,7 +1713,7 @@ def _glmfit(interp, args, nargout):
     if len(args) < 2:
         raise MatlabError("glmfit: expected glmfit(X, y, distr, 'Name', value, ...).")
     known = ["link", "constant", "offset", "weights", "estdisp", "options", "B0"]
-    pos, opts = get_opts(args, 2, known, "glmfit")
+    pos, opts = get_opts(args, 2, known, "glmfit", text_pos=(2,))
     if len(pos) > 3:
         raise MatlabError("Too many input arguments for glmfit.")
     dist = _dist_name(pos[2]) if len(pos) > 2 and not is_empty_arg(pos[2]) else "normal"

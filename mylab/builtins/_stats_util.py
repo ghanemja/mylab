@@ -151,23 +151,25 @@ def match_name(s: str, known) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
-def get_opts(args: list, start: int, known, fname: str) -> tuple[list, dict]:
+def get_opts(args: list, start: int, known, fname: str, text_pos=()) -> tuple[list, dict]:
     """Split ``args`` into positional values and name-value options.
 
-    Scanning starts at ``start``; the options begin at the first text argument that names a
-    known option. Unknown option names raise an error. Keys of the result are lower case.
+    ``args[:start]`` are always positional. From ``start`` on, the options begin at the first text
+    argument, unless that argument is not a known option name and its 0-based position is in
+    ``text_pos`` (the positions that take a text value, such as a distance name; ``True`` for any
+    position): then it is positional too. So a misspelt or unknown option name raises an error
+    naming it instead of being taken for a positional argument. Keys of the result are lower case.
     """
     pos = list(args[:start])
     i = start
     while i < len(args):
         a = args[i]
-        if is_text(a) and match_name(text(a), known) is not None:
+        if is_text(a) and (match_name(text(a), known) is not None
+                           or not (text_pos is True or i in text_pos)):
             break
         pos.append(a)
         i += 1
     rest = args[i:]
-    if len(rest) % 2:
-        raise MatlabError(f"{fname}: name-value arguments must come in pairs.")
     opts: dict[str, Any] = {}
     for k in range(0, len(rest), 2):
         if not is_text(rest[k]):
@@ -175,6 +177,9 @@ def get_opts(args: list, start: int, known, fname: str) -> tuple[list, dict]:
         key = match_name(text(rest[k]), known)
         if key is None:
             raise MatlabError(f"{fname}: unknown option '{text(rest[k])}'.")
+        if k + 1 >= len(rest):
+            raise MatlabError(f"{fname}: name-value arguments must come in pairs; "
+                              f"the option '{text(rest[k])}' needs a value.")
         opts[key] = rest[k + 1]
     return pos, opts
 
