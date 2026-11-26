@@ -3429,8 +3429,10 @@ def _resolve(interp, v) -> list[GraphicsHandle]:
 def _set_b(interp, args, nargout):
     if not args:
         raise MatlabError("Not enough input arguments for set.")
-    hs = _resolve(interp, args[0])
     rest = list(args[1:])
+    if isinstance(args[0], np.ndarray) and args[0].size == 0 and not is_char(args[0]) and len(rest) >= 2:
+        return None  # no objects (say, an empty findobj result): nothing to set
+    hs = _resolve(interp, args[0])
     if not rest or (len(rest) == 1 and is_text(rest[0])):  # set(h) / set(h, 'Prop'): what can be set
         if len(hs) != 1:
             raise MatlabError("set(h) and set(h, name) need a single graphics object.")

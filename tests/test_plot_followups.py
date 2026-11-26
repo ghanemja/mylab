@@ -27,3 +27,9 @@ def test_boxplot_of_a_matrix_with_one_group_per_column(m):
     m.run("figure('Visible', 'off'); boxplot(x, {'a', 'b', 'a'});")
     assert [t.get_text() for t in _axes(m).get_xticklabels()] == ["a", "b"]
     m.run("close all")
+
+
+def test_set_on_no_objects_does_nothing(m):
+    m.run("figure('Visible', 'off'); plot(1:3); txt = findobj(gca, 'Type', 'text');"
+          "set(txt, 'FontSize', 12, 'FontName', 'Times'); set([], 'Color', 'r'); close all")
+    assert m.num("isempty(txt)")
