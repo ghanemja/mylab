@@ -715,6 +715,11 @@ class Interpreter:
             from .classdef import overloaded_assign
             if overloaded_assign(self, target, value, frame):  # a class with its own subsasgn
                 return
+        if type(target) is A.Index and type(target.base) is A.Field and type(target.base.base) is A.Ident:
+            holder = frame.lookup(target.base.base.name)  # matfile: m.x(i, j) = v writes only that part
+            if isinstance(holder, MObject) and hasattr(holder, "assign_field_index") \
+                    and holder.assign_field_index(self, target.base.name, target.args, value, frame):
+                return
         current = self.lvalue_current(target, frame)
         new = self.assign_into(target, current, value, frame)
         self.assign(target.base, new, frame)
@@ -1244,6 +1249,11 @@ class Interpreter:
                     if container.has_method(name):
                         args = [ix_colon_to_char(a) for a in self.eval_elements(node.args, frame)]
                         return container.call_method(self, name, [container, *args], nargout)
+                    index_field = getattr(container, "index_field", None)  # matfile: read only a part
+                    if index_field is not None:
+                        part = index_field(self, name, node.args, frame)
+                        if part is not None:
+                            return [part]
                     base_val = container.get_field(self, name)
                 else:
                     base_val = self.eval_multi(base, frame, 1)[0] if not isinstance(container, Struct) \

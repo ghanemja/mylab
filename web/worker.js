@@ -744,7 +744,8 @@ let sympyState = "none"; // none | loaded | failed
 
 // h5py (HDF5 files and version 7.3 MAT-files) is also fetched on first use: by an h5* function,
 // matfile or '-v7.3' in the code, or by load/whos/... while the project holds an HDF5 file.
-const HDF5_RE = /\b(?:h5create|h5write|h5read|h5writeatt|h5readatt|h5info|h5disp|matfile)\b|v7\.3/;
+const HDF5_RE =
+  /\b(?:h5create|h5write|h5read|h5writeatt|h5readatt|h5info|h5disp|matfile|nccreate|ncwrite|ncread|ncinfo|ncdisp|ncreadatt|ncwriteatt)\b|\bH5(?:F|D|S|G|A|T|ML)\.\w|v7\.3/;
 const HDF5_READERS_RE = /\b(?:load|who|whos|importdata|open|uiimport)\b/;
 const HDF5_MAGIC = [0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a];
 const hdf5Files = new Set(); // project paths whose content is an HDF5 file
