@@ -252,7 +252,9 @@ may have relied on.
   the browser app; 705 + 469 MATLAB-behaviour checks with a ratchet (a check
   that passes may never fail again); a speed job that fails on a slowdown of
   more than 25%.
-- A MATLAB validation kit (validation/) to run the same checks on MATLAB.
+- A MATLAB validation kit (validation/), on hold and never run: MathWorks'
+  licence terms forbid using MATLAB to test mylab (see
+  docs/MATLAB-TERMS-REVIEW.md).
 - A regression suite of 25 real repositories from the MATLAB corpus (185
   scripts and test suites, all passing), fetched on demand:
   `python datasets/matlab-corpus/tools/run_corpus.py run`.

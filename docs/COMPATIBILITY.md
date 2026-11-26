@@ -6,9 +6,8 @@ Each statement here was checked against the 1.1.0 code.
 
 If you find a difference that isn't listed, please
 [report it](https://github.com/ghanemja/mylab/issues/new?template=report-a-difference.yml)
-with a short `.m` snippet, what mylab printed, and what MATLAB printed. If you
-have MATLAB, [validation/](../validation/) runs mylab's behaviour checks there
-and lists what differs.
+with a short `.m` snippet, what mylab printed, what you expected, and a link to
+the MathWorks reference page that documents it.
 
 ## How compatibility is checked
 

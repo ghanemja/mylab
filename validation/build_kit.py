@@ -1,9 +1,10 @@
-"""Build the MATLAB validation kit: validation/matlab/{checks.json, exprs.json} and a zip to upload.
+"""Build the MATLAB validation kit (on hold): validation/matlab/{checks.json, exprs.json} and a zip.
 
     python validation/build_kit.py            # writes the JSON files and dist/mylab-matlab-validation.zip
 
 The kit runs mylab's MATLAB-behaviour checks (tests/probes/checks and tests/probes/heldout) and the
-value-comparison expressions (tests/probes/values/exprs.txt) in real MATLAB. See validation/README.md.
+value-comparison expressions (tests/probes/values/exprs.txt) in real MATLAB. It is on hold and must
+not be run: see validation/README.md and docs/MATLAB-TERMS-REVIEW.md.
 """
 
 from __future__ import annotations
@@ -40,24 +41,17 @@ def load_exprs() -> list[str]:
         return [ln.strip() for ln in fh if ln.strip()]
 
 
-README = """mylab validation kit for MATLAB
-================================
+README = """mylab validation kit for MATLAB (ON HOLD)
+==========================================
 
-What it does: runs {n_orig} + {n_held} small checks of MATLAB behaviour and evaluates {n_expr}
-expressions in MATLAB, and writes one file, mylab_validation_results.json. Nothing else is
-read or written; each check runs in a temporary folder that is deleted afterwards.
+Do not run this kit. MathWorks' licence terms forbid using MATLAB, MATLAB Online or
+the free CI licence to test software with the same or similar functions, such as
+mylab. Nobody has run it, and it stays on hold unless MathWorks gives written
+permission. See validation/README.md and docs/MATLAB-TERMS-REVIEW.md in the mylab
+repository.
 
-1. Upload all files in this folder (or the zip, then right-click it and choose Extract).
-2. In the Command Window, go to the folder and run:
-
-       run_mylab_validation
-
-   The run saves its progress. It stops by itself after 12 minutes (below the 15-minute
-   compute limit of MATLAB Online basic); run the same command again to continue until it
-   prints "Finished".
-3. Download mylab_validation_results.json and give it to the mylab compare script:
-
-       python validation/compare_with_matlab.py mylab_validation_results.json
+Contents: run_mylab_validation.m and its helpers, and checks.json and exprs.json with
+{n_orig} + {n_held} behaviour checks and {n_expr} expressions.
 """
 
 

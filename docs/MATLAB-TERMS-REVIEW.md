@@ -10,6 +10,12 @@ counsel, not an answer.
 - Status: **MATLAB validation is on hold.** Nothing was run on MATLAB, MATLAB
   Online or a MathWorks CI licence for this review, and no MATLAB workflow
   was set up.
+- Update, 26 November 2026: the maintainer has confirmed that they hold no
+  MathWorks licence and that nobody has ever run the kit on MATLAB. The
+  kit's MATLAB Online instructions have been withdrawn, along with the
+  related text in the README, COMPATIBILITY, CLEANROOM and CHANGELOG (steps
+  1–3 in section 5). Line numbers in section 4 refer to the repository as
+  reviewed, at commit `4d2f4dd`.
 - Scope: the three routes for running mylab's validation kit
   ([validation/](../validation/)) on real MATLAB: MATLAB Online's free basic
   tier, the free MATLAB licence in GitHub Actions, and (for comparison) any
@@ -37,11 +43,11 @@ counsel, not an answer.
 | **User-submitted difference reports** | **Uncertain** | The risk moves to the reporter, whose own MathWorks licence may forbid it. mylab's maintainers are not parties to it. One-off reports are much lower risk than inviting people to run a test campaign. |
 | **Ask MathWorks for written permission** | **Safe** to ask | It is the only route that can make MATLAB validation clearly allowed. |
 
-The repository already tells people to use the unsafe route:
-[validation/README.md](../validation/README.md) lines 29–31 send users to
-MATLAB Online with a free account, and the kit stops itself at 12 minutes
-to stay under the basic tier's 15-minute compute limit. Section 5 recommends
-pausing that text.
+When this review was written, the repository told people to use the unsafe
+route: `validation/README.md` lines 29–31 sent users to MATLAB Online with a
+free account, and the kit stopped itself at 12 minutes to stay under the
+basic tier's 15-minute compute limit. Nobody followed those instructions,
+and they have since been withdrawn (section 5).
 
 ---
 
@@ -429,7 +435,9 @@ restrictions cover republishing Documentation (SLA 3.13) or the Services
 (OSA §3.2(1), (5)). SLA Article 9 limits a licensee's use of MathWorks'
 names in materials to "identifying MathWorks' Programs".
 
-What the repository says (checked on this branch):
+What the repository said when reviewed (commit `4d2f4dd`). The validation
+instructions, the README invitation, the COMPATIBILITY pointer and the
+CLEANROOM line have since been replaced:
 
 | Where | What it says | Based on running MATLAB? | Clause engaged |
 |---|---|---|---|
@@ -464,17 +472,19 @@ uses "MATLAB" only to describe compatibility, so I see no issue there.
 | MATLAB Online free tier | **Unsafe** | Don't use it for mylab validation, and don't tell others to. |
 | GitHub Actions free licence | **Unsafe** | Don't add a `setup-matlab` workflow. Don't install MATLAB in CI to read its terms either, since installing it means accepting them. |
 | Other MathWorks licences, trials, batch tokens | **Unsafe** | Same SLA 3.4. Home and Student licences also exclude academic or professional use, and trials are limited to evaluating a purchase. |
-| Documented behaviour + GNU Octave | **Safe** for non-licensees; **uncertain** for licensees | Keep this as the primary method (it is what produced 700/705 and 469/469). People who hold a MathWorks licence should know that SLA 23.17 makes the Documentation part of the "Program". |
+| Documented behaviour + GNU Octave | **Safe** for non-licensees; **uncertain** for licensees | The maintainer holds no MathWorks licence. Keep this as the primary method (it is what produced 700/705 and 469/469). People who hold a MathWorks licence should know that SLA 23.17 makes the Documentation part of the "Program". |
 | User-submitted difference reports | **Uncertain** | Keep accepting them, but don't solicit systematic runs. Prefer reports that cite the documented behaviour. |
 | Ask MathWorks | **Safe** to ask | Do it if MATLAB validation matters enough. |
 
-Concrete steps. None of them has been done; each changes the repository
-and needs your go-ahead.
+Concrete steps. Steps 1–3 are done; steps 4–6 are still open.
 
-1. **Keep MATLAB validation on hold.** No MATLAB Online runs and no
+1. **Keep MATLAB validation on hold.** *(Done.)* No MATLAB Online runs and no
    `setup-matlab` workflow. Nothing in `.github/workflows/` uses MATLAB
    today. I checked.
-2. **Pause the invitation.** Replace the MATLAB Online instructions in
+2. **Pause the invitation.** *(Done: the kit's README files and comments,
+   README, COMPATIBILITY, CLEANROOM and CHANGELOG now say the kit is on hold
+   and was never run. CLEANROOM forbids running MATLAB to test mylab.)*
+   Replace the MATLAB Online instructions in
    `validation/README.md` and `validation/matlab/README.txt` with an
    "on hold pending licence review" note, or remove the kit. Reword README
    lines 230–233 and the "If you have MATLAB" sentence in
@@ -482,7 +492,7 @@ and needs your go-ahead.
    behaviour of MATLAB … as a black box" from CLEANROOM.md line 20 and keep
    it for Octave only.
 3. **Don't publish a MATLAB-generated report.** Add `validation/report.*`
-   to `.gitignore` while the kit exists.
+   to `.gitignore` while the kit exists. *(Done.)*
 4. **Steer difference reports.** In `report-a-difference.yml`, make the
    documented-behaviour path the first option: what you expected, plus a
    link to the MathWorks reference page. Make "what MATLAB printed"
