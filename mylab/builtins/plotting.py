@@ -6855,7 +6855,7 @@ def _print(interp, args, nargout):
             elif low in ("-bestfit", "-fillpage"):
                 fit = low[1:]
             elif low in ("-painters", "-opengl", "-vector", "-image", "-zbuffer", "-noui", "-loose", "-tight",
-                         "-cmyk", "-rgb", "-append"):
+                         "-cmyk", "-rgb", "-append", "-tiff"):
                 if low == "-append":
                     raise MatlabError("print: -append (adding pages to a PostScript file) is not supported. "
                                       "Use exportgraphics(..., 'Append', true) with a PDF file.")
@@ -6863,7 +6863,8 @@ def _print(interp, args, nargout):
                     raise MatlabError("print: CMYK output is not supported.")
                 # -painters/-opengl/-vector/-image: vector files are always vector, images always images.
                 # -noui: figures have no user-interface controls to leave out. -loose/-tight: the bounding
-                # box of an EPS file is the figure in both cases.
+                # box of an EPS file is the figure in both cases. -tiff (a preview image inside an EPS file):
+                # the file is written without the preview.
             elif low.startswith("-p") or low.startswith("-v") or low.startswith("-s"):
                 raise MatlabError(f"print: option '{s}' needs a printer or a Simulink model, which mylab does "
                                   "not have. Print to a file instead.")
