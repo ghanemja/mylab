@@ -21,6 +21,7 @@ import numpy as np
 
 from ..errors import MatlabError
 from ..values import Cell, Struct
+from ._matcodec import MARK
 
 HDF5_SIGNATURE = b"\x89HDF\r\n\x1a\n"
 
@@ -419,6 +420,8 @@ def _describe(h5, f, obj, depth: int = 0) -> dict | None:
         if cls != "struct":
             return None
         fields = [x for x in (_Reader(h5, f, None)._fields(obj) or list(obj.keys())) if x in obj]
+        if fields and fields[0] == MARK:
+            return None  # an object, string, table, ... that mylab stores as a struct: it is read to be described
         total = 64 * len(fields)
         shape: tuple = (1, 1)
         for x in fields:

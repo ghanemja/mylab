@@ -59,12 +59,30 @@ def _dims(shape: tuple) -> np.ndarray:
 # -- encoding ------------------------------------------------------------------------------------
 
 class Encoder:
-    """Encodes the variables of one save call (handle objects are written once and then referred to)."""
+    """Encodes the variables of one save call.
+
+    A handle object (or containers.Map) is written in full where the call first meets it; later
+    occurrences, in the same variable or in another one, are ``object_ref`` markers naming its id.
+    The ids of one call start at a random multiple of 2^22, so variables that a later call adds
+    with -append (another encoder) do not reuse the ids already in the file. They stay below 2^52,
+    so a double holds them exactly.
+    """
 
     def __init__(self, interp):
+        import secrets
         self.interp = interp
         self.handles: dict[int, int] = {}
         self.keep: list = []  # keeps encoded handle objects alive so their id() stays unique
+        self.first_id = (secrets.randbits(30) << 22) + 1
+
+    def handle_id(self, v: Any) -> tuple[int, bool]:
+        """The id of a handle value, and whether this call has written it already."""
+        key = id(v)
+        if key in self.handles:
+            return self.handles[key], True
+        self.handles[key] = self.first_id + len(self.handles)
+        self.keep.append(v)
+        return self.handles[key], False
 
     def fail(self, var: str, v: Any, why: str = "") -> MatlabError:
         detail = f" ({why})" if why else ""
@@ -111,11 +129,10 @@ class Encoder:
         from ..objects import MapObject, MExceptionObject
         from .categorical import CategoricalArray
         from .datetimes import CalendarDuration, DatetimeArray, DurationArray
+        from .dictionary import DictionaryObject
         from .table import TableObject
         if isinstance(v, TableObject):
-            return _marker("table", varnames=_cellstr(v.names),
-                           vars=Cell.from_list([self.encode(c, var) for c in v.columns]),
-                           rownames=_cellstr(v.row_names or []), description=char(v.description or ""))
+            return self._table(v, var)
         if isinstance(v, DatetimeArray):
             return _marker("datetime", seconds=v.data, format=char(v.fmt or ""), timezone=char(v.zone or ""))
         if isinstance(v, DurationArray):
@@ -125,13 +142,25 @@ class Encoder:
         if isinstance(v, CategoricalArray):
             return _marker("categorical", codes=v.data, categories=_cellstr(v.categories),
                            ordinal=np.array([[bool(v.ordinal)]]))
-        if isinstance(v, MapObject):
+        if isinstance(v, MapObject):  # a handle: shared maps stay shared
+            ident, seen = self.handle_id(v)
+            if seen:
+                return _marker("object_ref", id=_num(ident))
             keys = v.sorted_keys()
             return _marker("containers.Map", keytype=char(v.key_type), valuetype=char(v.value_type),
                            keys=Cell.from_list([v.key_value(k) for k in keys]),
-                           values=Cell.from_list([self.encode(v.store[k], var) for k in keys]))
+                           values=Cell.from_list([self.encode(v.store[k], var) for k in keys]), id=_num(ident))
+        if isinstance(v, DictionaryObject):
+            entries = list(v.store.values())
+            return _marker("dictionary", keytype=char(v.key_type or ""), valuetype=char(v.value_type or ""),
+                           keys=Cell.from_list([self.encode(k, var) for k, _ in entries]),
+                           values=Cell.from_list([self.encode(x, var) for _, x in entries]),
+                           configured=np.array([[v.key_type is not None]]))
         if isinstance(v, MExceptionObject):
-            return _marker("MException", identifier=char(v.identifier), message=char(v.message))
+            extra = {"causes": Cell.from_list([self.encode(c, var) for c in v.causes])}
+            if isinstance(v.stack, Struct):
+                extra["stack"] = self.encode(v.stack, var)
+            return _marker("MException", identifier=char(v.identifier), message=char(v.message), **extra)
         if isinstance(v, ObjectArray):
             return _marker("object_array", name=char(v.cls.full_name if v.cls else ""), size=_dims(v.data.shape),
                            items=Cell.from_list([self.encode(x, var) for x in v.elements()]))
@@ -148,52 +177,118 @@ class Encoder:
             return _marker("enumeration", name=char(cls.full_name), member=char(obj._enum_name))
         if getattr(obj, "_deleted", False):
             raise self.fail(var, obj, "the handle object was deleted")
-        key = id(obj)
+        ident = 0
         if obj.is_handle:
-            if key in self.handles:
-                return _marker("object_ref", id=_num(self.handles[key]))
-            self.handles[key] = len(self.handles) + 1
-            self.keep.append(obj)
-        ident = _num(self.handles.get(key, 0))
+            ident, seen = self.handle_id(obj)
+            if seen:
+                return _marker("object_ref", id=_num(ident))
         if "saveobj" in cls.methods:
             res = cls.call(self.interp, "saveobj", [obj], 1)
             if not res:
                 raise MatlabError(f"save: the saveobj method of class '{cls.name}' returned nothing "
                                   f"(variable '{var}').")
             saved = res[0]
-            if saved is obj or (isinstance(saved, type(obj)) and getattr(saved, "cls", None) is cls):
-                return _marker("object", name=char(cls.full_name), id=ident, saveobj=np.array([[False]]),
-                               data=self._props(saved, var))
-            return _marker("object", name=char(cls.full_name), id=ident, saveobj=np.array([[True]]),
-                           data=self.encode(saved, var))
-        return _marker("object", name=char(cls.full_name), id=ident, saveobj=np.array([[False]]),
-                       data=self._props(obj, var))
+            if not (saved is obj or (isinstance(saved, type(obj)) and getattr(saved, "cls", None) is cls)):
+                return _marker("object", name=char(cls.full_name), id=_num(ident), saveobj=np.array([[True]]),
+                               data=self.encode(saved, var))
+            obj = saved
+        return _marker("object", name=char(cls.full_name), id=_num(ident), saveobj=np.array([[False]]),
+                       data=self._props(obj, var), **self._object_extras(obj, var))
 
     def _props(self, obj: Any, var: str) -> Struct:
+        """The stored property values: not Transient, Dependent or Constant ones (old-style objects: every
+        field, including the parent objects)."""
+        cls = obj.cls
         out = {}
-        for name in obj.cls.instance_props():
-            attrs = obj.cls.prop_defs[name][0].attrs
-            if attrs.get("Transient") or attrs.get("Dependent"):
+        names = list(obj.props) if cls.old_style else cls.instance_props()
+        for name in names:
+            entry = cls.prop_defs.get(name)
+            if entry is not None and (entry[0].attrs.get("Transient") or entry[0].attrs.get("Dependent")):
                 continue
             if name in obj.props:
                 out[name] = self.encode(obj.props[name], var)
         return Struct.scalar(out) if out else Struct()
 
+    def _object_extras(self, obj: Any, var: str) -> dict:
+        """The built-in value of an object of a class derived from double, char, ..., and the values of
+        its dynamic properties (addprop), when it has them."""
+        out: dict = {}
+        if obj._data is not None:
+            out["builtin"] = self.encode(obj._data, var)
+        dyn = {n: self.encode(d.stored, var) for n, d in (obj._dynprops or {}).items()
+               if not (d.attrs.get("Transient") or d.attrs.get("Dependent"))}
+        if dyn:
+            out["dynamic"] = Struct.scalar(dyn)
+        return out
+
+    def _table(self, t: Any, var: str) -> Struct:
+        """A table or timetable with its properties (units, descriptions, user data, dimension and
+        custom properties)."""
+        from .timetables import TimetableObject
+
+        def per_var(store: dict) -> Cell:
+            return _cellstr([store.get(n, "") for n in t.names])
+
+        fields: dict = {"varnames": _cellstr(t.names), "vars": Cell.from_list([self.encode(c, var) for c in t.columns]),
+                        "rownames": _cellstr(t.row_names or []), "description": char(t.description or ""),
+                        "units": per_var(t.units), "vardescriptions": per_var(t.var_descriptions),
+                        "dimnames": _cellstr(t.dim_names),
+                        "custom": Struct.scalar({k: self.encode(x, var) for k, x in t.custom.items()}),
+                        "customvar": _cellstr(sorted(t.custom_var))}
+        if t.user_data is not None:
+            fields["userdata"] = self.encode(t.user_data, var)
+        if isinstance(t, TimetableObject):
+            return _marker("timetable", rowtimes=self.encode(t.row_times, var), **fields)
+        return _marker("table", **fields)
+
 
 # -- decoding ------------------------------------------------------------------------------------
 
 class Decoder:
-    """Decodes the variables of one load call."""
+    """Decodes the variables of one load call.
 
-    def __init__(self, interp, subsystem: bytes | None = None):
+    ``everything``, when given, returns the stored (not yet decoded) values of all variables of the
+    file. It is called when a variable refers to a handle object that is written in full in another
+    variable which this call does not read (load of some variables, matfile, whos -file with names).
+
+    A ``passive`` decoder makes values only to describe them (whos -file): objects get their saved
+    property values directly, and no code of their class runs (no constructor, set method, loadobj,
+    and no delete method when the object is dropped).
+    """
+
+    def __init__(self, interp, subsystem: bytes | None = None, everything=None, passive: bool = False):
         self.interp = interp
+        self.passive = passive
         self.handles: dict[int, Any] = {}
         self.mcos = Mcos(subsystem) if subsystem else None
         self.var = ""
         self._in_object = 0  # inside MATLAB object data, uint32 reference arrays stand for objects
+        self._everything = everything
+        self._definitions: dict[int, dict] | None = None
+        self._made: dict[int, Any] = {}  # id() of a stored handle object's marker -> the object made from it
+        self._resolving: set[int] = set()
+        self._quiet = 0  # inside an object array of a missing class, whose variable is warned about once
+        self.made_handles = False  # whether a handle object or containers.Map was made
+        self.made_objects = False  # whether any object of a class was made
 
-    def warn(self, msg: str) -> None:
-        self.interp.warn(msg, "MATLAB:load:classNotFound")
+    def warn(self, msg: str, ident: str = "MATLAB:load:classNotFound") -> None:
+        self.interp.warn(msg, ident)
+
+    def _handle(self, ident: int) -> Any:
+        """The handle object (or containers.Map) with this id, decoding its definition if needed."""
+        if ident not in self.handles and self._everything is not None and ident not in self._resolving:
+            if self._definitions is None:
+                self._definitions = _handle_definitions(self._everything())
+            d = self._definitions.get(ident)
+            if d is not None:
+                self._resolving.add(ident)  # (saveobj data that refers back to its own object: an error)
+                try:
+                    self._marked(d)  # registers it
+                finally:
+                    self._resolving.discard(ident)
+        if ident not in self.handles:
+            raise MatlabError(f"load: variable '{self.var}' refers to a handle object that is not in the file.")
+        return self.handles[ident]
 
     def decode(self, v: Any) -> Any:
         if isinstance(v, np.ndarray):
@@ -237,11 +332,8 @@ class Decoder:
             if isinstance(ws, Struct) and ws.data.size:
                 captured = {k: self.decode(x) for k, x in ws.data.flat[0].items()}
             return self._function(to_str(d["function"]), captured)
-        if kind == "table":
-            from .table import TableObject
-            cols = [self.decode(c) for c in d["vars"].values_f()]
-            return TableObject(_texts(d["varnames"]), cols, to_str(d["description"]) if d["description"].size else "",
-                               _texts(d["rownames"]) or None)
+        if kind in ("table", "timetable"):
+            return self._table(d, kind)
         if kind == "datetime":
             from .datetimes import DatetimeArray
             return DatetimeArray(np.asarray(d["seconds"], dtype=float), _opt_text(d["format"]),
@@ -258,38 +350,46 @@ class Decoder:
                                     bool(np.asarray(d["ordinal"]).any()))
         if kind == "containers.Map":
             from ..objects import MapObject
+            if id(d) in self._made:
+                return self._made[id(d)]
             m = MapObject(to_str(d["keytype"]), to_str(d["valuetype"]))
+            self.made_handles = self.made_objects = True
+            ident = _ident(d)
+            if ident:  # registered first: its values may refer back to it
+                self.handles[ident] = self._made[id(d)] = m
             for k, x in zip(d["keys"].values_f(), d["values"].values_f()):
                 m.store[m.norm_key(k)] = self.decode(x)
             return m
+        if kind == "dictionary":
+            from .dictionary import DictionaryObject, _hashable
+            out = DictionaryObject(_opt_text(d["keytype"]), _opt_text(d["valuetype"]))
+            if not bool(np.asarray(d["configured"]).any()):
+                out.key_type = out.value_type = None
+            for k, x in zip(d["keys"].values_f(), d["values"].values_f()):
+                key = self.decode(k)
+                out.store[_hashable(key)] = (key, self.decode(x))
+            return out
         if kind == "MException":
             from ..objects import MExceptionObject
-            return MExceptionObject(_opt_text(d["identifier"]) or "", _opt_text(d["message"]) or "")
+            causes = [self.decode(c) for c in d["causes"].values_f()] if isinstance(d.get("causes"), Cell) else []
+            stack = self.decode(d["stack"]) if "stack" in d else None
+            return MExceptionObject(_opt_text(d["identifier"]) or "", _opt_text(d["message"]) or "",
+                                    stack if isinstance(stack, Struct) else None,
+                                    [c for c in causes if isinstance(c, MExceptionObject)])
         if kind == "enumeration":
             cls = self.interp.find_class(to_str(d["name"]))
             if cls is None:
-                self.warn(f"Variable '{self.var}': the enumeration class '{to_str(d['name'])}' was not found; "
-                          "the member name was loaded as text.")
+                if not self._quiet:
+                    self.warn(f"Variable '{self.var}': the enumeration class '{to_str(d['name'])}' was not found; "
+                              "the member name was loaded as text.")
                 return d["member"]
             return cls.enum_lookup(self.interp, d["member"])
         if kind == "object_ref":
-            ident = int(np.asarray(d["id"]).flat[0])
-            if ident not in self.handles:
-                raise MatlabError(f"load: variable '{self.var}' refers to a handle object that is not in the file.")
-            return self.handles[ident]
+            return self._handle(_ident(d))
         if kind == "object":
             return self._user_object(d)
         if kind == "object_array":
-            from ..classdef import ObjectArray
-            items = [self.decode(x) for x in d["items"].values_f()]
-            shape = tuple(int(x) for x in np.asarray(d["size"]).flatten())
-            data = np.empty(len(items), dtype=object)
-            for k, x in enumerate(items):
-                data[k] = x
-            cls = self.interp.find_class(to_str(d["name"])) if d["name"].size else None
-            if cls is None or any(not hasattr(x, "cls") for x in items):
-                return Cell(data.reshape(shape, order="F"))
-            return ObjectArray(data.reshape(shape, order="F"), cls)
+            return self._object_array(d)
         if kind == "sym":
             return self._sym(d)
         self.warn(f"Variable '{self.var}' holds a value of the unknown kind '{kind}'; it was loaded as a struct.")
@@ -317,36 +417,112 @@ class Decoder:
         return f
 
     def _user_object(self, d: dict) -> Any:
+        if id(d) in self._made:  # a handle object already made for a reference to it
+            return self._made[id(d)]
         name = to_str(d["name"])
-        ident = int(np.asarray(d["id"]).flat[0]) if "id" in d else 0
-        by_saveobj = bool(np.asarray(d["saveobj"]).any())
+        ident = _ident(d)
         cls = self.interp.find_class(name)
+        self.made_objects = True
         if cls is None:
-            self.warn(f"Variable '{self.var}': the class '{name}' was not found, so the object was loaded as a "
-                      "struct of its saved properties.")
-            return self.decode(d["data"])
-        if by_saveobj:
-            data = self.decode(d["data"])
-            obj = self._loadobj(cls, data)
+            if not self._quiet:
+                self.warn(f"Variable '{self.var}': the class '{name}' was not found, so the object was loaded as a "
+                          "struct of its saved properties.")
+            value = self.decode(d["data"])
+            if ident:  # references to it get the same struct
+                self.handles[ident] = self._made[id(d)] = value
+            return value
+        if bool(np.asarray(d["saveobj"]).any()):
+            obj = self._blank(cls) if self.passive else self._loadobj(cls, self.decode(d["data"]))
         else:
-            from ..classdef import UserObject
-            attrs = getattr(getattr(cls, "cd", None), "attrs", None) or {}
-            if attrs.get("ConstructOnLoad") and not getattr(cls, "is_abstract", False):
-                obj = cls.construct(self.interp, [], 1)[0]  # the constructor runs with no arguments
-            else:
-                obj = UserObject(cls)
-                obj.props = dict(cls.defaults(self.interp))
-            if ident:
-                self.handles[ident] = obj  # registered first: its properties may refer back to it
             saved = d["data"]
-            if isinstance(saved, Struct) and saved.data.size:
-                for k, x in saved.data.flat[0].items():
-                    if k in cls.prop_defs and not cls.is_constant(k):
-                        obj.props[k] = self.decode(x)
-            obj = self._loadobj(cls, obj)
+            items = list(saved.data.flat[0].items()) if isinstance(saved, Struct) and saved.data.size else []
+            obj = self._restore(cls, items, stored=True, ident=ident, key=id(d), builtin=d.get("builtin"),
+                                dynamic=d.get("dynamic"))
         if ident:
-            self.handles[ident] = obj
+            self.handles[ident] = self._made[id(d)] = obj
         return obj
+
+    def _blank(self, cls: Any) -> Any:
+        """The object load fills in: default property values, or what the constructor makes when the class
+        has ConstructOnLoad (old-style objects: no fields, they all come from the file)."""
+        from ..classdef import UserObject
+        if cls.old_style:
+            return UserObject(cls)
+        attrs = getattr(getattr(cls, "cd", None), "attrs", None) or {}
+        if attrs.get("ConstructOnLoad") and not getattr(cls, "is_abstract", False) and not self.passive:
+            return cls.construct(self.interp, [], 1)[0]  # the constructor runs with no arguments
+        return cls.new_object(self.interp)
+
+    def _restore(self, cls: Any, items: list, stored: bool, ident: int = 0, key: int | None = None,
+                 builtin: Any = None, dynamic: Any = None) -> Any:
+        """An object of class ``cls`` from its saved property values (``items``: name, value pairs, still in
+        their stored form when ``stored``).
+
+        Each value is assigned through the property's validation and set method, in the saved order. A
+        value that no longer fits the class (the property was removed or renamed, became Constant, fails
+        its validation, or its set method fails) makes load hand loadobj a struct of the saved values,
+        when the class has a loadobj method. Otherwise a removed property is dropped, a value that fails
+        validation leaves the default value, and a value whose set method fails is stored as saved; the
+        last two with a warning.
+        """
+        from ..classdef import UserObject, adopt_old_style_parent
+        from .classes_more import DynamicProperty
+        interp = self.interp
+        obj = self._blank(cls)
+        self.made_objects = True
+        self.made_handles = self.made_handles or bool(cls.is_handle)
+        if ident:
+            self.handles[ident] = obj  # registered first: its properties may refer back to it
+            if key is not None:
+                self._made[key] = obj
+        values = {k: self.decode(x) if stored else x for k, x in items}
+        if builtin is not None and isinstance(obj, UserObject) and cls.numeric_base:
+            obj._data = self.decode(builtin) if stored else builtin
+        if isinstance(dynamic, Struct) and dynamic.data.size and isinstance(obj, UserObject):
+            obj._dynprops = obj._dynprops or {}
+            for k, x in dynamic.data.flat[0].items():
+                prop = obj._dynprops[k] = DynamicProperty(obj, k)
+                prop.stored = self.decode(x) if stored else x
+        has_loadobj = "loadobj" in cls.methods
+        misfit = False
+        where = f"Variable '{self.var}': the saved value of property"
+        for k, x in values.items():
+            if cls.old_style:
+                obj.props[k] = x
+                if isinstance(x, UserObject) and x.cls.old_style and x.cls.name == k:
+                    adopt_old_style_parent(cls, x.cls)  # the parent part of the object
+                continue
+            entry = cls.prop_defs.get(k)
+            attrs = entry[0].attrs if entry is not None else {}
+            if entry is None or attrs.get("Constant") or (attrs.get("Dependent") and "set." + k not in cls.methods):
+                misfit = True
+                continue
+            if self.passive:
+                if not attrs.get("Dependent"):
+                    obj.props[k] = x
+                continue
+            try:
+                x = obj.validated(interp, k, x)
+            except MatlabError as e:
+                misfit = True
+                if not has_loadobj:
+                    self.warn(f"{where} '{k}' of class '{cls.name}' is not valid for the class now, so the property "
+                              f"has its default value. {e.message}", "mylab:load:propertyNotRestored")
+                continue
+            try:
+                obj = obj.restore_field(interp, k, x)
+            except MatlabError as e:
+                misfit = True
+                if not has_loadobj:
+                    self.warn(f"{where} '{k}' of class '{cls.name}' was stored without its set method, which "
+                              f"failed: {e.message}", "mylab:load:propertyNotRestored")
+                    obj.props[k] = x
+        if self.passive:
+            return obj
+        if misfit and has_loadobj:
+            return self._loadobj(cls, Struct.scalar(values) if values else Struct())
+        cls.arm(obj)
+        return self._loadobj(cls, obj)
 
     def _loadobj(self, cls: Any, value: Any) -> Any:
         if "loadobj" in cls.methods:
@@ -357,6 +533,30 @@ class Decoder:
             return res[0]
         return value
 
+    def _object_array(self, d: dict) -> Any:
+        from ..classdef import ObjectArray
+        shape = tuple(int(x) for x in np.asarray(d["size"]).flatten())
+        name = to_str(d["name"]) if d["name"].size else ""
+        cls = self.interp.find_class(name) if name else None
+        missing = bool(name) and cls is None
+        self._quiet += missing  # the elements are not warned about one by one
+        try:
+            items = [self.decode(x) for x in d["items"].values_f()]
+        finally:
+            self._quiet -= missing
+        data = np.empty(len(items), dtype=object)
+        for k, x in enumerate(items):
+            data[k] = x
+        data = data.reshape(shape, order="F")
+        if cls is not None and all(hasattr(x, "cls") for x in items):
+            return ObjectArray(data, cls)
+        out = _struct_array(data)
+        if missing:
+            self.warn(f"Variable '{self.var}': the class '{name}' was not found, so the object array was loaded as "
+                      + ("a struct array of the saved properties." if out is not None else
+                         "a cell array of what was saved for each element."))
+        return out if out is not None else Cell(data)
+
     def _make_object(self, name: str, fields: Any) -> Any:
         """An object from a class name and a struct of property values (old-style and MCOS objects)."""
         cls = self.interp.find_class(name) if name else None
@@ -364,21 +564,38 @@ class Decoder:
             self.warn(f"Variable '{self.var}' was saved as an object of class '{name}', which is not available; "
                       "it was loaded as a struct of its properties.")
             return fields
-        from ..classdef import ObjectArray, UserObject
-        objs = []
-        for d in fields.data.flatten(order="F"):
-            obj = UserObject(cls)
-            obj.props = dict(cls.defaults(self.interp))
-            for k, x in d.items():
-                if k in cls.prop_defs and not cls.is_constant(k):
-                    obj.props[k] = x
-            objs.append(self._loadobj(cls, obj))
+        from ..classdef import ObjectArray
+        objs = [self._restore(cls, list(d.items()), stored=False) for d in fields.data.flatten(order="F")]
         if len(objs) == 1:
             return objs[0]
         data = np.empty(len(objs), dtype=object)
         for k, o in enumerate(objs):
             data[k] = o
         return ObjectArray(data.reshape(fields.data.shape, order="F"), cls)
+
+    def _table(self, d: dict, kind: str) -> Any:
+        from .table import TableObject
+        from .timetables import TimetableObject
+        names = _texts(d["varnames"])
+        cols = [self.decode(c) for c in d["vars"].values_f()]
+        desc = to_str(d["description"]) if d["description"].size else ""
+        if kind == "timetable":
+            t = TimetableObject(names, cols, self.decode(d["rowtimes"]), desc)
+        else:
+            t = TableObject(names, cols, desc, _texts(d["rownames"]) or None)
+        if "units" in d:  # files of older mylab versions store only the names, data and row names
+            t.units = {n: u for n, u in zip(names, _texts(d["units"])) if u}
+            t.var_descriptions = {n: u for n, u in zip(names, _texts(d["vardescriptions"])) if u}
+            dims = _texts(d["dimnames"])
+            if len(dims) == 2:
+                t.dim_names = dims
+            custom = d["custom"]
+            if isinstance(custom, Struct) and custom.data.size:
+                t.custom = {k: self.decode(x) for k, x in custom.data.flat[0].items()}
+            t.custom_var = set(_texts(d["customvar"])) & set(t.custom)
+            if "userdata" in d:
+                t.user_data = self.decode(d["userdata"])
+        return t
 
     def _sym(self, d: dict) -> Any:
         fn = self.interp.builtins.get("str2sym")
@@ -507,6 +724,47 @@ class Decoder:
         if isinstance(props, Struct) and props.data.size and "Description" in props.fields:
             desc = _opt_text(props.data.flat[0]["Description"]) or ""
         return TableObject(names, cols, desc, rows or None)
+
+
+def _ident(d: dict) -> int:
+    """The handle id of a stored object or containers.Map (0: none)."""
+    return int(np.asarray(d["id"]).flat[0]) if "id" in d and np.asarray(d["id"]).size else 0
+
+
+def _handle_definitions(values) -> dict[int, dict]:
+    """The stored handle objects and maps in ``values`` (stored values of variables), by id, in file
+    order: each is written in full once, where its save call first met it."""
+    out: dict[int, dict] = {}
+    stack = list(values)[::-1]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, Cell):
+            stack.extend(v.data.flatten(order="F")[::-1])
+        elif isinstance(v, Struct):
+            children = []
+            for d in v.data.flatten(order="F"):
+                if v.data.size == 1 and v.fields and v.fields[0] == MARK and is_char(d[MARK]) \
+                        and to_str(d[MARK]) in ("object", "containers.Map"):
+                    ident = _ident(d)
+                    if ident:
+                        out.setdefault(ident, d)
+                children.extend(d.values())
+            stack.extend(children[::-1])
+    return out
+
+
+def _struct_array(data: np.ndarray) -> Struct | None:
+    """One struct array from an array of scalar structs with the same fields (None if they differ)."""
+    items = list(data.flat)
+    if not items or not all(isinstance(x, Struct) and x.data.size == 1 for x in items):
+        return None
+    fields = list(items[0].fields)
+    if any(set(x.fields) != set(fields) for x in items):
+        return None
+    out = np.empty(data.shape, dtype=object)
+    for idx in np.ndindex(data.shape):
+        out[idx] = dict(data[idx].data.flat[0])
+    return Struct(out, fields)
 
 
 def _opt_text(v: Any) -> str | None:
