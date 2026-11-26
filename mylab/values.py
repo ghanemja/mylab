@@ -544,6 +544,8 @@ def values_equal(a: Any, b: Any, nan_equal: bool = False) -> bool:
         return (isinstance(a, FunctionHandle) and isinstance(b, FunctionHandle)
                 and a.name is not None and a.name == b.name)
     for x, y in ((a, b), (b, a)):
+        if hasattr(x, "equal_values"):  # tables compare their variables, which may hold NaN
+            return bool(x.equal_values(y, nan_equal))
         if hasattr(x, "object_equals"):  # array-like objects (sparse, datetime, duration) compare by value
             return bool(x.object_equals(y))
     if hasattr(a, "isa_class") or hasattr(b, "isa_class"):

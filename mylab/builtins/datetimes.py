@@ -1057,14 +1057,20 @@ class CalendarDuration(MObject):
         return name in _NATIVE
 
     def call_method(self, interp, name: str, args: list, nargout: int) -> list:
+        if name == "isequaln":
+            first = args[0]
+            return [bool_scalar(all(isinstance(first, CalendarDuration) and first.object_equals(b, True)
+                                    for b in args[1:]))]
         res = _NATIVE[name](interp, args, nargout)
         if res is None:
             return []
         return [to_matlab(r) for r in res] if isinstance(res, tuple) else [to_matlab(res)]
 
-    def object_equals(self, other: Any) -> bool:
-        return isinstance(other, CalendarDuration) and self.months.shape == other.months.shape and bool(
-            np.all(self.months == other.months) and np.all(self.days == other.days) and np.all(self.secs == other.secs))
+    def object_equals(self, other: Any, nan_equal: bool = False) -> bool:
+        if not isinstance(other, CalendarDuration) or self.months.shape != other.months.shape:
+            return False
+        return all(np.array_equal(x, y, equal_nan=nan_equal) for x, y in
+                   ((self.months, other.months), (self.days, other.days), (self.secs, other.secs)))
 
     def index_get(self, interp, args: list) -> Any:
         return CalendarDuration(*(ix.get(a, list(args)) for a in (self.months, self.days, self.secs)))
@@ -1540,8 +1546,12 @@ def _iscalendarduration(interp, args, nargout):
 
 # -- generic array functions -----------------------------------------------------------------------------------
 
-def _first_time(args: list) -> _TimeArray:
-    return next(a for a in args if isinstance(a, _TimeArray))
+def _first_time(args: list, name: str = "this function") -> _TimeArray:
+    for a in args:
+        if isinstance(a, _TimeArray):
+            return a
+    kind = next((a.class_name() for a in args if isinstance(a, MObject)), "these")
+    raise MatlabError(f"Function '{name}' is not defined for {kind} arrays.")
 
 
 def _raw_args(args: list, ref: _TimeArray) -> list:
@@ -1561,7 +1571,7 @@ def _raw_args(args: list, ref: _TimeArray) -> list:
 def _rewrap(name: str, wrap_outputs: int = 1, as_duration: bool = False):
     """Run the numeric built-in on the underlying seconds and wrap the first output(s) again."""
     def f(interp, args, nargout):
-        ref = _first_time(args)
+        ref = _first_time(args, name)
         res = interp.call_named(name, _raw_args(args, ref), nargout, interp.frame)
         out = []
         for k, r in enumerate(res):
@@ -1588,7 +1598,7 @@ def _by_kind(name: str):
     keep = _rewrap(name, 1)
 
     def f(interp, args, nargout):
-        return (keep if isinstance(_first_time(args), DurationArray) else wrap)(interp, args, nargout)
+        return (keep if isinstance(_first_time(args, name), DurationArray) else wrap)(interp, args, nargout)
     return f
 
 
@@ -1600,7 +1610,7 @@ def _duration_only(name: str, wrap: int = 1):
     inner = _rewrap(name, wrap)
 
     def f(interp, args, nargout):
-        if not isinstance(_first_time(args), DurationArray):
+        if not isinstance(_first_time(args, name), DurationArray):
             raise MatlabError(f"Function '{name}' is not defined for datetime arrays.")
         return inner(interp, args, nargout)
     return f

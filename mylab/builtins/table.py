@@ -107,6 +107,20 @@ class TableObject(MObject):
     DEFAULT_DIMS = ("Row", "Variables")
     kind_word = "table"
 
+    def equal_values(self, other: Any, nan_equal: bool = False) -> bool:
+        """isequal (isequaln when ``nan_equal``): the same kind of table, size, variable names, row
+        names (row times for a timetable) and equal values in every variable. Descriptions, units
+        and other properties are not compared."""
+        from ..values import values_equal
+        if type(other) is not type(self) or self.names != other.names:
+            return False
+        if self.nrows != other.nrows or (self.row_names or None) != (other.row_names or None):
+            return False
+        rt, ort = getattr(self, "row_times", None), getattr(other, "row_times", None)
+        if (rt is None) != (ort is None) or (rt is not None and not values_equal(rt, ort, nan_equal)):
+            return False
+        return all(values_equal(x, y, nan_equal) for x, y in zip(self.columns, other.columns))
+
     def inherit(self, src: "TableObject", renames: dict | None = None) -> "TableObject":
         """Take the properties (units, descriptions, user data ...) of the table this one was made from."""
         ren = renames or {}
