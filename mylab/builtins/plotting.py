@@ -98,6 +98,25 @@ def _figure(interp, n: int | None = None):
     return st.figures[n]
 
 
+def subplot_grid(fig, m: int, n: int):
+    """An m-by-n grid of axes positions with MATLAB's margins and gaps (one grid per size and figure)."""
+    grids = fig.__dict__.setdefault("_mylab_grids", {})
+    gs = grids.get((m, n))
+    if gs is None:
+        top = 0.87 if getattr(fig, "_suptitle", None) is not None and fig._suptitle.get_text() else 0.925
+        gs = grids[(m, n)] = fig.add_gridspec(m, n, left=0.13, right=0.905, bottom=0.11, top=top,
+                                              wspace=0.3155, hspace=0.389)
+    return gs
+
+
+def _make_room_for_suptitle(fig) -> None:
+    """Move subplot grids down a little so that a figure title does not sit on the top row's titles."""
+    if getattr(fig, "get_layout_engine", lambda: None)() is not None:
+        return
+    for gs in fig.__dict__.get("_mylab_grids", {}).values():
+        gs.update(top=0.87)
+
+
 def _fig_dpi(fig) -> float:
     """Pixels per inch of a figure, without the scaling a high-resolution screen adds to it."""
     return float(getattr(fig, "_original_dpi", None) or fig.dpi)
@@ -174,7 +193,7 @@ def _axes(interp, fresh: bool = True, projection: str | None = None):
                 ax = candidates[-1]
             else:
                 kw = {"projection": projection} if projection not in (None, "rectilinear") else {}
-                ax = fig.add_subplot(1, 1, 1, **kw)
+                ax = fig.add_subplot(subplot_grid(fig, 1, 1)[0, 0], **kw)
             st.axes[st.current] = ax
     if projection is not None and getattr(ax, "name", "rectilinear") != projection:
         ax = _replace_axes(interp, ax, projection)
@@ -197,6 +216,8 @@ def _axes(interp, fresh: bool = True, projection: str | None = None):
         ax.__dict__.pop("_mylab_padded", None)
         _yy_restyle(ax)
         _axes_created(interp, ax)
+        if getattr(ax, "_mylab_linked", None):
+            _relink(ax)
     _tick_aligned(ax)
     return ax
 
@@ -2302,7 +2323,19 @@ def _dir_set(which):
 
 def _scale_set(which):
     def s(h, v):
-        getattr(h.obj, f"set_{which}scale")(text(v).lower())
+        scale = text(v).lower()
+        if scale not in ("linear", "log"):
+            raise MatlabError(f"{which.upper()}Scale must be 'linear' or 'log'.")
+        setter = getattr(h.obj, f"set_{which}scale", None)
+        if setter is None:
+            raise MatlabError(f"These axes have no {which}-axis.")
+        if getattr(h.obj, f"get_{which}scale")() == scale:
+            return
+        setter(scale)  # matplotlib installs its own tick locator and formatter for the new scale
+        r = _ruler_of(h.obj, which)
+        if r is not None:
+            install_ruler(h.obj, which, r)
+        _tick_aligned(h.obj)
     return s
 
 
@@ -4638,6 +4671,11 @@ def _clf(interp, args, nargout):
     for ax in list(fig.axes):
         _forget_children(interp, ax)
     fig.clf()
+    fig.__dict__.pop("_mylab_grids", None)
+    try:
+        fig.set_layout_engine("none")
+    except (AttributeError, ValueError, RuntimeError):
+        pass
     st.axes.pop(n, None)
     st.layouts.pop(n, None)
     h = _wrap(interp, "figure", fig)
@@ -4854,7 +4892,7 @@ def _subplot(interp, args, nargout):
         ax.remove()
         ax = None
     if ax is None:
-        gs = fig.add_gridspec(m, n)
+        gs = subplot_grid(fig, m, n)
         box = gs[r0:r1, c0:c1].get_position(fig)
         _remove_overlapping(interp, fig, list(box.bounds), None)
         ax = fig.add_subplot(gs[r0:r1, c0:c1])
@@ -5327,6 +5365,7 @@ def _label(method):
             fig = target.figure if target is not None else _figure(interp)
             t = fig.suptitle(s, **kw)
             set_text(interp, t, s, interp_name)
+            _make_room_for_suptitle(fig)
             _apply_extra(interp, [t], opts, "text")
             _redraw(interp)
             return _wrap(interp, "text", t) if nargout > 0 else None
@@ -6064,30 +6103,121 @@ def _drawnow(interp, args, nargout):
 
 # -- saving -------------------------------------------------------------------------------
 
+# print devices and saveas format names -> the kind of file that is written
 _FORMATS = {"png": "png", "jpeg": "jpg", "jpg": "jpg", "pdf": "pdf", "svg": "svg", "eps": "eps", "epsc": "eps",
-            "epsc2": "eps", "eps2": "eps", "tiff": "tif", "tiffn": "tif", "tif": "tif", "bmp": "png",
-            "meta": "png", "ps": "ps", "psc": "ps"}
+            "epsc2": "eps", "eps2": "eps", "tiff": "tif", "tiffn": "tif", "tif": "tif", "bmp": "bmp",
+            "bmpmono": "bmp", "bmp16m": "bmp", "bmp256": "bmp", "gif": "gif", "ps": "ps", "psc": "ps",
+            "ps2": "ps", "psc2": "ps", "fig": "fig"}
+_RASTER = ("png", "jpg", "jpeg", "tif", "tiff", "bmp", "gif")
+_VECTOR = ("pdf", "eps", "svg", "ps")
+_NOT_AVAILABLE = {"meta": "Windows metafiles (.emf) cannot be written", "emf": "Windows metafiles (.emf) cannot "
+                  "be written", "win": "there is no printer", "winc": "there is no printer",
+                  "hdf": "HDF image files cannot be written", "pcx": "PCX files cannot be written",
+                  "pbm": "PBM files cannot be written", "ppm": "PPM files cannot be written"}
 
-_FIG_ERROR = "The .fig format is not supported; use .png, .pdf or .svg."
 
-
-def _save(interp, n, fname: str, dpi: float, fmt: str | None = None) -> None:
-    st = _state(interp)
-    if n is None or n not in st.figures:
-        raise MatlabError("No figure to save.")
+def _file_kind(fname: str, fmt: str | None, what: str) -> tuple[str, str]:
+    """(file name with an extension, kind of file) for a save request."""
     ext = os.path.splitext(fname)[1].lower().lstrip(".")
-    if ext == "fig" or (fmt or "").lower() == "fig":
-        raise MatlabError(_FIG_ERROR)
+    kind = (fmt or "").lower() or {"jpeg": "jpg", "tiff": "tif"}.get(ext, ext) or "png"
+    kind = {"jpeg": "jpg", "tiff": "tif"}.get(kind, kind)
+    if kind in _NOT_AVAILABLE:
+        raise MatlabError(f"{what}: {_NOT_AVAILABLE[kind]} by mylab. Use png, jpg, tif, bmp, gif, pdf, eps, "
+                          "svg or ps.")
+    if kind not in _RASTER + _VECTOR + ("fig",):
+        raise MatlabError(f"{what}: the file type '{kind}' is not supported. Use png, jpg, tif, bmp, gif, "
+                          "pdf, eps, svg, ps or fig.")
     if not ext:
-        fname += "." + (fmt or "png")
-    elif ext == "jpeg":
-        pass
+        fname += "." + kind
+    return fname, kind
+
+
+def _paper_layout(interp, fig, page: bool, fit: str | None = None):
+    """(figure size in inches to draw at, page box in inches or None) for print and saveas.
+
+    The figure is drawn at its own size unless PaperPositionMode is 'manual'. For page formats (pdf, ps)
+    the output is a sheet of PaperSize with the figure placed on it, centred when the position is automatic.
+    """
+    from . import plot_objects
+    h = _wrap(interp, "figure", fig)
+    w, hh = (float(v) for v in fig.get_size_inches())
+    manual = plot_objects.paper_position_inches(h)
+    pw, ph = plot_objects._paper_size_in(h)
+    left, bottom = (pw - w) / 2, (ph - hh) / 2
+    if manual is not None:
+        left, bottom, w, hh = manual
+    if fit == "fillpage":
+        left, bottom, w, hh = 0.25, 0.25, pw - 0.5, ph - 0.5
+    elif fit == "bestfit":
+        k = min((pw - 0.5) / w, (ph - 0.5) / hh)
+        w, hh = w * k, hh * k
+        left, bottom = (pw - w) / 2, (ph - hh) / 2
+    if w <= 0 or hh <= 0:
+        raise MatlabError("The paper is too small for the figure; change PaperSize or PaperPosition.")
+    box = (-left, -bottom, pw, ph) if page else None
+    return (w, hh), box
+
+
+def _write_figure(fig, fname: str, kind: str, dpi: float, size=None, box=None, tight: bool = False,
+                  facecolor=None, transparent: bool = False, gray: bool = False, clip=None) -> None:
+    """Write a matplotlib figure to a file of the given kind."""
+    from matplotlib.transforms import Bbox
+    old_size = tuple(float(v) for v in fig.get_size_inches())
+    kw: dict = {"dpi": dpi}
+    if facecolor is not None:
+        kw["facecolor"] = facecolor
+    if transparent:
+        kw["transparent"] = True
+    if clip is not None:
+        kw["bbox_inches"] = clip
+    elif box is not None:
+        kw["bbox_inches"] = Bbox.from_bounds(*box)
+    elif tight:
+        kw["bbox_inches"] = "tight"
+        kw["pad_inches"] = 0.05
     try:
-        st.figures[n].savefig(fname, dpi=dpi, bbox_inches="tight")
+        if size is not None and tuple(size) != old_size:
+            fig.set_size_inches(*size)
+        if kind in ("bmp", "gif") or (gray and kind in _RASTER):
+            from PIL import Image
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", **kw)
+            buf.seek(0)
+            im = Image.open(buf)
+            if kind in ("bmp", "gif", "jpg") or gray:
+                bg = Image.new("RGB", im.size, (255, 255, 255))
+                bg.paste(im.convert("RGBA"), mask=im.convert("RGBA").split()[3])
+                im = bg
+            if gray:
+                im = im.convert("L")
+            im.save(fname, format={"jpg": "JPEG", "tif": "TIFF"}.get(kind, kind.upper()), dpi=(dpi, dpi))
+        else:
+            if gray:
+                raise MatlabError("Colorspace 'gray' applies to image files (png, jpg, tif, bmp, gif).")
+            fig.savefig(fname, format={"jpg": "jpeg", "tif": "tiff"}.get(kind, kind), **kw)
     except ValueError as e:
         raise MatlabError(f"Cannot save the figure as '{fname}': {e}") from e
     except OSError as e:
         raise MatlabError(f"Cannot write '{fname}': {e.strerror or e}") from e
+    finally:
+        if tuple(float(v) for v in fig.get_size_inches()) != old_size:
+            fig.set_size_inches(*old_size)
+
+
+def _save(interp, n, fname: str, dpi: float, fmt: str | None = None, what: str = "saveas",
+          fit: str | None = None) -> None:
+    """Save figure ``n`` whole, the way print and saveas do (no cropping)."""
+    st = _state(interp)
+    if n is None or n not in st.figures:
+        raise MatlabError("No figure to save.")
+    fig = st.figures[n]
+    fname, kind = _file_kind(fname, fmt, what)
+    if kind == "fig":
+        from . import figfiles
+        figfiles.save_fig(interp, [_wrap(interp, "figure", fig)], fname)
+        return
+    size, box = _paper_layout(interp, fig, page=kind in ("pdf", "ps"), fit=fit)
+    _write_figure(fig, fname, kind, dpi, size=size, box=box)
 
 
 @builtin("saveas")
@@ -6099,8 +6229,8 @@ def _saveas(interp, args, nargout):
         rest = args[2:]
     else:
         n = st.current
-        fname = text(args[-1]) if args else ""
-        rest = []
+        fname = text(args[0]) if args else ""
+        rest = args[1:]
     if not fname:
         raise MatlabError("saveas needs a file name.")
     fmt = None
@@ -6108,10 +6238,13 @@ def _saveas(interp, args, nargout):
         f = text(rest[0]).lower().lstrip("-")
         if f.startswith("d") and f[1:] in _FORMATS:
             f = f[1:]
-        if f == "fig":
-            raise MatlabError(_FIG_ERROR)
+        if f in ("m", "mfig", "mmat"):
+            raise MatlabError("saveas: generating MATLAB code for a figure is not supported. Save a .fig file "
+                              "with savefig instead.")
+        if f not in _FORMATS and f not in _NOT_AVAILABLE:
+            raise MatlabError(f"saveas: unknown format '{text(rest[0])}'.")
         fmt = _FORMATS.get(f, f)
-    _save(interp, n, fname, 150, fmt)
+    _save(interp, n, fname, 150, fmt, "saveas")
     return None
 
 
@@ -6122,49 +6255,417 @@ def _print(interp, args, nargout):
     fname = None
     dpi = 150.0
     n = st.current
+    fit = None
+    rgb = False
     for a in args:
         if isinstance(a, (GraphicsHandle, GraphicsArray)):
             n = _fig_num_arg(interp, a)
         elif is_text(a):
             s = text(a)
-            if s.startswith("-d"):
-                f = s[2:].lower()
-                if f == "fig":
-                    raise MatlabError(_FIG_ERROR)
-                fmt = _FORMATS.get(f, f) or "png"
-            elif s.startswith("-r"):
+            low = s.lower()
+            if low == "-rgbimage":
+                rgb = True
+            elif low in ("-clipboard",) or low.startswith("-dclipboard"):
+                raise MatlabError("print: there is no clipboard to copy the figure to; save it to a file.")
+            elif low.startswith("-d"):
+                f = low[2:]
+                if f in _NOT_AVAILABLE:
+                    raise MatlabError(f"print: {_NOT_AVAILABLE[f]} by mylab.")
+                if f not in _FORMATS:
+                    raise MatlabError(f"print: unknown device '{s}'. Use for example -dpng, -djpeg, -dtiff, "
+                                      "-dbmp, -dpdf, -depsc, -dsvg or -dps.")
+                fmt = _FORMATS[f]
+            elif low.startswith("-r"):
                 try:
                     r = float(s[2:]) if s[2:] else 150.0
                 except ValueError:
                     raise MatlabError(f"Invalid resolution option '{s}'.") from None
-                dpi = r if r > 0 else 150.0
-            elif s.startswith("-f") and s[2:].isdigit():
+                if r < 0:
+                    raise MatlabError("print: the resolution must not be negative.")
+                dpi = r if r > 0 else FIG_DPI  # -r0: the resolution of the screen
+            elif low.startswith("-f") and s[2:].isdigit():
                 n = int(s[2:])
+            elif low in ("-bestfit", "-fillpage"):
+                fit = low[1:]
+            elif low in ("-painters", "-opengl", "-vector", "-image", "-zbuffer", "-noui", "-loose", "-tight",
+                         "-cmyk", "-rgb", "-append"):
+                if low == "-append":
+                    raise MatlabError("print: -append (adding pages to a PostScript file) is not supported. "
+                                      "Use exportgraphics(..., 'Append', true) with a PDF file.")
+                if low == "-cmyk":
+                    raise MatlabError("print: CMYK output is not supported.")
+                # -painters/-opengl/-vector/-image: vector files are always vector, images always images.
+                # -noui: figures have no user-interface controls to leave out. -loose/-tight: the bounding
+                # box of an EPS file is the figure in both cases.
+            elif low.startswith("-p") or low.startswith("-v") or low.startswith("-s"):
+                raise MatlabError(f"print: option '{s}' needs a printer or a Simulink model, which mylab does "
+                                  "not have. Print to a file instead.")
             elif s.startswith("-"):
-                continue  # renderer and other options (-painters, -opengl, -bestfit, ...)
+                raise MatlabError(f"print: unknown option '{s}'.")
             else:
                 fname = s
         elif isinstance(a, np.ndarray) and a.size == 1:
             n = to_int(a, "figure")
+    if n is None or n not in st.figures:
+        raise MatlabError("No figure to print.")
+    if rgb:
+        size, _ = _paper_layout(interp, st.figures[n], page=False)
+        fig = st.figures[n]
+        old = tuple(float(v) for v in fig.get_size_inches())
+        try:
+            if tuple(size) != old:
+                fig.set_size_inches(*size)
+            return _render_rgb(fig, dpi)
+        finally:
+            if tuple(float(v) for v in fig.get_size_inches()) != old:
+                fig.set_size_inches(*old)
     if fname is None:
-        raise MatlabError("print: specify a file name, e.g. print('-dpng', 'figure.png').")
-    _save(interp, n, fname, dpi, fmt)
+        raise MatlabError("print: there is no printer; give a file name, e.g. print('-dpng', 'figure.png').")
+    _save(interp, n, fname, dpi, fmt, "print", fit)
     return None
+
+
+def _export_target(interp, v):
+    """(figure, axes list or None) for the object given to exportgraphics."""
+    hs = _resolve(interp, v)
+    if not hs:
+        raise MatlabError("exportgraphics needs a figure, an axes, a tiled layout or a chart.")
+    h = hs[0]
+    if not _alive(h):
+        raise MatlabError("Invalid or deleted object.")
+    if h.kind == "figure":
+        return h.obj, None
+    if h.kind == "tiledlayout":
+        return h.obj.fig, [a for a in h.obj.order if a in h.obj.fig.axes]
+    if h.kind in ("axes", "polaraxes", "geoaxes"):
+        return h.obj.figure, [h.obj]
+    ax = h.extra.get("_child_of") or _obj_axes(h)
+    if ax is None:
+        raise MatlabError("exportgraphics needs a figure, an axes, a tiled layout or a chart.")
+    return ax.figure, [ax]
+
+
+def _axes_clip(fig, axes: list):
+    """Bounding box in inches of the given axes with their labels, titles, legends and colorbars."""
+    from matplotlib.transforms import Bbox
+    fig.canvas.draw()
+    r = fig.canvas.get_renderer()
+    boxes = []
+    for ax in axes:
+        bb = ax.get_tightbbox(r)
+        if bb is not None:
+            boxes.append(bb)
+        cb = getattr(ax, "_mylab_colorbar", None)
+        if cb is not None:
+            cbb = cb.ax.get_tightbbox(r)
+            if cbb is not None:
+                boxes.append(cbb)
+        right = getattr(ax, "_mylab_yyright", None)
+        if right is not None and right in fig.axes:
+            rb = right.get_tightbbox(r)
+            if rb is not None:
+                boxes.append(rb)
+    if not boxes:
+        return None
+    return Bbox.union(boxes).padded(3).transformed(fig.dpi_scale_trans.inverted())
 
 
 @builtin("exportgraphics")
 def _exportgraphics(interp, args, nargout):
     args, opts = _split_name_values(args, {"resolution", "contenttype", "backgroundcolor", "append",
-                                           "colorspace"})
+                                           "colorspace", "padding", "width", "height", "units",
+                                           "preserveaspectratio"})
     st = _state(interp)
     if len(args) >= 2 and not is_text(args[0]):
-        n = _fig_num_arg(interp, args[0])
+        fig, axes = _export_target(interp, args[0])
         fname = text(args[1])
+        extra = args[2:]
+    elif len(args) == 1 and is_text(args[0]):
+        if st.current is None or st.current not in st.figures:
+            raise MatlabError("No figure to export.")
+        fig, axes = st.figures[st.current], None
+        fname = text(args[0])
+        extra = []
     else:
-        n = st.current
-        fname = text(args[-1])
+        raise MatlabError("exportgraphics needs an object and a file name, e.g. exportgraphics(gcf, 'f.png').")
+    if extra:
+        raise MatlabError("exportgraphics options must be name/value pairs (Resolution, ContentType, "
+                          "BackgroundColor, Append, Colorspace).")
+    ext = os.path.splitext(fname)[1].lower().lstrip(".")
+    if not ext:
+        raise MatlabError("exportgraphics: the file name needs an extension such as .png, .jpg, .tif, .gif, "
+                          ".pdf, .eps or .svg.")
+    fname, kind = _file_kind(fname, None, "exportgraphics")
+    if kind in ("fig", "bmp", "ps"):
+        raise MatlabError(f"exportgraphics does not write .{kind} files. Use saveas, print or savefig.")
     dpi = _scalar(opts["resolution"]) if "resolution" in opts else 150.0
-    _save(interp, n, fname, dpi)
+    if dpi <= 0:
+        raise MatlabError("Resolution must be a positive number.")
+    content = text(opts["contenttype"]).lower() if "contenttype" in opts else "auto"
+    if content not in ("auto", "vector", "image"):
+        raise MatlabError("ContentType must be 'auto', 'vector' or 'image'.")
+    if content == "vector" and kind in _RASTER:
+        raise MatlabError(f"A .{kind} file cannot hold vector content. Use a .pdf, .eps or .svg file.")
+    for key in ("width", "height", "units", "preserveaspectratio", "padding"):
+        if key in opts:
+            raise MatlabError(f"exportgraphics: the option '{key.capitalize()}' is not supported.")
+    space = text(opts["colorspace"]).lower() if "colorspace" in opts else "rgb"
+    if space not in ("rgb", "gray", "cmyk"):
+        raise MatlabError("Colorspace must be 'rgb', 'gray' or 'cmyk'.")
+    if space == "cmyk":
+        raise MatlabError("exportgraphics: the CMYK colour space is not supported.")
+    face, transparent = "white", False
+    if "backgroundcolor" in opts:
+        b = opts["backgroundcolor"]
+        if is_text(b) and text(b).lower() == "none":
+            transparent, face = True, None
+            if kind in ("jpg", "bmp", "gif", "tif"):
+                raise MatlabError(f"A .{kind} file cannot have a transparent background; use .png or .pdf.")
+        elif is_text(b) and text(b).lower() == "current":
+            face = fig.get_facecolor()
+        else:
+            face = _color(b)
+    append = "append" in opts and _onoff(opts["append"])
+    if append and kind not in ("pdf", "gif"):
+        raise MatlabError("Append works with .pdf and .gif files.")
+    clip = _axes_clip(fig, axes) if axes else None
+    raster_in_vector = content == "image" and kind in _VECTOR
+    kw = {"tight": clip is None, "facecolor": face, "transparent": transparent, "clip": clip,
+          "gray": space == "gray"}
+    if kind == "gif":
+        from PIL import Image, ImageSequence
+        buf = io.BytesIO()
+        _write_figure(fig, buf, "png", dpi, **{**kw, "gray": False})
+        buf.seek(0)
+        new = Image.open(buf).convert("RGB")
+        if space == "gray":
+            new = new.convert("L").convert("RGB")
+        frames = []
+        if append and os.path.exists(fname):
+            with Image.open(fname) as old:
+                frames = [f.convert("RGB").copy() for f in ImageSequence.Iterator(old)]
+        if frames and frames[0].size != new.size:
+            new = new.resize(frames[0].size)
+        frames.append(new)
+        try:
+            frames[0].save(fname, format="GIF", save_all=len(frames) > 1, append_images=frames[1:],
+                           duration=500, loop=0)
+        except OSError as e:
+            raise MatlabError(f"Cannot write '{fname}': {e.strerror or e}") from e
+        return None
+    if kind == "pdf":
+        _export_pdf(interp, fig, fname, dpi, kw, append, raster_in_vector)
+        return None
+    if raster_in_vector:
+        raise MatlabError(f"exportgraphics: image content in a .{kind} file is not supported; use .pdf, or an "
+                          "image file such as .png.")
+    _write_figure(fig, fname, kind, dpi, **kw)
+    return None
+
+
+def _export_pdf(interp, fig, fname: str, dpi: float, kw: dict, append: bool, as_image: bool) -> None:
+    """Write a figure as a one-page PDF file, or add it as a new page to an existing PDF file."""
+    plt = _plt()
+    buf = io.BytesIO()
+    if as_image:
+        from PIL import Image
+        png = io.BytesIO()
+        _write_figure(fig, png, "png", dpi, **{**kw, "gray": False})
+        png.seek(0)
+        im = Image.open(png).convert("L" if kw.get("gray") else "RGB")
+        tmp = plt.figure(figsize=(im.size[0] / dpi, im.size[1] / dpi), dpi=dpi)
+        try:
+            ax = tmp.add_axes([0, 0, 1, 1])
+            ax.imshow(np.asarray(im), cmap="gray" if kw.get("gray") else None, interpolation="nearest",
+                      vmin=0, vmax=255)
+            ax.set_axis_off()
+            tmp.savefig(buf, format="pdf", dpi=dpi)
+        finally:
+            plt.close(tmp)
+    else:
+        if kw.get("gray"):
+            raise MatlabError("Colorspace 'gray' needs ContentType 'image' for a PDF file.")
+        _write_figure(fig, buf, "pdf", dpi, **{k: v for k, v in kw.items() if k != "gray"})
+    data = buf.getvalue()
+    try:
+        if append and os.path.exists(fname) and os.path.getsize(fname) > 0:
+            with open(fname, "rb") as f:
+                old = f.read()
+            try:
+                data = merge_pdfs(old, data)
+            except ValueError as e:
+                data = _merge_with_pypdf(old, data, fname, str(e))
+        with open(fname, "wb") as f:
+            f.write(data)
+    except OSError as e:
+        raise MatlabError(f"Cannot write '{fname}': {e.strerror or e}") from e
+
+
+def _merge_with_pypdf(old: bytes, new: bytes, fname: str, why: str) -> bytes:
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError:
+        raise MatlabError(f"exportgraphics cannot append to '{fname}': {why}. Files written by mylab can "
+                          "always be appended to; for other PDF files install the Python package "
+                          "pypdf.") from None
+    writer = PdfWriter()
+    for src in (old, new):
+        for pg in PdfReader(io.BytesIO(src)).pages:
+            writer.add_page(pg)
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def _pdf_objects(data: bytes) -> tuple[dict, int, int | None]:
+    """({number: body bytes}, number of the catalog, number of the info object) of a simple PDF file."""
+    m = list(re.finditer(rb"startxref\s+(\d+)", data))
+    if not m:
+        raise ValueError("it has no cross-reference table")
+    pos = int(m[-1].group(1))
+    if data[pos:pos + 4] != b"xref":
+        raise ValueError("it uses compressed cross-reference streams")
+    offsets: dict[int, int] = {}
+    lines = data[pos:].split(b"\n")
+    k = 1
+    while k < len(lines):
+        head = lines[k].split()
+        if len(head) != 2 or not head[0].isdigit():
+            break
+        first, count = int(head[0]), int(head[1])
+        for i in range(count):
+            entry = lines[k + 1 + i].split()
+            if len(entry) >= 3 and entry[2] == b"n":
+                offsets[first + i] = int(entry[0])
+        k += 1 + count
+    t = data.find(b"trailer", pos)
+    trailer = data[t:data.find(b"startxref", t)] if t >= 0 else b""
+    root = re.search(rb"/Root\s+(\d+)\s+0\s+R", trailer)
+    if root is None:
+        raise ValueError("its trailer has no /Root entry")
+    if b"/Encrypt" in trailer:
+        raise ValueError("it is encrypted")
+    info = re.search(rb"/Info\s+(\d+)\s+0\s+R", trailer)
+    order = sorted(offsets.items(), key=lambda kv: kv[1])
+    objs: dict[int, bytes] = {}
+    for idx, (number, off) in enumerate(order):
+        end = order[idx + 1][1] if idx + 1 < len(order) else pos
+        chunk = data[off:end]
+        head = re.match(rb"\s*(\d+)\s+(\d+)\s+obj", chunk)
+        if head is None or int(head.group(1)) != number:
+            raise ValueError("its cross-reference table does not match its objects")
+        body = chunk[head.end():]
+        cut = body.rfind(b"endobj")
+        objs[number] = body[:cut] if cut >= 0 else body
+    return objs, int(root.group(1)), int(info.group(1)) if info else None
+
+
+def merge_pdfs(first: bytes, second: bytes) -> bytes:
+    """One PDF file with the pages of ``first`` followed by the pages of ``second``.
+
+    Works for files with a plain cross-reference table (what matplotlib and most simple writers produce);
+    raises ValueError for files it cannot take apart.
+    """
+    ref = re.compile(rb"(\d+)(\s+0\s+R)")
+    out_objs: list[tuple[int, bytes]] = []
+    kids: list[bytes] = []
+    count = 0
+    next_free = 3  # 1 = catalog, 2 = page tree root
+    info_ref = None
+    for data in (first, second):
+        objs, root, info = _pdf_objects(data)
+        shift = next_free - 1
+        pages = re.search(rb"/Pages\s+(\d+)\s+0\s+R", objs[root])
+        if pages is None:
+            raise ValueError("its catalog has no /Pages entry")
+        pages_num = int(pages.group(1))
+        tree = objs[pages_num]
+        kid_list = re.search(rb"/Kids\s*\[(.*?)\]", tree, re.S)
+        n_pages = re.search(rb"/Count\s+(\d+)", tree)
+        if kid_list is None or n_pages is None:
+            raise ValueError("its page tree cannot be read")
+        count += int(n_pages.group(1))
+        for kid in re.findall(rb"(\d+)\s+0\s+R", kid_list.group(1)):
+            kids.append(b"%d 0 R" % (int(kid) + shift))
+        for number, body in objs.items():
+            if number in (root, pages_num):
+                continue
+            cut = re.search(rb"stream\r?\n", body)
+            head, rest = (body[:cut.start()], body[cut.start():]) if cut else (body, b"")
+            head = ref.sub(lambda mm: b"%d" % (int(mm.group(1)) + shift) + mm.group(2), head)
+            # objects that pointed at their file's page tree root now hang off the new root
+            head = head.replace(b"/Parent %d 0 R" % (pages_num + shift), b"/Parent 2 0 R")
+            out_objs.append((number + shift, head + rest))
+        if info is not None and info_ref is None:
+            info_ref = info + shift
+        next_free += max(objs) if objs else 0
+    out = io.BytesIO()
+    out.write(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    table: dict[int, int] = {}
+
+    def emit(number: int, body: bytes) -> None:
+        table[number] = out.tell()
+        out.write(b"%d 0 obj" % number + (b"" if body[:1] in (b"\n", b"\r", b" ") else b"\n") + body
+                  + (b"" if body.endswith(b"\n") else b"\n") + b"endobj\n")
+
+    emit(1, b"\n<< /Type /Catalog /Pages 2 0 R >>\n")
+    emit(2, b"\n<< /Type /Pages /Kids [ " + b" ".join(kids) + b" ] /Count %d >>\n" % count)
+    for number, body in out_objs:
+        emit(number, body)
+    size = max(table) + 1
+    start = out.tell()
+    out.write(b"xref\n0 %d\n" % size)
+    out.write(b"0000000000 65535 f \n")
+    for number in range(1, size):
+        if number in table:
+            out.write(b"%010d 00000 n \n" % table[number])
+        else:
+            out.write(b"0000000000 00000 f \n")
+    out.write(b"trailer\n<< /Size %d /Root 1 0 R" % size
+              + (b" /Info %d 0 R" % info_ref if info_ref is not None else b"") + b" >>\nstartxref\n%d\n%%%%EOF\n"
+              % start)
+    return out.getvalue()
+
+
+@builtin("hgexport")
+def _hgexport(interp, args, nargout):
+    """hgexport(fig, filename[, style], 'Format', fmt): the older way to save a figure to a file."""
+    if len(args) == 1 and is_text(args[0]) and text(args[0]).lower() in ("factorystyle", "readstyle"):
+        return Struct.scalar({"Version": char("1"), "Format": char("eps"), "Preview": char("none"),
+                              "Width": char("auto"), "Height": char("auto"), "Units": char("inches"),
+                              "Color": char("rgb"), "Background": char("w"), "Resolution": char("auto"),
+                              "Renderer": char("auto"), "Bounds": char("loose")})
+    if len(args) < 2:
+        raise MatlabError("hgexport needs a figure and a file name.")
+    n = _fig_num_arg(interp, args[0])
+    fname = text(args[1])
+    rest = list(args[2:])
+    style = None
+    if rest and isinstance(rest[0], Struct):
+        style = rest.pop(0)
+    fmt, dpi = "eps", 150.0
+    if style is not None:
+        if "Format" in style.fields:
+            fmt = to_str(style.get_field(0, "Format")).lower()
+        if "Resolution" in style.fields:
+            r = style.get_field(0, "Resolution")
+            if not is_text(r):
+                dpi = _scalar(r)
+            elif to_str(r).isdigit():
+                dpi = float(to_str(r))
+    if len(rest) % 2:
+        raise MatlabError("hgexport options must be name/value pairs.")
+    for i in range(0, len(rest), 2):
+        name = text(rest[i]).lower()
+        if name == "format":
+            fmt = text(rest[i + 1]).lower()
+        elif name == "resolution":
+            dpi = _scalar(rest[i + 1])
+        else:
+            raise MatlabError(f"hgexport: the option '{text(rest[i])}' is not supported.")
+    if fmt not in _FORMATS:
+        raise MatlabError(f"hgexport: unknown format '{fmt}'.")
+    _save(interp, n, fname, dpi, _FORMATS[fmt], "hgexport")
     return None
 
 
@@ -6807,7 +7308,8 @@ def _open(interp, args, nargout):
     name = text(args[0])
     ext = os.path.splitext(name)[1].lower()
     if ext == ".fig":
-        raise MatlabError(_FIG_ERROR)
+        from . import figfiles
+        return figfiles.openfig_builtin(interp, [char(name)], nargout)
     if not os.path.exists(name):
         raise MatlabError(f"File '{name}' not found.")
     if ext == ".mat":
@@ -7425,16 +7927,127 @@ builtin("daspect")(_with_axes_arg(lambda interp, args, nargout: _aspect(interp, 
 builtin("pbaspect")(_with_axes_arg(lambda interp, args, nargout: _aspect(interp, args, nargout, "pbaspect")))
 
 
-@builtin("lighting", "camlight", "material", "light", "zoom", "pan", "rotate3d", "datacursormode",
-         "refreshdata")
-def _graphics_noop(interp, args, nargout):
-    """Lighting and mouse-interaction commands: accepted, without an effect."""
-    return np.zeros((0, 0)) if nargout > 0 else None
+def _mode_target(interp, args: list):
+    """(figure handle, axes or None, remaining args) for zoom, pan, rotate3d and datacursormode."""
+    args = list(args)
+    ax = None
+    if args and isinstance(args[0], GraphicsHandle):
+        h = args.pop(0)
+        if h.kind in ("axes", "polaraxes"):
+            ax = h.obj
+            fig = h.obj.figure
+        elif h.kind == "figure":
+            fig = h.obj
+        else:
+            raise MatlabError("Expected a figure or an axes.")
+    else:
+        fig = _figure(interp)
+    return _wrap(interp, "figure", fig), ax, args
 
 
-@builtin("hgsave", "hgload", "openfig", "savefig")
-def _fig_files(interp, args, nargout):
-    raise MatlabError(_FIG_ERROR)
+def _interaction_mode(name: str, words: tuple):
+    def f(interp, args, nargout):
+        fh, ax, rest = _mode_target(interp, args)
+        key = f"_{name}_mode"
+        if not rest:
+            if nargout > 0:  # the state of the mode; there is no mouse, so it only records on/off
+                return Struct.scalar({"Enable": char(fh.extra.get(key, "off")),
+                                      "FigureHandle": fh})
+            fh.extra[key] = "off" if fh.extra.get(key, "off") != "off" else "on"
+            return None
+        word = text(rest[0]).lower() if is_text(rest[0]) else None
+        if word not in words:
+            raise MatlabError(f"{name}: expected one of {', '.join(repr(w) for w in words)}.")
+        fh.extra[key] = "off" if word == "off" else ("on" if word in ("on", "toggle") else word)
+        return None
+    f.__doc__ = f"{name} mode: recorded on the figure; it needs a mouse to have an effect."
+    return f
+
+
+builtin("pan")(_interaction_mode("pan", ("on", "off", "xon", "yon", "toggle")))
+builtin("rotate3d")(_interaction_mode("rotate3d", ("on", "off", "toggle")))
+builtin("datacursormode")(_interaction_mode("datacursormode", ("on", "off", "toggle")))
+builtin("brush")(_interaction_mode("brush", ("on", "off", "toggle")))
+
+
+@builtin("zoom")
+def _zoom(interp, args, nargout):
+    """zoom(factor) changes the limits of the current axes; zoom on/off records the mouse mode."""
+    fh, ax, rest = _mode_target(interp, args)
+    if rest and not is_text(rest[0]):
+        factor = _scalar(rest[0])
+        if factor <= 0:
+            raise MatlabError("zoom: the factor must be positive.")
+        st = _state(interp)
+        if ax is None:
+            n = _fig_number(interp, fh.obj)
+            ax = st.axes.get(n)
+            if ax is None or ax not in fh.obj.axes:
+                raise MatlabError("zoom: the figure has no axes.")
+        if not hasattr(ax, "_mylab_zoom_reset"):
+            ax._mylab_zoom_reset = (ax.get_xlim(), ax.get_ylim())
+        for which in "xy":
+            lo, hi = getattr(ax, f"get_{which}lim")()
+            if getattr(ax, f"get_{which}scale")() == "log" and lo > 0 and hi > 0:
+                c = math.sqrt(lo * hi)
+                half = math.sqrt(hi / lo) ** (1 / factor)
+                getattr(ax, f"set_{which}lim")(c / half, c * half)
+            else:
+                c, half = (lo + hi) / 2, (hi - lo) / 2 / factor
+                getattr(ax, f"set_{which}lim")(c - half, c + half)
+        _redraw(interp)
+        return None
+    if rest and text(rest[0]).lower() in ("out", "reset"):
+        st = _state(interp)
+        target = ax or st.axes.get(_fig_number(interp, fh.obj))
+        if target is not None and target in fh.obj.axes:
+            if text(rest[0]).lower() == "reset":
+                target._mylab_zoom_reset = (target.get_xlim(), target.get_ylim())
+            else:
+                saved = getattr(target, "_mylab_zoom_reset", None)
+                if saved is not None:
+                    target.set_xlim(saved[0])
+                    target.set_ylim(saved[1])
+                else:
+                    target.autoscale(True)
+            _redraw(interp)
+        return None
+    return _interaction_mode("zoom", ("on", "off", "xon", "yon", "toggle"))(
+        interp, [fh] + rest, nargout)
+
+
+@builtin("hgsave", "savefig")
+def _savefig(interp, args, nargout):
+    from . import figfiles
+    return figfiles.savefig_builtin(interp, list(args), nargout)
+
+
+@builtin("hgload", "openfig")
+def _openfig(interp, args, nargout):
+    from . import figfiles
+    return figfiles.openfig_builtin(interp, list(args), nargout)
+
+
+def _link_callback(which: str, group: list):
+    def on_change(src):
+        if getattr(src, "_mylab_syncing", False):
+            return
+        lim = getattr(src, f"get_{which}lim")()
+        for o in group:
+            if o is not src and o.figure is not None:
+                o._mylab_syncing = True
+                try:
+                    getattr(o, f"set_{which}lim")(lim)
+                finally:
+                    o._mylab_syncing = False
+    return on_change
+
+
+def _relink(ax) -> None:
+    """Connect the limit callbacks of a linked axes again (clearing an axes drops its callbacks)."""
+    for which, info in getattr(ax, "_mylab_linked", {}).items():
+        cid = ax.callbacks.connect(f"{which}lim_changed", _link_callback(which, info[1]))
+        ax._mylab_linked[which] = (cid, info[1])
 
 
 @builtin("linkaxes")
@@ -7444,21 +8057,22 @@ def _linkaxes(interp, args, nargout):
     axs = [h.obj for h in _handles_of(args[0]) if h.kind == "axes"]
     if len(axs) != len(_handles_of(args[0])) or not axs:
         raise MatlabError("linkaxes expects axes handles, e.g. linkaxes([ax1 ax2], 'x').")
-    mode = text(args[1]).lower() if len(args) > 1 else "xy"
-    if mode not in ("x", "y", "xy", "off", "xyz", "z", "xz", "yz"):
-        raise MatlabError("linkaxes: the option must be 'x', 'y', 'xy' or 'off'.")
+    mode = text(args[1]).lower() if len(args) > 1 else "xyz"
+    if mode not in ("x", "y", "z", "xy", "xz", "yz", "xyz", "off"):
+        raise MatlabError("linkaxes: the option must be 'x', 'y', 'z', a combination such as 'xy', or 'off'.")
+    for a in axs:  # links set earlier for these axes are replaced
+        for cid, _group in list(getattr(a, "_mylab_linked", {}).values()):
+            a.callbacks.disconnect(cid)
+        a._mylab_linked = {}
     if mode == "off" or len(axs) < 2:
         return None
-    for which in "xy":
-        if which not in mode:
+    for which in mode:
+        if not all(hasattr(a, f"get_{which}lim") for a in axs):
             continue
         lims = [getattr(a, f"get_{which}lim")() for a in axs]
         lo, hi = min(min(v) for v in lims), max(max(v) for v in lims)
-        for a in axs[1:]:
-            try:
-                getattr(a, f"share{which}")(axs[0])
-            except (ValueError, AttributeError):
-                pass  # already shared
+        for a in axs:
+            a._mylab_linked[which] = (a.callbacks.connect(f"{which}lim_changed", _link_callback(which, axs)), axs)
         for a in axs:
             _set_lim(a, which, lo, hi)
     _redraw(interp)
@@ -7918,27 +8532,8 @@ def _ribbon(interp, args, nargout):
 
 @builtin("copyobj")
 def _copyobj(interp, args, nargout):
-    if len(args) < 2:
-        raise MatlabError("copyobj needs the objects to copy and the new parent.")
-    parents = _handles_of(args[1])
-    if not parents or parents[0].kind not in ("axes", "polaraxes"):
-        raise MatlabError("copyobj: the new parent must be an axes. Copying axes or figures is not supported.")
-    ax = parents[0].obj
-    out = []
-    for h in _handles_of(args[0]):
-        if h.kind not in ("line", "animatedline", "stair") or hasattr(h.obj, "get_data_3d"):
-            raise MatlabError(f"copyobj: copying {_short(h.kind)} objects is not supported; only 2-D lines "
-                              "can be copied.")
-        src = h.obj
-        new = ax.plot(*src.get_data(), color=src.get_color(), linestyle=src.get_linestyle(),
-                      linewidth=src.get_linewidth(), marker=src.get_marker(), markersize=src.get_markersize(),
-                      markerfacecolor=src.get_markerfacecolor(), markeredgecolor=src.get_markeredgecolor(),
-                      label=src.get_label(), drawstyle=src.get_drawstyle())[0]
-        nh = _wrap(interp, "line", new)
-        nh.extra.update({k: v for k, v in h.extra.items() if k in ("Tag", "UserData")})
-        out.append(nh)
-    _redraw(interp)
-    return _handle_list(out) if nargout > 0 else None
+    from . import figfiles
+    return figfiles.copyobj_builtin(interp, list(args), nargout)
 
 
 @builtin("gtext")

@@ -18,7 +18,7 @@ import numpy as np
 
 from ..errors import MatlabError
 from ..values import Cell, MString, StringArray, char, is_char, to_str
-from . import plot_charts  # noqa: F401  (its chart functions are wrapped below)
+from . import plot_charts, plotmore  # noqa: F401  (their functions are wrapped below)
 from . import plotting as P
 from ._registry import BUILTINS, builtin
 from ._util import fnum, is_text, text

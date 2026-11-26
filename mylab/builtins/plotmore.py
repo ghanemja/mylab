@@ -332,15 +332,18 @@ def _ref_line(interp, args, nargout, vertical: bool):
     lines = []
     for k, value in enumerate(values):
         ln = ax.axvline(value, **kw) if vertical else ax.axhline(value, **kw)
+        ln._mylab_constant = ("x" if vertical else "y", float(value))
         lines.append(ln)
         label = texts[k] if k < len(texts) else (texts[0] if len(texts) == 1 else "")
         if label:
             if vertical:
-                ax.annotate(label, xy=(value, 1), xycoords=("data", "axes fraction"), xytext=(3, -3),
-                            textcoords="offset points", rotation=90, va="top", ha="left", fontsize=9)
+                note = ax.annotate(label, xy=(value, 1), xycoords=("data", "axes fraction"), xytext=(3, -3),
+                                   textcoords="offset points", rotation=90, va="top", ha="left", fontsize=9)
             else:
-                ax.annotate(label, xy=(1, value), xycoords=("axes fraction", "data"), xytext=(-3, 3),
-                            textcoords="offset points", va="bottom", ha="right", fontsize=9)
+                note = ax.annotate(label, xy=(1, value), xycoords=("axes fraction", "data"), xytext=(-3, 3),
+                                   textcoords="offset points", va="bottom", ha="right", fontsize=9)
+            note._mylab_internal = True  # part of the line, not a text object of its own
+            ln._mylab_label = note
     _redraw(interp)
     hs = [_wrap(interp, "line", ln) for ln in lines]
     return (hs[0] if len(hs) == 1 else GraphicsArray(hs)) if nargout > 0 else None
@@ -458,15 +461,23 @@ def _boxplot(interp, args, nargout):
 
 @builtin("gobjects")
 def _gobjects(interp, args, nargout):
-    """An array to hold graphics handles; mylab pre-allocates it as an empty cell-like list."""
+    """An array of placeholders for graphics handles, to be filled in later: h = gobjects(1, 3)."""
     dims = [int(np.real(fnum(a)).flat[0]) for a in args if not is_text(a)]
     if len(args) == 1 and not is_text(args[0]) and np.asarray(args[0]).size > 1:
         dims = [int(v) for v in np.real(fnum(args[0])).flatten()]
+    if any(is_text(a) for a in args):
+        raise MatlabError("gobjects expects sizes, e.g. gobjects(2, 3).")
     if not dims:
         dims = [1, 1]
     if len(dims) == 1:
         dims = [dims[0], dims[0]]
+    if len(dims) > 2:
+        if any(d != 1 for d in dims[2:]):
+            raise MatlabError("gobjects makes arrays with up to two dimensions.")
+        dims = dims[:2]
+    dims = [max(d, 0) for d in dims]
     n = int(np.prod(dims))
     if n == 0:
         return GraphicsArray([], row=dims[0] <= 1)
-    return GraphicsArray([GraphicsHandle(interp, "placeholder", None) for _ in range(n)], row=dims[0] == 1)
+    items = [GraphicsHandle(interp, "placeholder", None) for _ in range(n)]
+    return GraphicsArray(items, row=dims[0] == 1, shape=tuple(dims))
