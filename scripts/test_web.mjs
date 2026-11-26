@@ -1753,14 +1753,26 @@ async function main() {
       check((await model()).blocks[1].position[1] === before[1], "undo goes back step by step");
       check(/"Gain": "3"/.test(await page.evaluate(() => window.mylab.app.liveContent("models/build.mlb.json"))), "every change is written to the model file");
       // copy, paste, rotate, connect from the keyboard
+      const selected = () => page.waitForFunction(() => window.mylab.app.blocks.editor.sel.has("Gain"), null, { timeout: 5000 }).then(() => true, () => false);
       const g1 = await blockAt("Gain");
       await page.mouse.click(g1.x, g1.y);
       // a slow machine may not have handled the click yet: copy only once the block is selected
-      await page.waitForFunction(() => window.mylab.app.blocks.editor.sel.has("Gain"), null, { timeout: 5000 }).catch(() => {});
+      if (!(await selected())) {
+        const g1b = await blockAt("Gain");
+        await page.mouse.click(g1b.x, g1b.y);
+        await selected();
+      }
       await page.keyboard.press("Control+c");
       await page.keyboard.press("Control+v");
       await page.waitForFunction(() => JSON.parse(window.mylab.app.blocks.editor.text()).blocks.length === 4, null, { timeout: 5000 }).catch(() => {});
-      check((await names()).join() === "Constant,Gain,Scope,Gain1", "paste adds a copy with a new name: " + (await names()).join());
+      const why = await page.evaluate(() => {
+        const ed = window.mylab.app.blocks.editor;
+        const a = document.activeElement;
+        return `selected [${[...ed.sel].join()}], focus ${a ? a.tagName + "#" + a.id + "." + a.className : "none"}, ` +
+          `open dialogs [${[...document.querySelectorAll("dialog[open]")].map((d) => d.id).join()}], ` +
+          `status "${(document.querySelector(".bd-live") || {}).textContent || ""}"`;
+      });
+      check((await names()).join() === "Constant,Gain,Scope,Gain1", "paste adds a copy with a new name: " + (await names()).join() + " (" + why + ")");
       await page.keyboard.press("r");
       check((await model()).blocks[3].rotation === 1, "R rotates the selected block");
       await page.keyboard.press("Shift+R");

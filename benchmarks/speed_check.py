@@ -5,8 +5,9 @@
     python benchmarks/speed_check.py --only b0    # some cases only
 
 Times differ between machines, so every case is stored relative to a calibration workload timed on
-the same machine in the same run: a pure-Python loop for cases bound by the interpreter, and a
-NumPy/BLAS workload for cases bound by numerical libraries. A case fails when its relative time is
+the same machine in the same run: a pure-Python loop for cases bound by the interpreter, a NumPy
+workload for cases bound by numerical libraries, and the same LAPACK/BLAS operations called from
+NumPy for the dense linear-algebra cases. A case fails when its relative time is
 more than --limit (default 25%) above the baseline; failing cases are timed again before they count.
 """
 
@@ -31,8 +32,13 @@ LIBRARY_BOUND = {"b20_vec_elementwise", "b21_matmul_1500", "b22_solve_1500", "b2
                  "b30_accumarray_interp", "b31_csv_write_read", "b32_plot_to_png"}
 
 
+# dense linear algebra: timed against the same LAPACK/BLAS operations called from NumPy, so the number
+# of cores and the BLAS library (which change these far more than anything else) cancel out
+LINALG_BOUND = {"b21_matmul_1500", "b22_solve_1500", "b23_eig_500", "b24_svd_600"}
+
+
 def calibrate() -> dict:
-    """Best of five timings of two fixed workloads, in seconds."""
+    """Best of five timings of three fixed workloads, in seconds."""
     import numpy as np
 
     def py():
@@ -50,8 +56,19 @@ def calibrate() -> dict:
         np.fft.fft(x)
         np.sort(x)
 
+    big = np.random.default_rng(2).random((1500, 1500)) + 1500 * np.eye(1500)
+    rhs = np.arange(1.0, 1501.0)
+    e5 = np.random.default_rng(3).random((500, 500))
+    s6 = np.random.default_rng(4).random((600, 600))
+
+    def linalg():
+        big @ big.T
+        np.linalg.solve(big, rhs)
+        np.linalg.eigvals(e5)
+        np.linalg.svd(s6, compute_uv=False)
+
     out = {}
-    for name, fn in (("python", py), ("numpy", lib)):
+    for name, fn in (("python", py), ("numpy", lib), ("linalg", linalg)):
         best = float("inf")
         for _ in range(5):
             t0 = time.perf_counter()
@@ -85,6 +102,8 @@ def startup(repeats: int = 5) -> float:
 
 
 def unit(name: str) -> str:
+    if name in LINALG_BOUND:
+        return "linalg"
     return "numpy" if name in LIBRARY_BOUND else "python"
 
 
@@ -98,7 +117,8 @@ def main() -> None:
     if a.only:
         names = [n for n in names if re.search(a.only, n)]
     cal = calibrate()
-    print(f"calibration: python loop {cal['python']:.3f} s, numpy workload {cal['numpy']:.3f} s", flush=True)
+    print(f"calibration: python loop {cal['python']:.3f} s, numpy workload {cal['numpy']:.3f} s, "
+          f"linear algebra {cal['linalg']:.3f} s", flush=True)
     now = {}
     for n in names:
         now[n] = run_case(n)
@@ -120,6 +140,10 @@ def main() -> None:
     for n in names:
         if n not in base["cases"]:
             rows.append((n, None, now[n] / cal[unit(n)], "new"))
+            continue
+        if base["cases"][n].get("unit") != unit(n):
+            rows.append((n, None, now[n] / cal[unit(n)], "re-record the baseline (--update)"))
+            failed.append(n)
             continue
         ref = base["cases"][n]["relative"]
         rel = now[n] / cal[unit(n)]

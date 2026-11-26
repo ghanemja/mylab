@@ -161,6 +161,15 @@ def test_operators_on_scalars(op):
             assert r.dtype == np.float64 and r.shape == (1, 1)
             assert describe(r) == describe(np.array([[x ** y]]))
             continue
+        if np.isnan(x) and np.isnan(y) and op not in ("==", "~=", "<", "<=", ">", ">=", "&", "|"):
+            # Arithmetic on two NaNs: IEEE 754 makes the result one of the input NaNs without saying which,
+            # and compiled scalar code and NumPy's vector loops pick differently on some CPUs (NaN .* -NaN
+            # gave -NaN on one path and NaN on the other on GitHub's runners). Any NaN of the same class.
+            fast, slow = on_and_off(lambda: ops.binop(op, a, b))
+            for r in (fast, slow):
+                assert isinstance(r, np.ndarray) and r.shape == (1, 1) and np.isnan(r).all(), (op, fast, slow)
+            assert fast.dtype == slow.dtype
+            continue
         same(lambda: ops.binop(op, a, b), f"{a!r} {op} {b!r}")
 
 

@@ -1,160 +1,161 @@
 {
  "calibration": {
-  "numpy": 0.05993593400125974,
-  "python": 0.07832136400247691
+  "linalg": 0.20589213600032963,
+  "numpy": 0.05164992199934204,
+  "python": 0.06997305800177855
  },
  "cases": {
   "b01_scalar_loop": {
-   "relative": 0.979732681846211,
-   "seconds": 0.076734,
+   "relative": 0.9594978684266376,
+   "seconds": 0.067139,
    "unit": "python"
   },
   "b02_array_fill": {
-   "relative": 3.6573290525295388,
-   "seconds": 0.286447,
+   "relative": 2.820599894247632,
+   "seconds": 0.197366,
    "unit": "python"
   },
   "b03_while_if": {
-   "relative": 3.2478877665097263,
-   "seconds": 0.254379,
+   "relative": 3.40896920631848,
+   "seconds": 0.238536,
    "unit": "python"
   },
   "b04_nested_matrix": {
-   "relative": 1.0071581490524777,
-   "seconds": 0.078882,
+   "relative": 0.6915375914937155,
+   "seconds": 0.048389,
    "unit": "python"
   },
   "b05_recursion_fib22": {
-   "relative": 0.071487519035329,
-   "seconds": 0.005599,
+   "relative": 0.07712968611237228,
+   "seconds": 0.005397,
    "unit": "python"
   },
   "b06_call_user_function": {
-   "relative": 0.3345319675378916,
-   "seconds": 0.026201,
+   "relative": 0.3560799072032366,
+   "seconds": 0.024916,
    "unit": "python"
   },
   "b07_call_anonymous": {
-   "relative": 0.3668092399296244,
-   "seconds": 0.028729,
+   "relative": 0.2872391256573227,
+   "seconds": 0.020099,
    "unit": "python"
   },
   "b08_struct_fields": {
-   "relative": 0.9766173122008065,
-   "seconds": 0.07649,
+   "relative": 1.1449692537085288,
+   "seconds": 0.080117,
    "unit": "python"
   },
   "b09_cell_and_string_build": {
-   "relative": 2.887832750114606,
-   "seconds": 0.226179,
+   "relative": 3.3360697197779556,
+   "seconds": 0.233435,
    "unit": "python"
   },
   "b10_small_array_ops": {
-   "relative": 3.4129257502658725,
-   "seconds": 0.267305,
+   "relative": 3.396207151529088,
+   "seconds": 0.237643,
    "unit": "python"
   },
   "b11_object_methods": {
-   "relative": 14.38095485625582,
-   "seconds": 1.126336,
+   "relative": 15.945294258422157,
+   "seconds": 1.115741,
    "unit": "python"
   },
   "b12_map_inserts": {
-   "relative": 5.6383338776637535,
-   "seconds": 0.441602,
+   "relative": 6.095531797240572,
+   "seconds": 0.426523,
    "unit": "python"
   },
   "b13_ode45_vdp": {
-   "relative": 12.069325043548849,
-   "seconds": 0.945286,
+   "relative": 9.984342830668375,
+   "seconds": 0.698635,
    "unit": "python"
   },
   "b14_fminsearch_rosen": {
-   "relative": 1.21390888949525,
-   "seconds": 0.095075,
+   "relative": 1.366040054981882,
+   "seconds": 0.095586,
    "unit": "python"
   },
   "b15_bubble_sort": {
-   "relative": 9.145397416436053,
-   "seconds": 0.71628,
+   "relative": 9.531940135916983,
+   "seconds": 0.666979,
    "unit": "python"
   },
   "b16_text_parsing": {
-   "relative": 7.042893175131058,
-   "seconds": 0.551609,
+   "relative": 7.411624056602157,
+   "seconds": 0.518614,
    "unit": "python"
   },
   "b20_vec_elementwise": {
-   "relative": 3.0958055979589822,
-   "seconds": 0.18555,
+   "relative": 3.4558425858275994,
+   "seconds": 0.178494,
    "unit": "numpy"
   },
   "b21_matmul_1500": {
-   "relative": 0.7719242349510659,
-   "seconds": 0.046266,
-   "unit": "numpy"
+   "relative": 0.20062446678358745,
+   "seconds": 0.041307,
+   "unit": "linalg"
   },
   "b22_solve_1500": {
-   "relative": 1.1015428573885633,
-   "seconds": 0.066022,
-   "unit": "numpy"
+   "relative": 0.3343692543939113,
+   "seconds": 0.068844,
+   "unit": "linalg"
   },
   "b23_eig_500": {
-   "relative": 1.123633111291542,
-   "seconds": 0.067346,
-   "unit": "numpy"
+   "relative": 0.32540825162886616,
+   "seconds": 0.066999,
+   "unit": "linalg"
   },
   "b24_svd_600": {
-   "relative": 0.9789452851233916,
-   "seconds": 0.058674,
-   "unit": "numpy"
+   "relative": 0.34364595644336177,
+   "seconds": 0.070754,
+   "unit": "linalg"
   },
   "b25_fft_4m": {
-   "relative": 3.421520051655319,
-   "seconds": 0.205072,
+   "relative": 3.541263818410607,
+   "seconds": 0.182906,
    "unit": "numpy"
   },
   "b26_sort_unique_5m": {
-   "relative": 3.796153405988765,
-   "seconds": 0.227526,
+   "relative": 3.858224606854945,
+   "seconds": 0.199277,
    "unit": "numpy"
   },
   "b27_logical_index_1e7": {
-   "relative": 5.559886661530894,
-   "seconds": 0.333237,
+   "relative": 4.741594769554924,
+   "seconds": 0.244903,
    "unit": "numpy"
   },
   "b28_sparse_tridiag_solve": {
-   "relative": 2.328219328275873,
-   "seconds": 0.139544,
+   "relative": 2.5891810640431085,
+   "seconds": 0.133731,
    "unit": "numpy"
   },
   "b29_arrayfun_cellfun": {
-   "relative": 16.474789687768887,
-   "seconds": 1.290328,
+   "relative": 17.704328428357552,
+   "seconds": 1.238826,
    "unit": "python"
   },
   "b30_accumarray_interp": {
-   "relative": 2.8015580769371304,
-   "seconds": 0.167914,
+   "relative": 3.1604694388905266,
+   "seconds": 0.163238,
    "unit": "numpy"
   },
   "b31_csv_write_read": {
-   "relative": 2.29056245285365,
-   "seconds": 0.137287,
+   "relative": 2.6061607605470294,
+   "seconds": 0.134608,
    "unit": "numpy"
   },
   "b32_plot_to_png": {
-   "relative": 3.070378447696037,
-   "seconds": 0.184026,
+   "relative": 2.915047964678785,
+   "seconds": 0.150562,
    "unit": "numpy"
   },
   "b33_regexprep_cellstr": {
-   "relative": 27.001304521881412,
-   "seconds": 2.114779,
+   "relative": 24.195469632854504,
+   "seconds": 1.693031,
    "unit": "python"
   }
  },
  "note": "Times relative to the calibration workloads of benchmarks/speed_check.py, recorded with --update.",
- "startup": 3.301103310648604
+ "startup": 3.35400127856582
 }
