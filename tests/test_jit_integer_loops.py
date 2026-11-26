@@ -27,6 +27,9 @@ _FUNCS = {
     "fi_twice.m": "function y = fi_twice(x)\n  y = 2 * x - 1;\nend\n",
     "fi_pick.m": "function y = fi_pick(a, b)\n  if a > b\n    y = a;\n  else\n    y = b;\n  end\nend\n",
     "fi_conv.m": "function y = fi_conv(x)\n  y = int16(x) + 3;\nend\n",
+    "fi_isum.m": "function s = fi_isum(n)\n  s = 0;\n  for k = int32(1):n\n    s = s + double(k) * 2;\n  end\nend\n",
+    "fi_imix.m": "function s = fi_imix(n)\n  s = int8(0);\n  for k = int8(n):-1:int8(-3)\n    s = s + k;\n  end\n"
+                 "  for j = uint64(1):3\n    s = s + int8(j);\n  end\nend\n",
 }
 
 
@@ -134,6 +137,12 @@ CASES = [
     "s = 0; for k = int32(1):6, s = fi_conv(k); end",
     "s = 0; for k = int32(1):6, s = fi_twice(int8(k)) + fi_twice(k); end",  # mixed classes: an error
     "n = int32(0); for k = int32(1):10, if k > 6, break; elseif mod(k, 2), continue; end, n = n + k; end",
+    # integer ranges inside compiled functions
+    "r = zeros(1, 6); for j = 1:6, r(j) = fi_isum(int32(j * 3)); end",
+    "r = zeros(1, 6); for j = 1:6, r(j) = fi_isum(j + 0.5); end",
+    "r = zeros(1, 6); for j = 1:6, r(j) = fi_isum(int16(j)); end",          # two integer classes: an error
+    "r = int8(zeros(1, 6)); for j = 1:6, r(j) = fi_imix(100 + j * 5); end",
+    "s = 0; for j = 1:6, s = s + double(fi_imix(-5)); end",                  # an empty range
 ]
 
 
@@ -173,7 +182,7 @@ def test_integer_helpers_round_like_saturate_int():
               float("-inf"), float("nan"), -0.0, 0.0, 5e-324]
     values += [rng.uniform(-1, 1) * 10.0 ** rng.randint(0, 20) for _ in range(300)]
     for name in INT_CLASSES:
-        sat = jit._NS["_s" + jit._ICODE[name]]
+        sat = jit._NS["_Qs" + jit._ICODE[name]]
         for x in values:
             want = saturate_int(np.array([[x]]), name).item()
             want_array = saturate_int(np.array([[x, 0.0]]), name)[0, 0].item()  # the array code too

@@ -534,8 +534,8 @@ def _int_helpers(code: str) -> dict:
         c -= 1
         return a.item(r - 1, c % shape[1], c // shape[1])
 
-    out = {f"_s{code}": sat, f"_b{code}": box, f"_n{code}": neg, f"_u{code}": unbox, f"_c{code}": clamp,
-           f"_q{code}": operand, f"_g{code}1": get1, f"_g{code}2": get2}
+    out = {f"_Qs{code}": sat, f"_Qb{code}": box, f"_Qn{code}": neg, f"_Qu{code}": unbox, f"_Qc{code}": clamp,
+           f"_Qq{code}": operand, f"_Qg{code}1": get1, f"_Qg{code}2": get2}
     if code in _WIDE:
         def wide(op, x, y):
             """``x op y`` (+, - or *) for this 64-bit class and an int, bool or double operand."""
@@ -546,7 +546,7 @@ def _int_helpers(code: str) -> dict:
             a, b = int(x), int(y)
             r = a + b if op == "+" else (a - b if op == "-" else a * b)
             return lo if r < lo else (hi if r > hi else r)
-        out[f"_w{code}"] = wide
+        out[f"_Qw{code}"] = wide
     return out
 
 
@@ -558,7 +558,7 @@ def _ibox(x, code):
     if t is float:
         return _bd(x)
     if t is int:
-        return _NS["_b" + code](x)
+        return _NS["_Qb" + code](x)
     raise Bail
 
 
@@ -567,6 +567,13 @@ def _ig(op, x, y, code):
     r = ops.binop(op, x, y)
     if type(r) is _ND and r.shape == _S11 and r.dtype == _IDT[code]:
         return r.item()
+    raise Bail
+
+
+def _wf(x):
+    """A 64-bit integer range end as a double: the range is computed in doubles, so only up to 2^52."""
+    if -_EXACT_DOUBLE // 2 <= x <= _EXACT_DOUBLE // 2:
+        return float(x)
     raise Bail
 
 
@@ -668,7 +675,7 @@ _NS.update(_ELEMENT_FUNCS)
 _NS["_EMPTY"].setflags(write=False)
 for _code in _IDT:
     _NS.update(_int_helpers(_code))
-_NS.update({"_ig": _ig, "_dw": _dw})
+_NS.update({"_ig": _ig, "_dw": _dw, "_wf": _wf})
 _CONSTS: dict = {}
 _counter = [0]
 
@@ -1010,7 +1017,7 @@ class _Gen:
         if typ == "d":
             return f"_bd({code})"
         if typ in _IDT:
-            return f"_b{typ}({code})"
+            return f"_Qb{typ}({code})"
         return f"_bb({code})" if typ == "b" else code
 
     def convert(self, code: str, typ: str, want: str) -> str:
@@ -1055,7 +1062,7 @@ class _Gen:
                 return f"_unary({node.op!r}, {code})", typ
             if typ in _IDT:
                 if node.op == "-":  # saturates: -intmin is intmax, and unsigned values become 0
-                    return (f"_n{typ}({code})" if _ILIM[typ][0] else f"(0 * {code})"), typ
+                    return (f"_Qn{typ}({code})" if _ILIM[typ][0] else f"(0 * {code})"), typ
                 if node.op == "+":
                     return code, typ
                 return f"(not {self.as_truth(code, typ)})", "b"
@@ -1132,7 +1139,7 @@ class _Gen:
                 if not (op in _COMPARE or op in ("&", "|")
                         or (pyop is not None and (other not in _WIDE or pyop != "/"))):
                     return f"_ig({op!r}, {self.as_box(a, ta)}, {self.as_box(b, tb)}, {other!r})", other
-                unbox = f"_q{other}"
+                unbox = f"_Qq{other}"
             else:
                 unbox = "_d"
             if boxed_a:
@@ -1171,9 +1178,9 @@ class _Gen:
             if code not in _WIDE:
                 # every value of these classes is exact in a double: Python computes in doubles (or exactly,
                 # which gives the same double), then the result is rounded and saturated
-                return f"_s{code}({a} {pyop} {b})", code
+                return f"_Qs{code}({a} {pyop} {b})", code
             if pyop != "/":
-                return f"_w{code}({op!r}, {a}, {b})", code
+                return f"_Qw{code}({op!r}, {a}, {b})", code
         # powers, divisions of 64-bit integers, left divisions, mixed integer classes (an error):
         # the operators' general code
         return f"_ig({op!r}, {self.as_box(a, ta)}, {self.as_box(b, tb)}, {code!r})", code
@@ -1243,7 +1250,7 @@ class _Gen:
                 idx = ", ".join(self.as_index(c, typ) for c, typ in parts)
                 if kind[:1] == "a" and kind[1:] in _IDT:
                     # an element of an integer-class array (the helper checks the class at run time)
-                    return f"_g{kind[1:]}{count}({code}, {idx})", kind[1:]
+                    return f"_Qg{kind[1:]}{count}({code}, {idx})", kind[1:]
                 return f"_get{count}({code}, {idx})", "d"
         items = []
         for k, a in enumerate(args):
@@ -1318,15 +1325,15 @@ class _Gen:
             if exact is not None:  # int64(<literal>) keeps every digit (the interpreter does the same)
                 return repr(min(max(exact, lo), hi)), target
         if typ == "d":
-            return f"_s{target}({code})", target
+            return f"_Qs{target}({code})", target
         if typ == "b":
             return f"int({code})", target
         if typ == target:
             return code, target
         if typ in _IDT:
-            return f"_c{target}({code})", target
+            return f"_Qc{target}({code})", target
         if typ == "o":
-            return f"_u{target}(_callb({self.const(builtin)}, [{code}]))", target
+            return f"_Qu{target}(_callb({self.const(builtin)}, [{code}]))", target
         return None
 
     def int_call(self, name: str, builtin, parts: list) -> tuple[str, str]:
@@ -1343,7 +1350,7 @@ class _Gen:
         codes = {typ for _, typ in parts if typ in _IDT}
         if name in _INT_KEEPING and len(codes) == 1 and all(typ in "db" or typ in _IDT for _, typ in parts):
             code = codes.pop()
-            return f"_u{code}(_callb({fn}, [{boxed}]))", code  # bails if the class is not the expected one
+            return f"_Qu{code}(_callb({fn}, [{boxed}]))", code  # bails if the class is not the expected one
         return f"_callb({fn}, [{boxed}])", ("o" if name in _LIKELY_SCALAR else "O")
 
     def user_call(self, fn, functions, args: list, ctx) -> tuple[str, str]:
@@ -1438,10 +1445,21 @@ class _Gen:
         if name not in self.variables:
             raise Reject
         rng = stmt.iterable
-        a = self.as_float(*self.expr(rng.start))
-        s = "1.0" if rng.step is None else self.as_float(*self.expr(rng.step))
-        b = self.as_float(*self.expr(rng.stop))
-        self.types.setdefault(name, set()).add("d")
+        parts = [self.expr(rng.start), ("1.0", "d") if rng.step is None else self.expr(rng.step),
+                 self.expr(rng.stop)]
+        codes = {typ for _, typ in parts if typ in _IDT}
+        if len(codes) > 1:
+            raise Reject  # two integer classes: an error the interpreter reports
+        kind = codes.pop() if codes else "d"
+        if kind == "d":
+            a, s, b = (self.as_float(c, typ) for c, typ in parts)
+            value = f"(_a{k} + _s{k} * _i{k})"
+        else:
+            # an integer range: computed in doubles and converted element by element, as run_for does it
+            conv = "_wf" if kind in _WIDE else "float"
+            a, s, b = (f"{conv}({c})" if typ in _IDT else self.as_float(c, typ) for c, typ in parts)
+            value = f"_Qs{kind}(_a{k} + _s{k} * _i{k})"
+        self.types.setdefault(name, set()).add(kind)
         self.emit(indent, f"_a{k} = {a}")
         self.emit(indent, f"_s{k} = {s}")
         self.emit(indent, f"_n{k} = _count(_a{k}, _s{k}, {b})")
@@ -1449,7 +1467,7 @@ class _Gen:
             self.emit(indent, f"if _n{k} == 0:")
             self.emit(indent + 1, "raise _Bail")  # the loop variable becomes empty: interpreter's job
         self.emit(indent, f"for _i{k} in range(_n{k}):")
-        self.emit(indent + 1, f"{self.py(name)} = {self.convert(f'(_a{k} + _s{k} * _i{k})', 'd', self.var_type(name))}")
+        self.emit(indent + 1, f"{self.py(name)} = {self.convert(value, kind, self.var_type(name))}")
         self.block(stmt.body, indent + 1, ())
 
     def read_outside(self, name: str, loop) -> bool:
@@ -1789,7 +1807,7 @@ def call_function(interp, fn, args: list, nargout: int, functions: dict):
     if record.ret == "b":
         return [_bb(r)]
     if record.ret in _IDT:
-        return [_NS["_b" + record.ret](r)]
+        return [_NS["_Qb" + record.ret](r)]
     return [r]
 
 
@@ -1977,7 +1995,7 @@ def map_function(interp, f, columns: list, kinds: tuple):
     except Exception:  # noqa: BLE001 - some element needs the interpreter: let it do them all
         return None
     if ret in _IDT:
-        box = _NS["_b" + ret]
+        box = _NS["_Qb" + ret]
         return "o", [box(x) for x in out]
     return ret, out
 
@@ -2060,7 +2078,7 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
             gen.types.setdefault(loop_var, set()).add(loop_kind)
             gen.emit(2, "for _i in range(_it0, _n):")
             # an integer range is computed in doubles and then converted, element by element (colon_range)
-            value = "(_start + _step * _i)" if loop_kind == "d" else f"_s{loop_kind}(_start + _step * _i)"
+            value = "(_start + _step * _i)" if loop_kind == "d" else f"_Qs{loop_kind}(_start + _step * _i)"
             gen.emit(3, f"{gen.py(loop_var)} = {gen.convert(value, loop_kind, gen.var_type(loop_var))}")
             gen.block(stmt.body, 3, ())
         else:
@@ -2203,7 +2221,7 @@ def _write_back(frame, compiled: _Loop, values) -> None:
         else:
             store, key = fvars, n
         if typ in _IDT:
-            store[key] = _NS["_b" + typ](v)
+            store[key] = _NS["_Qb" + typ](v)
         elif typ == "b" or type(v) is bool:
             store[key] = _bb(v)
         elif typ == "d" or type(v) is float:
@@ -2286,7 +2304,7 @@ def run_for(interp, stmt, frame) -> bool:
             if kind == "d":
                 frame.set(name, np.array([[a + s * j]]))
             else:
-                frame.set(name, _NS["_b" + kind](_NS["_s" + kind](a + s * j)))
+                frame.set(name, _NS["_Qb" + kind](_NS["_Qs" + kind](a + s * j)))
             try:
                 interp.exec_block(stmt.body, frame)
             except ContinueSignal:
@@ -2446,5 +2464,5 @@ def eval_condition(interp, node, frame):
     if typ == "d":
         return _bd(r)
     if typ in _IDT:
-        return _NS["_b" + typ](r)
+        return _NS["_Qb" + typ](r)
     return r
