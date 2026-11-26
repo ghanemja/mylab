@@ -55,6 +55,21 @@ may have relied on.
   (`evalc`, `disp` in tests) can differ from 1.0.0's.
 - **Files:** `matfile` on a new file creates a version 7.3 MAT-file, as
   MATLAB does (was version 7).
+- **`inputParser` optional inputs:** with no validator, text in an optional
+  input's position is read as a parameter name, as MATLAB documents (1.0.0
+  took it as the optional value). Give the optional input a validator, or
+  pass it by name, to keep the old behaviour.
+- **Empty text is 1x0:** `sprintf`, `strjoin`, `compose` and `blanks(0)`
+  return a 1x0 char when the result is empty (was 0x0), so `size` and
+  `isequal` against `''` change.
+- **`max` and `min` of complex arrays** return a real array when every
+  imaginary part of the result is 0.
+- **Property and argument validation convert values** as MATLAB does: `[]`
+  for a `(1,:)` property becomes 1x0, a scalar fills a fixed size, a vector
+  in the other orientation is turned, and logical, integer and text values
+  are converted to the declared class (they were refused or kept as given).
+  Size errors read "Value must be a row vector (size 1x:), but its size is
+  2x3."
 
 ### Language
 - Object arrays of classdef objects: `objs(3) = Point(1, 2)`, `[a, b]`,
@@ -74,6 +89,17 @@ may have relied on.
   `printf`, ...), `arguments` block options, MATLAB's error identifiers and
   messages for the common runtime errors, `MException` details.
 - Source files that are not UTF-8 (Windows-1252, Shift-JIS) are read.
+- An empty array of any class (`[]`, `''`, `zeros(1, 0)`, `struct([])`) adds
+  nothing next to a cell array, so `files = []; files = [files; {d.name}']`
+  builds a cell array of names.
+- `num2cell` for struct, cell, char, logical, string and object arrays;
+  `round` with `'TieBreaker'`; the old `rand('state')`, `rand('seed')` and
+  `rand('twister')` forms (and `randn`'s) save and restore the sequence.
+- `inputParser`: optional inputs given by name (a unique leading part is
+  enough), `PartialMatchPriority`, ambiguous names to `Unmatched` with
+  `KeepUnmatched`.
+- `input` at the end of input raises `MATLAB:input:EndOfInput`, which
+  `try`/`catch` can handle.
 
 ### Library
 - Geometry: `pdist2`, `knnsearch`, `dsearchn`, `inpolygon`, `polyarea`,
@@ -93,7 +119,40 @@ may have relied on.
   Fourier series, rationals, Weibull, interpolants, smoothing splines,
   polynomial surfaces), custom equations, weights, exclusions, robust fits,
   `confint`, `predint`, `differentiate`, `integrate` and `plot(f, x, y)`.
-  Lowess surface fits are not supported yet. See docs/COMPATIBILITY.md.
+  Lowess and loess surface fits (`Span`, `Robust`) and the surface
+  interpolants (linear, nearest, cubic, thin-plate, biharmonic). See
+  docs/COMPATIBILITY.md.
+- **`polyshape`** and `nsidedpoly`: polygons with holes and several regions,
+  the set operations (`union`, `intersect`, `subtract`, `xor`), `polybuffer`,
+  `convhull`, `rmslivers`, `simplify`, `triangulation`, `turningdist`,
+  queries (`area`, `centroid`, `isinterior`, `nearestvertex`, ...), `plot`
+  and object arrays.
+- **`imageDatastore`** (also `datastore(..., 'Type', 'image')`): folders,
+  wildcards, subfolders, labels from folder names, `read`, `readimage`,
+  `readall`, `countEachLabel`, `splitEachLabel`, `shuffle`, `subset`,
+  `partition`; `transform` and `combine` for image and text datastores.
+- **More spreadsheets:** `.ods` files are read and written, and `.xls` files
+  read, by `readtable`, `readmatrix`, `readcell`, `xlsread`, `sheetnames` and
+  the rest of the `.xlsx` functions. `.xlsb` is refused with a message.
+- **NetCDF-4 files** (`'Format'` `netcdf4` and `netcdf4_classic`, groups,
+  chunking, compression, several unlimited dimensions) with `nccreate`,
+  `ncwrite`, `ncread` (start, count, stride), `ncinfo`, `ncdisp`,
+  `ncreadatt` and `ncwriteatt`.
+- **Low-level HDF5:** a subset of the `H5F`, `H5G`, `H5D`, `H5S`, `H5A`,
+  `H5T` and `H5ML` functions.
+- `matfile` on version 7.3 files reads and writes only the indexed part of a
+  numeric variable (`m.x(1:10, :)`), and `size(m, 'x')` and `whos(m)` read no
+  data.
+- **Dates in other languages:** `datetime(text, ..., 'Locale', loc)` reads
+  month and day names in French, German, Spanish, Italian, Portuguese, Dutch,
+  Swedish, Polish, Russian, Japanese and Chinese; `char`, `string` and
+  `cellstr(t, fmt, locale)` show them in those languages.
+- `view(3)` (and any `view(az, el)` that is not from above) turns a 2-D plot
+  into a 3-D one with the same objects and handles; `view(2)` returns it.
+  Arrays of graphics handles keep MATLAB's shapes under `'`, `reshape`,
+  `repmat` and concatenation.
+- `interp2` takes grid vectors of either orientation; `bsxfun` treats the
+  dimensions one operand lacks as 1.
 - `griddedInterpolant` (all methods, extrapolation, grid and scattered
   queries), `triangulation` and `delaunayTriangulation` objects, `voronoin`.
 - **HDF5 and version 7.3 MAT-files in the default install:** `h5create`,
@@ -128,7 +187,12 @@ may have relied on.
   3-8x faster.
 - Sparse banded systems use LAPACK's banded solver; one long FFT uses several
   cores; `regexp` on cell arrays builds only the outputs asked for.
-- Start-up imports SciPy, numexpr and the app server on first use.
+- Start-up imports SciPy, numexpr and the app server on first use, and now
+  also the archive, CSV, JSON, audio and XML modules.
+- `x(i, :) = v`, `x(:, j) = v`, `x(mask) = v` and other stores into an array
+  no other variable shares are made in place instead of copying the array: a
+  loop that fills the rows of a large matrix is no longer quadratic.
+  `regexprep` on cell arrays is about twice as fast.
 
 ### Fixed
 - **Python 3.14:** `b = a; b(2) = 5` also changed `a` (Python 3.14 lends
@@ -143,6 +207,9 @@ may have relied on.
   the fast numeric paths matches the general one.
 - Block diagrams: a non-numeric block parameter is reported by its MATLAB
   class instead of a Python error.
+- `regexprep` evaluates `${...}` expressions in the caller's workspace;
+  `fopen` accepts an empty encoding; `exist('model.slx')` returns 4 for
+  `.slx` and `.mdl` files.
 
 ### Web app
 - Editor conveniences: a command palette (Ctrl+Shift+P) and file switcher
@@ -159,6 +226,14 @@ may have relied on.
   and a local version history with a diff view.
 - The assistant offers "Fix this error" and "Explain selection", and shows
   its edits as a diff to accept or reject.
+- The 1.1 features in the app: help, hover and suggestions for dotted names
+  (`RandStream.create`) and for the properties and methods of a workspace
+  object after `f.`; the variable viewer shows objects (`cfit`,
+  `griddedInterpolant`, class instances) property by property, timetables
+  and datetime/duration/categorical arrays; the Files panel imports and opens
+  `.mat`, `.h5`, `.nc`, spreadsheet, CSV, JSON and image files with a
+  double-click; figures are shown at their own size, sharp on high-resolution
+  screens; examples in `whats_new/` and a *What's new in 1.1* dialog.
 - Block diagrams are easier to find: the six example models are in the
   `models` folder of *My files* (added once for people who already had the
   `.m` examples), the welcome window has a *Block diagrams* card, and New file
