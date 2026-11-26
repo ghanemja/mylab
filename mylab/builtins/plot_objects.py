@@ -1482,6 +1482,11 @@ def _text_box_get(key: str):
 
 
 def _text_units_set(h, v):
+    set_text_units(h, v, convert=True)
+
+
+def set_text_units(h, v, convert: bool = True) -> None:
+    """Change the units of a text position; with ``convert`` the text stays where it is drawn."""
     u = text(v).lower()
     if u not in ("data", "normalized", "pixels", "inches", "centimeters", "points", "characters"):
         raise MatlabError("Units of a text object must be 'data', 'normalized', 'pixels', 'inches', "
@@ -1493,17 +1498,19 @@ def _text_units_set(h, v):
     if u == old:
         return
     x, y = h.obj.get_position()
-    disp = _text_transform(h, old).transform((x, y))
     tr = _text_transform(h, u)
-    nx, ny = tr.inverted().transform(disp)
+    if convert:
+        x, y = tr.inverted().transform(_text_transform(h, old).transform((x, y)))
     h.obj.set_transform(tr)
-    h.obj.set_position((float(nx), float(ny)))
+    h.obj.set_position((float(x), float(y)))
     h.extra["Units"] = u
 
 
 def _text_transform(h, units: str):
     from matplotlib.transforms import Affine2D
     ax = h.obj.axes
+    ax.get_xlim()  # bring automatic limits up to date before the data transform is used
+    ax.get_ylim()
     if units == "data":
         return ax.transData
     if units == "normalized":
@@ -1858,6 +1865,38 @@ def _cb_axis(h):
     return cb.ax.xaxis if cb.orientation == "horizontal" else cb.ax.yaxis
 
 
+def _cb_ticks_set(h, v):
+    if is_text(v) and text(v).lower() == "auto":
+        from matplotlib.ticker import AutoLocator
+        _cb_axis(h).set_major_locator(AutoLocator())
+        h.extra["TicksMode"] = "auto"
+        return
+    h.obj.set_ticks(np.real(fnum(v)).flatten())
+    h.extra["TicksMode"] = "manual"
+
+
+def _cb_ticklabels_get(h):
+    fixed = h.extra.get("_ticklabels")
+    if fixed is not None:
+        return P._cell_column([char(s) for s in fixed])
+    lo, hi = sorted(_cb_limits_get(h).flatten())
+    ticks = [t for t in h.obj.get_ticks() if lo - 1e-12 <= t <= hi + 1e-12]
+    return P._cell_column([char(f"{t:g}") for t in ticks])
+
+
+def _cb_ticklabels_set(h, v):
+    labels = P._text_list(v)
+    lo, hi = sorted(_cb_limits_get(h).flatten())
+    ticks = [float(t) for t in h.obj.get_ticks() if lo - 1e-12 <= t <= hi + 1e-12]
+    full = (labels + [""] * len(ticks))[:len(ticks)]
+    h.obj.set_ticks(ticks)
+    h.obj.set_ticklabels([P._tex(h.interp, s, str(h.extra.get("TickLabelInterpreter", "tex")), "colorbar")
+                          for s in full])
+    h.extra["_ticklabels"] = full
+    h.extra["TicksMode"] = "manual"
+    h.extra["TickLabelsMode"] = "manual"
+
+
 def _cb_location_set(h, v):
     loc = text(v).lower()
     valid = ("north", "south", "east", "west", "northoutside", "southoutside", "eastoutside", "westoutside",
@@ -1870,15 +1909,24 @@ def _cb_location_set(h, v):
     ax = getattr(h.obj, "_mylab_parent_ax", None)
     if ax is None:
         raise MatlabError("This colorbar is not attached to an axes.")
-    label = _cb_axis(h).label.get_text()
-    new = BUILTINS["colorbar"](h.interp, [P._wrap(h.interp, P._axes_kind(ax), ax), char(loc)], 1)
-    st = P._state(h.interp)
-    st.handles.pop(id(new.obj), None)
-    h.obj = new.obj
-    st.handles[id(h.obj)] = h
+    lab = _cb_axis(h).label
+    label = getattr(lab, "_mylab_raw", None) or lab.get_text()
+    keep = {"ticks": list(h.obj.get_ticks()) if h.extra.get("TicksMode") == "manual" else None,
+            "labels": h.extra.get("_ticklabels"), "reverse": _cb_axis(h).get_inverted(),
+            "limits": _cb_limits_get(h).flatten() if h.extra.get("LimitsMode") == "manual" else None}
+    BUILTINS["colorbar"](h.interp, [P._wrap(h.interp, P._axes_kind(ax), ax), char(loc)], 1)
+    # the colorbar built-in moves this handle to the new colorbar
     h.extra["Location"] = loc
     if label:
-        h.obj.set_label(label)
+        P.set_text(h.interp, _cb_axis(h).label, label)
+    if keep["ticks"] is not None:
+        h.obj.set_ticks(keep["ticks"])
+    if keep["labels"] is not None:
+        _cb_ticklabels_set(h, Cell.from_list([char(s) for s in keep["labels"]]))
+    if keep["limits"] is not None:
+        _cb_limits_set(h, keep["limits"])
+    if keep["reverse"]:
+        _cb_axis(h).set_inverted(True)
 
 
 def _cb_direction_get(h):
@@ -1980,6 +2028,10 @@ def _cb_title(h):
 
 
 P._COLORBAR_PROPS.update({
+    "Ticks": (lambda h: P._row([t for t in h.obj.get_ticks()
+                                if min(_cb_limits_get(h).flat) - 1e-12 <= t <= max(_cb_limits_get(h).flat) + 1e-12]),
+              _cb_ticks_set),
+    "TickLabels": (_cb_ticklabels_get, _cb_ticklabels_set),
     "Location": (lambda h: char(h.extra.get("Location", "eastoutside")), _cb_location_set),
     "Orientation": (lambda h: char(h.obj.orientation), None),
     "Direction": (_cb_direction_get, _cb_direction_set),
