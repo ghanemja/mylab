@@ -8,6 +8,7 @@
 * Optional standard-library modules (archives, JSON, CSV, WAV, fractions) are imported on first use.
 """
 
+import os
 import subprocess
 import sys
 import weakref
@@ -196,9 +197,11 @@ def test_optional_modules_are_imported_on_first_use():
             "late = ['tarfile', 'zipfile', 'gzip', 'json', 'csv', 'wave', 'fractions', 'xml.etree.ElementTree']\n"
             "print(sorted(n for n in late if n in sys.modules))\n"
             "m.execute(\"s = jsondecode('{\\\"a\\\": [1, 2]}'); t = jsonencode(s); f = rats(0.75);\")\n"
-            "print(m.get_var('t').tobytes().decode('utf-32-le') if False else ''.join(m.get_var('t').ravel()))\n"
+            "print(''.join(m.get_var('t').ravel()))\n"
             "print(''.join(m.get_var('f').ravel()).strip())\n")
-    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # this checkout, whatever the cwd
+    env = dict(os.environ, PYTHONPATH=root + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, cwd=root, env=env)
     lines = r.stdout.splitlines()
     assert lines[0] == "[]"
     assert lines[1] == '{"a":[1,2]}'
