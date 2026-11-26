@@ -1094,8 +1094,14 @@ class Interpreter:
                 args = self.eval_elements(node.args, frame)
                 args = [ix_colon_to_char(a) for a in args]
                 # Argument variable names, for functions such as table() that use them.
-                self.state["call_arg_names"] = [a.name if isinstance(a, A.Ident) else None for a in node.args]
-                return self.call_named(base.name, args, nargout, frame, node)
+                # They belong to this call only: a later call through a handle, feval or a built-in
+                # callback must not see them (inputname would name the wrong variable).
+                state = self.state
+                state["call_arg_names"] = [a.name if isinstance(a, A.Ident) else None for a in node.args]
+                try:
+                    return self.call_named(base.name, args, nargout, frame, node)
+                finally:
+                    state.pop("call_arg_names", None)
             if isinstance(base, (A.Field, A.DynField)):
                 dotted = self.dotted_name(base, frame)
                 if dotted is not None:
