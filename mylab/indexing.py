@@ -211,6 +211,19 @@ def set_(arr: np.ndarray, args: list[Any], rhs: np.ndarray, fill: Callable[[], A
         positions.append(None if idx is COLON else _to_positions(idx, eshape[d], for_set=True)[0])
     # Size colons over empty dimensions from the right-hand side.
     zero_colons = [d for d, p in enumerate(positions) if p is None and eshape[d] == 0]
+    colons = [d for d, p in enumerate(positions) if p is None]
+    if shape == (0, 0) and rhs.size != 1 and colons:
+        # [] grows to the right-hand side, as in MATLAB and Octave: one colon takes all its elements
+        # (s(1, 1, :) = [a b] makes s 1-by-1-by-2); several colons take its dimensions in order
+        # (W = []; W(:, 1, :) = ones(3, 4) makes W 3-by-1-by-4)
+        if len(colons) == 1:
+            known = _prod(len(p) for p in positions if p is not None)
+            positions[colons[0]] = np.arange(rhs.size // max(known, 1))
+        else:
+            rdims = list(rhs.shape) + [1] * len(colons)
+            for j, d in enumerate(colons):
+                positions[d] = np.arange(rdims[j])
+        zero_colons = []
     for d, p in enumerate(positions):
         if p is None and eshape[d] > 0:
             positions[d] = np.arange(eshape[d])

@@ -260,3 +260,31 @@ def test_axis_limits_survive_view3():
     m = Interpreter(out=lambda s: None)
     m.execute("figure; axis([-10 10 -10 10 -10 10]); hold on; view(3); x = xlim; z = zlim;")
     assert num(m, "x").tolist() == [[-10, 10]] and num(m, "z").tolist() == [[-10, 10]]
+
+
+# -- growing [] through colons; optional inputParser arguments given by name ------------------------------------
+
+@pytest.mark.parametrize("code, size", [
+    ("W = []; W(:,1,:) = ones(3,4);", [3, 1, 4]),
+    ("W = []; W(:,:,2) = ones(3,4);", [3, 4, 2]),
+    ("W = []; W(2,:,:) = ones(3,4);", [2, 3, 4]),
+    ("W = []; W(:,1,:) = ones(1,4);", [1, 1, 4]),
+    ("W = []; W(:,1,:) = ones(4,1);", [4, 1]),
+    ("clear W; W(1,1,:) = [5 6];", [1, 1, 2]),
+    ("W = []; W(1,:,2) = [1 2 3];", [1, 3, 2]),
+    ("W = []; W(2,:) = [1 2 3];", [2, 3]),
+])
+def test_growing_an_empty_array_through_colons(code, size):  # sizes as Octave gives them
+    m = Interpreter(out=lambda s: None)
+    m.execute(code)
+    assert num(m, "size(W)").ravel().tolist() == size
+
+
+def test_optional_inputs_given_by_name():
+    m = Interpreter(out=lambda s: None)
+    m.execute("p = inputParser; addOptional(p, 'K', 10); addOptional(p, 'L', 100); addOptional(p, 'lambda', .001);"
+              "parse(p, 'K', 3, 'L', 7); r = [p.Results.K p.Results.L p.Results.lambda]; d = p.UsingDefaults;"
+              "q = inputParser; addOptional(q, 'units', 'inches'); parse(q, 'cm'); u = q.Results.units;")
+    assert num(m, "r").tolist() == [[3, 7, 0.001]]
+    assert [to_str(x) for x in m.eval_expression("d").values_f()] == ["lambda"]
+    assert to_str(m.eval_expression("u")) == "cm"  # one text argument that names nothing stays positional

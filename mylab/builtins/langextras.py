@@ -217,11 +217,17 @@ class InputParser(MObject):
             self.results[name] = value
         rest = args[len(self.required):]
         named = list(self.params) + self.switches
+        # Optional inputs can also be given by name: MATLAB reads text without a validator as a
+        # parameter name, and the names include the optional ones (seqNMF(X, 'K', 3, 'L', 7) with
+        # every input added by addOptional).
+        by_name = named + [n for n, _, _ in self.optional]
         for name, default, validator in self.optional:
             take = bool(rest)
             if take and is_text(rest[0]):
                 try:
                     is_name = self._match(text(rest[0]), named) is not None
+                    if not is_name and validator is None and len(rest) >= 2:
+                        is_name = self._match(text(rest[0]), by_name) is not None
                 except MatlabError:
                     is_name = True
                 exact = text(rest[0]).lower() in [n.lower() for n in named] and len(rest) % 2 == 0
@@ -261,8 +267,14 @@ class InputParser(MObject):
                                   "Name-value arguments come in pairs.", "MATLAB:InputParser:ParamMissingValue")
             pairs.append((key, rest[k + 1]))
             k += 2
+        optional = {n: v for n, _, v in self.optional}
         for key, value in pairs:
-            name = self._match(key, named)
+            name = self._match(key, named + [n for n in optional if n in self.using_defaults])
+            if name in optional:  # an optional input given by name
+                self._validate(interp, name, value, optional[name])
+                self.results[name] = value
+                self.using_defaults.remove(name)
+                continue
             if name is None:
                 if self.settings["KeepUnmatched"]:
                     self.unmatched[key] = value
