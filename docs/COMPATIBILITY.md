@@ -117,6 +117,16 @@ what mylab printed, and what you expected.
 - **Scattered interpolation:** `'natural'` uses linear interpolation.
   `scatteredInterpolant` extrapolates with the plane of the nearest triangle,
   which is close to MATLAB's result but not identical.
+- **Curve fitting:** `fit` solves nonlinear models with SciPy's `least_squares`
+  (trust-region-reflective or Levenberg-Marquardt) from its own data-driven
+  starting points, so a fit with several local optima can end at a different
+  one than MATLAB's; iteration counts and `output` details differ. Robust fits
+  report confidence bounds from the final weights. The default smoothing
+  parameter of `'smoothingspline'` is `1/(1 + h^3/6)` (h the mean data spacing).
+  Interpolant and lowess surface fits are not available yet.
+- **`griddedInterpolant`:** `'pchip'` and `'makima'` in more than one dimension
+  interpolate along the first dimension first; `'cubic'` on a non-uniform grid
+  uses `'spline'`.
 - **`message`:** there is no message catalog, so `getString(message(id))`
   returns the identifier and its arguments.
 - **`uistack`, `movegui`, `web`, `linkprop`, `brush`** and similar desktop
