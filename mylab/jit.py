@@ -248,6 +248,13 @@ def _df(v):
     raise Bail
 
 
+def _lb(v):
+    """A built-in's result that must be a logical scalar, as a bool."""
+    if type(v) is _ND and v.shape == _S11 and v.dtype is _BOOL:
+        return v.item()
+    raise Bail
+
+
 def _bd(x):
     r = np.empty(_S11)
     r[0, 0] = x
@@ -433,6 +440,164 @@ def _count(a, s, b):
     return int(math.floor(span + 1e-10 * max(1.0, abs(span)))) + 1
 
 
+# -- integer classes ----------------------------------------------------------------------------
+# A scalar of an integer class is held as a Python int, under a one-character type code ("1" for
+# int8 ... "8" for uint64).  Python ints are exact, so the only rounding is the one the general code
+# does: arithmetic with a double happens in double precision, then rounds halves away from zero and
+# saturates (saturate_int).  For 8- to 32-bit classes every int is exact in a double, so Python's
+# own operators on ints, bools and floats compute exactly what NumPy computes on the arrays.  The
+# 64-bit classes are computed exactly with Python ints where that is provably what the general code
+# gives (integer operands); everything else goes through the operators' general code (_ig).
+
+_INT_NAMES = ("int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64")
+_ICODE = {name: str(k + 1) for k, name in enumerate(_INT_NAMES)}     # class name -> type code
+_IDT = {code: np.dtype(name) for name, code in _ICODE.items()}       # type code -> dtype
+_DT_CODE = {dt: code for code, dt in _IDT.items()}                    # dtype -> type code
+_ILIM = {code: (int(np.iinfo(dt).min), int(np.iinfo(dt).max)) for code, dt in _IDT.items()}
+_WIDE = frozenset(code for code, dt in _IDT.items() if dt.itemsize == 8)
+_EXACT_DOUBLE = 2 ** 53   # every integer up to this magnitude is a double
+
+
+def _int_helpers(code: str) -> dict:
+    lo, hi = _ILIM[code]
+    dt = _IDT[code]
+
+    def sat(x):
+        """A double (or an exact int) as this class: NaN is 0, halves round away from zero, saturated."""
+        if x != x:
+            return 0
+        if x >= hi:
+            return hi
+        if x <= lo:
+            return lo
+        m = abs(x)
+        r = math.floor(m)
+        if m - r >= 0.5:
+            r += 1
+        return -r if x < 0 else r
+
+    def box(x):
+        r = np.empty(_S11, dt)
+        r[0, 0] = x
+        return r
+
+    def neg(x):
+        return hi if x == lo else -x
+
+    def unbox(v):
+        """A built-in's result that must be a scalar of this class."""
+        if type(v) is _ND and v.shape == _S11 and v.dtype == dt:
+            return v.item()
+        raise Bail
+
+    def clamp(x):
+        return lo if x < lo else (hi if x > hi else x)
+
+    def operand(v):
+        """A boxed scalar next to a value of this class: a double or logical as a float, this class as an int."""
+        if type(v) is _ND and v.shape == _S11:
+            t = v.dtype
+            if t is _F64 or t is _BOOL:
+                return float(v.item())
+            if t == dt:
+                return v.item()
+        raise Bail
+
+    def get1(a, i):
+        """``a(i)`` for a 2-D or 3-D array of this class held as a boxed value (column-major order)."""
+        if type(a) is not _ND or a.dtype != dt or not 2 <= a.ndim <= 3:
+            raise Bail
+        k = int(i)
+        if k != i or k < 1 or k > a.size:
+            raise Bail
+        shape = a.shape
+        rows = shape[0]
+        k -= 1
+        if a.ndim == 2:
+            if rows == 1 or shape[1] == 1:
+                return a.item(k)
+            return a.item(k % rows, k // rows)
+        plane = rows * shape[1]
+        return a.item(k % rows, (k % plane) // rows, k // plane)
+
+    def get2(a, i, j):
+        """``a(i, j)``; of a 3-D array, j runs over its columns page after page."""
+        if type(a) is not _ND or a.dtype != dt or not 2 <= a.ndim <= 3:
+            raise Bail
+        r, c = int(i), int(j)
+        shape = a.shape
+        cols = shape[1] if a.ndim == 2 else shape[1] * shape[2]
+        if r != i or c != j or r < 1 or c < 1 or r > shape[0] or c > cols:
+            raise Bail
+        if a.ndim == 2:
+            return a.item(r - 1, c - 1)
+        c -= 1
+        return a.item(r - 1, c % shape[1], c // shape[1])
+
+    out = {f"_Qs{code}": sat, f"_Qb{code}": box, f"_Qn{code}": neg, f"_Qu{code}": unbox, f"_Qc{code}": clamp,
+           f"_Qq{code}": operand, f"_Qg{code}1": get1, f"_Qg{code}2": get2}
+    if code in _WIDE:
+        def wide(op, x, y):
+            """``x op y`` (+, - or *) for this 64-bit class and an int, bool or double operand."""
+            for v in (x, y):
+                if type(v) is float and not v.is_integer():
+                    # a fraction: rounding in the wide type may differ from exact arithmetic
+                    return _ig(op, _ibox(x, code), _ibox(y, code), code)
+            a, b = int(x), int(y)
+            r = a + b if op == "+" else (a - b if op == "-" else a * b)
+            return lo if r < lo else (hi if r > hi else r)
+        out[f"_Qw{code}"] = wide
+    return out
+
+
+def _ibox(x, code):
+    """A Python value used by integer arithmetic as a MATLAB value (int: of class code)."""
+    t = type(x)
+    if t is bool:
+        return _bb(x)
+    if t is float:
+        return _bd(x)
+    if t is int:
+        return _NS["_Qb" + code](x)
+    raise Bail
+
+
+def _ig(op, x, y, code):
+    """``x op y`` on boxed operands through the operators' general code: a scalar of class code."""
+    r = ops.binop(op, x, y)
+    if type(r) is _ND and r.shape == _S11 and r.dtype == _IDT[code]:
+        return r.item()
+    raise Bail
+
+
+def _wf(x):
+    """A 64-bit integer range end as a double: the range is computed in doubles, so only up to 2^52."""
+    if -_EXACT_DOUBLE // 2 <= x <= _EXACT_DOUBLE // 2:
+        return float(x)
+    raise Bail
+
+
+def _dw(x):
+    """double() of a 64-bit integer: exact up to 2^53; beyond that the interpreter converts it."""
+    if -_EXACT_DOUBLE <= x <= _EXACT_DOUBLE:
+        return float(x)
+    raise Bail
+
+
+def _exact_lit(node) -> int | None:
+    """The exact value of an integer literal too large for a double (optionally negated), else None."""
+    if type(node) is A.UnaryOp and node.op == "-":
+        v = _exact_lit(node.operand)
+        return None if v is None else -v
+    if type(node) is A.Number and isinstance(node.value, A.ExactInt):
+        return node.value.exact
+    return None
+
+
+# Built-ins that keep the integer class of a scalar argument (their result is checked at run time).
+_INT_KEEPING = frozenset("abs sign floor ceil round fix mod rem min max idivide bitand bitor bitxor".split())
+
+
 _INTERP: list = [None]   # the interpreter running compiled code (set on every entry)
 
 
@@ -497,7 +662,8 @@ _NS: dict[str, Any] = {
     "_ix": _ix, "_lin": _lin, "_tr": _tr, "_pow": _pow, "_round": _round, "_sign": _sign,
     "_min2": _min2, "_max2": _max2, "_mod": _mod, "_rem": _rem, "_floor": _floor, "_ceil": _ceil,
     "_fix": _fix, "_math": math, "_UNSET": _UNSET, "_Bail": Bail, "_inf": math.inf, "_nan": math.nan,
-    "_d": _d, "_df": _df, "_bd": _bd, "_bb": _bb, "_truth": _truth, "_sc": _sc, "_binop": _binop, "_unary": _unary,
+    "_d": _d, "_df": _df, "_lb": _lb, "_bd": _bd, "_bb": _bb, "_truth": _truth, "_sc": _sc, "_binop": _binop,
+    "_unary": _unary,
     "_transpose": _transpose, "_arr": _arr, "_build": _build, "_get1": _get1, "_get2": _get2,
     "_set1": _set1, "_set2": _set2, "_copy": _copy, "_cellget": _cellget, "_lset": _lset, "_field": _field,
     "_numelf": _numelf, "_endf": _endf, "_index": _index, "_range": _range, "_count": _count,
@@ -507,6 +673,9 @@ _NS: dict[str, Any] = {
 }
 _NS.update(_ELEMENT_FUNCS)
 _NS["_EMPTY"].setflags(write=False)
+for _code in _IDT:
+    _NS.update(_int_helpers(_code))
+_NS.update({"_ig": _ig, "_dw": _dw, "_wf": _wf})
 _CONSTS: dict = {}
 _counter = [0]
 
@@ -540,7 +709,7 @@ _PURE = frozenset("""
 abs acos acosd acosh all angle any asin asind asinh atan atan2 atand atanh bitand bitor bitshift bitxor
 blanks cat ceil cell cell2mat char circshift colon columns complex conj contains cos cosd cosh
 cot cross cummax cummin cumprod cumsum deblank deg2rad det diag diff dot double endsWith eps erf
-erfc exp expm1 eye factorial false fieldnames find fix fliplr flipud floor gamma gcd horzcat hypot idivide
+erfc exp expm expm1 eye factorial false fieldnames find fix fliplr flipud floor gamma gcd horzcat hypot idivide
 imag int16 int2str int32 int64 int8 isa iscell iscellstr ischar iscolumn isempty isequal isfield isfinite
 isfloat isinf isinteger islogical ismatrix ismember isnan isnumeric isreal isrow isscalar isspace isstring
 isstruct isvector kron lcm length linspace log log10 log1p log2 logical lower mat2str max mean median min
@@ -555,6 +724,11 @@ _LIKELY_SCALAR = frozenset("""
 sum prod max min norm dot numel length ndims nnz str2double mean median std var det trace abs sqrt exp log
 floor ceil round fix mod rem sin cos tan atan atan2 sign real imag gcd lcm factorial nchoosek strlength
 polyval trapz double
+""".split())
+# ... whose result is always a logical scalar, whatever the arguments
+_ALWAYS_LOGICAL = frozenset("""
+isempty ischar iscell iscellstr isstruct isnumeric islogical isreal isfloat isinteger isscalar isvector isrow
+iscolumn ismatrix isstring isequal isa
 """.split())
 # ... and those that may see a whole array that the loop also writes to (their result never shares
 # memory with the argument)
@@ -619,7 +793,7 @@ class _Scan:
                 raise Reject
             self.names.add(target.name)
             self.assigned.add(target.name)
-        elif t is A.Index and type(target.base) is A.Ident and 1 <= len(target.args) <= 2:
+        elif t is A.Index and type(target.base) is A.Ident and 1 <= len(target.args) <= 3:
             self.names.add(target.base.name)
             self.index_written.add(target.base.name)
             for a in target.args:
@@ -649,7 +823,7 @@ class _Scan:
         if t is A.Number:
             if isinstance(node.value, complex):
                 raise Reject
-        elif t is A.String or t is A.End or t is A.Colon:
+        elif t is A.String or t is A.End or t is A.Colon or t is A.IntLiteral:
             pass
         elif t is A.Ident:
             self.names.add(node.name)
@@ -795,9 +969,9 @@ class _Gen:
         if t is not None:
             return t
         k = self.kinds.get(name, "-")
-        if k == "d" or k == "b":
+        if k == "d" or k == "b" or k in _IDT:
             return k
-        return "O" if k == "x" or k.startswith("h:") else "d"
+        return "O" if k == "x" or k[:1] == "a" or k.startswith("h:") else "d"
 
     def const(self, value, key=None) -> str:
         key = id(value) if key is None else key
@@ -822,18 +996,28 @@ class _Gen:
     def as_float(code: str, typ: str) -> str:
         if typ == "d":
             return code
+        if typ in _IDT:
+            raise Reject  # an integer-class value is not a double: only the contexts that allow one take it
         return f"float({code})" if typ == "b" else f"_d({code})"
+
+    def as_index(self, code: str, typ: str) -> str:
+        """An index: a double, a logical or an integer-class scalar (whose value the index helpers check)."""
+        return code if typ in _IDT else self.as_float(code, typ)
 
     @staticmethod
     def as_truth(code: str, typ: str) -> str:
         if typ == "b":
             return code
+        if typ in _IDT:
+            return f"({code} != 0)"
         return f"_tr({code})" if typ == "d" else f"_truth({code})"
 
     @staticmethod
     def as_box(code: str, typ: str) -> str:
         if typ == "d":
             return f"_bd({code})"
+        if typ in _IDT:
+            return f"_Qb{typ}({code})"
         return f"_bb({code})" if typ == "b" else code
 
     def convert(self, code: str, typ: str, want: str) -> str:
@@ -855,6 +1039,11 @@ class _Gen:
             if v in (math.inf, -math.inf):
                 return ("_inf" if v > 0 else "(-_inf)"), "d"
             return repr(v), "d"
+        if t is A.IntLiteral:
+            code = _ICODE.get(node.cls)
+            if code is None or not _ILIM[code][0] <= node.value <= _ILIM[code][1]:
+                raise Reject
+            return repr(int(node.value)), code
         if t is A.String:
             name = node.__dict__.get("_jit_const")
             if name is None:
@@ -871,6 +1060,12 @@ class _Gen:
             code, typ = self.expr(node.operand, ctx)
             if typ in "oO":
                 return f"_unary({node.op!r}, {code})", typ
+            if typ in _IDT:
+                if node.op == "-":  # saturates: -intmin is intmax, and unsigned values become 0
+                    return (f"_Qn{typ}({code})" if _ILIM[typ][0] else f"(0 * {code})"), typ
+                if node.op == "+":
+                    return code, typ
+                return f"(not {self.as_truth(code, typ)})", "b"
             if node.op == "-":
                 return f"(-{self.as_float(code, typ)})", "d"
             if node.op == "+":
@@ -878,7 +1073,7 @@ class _Gen:
             return f"(not {self.as_truth(code, typ)})", "b"
         if t is A.Postfix:
             code, typ = self.expr(node.operand, ctx)
-            if typ in "db":
+            if typ in "db" or typ in _IDT:
                 return code, typ
             return f"_transpose({code}, {node.op == chr(39)!r})", typ
         if t is A.BinOp:
@@ -937,10 +1132,22 @@ class _Gen:
                 kind = "O" if "O" in (ta, tb) else "o"
                 return f"_binop({op!r}, {self.as_box(a, ta)}, {self.as_box(b, tb)})", kind
             # one boxed value of unknown shape next to a scalar: expect a scalar (bails otherwise)
-            if boxed_a:
-                a, ta = f"_d({a})", "d"
+            other = tb if boxed_a else ta
+            if other in _IDT:
+                # next to an integer: a double or logical scalar (as a float), or one of the same class (as an int)
+                pyop = _ARITH.get(op)
+                if not (op in _COMPARE or op in ("&", "|")
+                        or (pyop is not None and (other not in _WIDE or pyop != "/"))):
+                    return f"_ig({op!r}, {self.as_box(a, ta)}, {self.as_box(b, tb)}, {other!r})", other
+                unbox = f"_Qq{other}"
             else:
-                b, tb = f"_d({b})", "d"
+                unbox = "_d"
+            if boxed_a:
+                a, ta = f"{unbox}({a})", "d"
+            else:
+                b, tb = f"{unbox}({b})", "d"
+        if ta in _IDT or tb in _IDT:
+            return self.int_binop(op, a, ta, b, tb)
         if op in _ARITH:
             return f"({self.as_float(a, ta)} {_ARITH[op]} {self.as_float(b, tb)})", "d"
         if op in ("^", ".^"):
@@ -956,6 +1163,27 @@ class _Gen:
             # Python's & and | on two bools do that and give a bool
             return f"(({self.as_truth(a, ta)}) {op} ({self.as_truth(b, tb)}))", "b"
         raise Reject  # left division of scalars: rare enough to leave to the interpreter
+
+    def int_binop(self, op: str, a: str, ta: str, b: str, tb: str) -> tuple[str, str]:
+        """An operator with an integer-class scalar operand (the other: a double, a logical or an integer)."""
+        code = ta if ta in _IDT else tb
+        if op in _COMPARE:
+            # Python compares ints, bools and floats by their exact values, as the general code does
+            return f"({a} {_COMPARE[op]} {b})", "b"
+        if op in ("&", "|"):
+            return f"(({self.as_truth(a, ta)}) {op} ({self.as_truth(b, tb)}))", "b"
+        same = ta == tb or ta in "db" or tb in "db"
+        pyop = _ARITH.get(op)
+        if same and pyop is not None:
+            if code not in _WIDE:
+                # every value of these classes is exact in a double: Python computes in doubles (or exactly,
+                # which gives the same double), then the result is rounded and saturated
+                return f"_Qs{code}({a} {pyop} {b})", code
+            if pyop != "/":
+                return f"_Qw{code}({op!r}, {a}, {b})", code
+        # powers, divisions of 64-bit integers, left divisions, mixed integer classes (an error):
+        # the operators' general code
+        return f"_ig({op!r}, {self.as_box(a, ta)}, {self.as_box(b, tb)}, {code!r})", code
 
     def matrix(self, node, ctx) -> tuple[str, str]:
         rows = [[self.expr(e, ctx) for e in row] for row in node.rows]
@@ -976,12 +1204,12 @@ class _Gen:
         base = node.base
         if type(base) is A.Ident and base.name in self.lists:
             lst = self.py(base.name, "l")
-            i = self.as_float(*self.expr(node.args[0], f"float(len({lst}))"))
+            i = self.as_index(*self.expr(node.args[0], f"float(len({lst}))"))
             return f"{lst}[_ix({i}, len({lst}))]", "o"
         code, typ = self.expr(base, ctx)
         if typ not in "oO":
             raise Reject
-        i = self.as_float(*self.expr(node.args[0], f"_numelf({code})"))
+        i = self.as_index(*self.expr(node.args[0], f"_numelf({code})"))
         return f"_cellget({code}, {i})", "o"
 
     def index_read(self, node, ctx) -> tuple[str, str]:
@@ -993,8 +1221,6 @@ class _Gen:
         else:
             raise Reject
         if name in self.arrays:
-            if not 1 <= len(args) <= 2:
-                raise Reject
             return f"{self.py(name, 'a')}.item({self.index(name, args)})", "d"
         if name in self.lists or name in self.structs or name in self.blocked:
             raise Reject
@@ -1011,17 +1237,20 @@ class _Gen:
             code, typ = self.ident(name)
             if typ not in "oO":
                 raise Reject  # indexing into a scalar variable
-            return self.boxed_index(code, args)
+            return self.boxed_index(code, args, self.kinds.get(name, "-"))
         if "." in name:
             raise Reject
         return self.call(name, args, ctx)
 
-    def boxed_index(self, code: str, args: list) -> tuple[str, str]:
+    def boxed_index(self, code: str, args: list, kind: str = "-") -> tuple[str, str]:
         count = len(args)
         if 1 <= count <= 2 and all(type(a) not in (A.Colon, A.Range, A.Matrix, A.String) for a in args):
             parts = [self.expr(a, f"_endf({code}, {k}, {count})") for k, a in enumerate(args)]
-            if all(typ in "dbo" for _, typ in parts):
-                idx = ", ".join(self.as_float(c, typ) for c, typ in parts)
+            if all(typ in "dbo" or typ in _IDT for _, typ in parts):
+                idx = ", ".join(self.as_index(c, typ) for c, typ in parts)
+                if kind[:1] == "a" and kind[1:] in _IDT:
+                    # an element of an integer-class array (the helper checks the class at run time)
+                    return f"_Qg{kind[1:]}{count}({code}, {idx})", kind[1:]
                 return f"_get{count}({code}, {idx})", "d"
         items = []
         for k, a in enumerate(args):
@@ -1044,6 +1273,8 @@ class _Gen:
                 if name == "numel" and len(args) == 1:
                     return f"float(n{arr})", "d"
                 if name == "length" and len(args) == 1:
+                    if self.kinds.get(target) == "n":
+                        return f"float(max(r{arr}, c{arr}, p{arr}))", "d"
                     return f"float(max(r{arr}, c{arr}))", "d"
                 if name == "size" and len(args) == 2 and type(args[1]) is A.Number and args[1].value in (1, 2):
                     return f"float({'r' if args[1].value == 1 else 'c'}{arr})", "d"
@@ -1055,6 +1286,12 @@ class _Gen:
             parts = [self.expr(a, ctx) for a in args]
         finally:
             self.whole_ok = saved
+        if name in _ICODE and len(parts) == 1:
+            conv = self.int_conversion(name, args[0], *parts[0], res[1])
+            if conv is not None:
+                return conv
+        if any(typ in _IDT for _, typ in parts):
+            return self.int_call(name, res[1], parts)
         spec = _FUNCS.get(name)
         if spec is not None and spec[0] == len(parts) and all(typ != "O" for _, typ in parts) \
                 and not (name in ("min", "max") and any(typ == "o" for _, typ in parts)):
@@ -1075,6 +1312,45 @@ class _Gen:
             return f"_d(_callb({fn}, [{boxed}]))", "d"
         if name in _LIKELY_SCALAR and all(typ != "O" for _, typ in parts):
             return f"_df(_callb({fn}, [{boxed}]))", "d"
+        if name in _ALWAYS_LOGICAL:
+            return f"_lb(_callb({fn}, [{boxed}]))", "b"
+        return f"_callb({fn}, [{boxed}])", ("o" if name in _LIKELY_SCALAR else "O")
+
+    def int_conversion(self, name: str, node, code: str, typ: str, builtin) -> tuple[str, str] | None:
+        """int8(x) ... uint64(x) of a scalar, as saturate_int converts it; None for the general call."""
+        target = _ICODE[name]
+        lo, hi = _ILIM[target]
+        if target in _WIDE:
+            exact = _exact_lit(node)
+            if exact is not None:  # int64(<literal>) keeps every digit (the interpreter does the same)
+                return repr(min(max(exact, lo), hi)), target
+        if typ == "d":
+            return f"_Qs{target}({code})", target
+        if typ == "b":
+            return f"int({code})", target
+        if typ == target:
+            return code, target
+        if typ in _IDT:
+            return f"_Qc{target}({code})", target
+        if typ == "o":
+            return f"_Qu{target}(_callb({self.const(builtin)}, [{code}]))", target
+        return None
+
+    def int_call(self, name: str, builtin, parts: list) -> tuple[str, str]:
+        """A built-in called with an integer-class scalar among its arguments."""
+        if name not in _PURE:
+            raise Reject
+        if name == "double" and len(parts) == 1:
+            c, typ = parts[0]
+            return (f"_dw({c})" if typ in _WIDE else f"float({c})"), "d"
+        boxed = ", ".join(self.as_box(c, typ) for c, typ in parts)
+        fn = self.const(builtin)
+        if name in ("numel", "length", "ndims") or (name == "size" and len(parts) == 2):
+            return f"_d(_callb({fn}, [{boxed}]))", "d"
+        codes = {typ for _, typ in parts if typ in _IDT}
+        if name in _INT_KEEPING and len(codes) == 1 and all(typ in "db" or typ in _IDT for _, typ in parts):
+            code = codes.pop()
+            return f"_Qu{code}(_callb({fn}, [{boxed}]))", code  # bails if the class is not the expected one
         return f"_callb({fn}, [{boxed}])", ("o" if name in _LIKELY_SCALAR else "O")
 
     def user_call(self, fn, functions, args: list, ctx) -> tuple[str, str]:
@@ -1088,20 +1364,25 @@ class _Gen:
     def index(self, name: str, args: list) -> str:
         kind = self.kinds[name]
         n = self.py(name, "")
+        if (kind == "n") != (len(args) == 3) or not 1 <= len(args) <= 3:
+            raise Reject  # a 3-D array with fewer subscripts folds its dimensions: the interpreter's job
+        if kind == "n":
+            i, j, k = (self.as_index(*self.expr(a, f"float({d}{n})")) for a, d in zip(args, "rcp"))
+            return f"(_ix({i}, r{n}), _ix({j}, c{n}), _ix({k}, p{n}))"
         if len(args) == 1:
-            i = self.as_float(*self.expr(args[0], f"float(n{n})"))
+            i = self.as_index(*self.expr(args[0], f"float(n{n})"))
             if kind in "rc":
                 return f"_ix({i}, n{n})"
             return f"_lin({i}, n{n}, r{n})"
-        i = self.as_float(*self.expr(args[0], f"float(r{n})"))
-        j = self.as_float(*self.expr(args[1], f"float(c{n})"))
+        i = self.as_index(*self.expr(args[0], f"float(r{n})"))
+        j = self.as_index(*self.expr(args[1], f"float(c{n})"))
         return f"(_ix({i}, r{n}), _ix({j}, c{n}))"
 
     def store_index(self, name: str, args: list) -> str:
         kind = self.kinds[name]
         if len(args) == 1 and kind in "rc":
             n = self.py(name, "")
-            i = self.as_float(*self.expr(args[0], f"float(n{n})"))
+            i = self.as_index(*self.expr(args[0], f"float(n{n})"))
             k = f"_ix({i}, n{n})"
             return f"0, {k}" if kind == "r" else f"{k}, 0"
         return self.index(name, args)
@@ -1164,10 +1445,21 @@ class _Gen:
         if name not in self.variables:
             raise Reject
         rng = stmt.iterable
-        a = self.as_float(*self.expr(rng.start))
-        s = "1.0" if rng.step is None else self.as_float(*self.expr(rng.step))
-        b = self.as_float(*self.expr(rng.stop))
-        self.types.setdefault(name, set()).add("d")
+        parts = [self.expr(rng.start), ("1.0", "d") if rng.step is None else self.expr(rng.step),
+                 self.expr(rng.stop)]
+        codes = {typ for _, typ in parts if typ in _IDT}
+        if len(codes) > 1:
+            raise Reject  # two integer classes: an error the interpreter reports
+        kind = codes.pop() if codes else "d"
+        if kind == "d":
+            a, s, b = (self.as_float(c, typ) for c, typ in parts)
+            value = f"(_a{k} + _s{k} * _i{k})"
+        else:
+            # an integer range: computed in doubles and converted element by element, as run_for does it
+            conv = "_wf" if kind in _WIDE else "float"
+            a, s, b = (f"{conv}({c})" if typ in _IDT else self.as_float(c, typ) for c, typ in parts)
+            value = f"_Qs{kind}(_a{k} + _s{k} * _i{k})"
+        self.types.setdefault(name, set()).add(kind)
         self.emit(indent, f"_a{k} = {a}")
         self.emit(indent, f"_s{k} = {s}")
         self.emit(indent, f"_n{k} = _count(_a{k}, _s{k}, {b})")
@@ -1175,7 +1467,7 @@ class _Gen:
             self.emit(indent, f"if _n{k} == 0:")
             self.emit(indent + 1, "raise _Bail")  # the loop variable becomes empty: interpreter's job
         self.emit(indent, f"for _i{k} in range(_n{k}):")
-        self.emit(indent + 1, f"{self.py(name)} = {self.convert(f'(_a{k} + _s{k} * _i{k})', 'd', self.var_type(name))}")
+        self.emit(indent + 1, f"{self.py(name)} = {self.convert(value, kind, self.var_type(name))}")
         self.block(stmt.body, indent + 1, ())
 
     def read_outside(self, name: str, loop) -> bool:
@@ -1211,7 +1503,7 @@ class _Gen:
                     and type(arg.right) is A.Number and arg.right.value == 1:
                 self.emit(indent, f"{lst}.append({value})")
             else:
-                i = self.as_float(*self.expr(arg, f"float(len({lst}))"))
+                i = self.as_index(*self.expr(arg, f"float(len({lst}))"))
                 self.emit(indent, f"_lset({lst}, {i}, {value})")
             self.emit(indent, f"{self.py(name, 'm')} = True")
             return
@@ -1229,7 +1521,9 @@ class _Gen:
             raise Reject
         var = self.py(name)
         count = len(target.args)
-        idx = ", ".join(self.as_float(*self.expr(a, f"_endf({var}, {k}, {count})"))
+        if count > 2:
+            raise Reject  # (three subscripts: only for a 3-D double array held element by element)
+        idx = ", ".join(self.as_index(*self.expr(a, f"_endf({var}, {k}, {count})"))
                         for k, a in enumerate(target.args))
         self.emit(indent, f"_set{count}({var}, {idx}, {value})")
 
@@ -1257,14 +1551,24 @@ def _kind(value: Any) -> str:
         return "L" if shape == (0, 0) or (len(shape) == 2 and shape[0] == 1) else "x"
     if t is Struct:
         return "S" if value.data.shape == (1, 1) else "x"
-    if t is not np.ndarray or value.ndim != 2:
+    if t is not np.ndarray:
         return "x"
+    if value.ndim != 2:
+        if value.ndim != 3 or not value.size:
+            return "x"
+        if value.dtype is _F64:
+            return "n"
+        code = _DT_CODE.get(value.dtype)
+        return "x" if code is None else "a" + code
     if value.shape == (1, 1):
         if value.dtype is _F64:
             return "d"
-        return "b" if value.dtype == bool else "x"
+        if value.dtype == bool:
+            return "b"
+        return _DT_CODE.get(value.dtype, "x")
     if value.dtype is not _F64 or value.size == 0:
-        return "x"
+        code = _DT_CODE.get(value.dtype) if value.size else None
+        return "x" if code is None else "a" + code  # an integer-class array: its elements are read typed
     return "r" if value.shape[0] == 1 else ("c" if value.shape[1] == 1 else "m")
 
 
@@ -1282,10 +1586,10 @@ def _roles(gen: _Gen, scan: _Scan, kinds: dict, declared: set) -> None:
             if kind != "L" or name in scan.assigned or name in scan.index_written or scan.reads.get(name, 0):
                 raise Reject
             gen.lists.add(name)
-        elif kind in ("r", "c", "m") and name not in scan.assigned:
+        elif kind in ("r", "c", "m", "n") and name not in scan.assigned:
             gen.arrays.add(name)
         elif kind != "-" or name in scan.assigned or name in declared:
-            if kind in ("r", "c", "m", "L", "S") or kind.startswith("h:"):
+            if kind in ("r", "c", "m", "n", "L", "S") or kind.startswith("h:"):
                 kinds[name] = "x" if not kind.startswith("h:") else kind
             gen.variables.add(name)
     for s, f in scan.fields:
@@ -1326,7 +1630,7 @@ def _infer(gen: _Gen, kinds: dict, generate) -> None:
         for name, types in gen.types.items():
             entry = kinds.get(name, "-")
             seen = set(types)
-            if entry == "d" or entry == "b":
+            if entry == "d" or entry == "b" or entry in _IDT:
                 seen.add(entry)
             elif entry != "-":
                 seen.add("O")
@@ -1375,7 +1679,8 @@ def _compile_function(interp, fn, functions: dict, sig: tuple) -> _Function:
     if not _COMPILING:
         _SESSION.clear()
     state["sigs"][sig] = None  # until proven otherwise
-    if fn.subfunctions or fn.arguments or len(fn.outputs) != 1 or len(sig) > len(fn.params) \
+    # (a function with several outputs is compiled for one: callers that want more use the interpreter)
+    if fn.subfunctions or fn.arguments or not fn.outputs or len(sig) > len(fn.params) \
             or len(set(fn.params)) != len(fn.params) or "varargin" in fn.params or "~" in fn.params \
             or fn.outputs[0] == "varargout":
         raise Reject
@@ -1419,7 +1724,7 @@ def _compile_function(interp, fn, functions: dict, sig: tuple) -> _Function:
         if name not in fn.params:
             src.append(f"    {gen.py(name)} = _UNSET")
     for p, k in zip(fn.params, sig):  # arguments arrive as floats/bools; box those the body keeps boxed
-        if k in "db" and gen.var_type(p) in "oO":
+        if (k in "db" or k in _IDT) and gen.var_type(p) in "oO":
             src.append(f"    {gen.py(p)} = {gen.as_box(gen.py(p), k)}")
         elif k == "o" and p in scan.index_written:
             src.append(f"    {gen.py(p)} = _copy({gen.py(p)})")  # the caller keeps its own array
@@ -1466,6 +1771,9 @@ def call_function(interp, fn, args: list, nargout: int, functions: dict):
         elif type(v) is _ND and v.shape == _S11 and v.dtype is _BOOL:
             sig.append("b")
             values.append(v.item())
+        elif type(v) is _ND and v.shape == _S11 and v.dtype in _DT_CODE:
+            sig.append(_DT_CODE[v.dtype])
+            values.append(v.item())
         elif type(v) in _PLAIN:
             sig.append("o")
             values.append(v)
@@ -1498,6 +1806,8 @@ def call_function(interp, fn, args: list, nargout: int, functions: dict):
         return [_bd(r)]
     if record.ret == "b":
         return [_bb(r)]
+    if record.ret in _IDT:
+        return [_NS["_Qb" + record.ret](r)]
     return [r]
 
 
@@ -1569,6 +1879,8 @@ def _compile_anonymous(interp, handle, sig: tuple):
         gen.nargin = len(sig)
         gen.variables = set(params) | set(captured)
         code, typ = gen.expr(body)
+        if typ in _IDT:
+            code, typ = gen.as_box(code, typ), "o"
     except (Reject, KeyError, RecursionError):
         return None
     record = _Function(_unique("_f"), "o" if typ in "oO" else typ)
@@ -1682,6 +1994,9 @@ def map_function(interp, f, columns: list, kinds: tuple):
             out = [py(depth, *xs, *extra) for xs in zip(*columns)]
     except Exception:  # noqa: BLE001 - some element needs the interpreter: let it do them all
         return None
+    if ret in _IDT:
+        box = _NS["_Qb" + ret]
+        return "o", [box(x) for x in out]
     return ret, out
 
 
@@ -1696,11 +2011,11 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
     kinds = dict(kinds)
     gen = _Gen(interp, frame.functions, kinds, scan, "loop")
     declared = {loop_var} if loop_var else set()
+    loop_kind = kinds.get(loop_var, "d") if loop_var else "d"   # 'd' or an integer class's type code
     if loop_var:
-        if kinds.get(loop_var, "-") not in "-db" or loop_var in scan.index_written \
+        if (loop_kind != "d" and loop_kind not in _IDT) or loop_var in scan.index_written \
                 or loop_var in scan.brace_used or any(s == loop_var for s, _ in scan.fields):
             raise Reject
-        kinds[loop_var] = "d"
     _roles(gen, scan, kinds, declared)
     if loop_var:
         gen.variables.add(loop_var)
@@ -1760,9 +2075,11 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
 
     def generate():
         if is_for:
-            gen.types.setdefault(loop_var, set()).add("d")
+            gen.types.setdefault(loop_var, set()).add(loop_kind)
             gen.emit(2, "for _i in range(_it0, _n):")
-            gen.emit(3, f"{gen.py(loop_var)} = {gen.convert('(_start + _step * _i)', 'd', gen.var_type(loop_var))}")
+            # an integer range is computed in doubles and then converted, element by element (colon_range)
+            value = "(_start + _step * _i)" if loop_kind == "d" else f"_Qs{loop_kind}(_start + _step * _i)"
+            gen.emit(3, f"{gen.py(loop_var)} = {gen.convert(value, loop_kind, gen.var_type(loop_var))}")
             gen.block(stmt.body, 3, ())
         else:
             gen.emit(2, "while True:")
@@ -1786,6 +2103,10 @@ def _compile(stmt, info: dict, kinds: dict, interp, frame, loop_var: str | None)
         "".join(f"{gen.py(n, 'l')}, {gen.py(n, 'm')}, " for n in list_names) + ")"
     name = _unique("_loop")
     src = [f"def {name}({', '.join(params)}):", "    _p = 0", "    _i = _it0"]
+    for n in arr_names:
+        if kinds.get(n) == "n":
+            suffix = gen.py(n, "")
+            src.append(f"    p{suffix} = n{suffix} // (r{suffix} * c{suffix})")
     src += [f"    {gen.py(n, 'm')} = False" for n in list_names]
     src += ["    try:"] + gen.lines
     src += ["    except BaseException as _e:",
@@ -1816,8 +2137,12 @@ def _entry_value(frame, name: str):
     return frame.vars.get(name)
 
 
-def _prepare(interp, stmt, frame, loop_var):
-    """Compiled function and call arguments for this loop in its current state, or None."""
+def _prepare(interp, stmt, frame, loop_var, loop_kind="d"):
+    """Compiled function and call arguments for this loop in its current state, or None.
+
+    ``loop_kind``: the type of a for loop's variable ('d', or an integer class's type code).  What the
+    variable held before the loop does not matter: the loop runs at least once and sets it first.
+    """
     info = _static(stmt)
     if info is None or info["bails"] >= MAX_BAILS:
         return None
@@ -1833,8 +2158,7 @@ def _prepare(interp, stmt, frame, loop_var):
             body = fvars[n].body  # keep the body alive so its id() is never reused
             info.setdefault("keep", {})[id(body)] = body
     if loop_var:
-        k = _kind(fvars.get(loop_var))
-        kinds[loop_var] = "d" if k in "-db" else k
+        kinds[loop_var] = loop_kind
     sig = (id(frame.functions), tuple(sorted(kinds.items())))
     compiled = info["compiled"].get(sig, _MISSING)
     if compiled is not _MISSING and compiled is not None and not _deps_valid(interp, compiled.deps):
@@ -1856,10 +2180,10 @@ def _prepare(interp, stmt, frame, loop_var):
                 fvars[s] = struct.copy()
     args = []
     for n, typ in compiled.variables:
-        v = _entry_value(frame, n)
+        v = None if n == loop_var else _entry_value(frame, n)
         if v is None:
             args.append(_UNSET)
-        elif typ in "db":
+        elif typ in "db" or typ in _IDT:
             args.append(v.item())
         else:
             args.append(v)
@@ -1896,7 +2220,9 @@ def _write_back(frame, compiled: _Loop, values) -> None:
             store, key = fvars[s].data[0, 0], f
         else:
             store, key = fvars, n
-        if typ == "b" or type(v) is bool:
+        if typ in _IDT:
+            store[key] = _NS["_Qb" + typ](v)
+        elif typ == "b" or type(v) is bool:
             store[key] = _bb(v)
         elif typ == "d" or type(v) is float:
             store[key] = _bd(v)
@@ -1933,11 +2259,21 @@ def run_for(interp, stmt, frame) -> bool:
         step = interp.eval(rng.step, frame) if rng.step is not None else None
     except Exception:  # noqa: BLE001 - let the interpreter evaluate it again and report the error
         return False
+    kind = "d"  # or the type code of the integer class the range has (colon_range)
     for v in (start, stop, step):
-        if v is not None and (type(v) is not np.ndarray or v.shape != (1, 1) or v.dtype is not _F64):
+        if v is None:
+            continue
+        if type(v) is not np.ndarray or v.shape != (1, 1):
             return False
-    a, b = start.item(), stop.item()
-    s = 1.0 if step is None else step.item()
+        if v.dtype is not _F64:
+            code = _DT_CODE.get(v.dtype)
+            if code is None or (kind != "d" and code != kind):
+                return False  # another class, or two integer classes (an error the interpreter reports)
+            kind = code
+    if kind in _WIDE and any(v is not None and abs(v.item()) > _EXACT_DOUBLE // 2 for v in (start, stop, step)):
+        return False  # the range is computed in doubles: leave values that do not fit one to the interpreter
+    a, b = float(start.item()), float(stop.item())
+    s = 1.0 if step is None else float(step.item())
     if s == 0 or a != a or b != b or s != s or abs(a) == math.inf or abs(b) == math.inf:
         return False
     span = (b - a) / s
@@ -1947,7 +2283,7 @@ def run_for(interp, stmt, frame) -> bool:
     if n < MIN_ITERATIONS:
         return False
     name = stmt.var.name
-    prepared = _prepare(interp, stmt, frame, name)
+    prepared = _prepare(interp, stmt, frame, name, kind)
     if prepared is None:
         return False
     compiled, args, info = prepared
@@ -1965,7 +2301,10 @@ def run_for(interp, stmt, frame) -> bool:
         except ContinueSignal:
             pass
         for j in range(i + 1, n):
-            frame.set(name, np.array([[a + s * j]]))
+            if kind == "d":
+                frame.set(name, np.array([[a + s * j]]))
+            else:
+                frame.set(name, _NS["_Qb" + kind](_NS["_Qs" + kind](a + s * j)))
             try:
                 interp.exec_block(stmt.body, frame)
             except ContinueSignal:
@@ -1996,3 +2335,134 @@ def run_while(interp, stmt, frame) -> bool:
         except ContinueSignal:
             pass
     return False  # the interpreter's own while loop carries on from the current state
+
+
+# -- conditions -----------------------------------------------------------------------------------
+# The condition of an if or while statement in code that is not compiled (a loop body with a while
+# loop, file input or a struct-array assignment in it) is evaluated by the interpreter one node at a
+# time: isempty(strfind(raw{n}, 'Gravity:')) == 0 costs about 25 us there. A condition that is run
+# often and calls functions or indexes values is compiled on its own: it is side-effect free (only
+# the built-ins in _PURE, compiled pure functions and element reads), so when the compiled code bails
+# out the interpreter simply evaluates it again, and the result is the interpreter's.
+
+NOT_COMPILED = object()
+CONDITION_RUNS_BEFORE_COMPILE = 16
+_COND_BOX = {"S": "x", "L": "x", "r": "x", "c": "x", "m": "x", "n": "x"}
+
+
+class _Cond:
+    __slots__ = ("fn", "names", "kinds", "typ", "deps", "checked")
+
+
+def _cond_worth(node) -> bool:
+    """Whether a condition does enough (calls, indexing, several operators) to gain from compiling."""
+    work = 0
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        t = type(n)
+        if t is A.Index or t is A.CellIndex:
+            work += 3
+            stack.append(n.base)
+            stack.extend(n.args)
+        elif t is A.BinOp:
+            work += 1
+            stack.append(n.left)
+            stack.append(n.right)
+        elif t is A.UnaryOp or t is A.Postfix:
+            stack.append(n.operand)
+    return work >= 3
+
+
+def _compile_cond(interp, node, scan: _Scan, kinds: dict, frame) -> _Cond:
+    gen = _Gen(interp, frame.functions, dict(kinds), scan, "loop")
+    gen.variables = {n for n in scan.names if kinds.get(n, "-") != "-"}
+    code, typ = gen.expr(node)
+    if gen.lists or gen.structs or gen.arrays:
+        raise Reject
+    names = sorted(gen.variables)
+    fn_name = _unique("_cond")
+    params = "".join(f", {gen.py(n)}" for n in names)
+    src = f"def {fn_name}(_dp{params}):\n    return {code}"
+    exec(compile(src, "<mylab-jit condition>", "exec"), _NS)  # noqa: S102 - code generated above
+    cond = _Cond()
+    cond.fn = _NS.pop(fn_name)
+    cond.names = names
+    cond.kinds = [kinds[n] for n in names]
+    cond.typ = typ
+    cond.deps = gen.deps
+    cond.checked = None
+    return cond
+
+
+def eval_condition(interp, node, frame):
+    """The value of an if/while condition, compiled; NOT_COMPILED when the interpreter must evaluate it."""
+    info = node.__dict__.get("_jit_cond")
+    if info is None:
+        scan = _Scan(allow_loops=False)
+        try:
+            scan.expr(node)
+        except Reject:
+            node._jit_cond = False
+            return NOT_COMPILED
+        if scan.fields or not _cond_worth(node):
+            node._jit_cond = False
+            return NOT_COMPILED
+        info = node._jit_cond = {"scan": scan, "runs": 0, "bails": 0, "compiled": {}}
+    elif info is False:
+        return NOT_COMPILED
+    info["runs"] += 1
+    if info["runs"] < CONDITION_RUNS_BEFORE_COMPILE:
+        return NOT_COMPILED
+    scan = info["scan"]
+    if frame.globals and any(n in frame.globals for n in scan.names):
+        return NOT_COMPILED
+    fvars = frame.vars
+    kinds = {}
+    for n in scan.names:
+        k = _kind(fvars.get(n))
+        kinds[n] = _COND_BOX.get(k, k)
+    sig = (id(frame.functions), tuple(kinds.items()))
+    cond = info["compiled"].get(sig, _MISSING)
+    if cond is not _MISSING and cond is not None and cond.deps:
+        # What the called names mean can only change when the interpreter looks at the disk again,
+        # a class is defined or an import is made: check the dependencies only then.
+        token = (interp._lookup_checked, len(interp.classes), bool(frame.imports))
+        if cond.checked != token:
+            if not _deps_valid(interp, cond.deps):
+                cond = _MISSING
+            else:
+                cond.checked = token
+    if cond is _MISSING:
+        if len(info["compiled"]) >= 8:
+            node._jit_cond = False  # too many different kinds of values here
+            return NOT_COMPILED
+        try:
+            cond = _compile_cond(interp, node, scan, kinds, frame)
+        except (Reject, KeyError, SyntaxError, RecursionError):
+            cond = None
+        info["compiled"][sig] = cond
+        info.setdefault("keep", []).append(frame.functions)  # so that id(frame.functions) is never reused
+    if cond is None:
+        return NOT_COMPILED
+    args = []
+    for n, k in zip(cond.names, cond.kinds):
+        v = fvars[n]
+        args.append(v.item() if k in "db" or k in _IDT else v)
+    _NS["_lim"][0] = interp.max_depth
+    _INTERP[0] = interp
+    try:
+        r = cond.fn(interp.depth, *args)
+    except Exception:  # noqa: BLE001 - a bail-out: the interpreter evaluates the condition itself
+        info["bails"] += 1
+        if info["bails"] >= 4 * MAX_BAILS:
+            node._jit_cond = False
+        return NOT_COMPILED
+    typ = cond.typ
+    if typ == "b":
+        return _bb(r)
+    if typ == "d":
+        return _bd(r)
+    if typ in _IDT:
+        return _NS["_Qb" + typ](r)
+    return r

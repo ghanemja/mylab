@@ -16,8 +16,10 @@ from . import fuse
 from . import jit
 from . import ops
 from ._refcount import DICT_AND_LOCAL as _RC_DICT_AND_LOCAL
+from ._refcount import ELEMENT as _RC_ELEMENT
 from ._refcount import FRESH_LEFT as _RC_FRESH_LEFT
 from ._refcount import FRESH_RIGHT as _RC_FRESH_RIGHT
+from ._refcount import SLOT_AND_LOCAL as _RC_SLOT_AND_LOCAL
 from .display import FORMAT, format_display, function_handle_text, unparse
 from .errors import BreakSignal, ContinueSignal, MatlabError, ReturnSignal
 from .objects import MObject
@@ -626,6 +628,10 @@ class Interpreter:
         There the element-wise | and & short-circuit, as in MATLAB: when the left operand is a scalar
         that decides the result, the right one is not evaluated. Old code relies on it, e.g.
         if (exist('ht') ~= 1) | (ht == 'auto') when ht was not passed.
+
+        Each operand of such a | or & chain that is run often is compiled on its own
+        (jit.eval_condition): its value is exactly what evaluating it gives, so the chain keeps
+        MATLAB's short-circuit rules (true | [] is true here, though the element-wise operator gives []).
         """
         if type(node) is A.BinOp and node.op in ("|", "&"):
             left = self._cond(node.left, frame)
@@ -637,6 +643,10 @@ class Interpreter:
                     if node.op == "&" and not v:
                         return _FALSE_1x1
             return self.binop_values(node.op, left, self._cond(node.right, frame))
+        if self.jit_enabled and self.trace_hook is None and type(frame) is Frame:
+            r = jit.eval_condition(self, node, frame)
+            if r is not jit.NOT_COMPILED:
+                return r
         return self.eval(node, frame)
 
     def exec_for(self, stmt: A.For, frame: Frame) -> None:
@@ -709,8 +719,12 @@ class Interpreter:
         if isinstance(target, A.Ident):
             frame.set(target.name, value)  # shadowing built-ins (e.g. i, pi) is allowed
             return
-        if type(target) is A.Index and type(target.base) is A.Ident and self._assign_inplace(target, value, frame):
-            return
+        if type(target) is A.Index:
+            base = type(target.base)
+            if base is A.Ident and self._assign_inplace(target, value, frame):
+                return
+            if base is A.Field and self._assign_field_inplace(target, value, frame):
+                return
         if self.index_overloads:
             from .classdef import overloaded_assign
             if overloaded_assign(self, target, value, frame):  # a class with its own subsasgn
@@ -779,7 +793,27 @@ class Interpreter:
                     and all(self._pure(a, frame) for a in node.args)
             if name in _PURE_FUNCS and name not in frame.functions:
                 return all(self._pure(a, frame) for a in node.args)
+        if self.index_overloads:
+            return False
+        if t is A.Field:  # a field of a struct variable (not of an object: a property may run code)
+            return self._pure_struct(node.base, frame)
+        if t is A.CellIndex:  # contents of a cell variable
+            base = node.base
+            return type(base) is A.Ident and frame.has(base.name) and type(frame.get(base.name)) is Cell \
+                and all(self._pure(a, frame) for a in node.args)
+        if t is A.Index and (type(node.base) is A.Field or type(node.base) is A.CellIndex):
+            # an element of such a field or cell (no class overloads indexing, so it runs no code)
+            return self._pure(node.base, frame) and all(self._pure(a, frame) for a in node.args)
         return False
+
+    def _pure_struct(self, node: A.Node, frame: Frame) -> bool:
+        """``s`` or ``s(k)`` for a struct variable s and pure k."""
+        if type(node) is A.Index:
+            args, node = node.args, node.base
+        else:
+            args = ()
+        return type(node) is A.Ident and frame.has(node.name) and type(frame.get(node.name)) is Struct \
+            and all(self._pure(a, frame) for a in args)
 
     def _assign_inplace(self, target: A.Index, value: Any, frame: Frame) -> bool:
         """``x(i) = v`` and ``x(i, :) = v`` without copying x, when x is a plain unshared array.
@@ -789,9 +823,10 @@ class Interpreter:
         declines, the general path finishes the job with the indices already evaluated.
         """
         name = target.base.name
-        if name in frame.globals:
-            return False
-        arr = frame.vars.get(name)
+        # A global or persistent variable lives in its own store (one dict, like the workspace's): the same
+        # test tells whether anything else refers to its array.
+        store = frame.globals.get(name) if frame.globals else None
+        arr = (frame.vars if store is None else store).get(name)
         if type(arr) is not np.ndarray or type(value) is not np.ndarray or not arr.flags.writeable:
             return False
         if arr.base is not None or sys.getrefcount(arr) > _RC_DICT_AND_LOCAL:  # shared: copy-on-write path
@@ -817,6 +852,65 @@ class Interpreter:
             return True
         self.assign(target.base, self.assign_into(target, arr, value, frame, idx), frame)
         return True
+
+    def _assign_field_inplace(self, target: A.Index, value: Any, frame: Frame) -> bool:
+        """``s.f(i, j) = v`` and ``s(k).f(i, j) = v`` without copying the field, the struct or its elements.
+
+        Only when nothing else can see any of them: the struct variable, its element array, the element's
+        fields and the field's array each have exactly one holder (the counts measured in _refcount.py),
+        the element exists, and the store fits inside the field's array and keeps its class. Anything
+        else (growth, a new field, a conversion, objects, shared values) is left to the general path.
+        """
+        field = target.base
+        holder = field.base
+        if type(holder) is A.Ident:
+            name, elem_args = holder.name, None
+        elif type(holder) is A.Index and type(holder.base) is A.Ident and 1 <= len(holder.args) <= 2:
+            name, elem_args = holder.base.name, holder.args
+        else:
+            return False
+        if self.index_overloads or type(value) is not np.ndarray or value.size == 0:
+            return False
+        store = frame.globals.get(name) if frame.globals else None
+        struct = (frame.vars if store is None else store).get(name)
+        if type(struct) is not Struct or sys.getrefcount(struct) > _RC_DICT_AND_LOCAL:
+            return False
+        data = struct.data
+        if data.base is not None or sys.getrefcount(data) > _RC_SLOT_AND_LOCAL:
+            return False
+        args = target.args
+        if not all(self._pure(a, frame) for a in args):
+            return False
+        if elem_args is None:
+            if data.shape != (1, 1):
+                return False
+            pos = (0, 0)
+        else:
+            if not all(self._pure(a, frame) for a in elem_args):
+                return False
+            pos = self._scalar_positions(elem_args, data, frame, checked=True)
+            if pos is None:
+                return False
+        if sys.getrefcount(data[pos]) > _RC_ELEMENT:  # the element's fields are shared with another struct
+            return False
+        arr = data[pos].get(field.name)
+        if type(arr) is not np.ndarray or not arr.flags.writeable or arr.base is not None \
+                or sys.getrefcount(arr) > _RC_DICT_AND_LOCAL or arr.size == 0:
+            return False
+        if value.size == 1 and arr.dtype.kind in "fb" and (arr.dtype == value.dtype
+                                                           or arr.dtype.kind == "f" and value.dtype.kind == "b"):
+            p = self._scalar_positions(args, arr, frame, checked=True)
+            if p is not None:
+                arr[p] = value.item()
+                return True
+        if arr.dtype.kind not in "fbiuU":
+            return False
+        if value.dtype != arr.dtype:
+            if arr.dtype.kind == "f" and value.dtype.kind == "b":
+                value = value.astype(arr.dtype)  # as coerce_for_assignment converts it
+            else:
+                return False
+        return ix.set_inplace(arr, self.eval_index_args(args, arr, frame), value)
 
     def lvalue_current(self, target: A.Node, frame: Frame) -> Any:
         """Current value of ``target.base`` (None if it does not exist yet)."""
@@ -1346,7 +1440,19 @@ class Interpreter:
                 cls = self.find_class(node.base.name)  # ClassName.(memberName)
                 if cls is not None:
                     return cls.static_access(self, self.field_name(node, frame), [], nargout)
-            base_val = self.eval(node.base, frame)
+            base = node.base
+            sv = None
+            if t is A.Field and type(base) is A.Index and type(base.base) is A.Ident:
+                sv = frame.lookup(base.base.name)
+            if type(sv) is Struct:
+                # s(k).f: the element's field, without building the 1x1 struct s(k) first
+                args = self.eval_index_args(base.args, sv, frame)
+                pos = _scalar_index(sv.data, args) if node.name in sv.fields else None
+                if pos is not None:
+                    return [sv.data[pos][node.name]]
+                base_val = index_value(sv, args)  # what evaluating s(k) gives, from the same indices
+            else:
+                base_val = self.eval(base, frame)
             name = self.field_name(node, frame)
             if isinstance(base_val, MObject):
                 if hasattr(base_val, "field_list"):

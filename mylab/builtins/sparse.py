@@ -123,6 +123,45 @@ class SparseMatrix(MObject):
         m = self.m
         return m.astype(np.float64) if m.dtype == bool else m
 
+    _csr_cache: Any = None
+
+    def _rows(self) -> sp.csr_matrix:
+        """The matrix in compressed-row form, converted once per value of the compressed-column storage.
+
+        (Storage is replaced, never changed in place, while it is in compressed-column form: index_set
+        works on a LIL copy, and the m property converts that back to a new CSC matrix.)
+        """
+        m = self.m
+        cache = self._csr_cache
+        if cache is not None and cache[0] is m:
+            return cache[1]
+        rows = m.tocsr()
+        if not rows.has_sorted_indices:
+            rows.sort_indices()
+        self._csr_cache = (m, rows)
+        return rows
+
+    def _column(self, j: int) -> "SparseMatrix":
+        """A(:, j), straight from the compressed columns (SciPy's indexing costs far more for one column)."""
+        m = self.m
+        lo, hi = m.indptr[j], m.indptr[j + 1]
+        out = sp.csc_matrix((m.data[lo:hi].copy(), m.indices[lo:hi].copy(), np.array([0, hi - lo], m.indptr.dtype)),
+                            shape=(m.shape[0], 1))
+        return SparseMatrix(out, canonical=True)  # (a column of canonical storage is canonical)
+
+    def _row(self, i: int) -> "SparseMatrix":
+        """A(i, :), from the compressed rows kept by _rows."""
+        rows = self._rows()
+        lo, hi = rows.indptr[i], rows.indptr[i + 1]
+        cols = rows.indices[lo:hi]
+        n = rows.shape[1]
+        indptr = np.zeros(n + 1, dtype=rows.indptr.dtype)
+        indptr[cols + 1] = 1
+        np.cumsum(indptr, out=indptr)
+        out = sp.csc_matrix((rows.data[lo:hi].copy(), np.zeros(cols.size, dtype=rows.indices.dtype), indptr),
+                            shape=(1, n))
+        return SparseMatrix(out, canonical=True)
+
     def to_dense(self) -> np.ndarray:
         r, c = self._m.shape
         if r * c > DENSE_LIMIT:
@@ -254,9 +293,15 @@ class SparseMatrix(MObject):
             sub = self.m
         if sub.format == "csc":
             if cp is not None:
+                if rp is None and cp.size == 1:
+                    return self._column(int(cp[0]))
                 sub = sub[:, cp]
-            if rp is not None:
-                sub = sub.tocsr()[rp, :]
+                if rp is not None:
+                    sub = sub.tocsr()[rp, :]
+            elif rp is not None:
+                if rp.size == 1:
+                    return self._row(int(rp[0]))
+                sub = self._rows()[rp, :]  # A(i, :): rows of the compressed-row form, kept for the next call
         else:  # small block of a matrix that is being assembled
             sub = sub[rp.reshape(-1, 1), cp.reshape(1, -1)]
         return SparseMatrix(sub)
@@ -653,8 +698,12 @@ def _times(a: Any, b: Any) -> "SparseMatrix":
     if isinstance(a, SparseMatrix) and isinstance(b, SparseMatrix):
         if A == B:
             return SparseMatrix(a.fm().multiply(b.fm()))
-        return _sparse_from_dense_op(".*", a, b)
-    s, d = (a, b) if isinstance(a, SparseMatrix) else (b, a)
+        # a matrix times a row or a column (singleton expansion): only the vector is made full
+        s, d = (a, b) if A[0] * A[1] >= B[0] * B[1] else (b, a)
+        if 1 not in d.shape:
+            return _sparse_from_dense_op(".*", a, b)
+    else:
+        s, d = (a, b) if isinstance(a, SparseMatrix) else (b, a)
     dd = _dense(d)
     ops._check_broadcast(np.empty(A), np.empty(B), ".*")
     if np.all(np.isfinite(dd)) and (dd.shape[0] <= s.shape[0] and dd.shape[1] <= s.shape[1]):
@@ -1412,6 +1461,24 @@ for _op, _fname in {"+": "plus", "-": "minus", ".*": "times", "*": "mtimes", "./
                     ".\\": "ldivide", "\\": "mldivide", ".^": "power", "^": "mpower", "==": "eq", "~=": "ne",
                     "<": "lt", "<=": "le", ">": "gt", ">=": "ge", "&": "and", "|": "or"}.items():
     _NATIVE[_fname] = _op_function(_op)
+
+
+# bsxfun(@op, A, B) is op(A, B) with singleton dimensions expanded. These operators expand the dimensions
+# of a sparse operand themselves, so bsxfun hands them the operands as they are: a sparse result stays
+# sparse, and a large sparse matrix is not made full (and copied twice) first.
+_BSX_OPERATORS = frozenset({"plus", "minus", "times", "rdivide", "ldivide", "power", "eq", "ne", "lt", "le", "gt",
+                            "ge", "and", "or"})
+
+
+@native("bsxfun")
+def _n_bsxfun(interp, args, nargout):
+    f = args[0] if args else None
+    if len(args) == 3 and isinstance(f, FunctionHandle) and not f.is_anonymous and f.name in _BSX_OPERATORS \
+            and f.name not in f.closure.get("__functions__", {}) and interp.find_file_function(f.name) is None:
+        return interp.call_function_value(f, [args[1], args[2]], 1)[0]
+    dense = [a.to_dense() if isinstance(a, SparseMatrix) else a for a in args]
+    vals = interp.call_named("bsxfun", dense, nargout, interp.frame)
+    return vals[0] if vals else None
 
 
 @native("uminus")

@@ -6,6 +6,7 @@ SciPy is imported inside the functions that need it, so importing this module st
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy as np
@@ -510,6 +511,10 @@ def _cholupdate(interp, args, nargout):
         if sign not in ("+", "-"):
             raise MatlabError("cholupdate: the third argument must be '+' or '-'.")
     dt = complex if (r.dtype.kind == "c" or x.dtype.kind == "c") else float
+    if dt is float and 1 <= n <= 16:
+        small = _cholupdate_small(r, x, sign, nargout, single)
+        if small is not None:
+            return small
     r1 = np.triu(r).astype(dt)  # only the upper triangle is used
     x = x.flatten().astype(dt)
     d = np.diag(r1)
@@ -551,6 +556,55 @@ def _cholupdate(interp, args, nargout):
         extra[k:] = np.conj(s) * rk + c * extra[k:]
         alpha = rho
     out = _fin(r1, single)
+    return (out, 0.0) if nargout > 1 else out
+
+
+def _cholupdate_small(r, x, sign, nargout, single):
+    """The real case of the rotations above for a small factor, on Python floats: the same operations in
+    the same order (the products and sums of each element, NumPy's hypot and LAPACK's triangular solve),
+    so the same bits, without a NumPy call per element. None when the general code must report a problem."""
+    n = r.shape[0]
+    rows = np.triu(r).astype(float).tolist()
+    xs = x.astype(float).ravel().tolist()
+    for k in range(n):
+        d = rows[k][k]
+        if not (d > 0 and math.isfinite(d)) or not all(math.isfinite(v) for v in rows[k]):
+            return None  # an invalid factor: the general code reports it
+    hypot = np.hypot
+    if sign == "+":
+        row = xs
+        for k in range(n):
+            rk = rows[k]
+            rho = float(hypot(rk[k], abs(row[k])))
+            if rho == 0:
+                continue
+            c = rk[k] / rho
+            s = row[k] / rho
+            for j in range(k, n):
+                a, b = rk[j], row[j]
+                rk[j] = c * a + s * b
+                row[j] = -s * a + c * b
+            rk[k] = rho
+    else:
+        r1 = np.array(rows)
+        p = _sla().solve_triangular(r1, np.array(xs), trans=2, lower=False, check_finite=False)
+        alpha2 = 1.0 - float(np.real(np.vdot(p, p)))
+        if not alpha2 > 0:
+            return None
+        p = p.tolist()
+        alpha = math.sqrt(alpha2)
+        extra = [0.0] * n
+        for k in range(n - 1, -1, -1):
+            rk = rows[k]
+            rho = float(hypot(alpha, abs(p[k])))
+            c = alpha / rho
+            s = p[k] / rho
+            for j in range(k, n):
+                a, b = rk[j], extra[j]
+                rk[j] = c * a - s * b
+                extra[j] = s * a + c * b
+            alpha = rho
+    out = _fin(np.array(rows), single)
     return (out, 0.0) if nargout > 1 else out
 
 
