@@ -121,6 +121,8 @@ def _member_lists(interp, v):
                          and str(cls.method_attrs.get(n, {}).get("Access", "public")).lower() == "public")
         return cls.name, props, methods
     if isinstance(v, MObject):
+        if hasattr(v, "property_names") and hasattr(v, "method_names"):  # built-in objects that list their members
+            return v.class_name(), list(v.property_names()), list(v.method_names())
         methods = sorted(getattr(v, "_METHODS", []))
         props = ["Count", "KeyType", "ValueType"] if v.class_name() == "containers.Map" else []
         return v.class_name(), props, methods
