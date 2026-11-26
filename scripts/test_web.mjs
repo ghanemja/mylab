@@ -2080,6 +2080,7 @@ async function main() {
       watchErrors(tp, consoleErrors, "[tablet] ");
       await tp.goto(url);
       await tp.waitForSelector(".CodeMirror");
+      await tp.waitForFunction(() => window.mylab.state.project);  // files can be written once the project is open
       await tp.evaluate(() => { const d = document.getElementById("dlg-welcome"); if (d && d.open) d.close(); });
       await tp.evaluate(() => window.mylab.createFile("touch.mlb.json", JSON.stringify({ format: "mylab-blocks-1", name: "touch", blocks: [
         { name: "C", type: "Constant", position: [60, 60, 50, 36] }, { name: "S", type: "Scope", position: [260, 55, 50, 50] }], lines: [] })));
