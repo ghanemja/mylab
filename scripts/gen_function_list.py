@@ -29,6 +29,8 @@ SECTIONS = {
     "events": "Class events and enumerations",
     "categorical": "Categorical arrays",
     "spatial": "Geometry and scattered-data interpolation",
+    "gridinterp": "Gridded interpolation",
+    "curvefit": "Curve fitting",
     "ndmath": "N-dimensional transforms, sampling and more statistics",
     "jsonfuncs": "JSON",
     "audio": "Audio files",
