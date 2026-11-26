@@ -104,7 +104,7 @@ K = acker([0 1; 0 0], [0; 1], [-2 -3]); assert(norm(K - [6 5]) < 1e-9); s = tf('
 G = tf(5, [1 1]); assert(abs(norm(G, inf) - 5) < 1e-5); assert(abs(bandwidth(tf(1, [0.5 1])) - 2) < 0.02); [mag, ph, w] = bode(tf(1, [1 1])); assert(numel(w) > 10 && isequal(size(mag), [1 1 numel(w)]));
 z = tf('z', 0.1); H = 1 / (z - 0.5); assert(isdt(H) && abs(dcgain(H) - 2) < 1e-12); y = step(H, 0:0.1:0.3); assert(norm(y(:)' - [0 1 1.5 1.75]) < 1e-10);
 sys = ss([0 1; -2 -3], [0; 1], [1 0], 0); [y, t, x] = step(sys, 0:0.5:5); assert(isequal(size(x), [11 2]) && abs(y(end) - 0.5) < 0.01); p = pole(sys); assert(norm(sort(p) - [-2; -1]) < 1e-10);
-C = pid(1, 2, 3); assert(C.Kp == 1 && C.Ki == 2 && C.Kd == 3); Ct = tf(C); [n, d] = tfdata(Ct, 'v'); assert(norm(n - [3 1 2]) < 1e-12 && norm(d - [1 0]) < 1e-12 || norm(d - [0 1 0]) < 1e-12);
+C = pid(1, 2, 3); assert(C.Kp == 1 && C.Ki == 2 && C.Kd == 3); Ct = tf(C); [n, d] = tfdata(Ct, 'v'); assert(norm(n - [3 1 2]) < 1e-12 && ((numel(d) == 2 && norm(d - [1 0]) < 1e-12) || (numel(d) == 3 && norm(d - [0 1 0]) < 1e-12)));
 
 ### symbolic_tbx/held_out *
 syms x; assert(isequal(simplify(diff(sin(x) * cos(x)) - cos(2 * x)), sym(0))); assert(isequal(int(exp(x), 0, 1), exp(sym(1)) - 1)); assert(isequal(simplify((x^2 - 1) / (x - 1)), x + 1));

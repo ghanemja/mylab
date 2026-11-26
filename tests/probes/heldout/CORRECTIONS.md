@@ -36,3 +36,10 @@ Made after the first merge:
   NaNs and IEEE 754 does not say which one comes out. A NaN made inside a
   reduction (`Inf + -Inf`, `0 * Inf`) now counts towards the "two or more
   NaNs" rule; with one NaN source the sign is still compared bit for bit.
+- `control_tbx/held_out#21`: the check meant "the denominator of
+  tf(pid(1, 2, 3)) is [1 0], or [0 1 0] when padded", but wrote
+  `norm(d - [1 0]) < 1e-12 || norm(d - [0 1 0]) < 1e-12`, which is a size
+  error for a 1x3 `d` before `||` is reached, in MATLAB as in mylab. MATLAB's
+  tfdata pads numerator and denominator to the same length, so `d` is
+  [0 1 0] there. The two cases are now tested by length; the numerator check
+  is unchanged.
