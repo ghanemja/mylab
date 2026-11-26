@@ -11,6 +11,7 @@ import os
 import numpy as np
 
 from ..errors import MatlabError
+from ..objects import MObject
 from ..values import Cell, Struct, as_2d, char, is_char, to_int
 from ._registry import BUILTINS, builtin
 from ._util import is_text, nargs, text
@@ -21,7 +22,69 @@ _RANGE = {"uint8": (0.0, 255.0), "uint16": (0.0, 65535.0), "int16": (-32768.0, 3
 
 # -- helpers ------------------------------------------------------------------------------------
 
+class StrelObject(MObject):
+    """A flat structuring element: the object strel returns. Morphology functions read its Neighborhood."""
+
+    _METHODS = {"reflect", "translate", "decompose", "getheight", "isflat", "getnhood"}
+
+    def __init__(self, nhood: np.ndarray, kind: str = "arbitrary"):
+        self.nhood = np.asarray(nhood) != 0
+        self.kind = kind
+
+    def class_name(self) -> str:
+        return "strel"
+
+    def has_method(self, name: str) -> bool:
+        return name in self._METHODS
+
+    def get_field(self, interp, name: str):
+        if name == "Neighborhood":
+            return self.nhood.copy()
+        if name == "Dimensionality":
+            return np.array([[float(max(self.nhood.ndim, 2))]])
+        if name in self._METHODS:
+            return self.call_method(interp, name, [self], 1)[0]
+        raise MatlabError(f"Unrecognized property '{name}' for class 'strel'.")
+
+    def call_method(self, interp, name: str, args: list, nargout: int) -> list:
+        rest = [a for a in args if a is not self]
+        if name == "getnhood":
+            return [self.nhood.copy()]
+        if name == "getheight":
+            return [np.zeros(self.nhood.shape)]
+        if name == "isflat":
+            return [np.array([[True]])]
+        if name == "decompose":
+            return [self]
+        if name == "reflect":
+            flipped = self.nhood[tuple(slice(None, None, -1) for _ in self.nhood.shape)]
+            # keep the centre in the middle: an even dimension gains a leading empty line
+            pad = [(1, 0) if n % 2 == 0 else (0, 0) for n in flipped.shape]
+            return [StrelObject(np.pad(flipped, pad, mode="constant"), self.kind)]
+        if name == "translate":
+            if not rest:
+                raise MatlabError("translate: a displacement vector is required.")
+            v = [int(x) for x in np.ravel(rest[0])]
+            nh = self.nhood.reshape(self.nhood.shape + (1,) * (len(v) - self.nhood.ndim))
+            v = v + [0] * (nh.ndim - len(v))
+            # the centre stays where it is, so the array grows on both sides by the shift
+            odd = [(0, 1) if n % 2 == 0 else (0, 0) for n in nh.shape]
+            nh = np.pad(nh, odd, mode="constant")
+            out = np.pad(nh, [(abs(s), abs(s)) for s in v], mode="constant")
+            out = np.roll(out, v, axis=tuple(range(nh.ndim)))
+            return [StrelObject(out, self.kind)]
+        return super().call_method(interp, name, args, nargout)
+
+    def display_lines(self) -> list[str]:
+        shape = "x".join(str(n) for n in self.nhood.shape)
+        return [f"strel is a {self.kind} shaped structuring element with properties:", "",
+                f"      Neighborhood: [{shape} logical]",
+                f"    Dimensionality: {max(self.nhood.ndim, 2)}"]
+
+
 def _img(v, name: str, what: str = "image") -> np.ndarray:
+    if isinstance(v, StrelObject):
+        return v.nhood
     if not isinstance(v, np.ndarray) or v.dtype.kind not in "biuf":
         raise MatlabError(f"{name}: the {what} must be a numeric or logical array.")
     return v
@@ -1265,7 +1328,7 @@ def _edge(interp, args, nargout):
     if rest and not is_text(rest[0]):
         t = rest.pop(0)
         thresh = _vec(t, "threshold") if t.size else None
-    if method == "canny":
+    if method in ("canny", "approxcanny"):
         sigma = _scalar(rest[0], "sigma") if rest and not is_text(rest[0]) else np.sqrt(2.0)
         bw, used = _canny(g, thresh, sigma)
         return (bw, used) if nargout > 1 else bw
@@ -1309,8 +1372,8 @@ def _edge(interp, args, nargout):
         ky = np.array([[0, 1.0], [-1, 0]]) / 2
         factor = 6.0
     else:
-        raise MatlabError(f"edge: unknown method '{method}'. Use 'sobel', 'prewitt', 'roberts', 'log' "
-                          "or 'canny'.")
+        raise MatlabError(f"edge: unknown method '{method}'. Use 'sobel', 'prewitt', 'roberts', 'log', "
+                          "'zerocross', 'canny' or 'approxcanny'.")
     gx = _correlate(g, kx, "replicate", "same", False, "edge")
     gy = _correlate(g, ky, "replicate", "same", False, "edge")
     if direction == "horizontal":
@@ -1325,6 +1388,8 @@ def _edge(interp, args, nargout):
         bw &= _thin(mag, gx, gy)
     elif thinning:
         bw &= _thin(mag, gx - gy, gx + gy)
+    if nargout > 2:
+        return (bw, cut, gx, gy)[:nargout]
     return (bw, cut) if nargout > 1 else bw
 
 
@@ -1348,16 +1413,55 @@ def _line_strel(length: float, degrees: float) -> np.ndarray:
     return out
 
 
+_DISK_LINES = {4: [(1, 0), (1, 1), (0, 1), (-1, 1)],
+               6: [(1, 0), (1, 2), (2, 1), (0, 1), (-1, 2), (-2, 1)],
+               8: [(1, 0), (2, 1), (1, 1), (1, 2), (0, 1), (-1, 2), (-1, 1), (-2, 1)]}
+
+
+def _dilate_points(nhood: np.ndarray, offsets: list[tuple[int, int]]) -> np.ndarray:
+    """Dilation of a centred neighbourhood by a set of offsets (the result stays centred)."""
+    mr = max(abs(o[0]) for o in offsets)
+    mc = max(abs(o[1]) for o in offsets)
+    base = np.pad(nhood, ((mr, mr), (mc, mc)), mode="constant")
+    out = np.zeros_like(base)
+    for dr, dc in offsets:
+        out |= np.roll(base, (dr, dc), axis=(0, 1))
+    return out
+
+
+def _disk_strel(r: int, n: int) -> np.ndarray:
+    if n == 0 or r < 3:
+        x, y = np.meshgrid(np.arange(-r, r + 1), np.arange(-r, r + 1))
+        return x * x + y * y <= r * r
+    # a disk built from line segments in n directions (radial decomposition): quick to apply and
+    # slightly smaller than the true disk
+    theta = np.pi / (2 * n)
+    k = 2 * r / (1 / np.tan(theta) + 1 / np.sin(theta))
+    nhood = np.ones((1, 1), dtype=bool)
+    for v in _DISK_LINES[n]:
+        rp = int(np.floor(k / np.hypot(*v)))
+        if rp > 0:
+            nhood = _dilate_points(nhood, [(j * v[0], j * v[1]) for j in range(-rp, rp + 1)])
+    half = (nhood.shape[1] - 1) // 2
+    if half < r - 1:
+        extra = r - 1 - half
+        nhood = _dilate_points(nhood, [(0, j) for j in range(-extra, extra + 1)])
+        nhood = _dilate_points(nhood, [(j, 0) for j in range(-extra, extra + 1)])
+    return nhood
+
+
 @builtin("strel")
 def _strel(interp, args, nargout):
     nargs(args, 1, 4, "strel")
+    if isinstance(args[0], StrelObject):
+        return args[0]
     if not is_text(args[0]):
-        return _img(args[0], "strel", "neighbourhood") != 0
+        return StrelObject(_img(args[0], "strel", "neighbourhood") != 0)
     kind = text(args[0]).lower()
     p = list(args[1:])
     if kind == "arbitrary":
         nargs(p, 1, 2, "strel")
-        return _img(p[0], "strel", "neighbourhood") != 0
+        return StrelObject(_img(p[0], "strel", "neighbourhood") != 0)
     if not p:
         raise MatlabError(f"strel: the shape '{kind}' needs a size.")
     if kind in ("disk", "diamond", "octagon", "sphere"):
@@ -1367,32 +1471,53 @@ def _strel(interp, args, nargout):
         r = int(r)
         x, y = np.meshgrid(np.arange(-r, r + 1), np.arange(-r, r + 1))
         if kind == "disk":
-            return x * x + y * y <= r * r
+            n = int(_scalar(p[1], "number of line segments")) if len(p) > 1 else 4
+            if n not in (0, 4, 6, 8):
+                raise MatlabError("strel: the number of line segments of a disk must be 0, 4, 6 or 8.")
+            return StrelObject(_disk_strel(r, n), kind)
         if kind == "diamond":
-            return np.abs(x) + np.abs(y) <= r
+            return StrelObject(np.abs(x) + np.abs(y) <= r, kind)
         if kind == "sphere":
             z = np.arange(-r, r + 1).reshape(1, 1, -1)
-            return x[..., None] ** 2 + y[..., None] ** 2 + z ** 2 <= r * r
+            return StrelObject(x[..., None] ** 2 + y[..., None] ** 2 + z ** 2 <= r * r, kind)
         if r % 3:
             raise MatlabError("strel: the radius of an octagon must be a multiple of 3.")
-        return np.abs(x) + np.abs(y) <= r + r // 3
+        return StrelObject(np.abs(x) + np.abs(y) <= r + r // 3, kind)
     if kind == "square":
         w = int(_scalar(p[0], "width"))
-        return np.ones((w, w), dtype=bool)
+        return StrelObject(np.ones((w, w), dtype=bool), kind)
     if kind == "rectangle":
         s = _vec(p[0], "size")
         if s.size != 2:
             raise MatlabError("strel: a rectangle needs a size [rows cols].")
-        return np.ones((int(s[0]), int(s[1])), dtype=bool)
+        return StrelObject(np.ones((int(s[0]), int(s[1])), dtype=bool), kind)
     if kind == "cube":
         w = int(_scalar(p[0], "width"))
-        return np.ones((w, w, w), dtype=bool)
+        return StrelObject(np.ones((w, w, w), dtype=bool), kind)
+    if kind == "cuboid":
+        s = _vec(p[0], "size")
+        if s.size != 3:
+            raise MatlabError("strel: a cuboid needs a size [rows cols planes].")
+        return StrelObject(np.ones(tuple(int(v) for v in s), dtype=bool), kind)
     if kind == "line":
         if len(p) < 2:
             raise MatlabError("strel: a line needs a length and an angle in degrees.")
-        return _line_strel(_scalar(p[0], "length"), _scalar(p[1], "angle"))
-    raise MatlabError(f"strel: unknown shape '{kind}'. Use 'disk', 'square', 'rectangle', 'line', "
-                      "'diamond', 'octagon' or a matrix of zeros and ones.")
+        return StrelObject(_line_strel(_scalar(p[0], "length"), _scalar(p[1], "angle")), kind)
+    if kind == "pair":
+        off = _vec(p[0], "offset").astype(int)
+        if off.size != 2:
+            raise MatlabError("strel: a pair needs an offset [rows cols].")
+        return StrelObject(_dilate_points(np.ones((1, 1), dtype=bool), [(0, 0), (int(off[0]), int(off[1]))]), kind)
+    if kind == "periodicline":
+        if len(p) < 2:
+            raise MatlabError("strel: a periodic line needs a count and an offset [rows cols].")
+        count = int(_scalar(p[0], "count"))
+        off = _vec(p[1], "offset").astype(int)
+        pts = [(j * int(off[0]), j * int(off[1])) for j in range(-count, count + 1)]
+        return StrelObject(_dilate_points(np.ones((1, 1), dtype=bool), pts), kind)
+    raise MatlabError(f"strel: unknown shape '{kind}'. Use 'disk', 'diamond', 'square', 'rectangle', 'line', "
+                      "'octagon', 'sphere', 'cube', 'cuboid', 'pair', 'periodicline' or a matrix of zeros "
+                      "and ones.")
 
 
 @builtin("getnhood")
@@ -1778,13 +1903,21 @@ def _bwmorph_step(bw: np.ndarray, op: str) -> np.ndarray:
         return bw | (~bw & (top > 0) & (low != top))
     if op in ("thin", "skel"):
         return _thin_once(bw)
+    if op == "hbreak":
+        hpat = n[7] & n[0] & n[1] & n[5] & n[4] & n[3] & ~n[6] & ~n[2]     # rows above and below, sides empty
+        vpat = n[7] & n[6] & n[5] & n[1] & n[2] & n[3] & ~n[0] & ~n[4]
+        return bw & ~(hpat | vpat)
+    if op == "tophat":
+        return bw & ~nd.binary_dilation(nd.binary_erosion(bw, box, border_value=1), box)
+    if op == "bothat":
+        return nd.binary_erosion(nd.binary_dilation(bw, box), box, border_value=1) & ~bw
     if op == "perim4":
         return bw & ~nd.binary_erosion(bw, box, border_value=0)
     if op == "perim8":
         return bw & ~nd.binary_erosion(bw, cross, border_value=0)
-    raise MatlabError(f"bwmorph: the operation '{op}' is not supported. Supported: bridge, branchpoints, clean, "
-                      "close, diag, dilate, endpoints, erode, fill, majority, open, perim4, perim8, remove, skel, "
-                      "spur, thin.")
+    raise MatlabError(f"bwmorph: the operation '{op}' is not supported. Supported: bothat, bridge, "
+                      "branchpoints, clean, close, diag, dilate, endpoints, erode, fill, hbreak, majority, open, "
+                      "perim4, perim8, remove, skel, spur, thin, tophat.")
 
 
 @builtin("bwmorph")
@@ -1802,7 +1935,7 @@ def _bwmorph(interp, args, nargout):
         if np.array_equal(nxt, bw):
             break
         bw = nxt
-        if op in ("endpoints", "branchpoints", "perim4", "perim8"):
+        if op in ("endpoints", "branchpoints", "perim4", "perim8", "tophat", "bothat", "hbreak"):
             break
     return bw
 
@@ -1827,7 +1960,8 @@ def _perimeter(mask: np.ndarray) -> float:
 
 _SHAPE_PROPS = ["Area", "Centroid", "BoundingBox", "MajorAxisLength", "MinorAxisLength", "Eccentricity",
                 "Orientation", "EquivDiameter", "Extent", "Perimeter", "Circularity", "Image", "FilledImage",
-                "FilledArea", "EulerNumber", "PixelIdxList", "PixelList", "SubarrayIdx"]
+                "FilledArea", "EulerNumber", "ConvexHull", "ConvexImage", "ConvexArea", "Solidity", "Extrema",
+                "PixelIdxList", "PixelList", "SubarrayIdx"]
 _VALUE_PROPS = ["MeanIntensity", "MinIntensity", "MaxIntensity", "PixelValues", "WeightedCentroid"]
 
 
@@ -1867,6 +2001,7 @@ def _region(prop_names: list[str], idx: np.ndarray, shape: tuple[int, int], valu
         return float(major), float(minor), float(ecc), angle
 
     shape_cache = None
+    hull = None
     for p in prop_names:
         if p == "Area":
             out[p] = area
@@ -1895,6 +2030,26 @@ def _region(prop_names: list[str], idx: np.ndarray, shape: tuple[int, int], valu
             filled = _nd().binary_fill_holes(image())
             _, holes = _nd().label(filled & ~image(), structure=np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]]))
             out[p] = float(1 - holes)
+        elif p in ("ConvexHull", "ConvexImage", "ConvexArea", "Solidity"):
+            from .images_more import _hull_mask
+            if hull is None:
+                hull = _hull_mask(rows - r0, cols - c0, (r1 - r0 + 1, c1 - c0 + 1))
+            poly, hmask = hull
+            if p == "ConvexHull":
+                out[p] = poly + [c0, r0] if poly.size else np.zeros((0, 2))
+            elif p == "ConvexImage":
+                out[p] = hmask.copy()
+            elif p == "ConvexArea":
+                out[p] = float(hmask.sum())
+            else:
+                out[p] = area / float(hmask.sum())
+        elif p == "Extrema":
+            top, bottom = cols[rows == r0], cols[rows == r1]
+            left, right = rows[cols == c0], rows[cols == c1]
+            out[p] = np.array([[top.min() + 0.5, r0 + 0.5], [top.max() + 1.5, r0 + 0.5],
+                               [c1 + 1.5, right.min() + 0.5], [c1 + 1.5, right.max() + 1.5],
+                               [bottom.max() + 1.5, r1 + 1.5], [bottom.min() + 0.5, r1 + 1.5],
+                               [c0 + 0.5, left.max() + 1.5], [c0 + 0.5, left.min() + 0.5]])
         elif p == "PixelIdxList":
             out[p] = (idx + 1).astype(float).reshape(-1, 1)
         elif p == "PixelList":
@@ -1926,9 +2081,9 @@ def _region(prop_names: list[str], idx: np.ndarray, shape: tuple[int, int], valu
 def _regionprops(interp, args, nargout):
     nargs(args, 1, None, "regionprops")
     rest = list(args)
+    as_table = False
     if rest and is_text(rest[0]) and text(rest[0]).lower() in ("struct", "table"):
-        if text(rest.pop(0)).lower() == "table":
-            raise MatlabError("regionprops: table output is not supported; use the default struct array.")
+        as_table = text(rest.pop(0)).lower() == "table"
     if not rest:
         raise MatlabError("regionprops: an image is required.")
     src = rest.pop(0)
@@ -1978,6 +2133,9 @@ def _regionprops(interp, args, nargout):
             data[k, 0] = empty
         else:
             data[k, 0] = _region(names, idx, lab.shape, values)
+    if as_table:
+        from .images_more import _props_table
+        return _props_table(names, {p: [data[k, 0][p] for k in range(n)] for p in names}, n)
     return Struct(data, names)
 
 

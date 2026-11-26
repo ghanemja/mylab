@@ -182,7 +182,10 @@ class TestSpectra:
         m.run("[pk, lc] = findpeaks([1 3 2 5 4 4 6 1]);")
         close(m.val("pk"), [[3, 5, 6]])
         close(m.val("lc"), [[2, 4, 7]])
+        # peaks must be more than MinPeakDistance apart: the tallest (at 7) removes the one at 4
         m.run("[pk, lc] = findpeaks([1 3 2 5 4 4 6 1], 'MinPeakDistance', 3);")
+        close(m.val("lc"), [[2, 7]])
+        m.run("[pk, lc] = findpeaks([1 3 2 5 4 4 6 1], 'MinPeakDistance', 2.5);")
         close(m.val("lc"), [[4, 7]])
         m.run("[pk, lc] = findpeaks([1 3 2 5 4 4 6 1]', 'MinPeakHeight', 4);")
         close(m.val("pk"), [[5], [6]])
@@ -209,7 +212,8 @@ class TestResampling:
         m.interp.set_var("x", x.reshape(-1, 1))
         m.run("y = decimate(x, 3);")
         b, a = ss.cheby1(8, 0.05, 0.8 / 3)
-        expected = ss.filtfilt(b, a, x, padtype="odd", padlen=24)[::3]
+        # the kept samples are r apart and end with the last one (here samples 3, 6, ..., 60)
+        expected = ss.filtfilt(b, a, x, padtype="odd", padlen=24)[2::3]
         assert m.val("y").shape == (20, 1)
         close(m.val("y").ravel(), expected)
 
