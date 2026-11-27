@@ -261,9 +261,10 @@ expected values come from MATLAB's documented behaviour.
 
 - **Speed:** vectorized code runs at NumPy speed, and simple numeric loops,
   small functions and anonymous functions are compiled automatically.
-  Other loops are interpreted, at roughly 2–10 µs per simple statement. On
-  30 benchmark cases mylab took no longer than GNU Octave 10.3 on the same
-  machine; it has not been timed against MATLAB.
+  Other loops are interpreted, at roughly 2–10 µs per simple statement. Of
+  29 benchmark cases, mylab was at least 1.5× faster than GNU Octave 10.3 on
+  the same machine on 19 and level on 10; it has not been timed against
+  MATLAB.
 - **Display:** command-window output follows MATLAB's layout (`format`
   modes, column blocks, class headers); spacing can still differ in rare
   cases.

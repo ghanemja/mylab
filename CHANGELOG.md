@@ -254,10 +254,10 @@ on.
 - `scatter` and `scatter3` take one RGB colour per point (an M-by-3 matrix).
 
 ### Speed
-- Every case of the speed comparison with GNU Octave 10.3
-  (benchmarks/octave_compare) now takes no longer than Octave on the same
-  machine: FFT and `eig` are level with it, most interpreter-heavy cases run
-  3-50x faster (cell/string building and object methods about 1.1x).
+- In the speed comparison with GNU Octave 10.3 (benchmarks/octave_compare),
+  mylab is at least 1.5x faster on 19 of the 29 cases both can run and level
+  on the other 10: function calls 24-46x, struct updates 14x, plain loops
+  4-8x; matrix maths, FFT, cell/string building and object methods level.
 - Anonymous functions defined inside function files are compiled (they never
   were): `arrayfun`/`cellfun`, `fminsearch` and `ode45` with such handles run
   3-8x faster.

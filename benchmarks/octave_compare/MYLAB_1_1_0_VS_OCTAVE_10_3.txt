@@ -1,0 +1,39 @@
+# mylab 1.1.0 and GNU Octave 10.3.0 on the speed cases, seconds, best of three, same 4-core Linux container.
+# mylab: measured 27 Nov 2026 (benchmarks/octave_compare/run_bench.sh).
+# Octave: measured 27 Nov 2026 with run_octave.sh where the case ran ("today"); the cases that need
+# Octave's .m library could not be started that way here, so their times are from OCTAVE_10_3_TIMES.txt
+# (26 Nov 2026, same kind of machine; the cases measured on both days agree within about 10%).
+# Ratio: Octave time / mylab time. Between 0.75 and 1.5 counts as level: in repeated runs b09, b11,
+# b14, b23 and b25 came out ahead in either program by up to about 20%.
+# case                        mylab    octave   source  ratio
+b01_scalar_loop               0.0884    0.6169   today     7.0x  faster
+b02_array_fill                0.2670    1.1395   today     4.3x  faster
+b03_while_if                  0.2727    2.1975   today     8.1x  faster
+b04_nested_matrix             0.0766    0.2539   today     3.3x  faster
+b05_recursion_fib22           0.0054    0.2327   today    43.1x  faster
+b06_call_user_function        0.0279    1.2849   today    46.1x  faster
+b07_call_anonymous            0.0264    0.6274   today    23.8x  faster
+b08_struct_fields             0.1313    1.8075   today    13.8x  faster
+b09_cell_and_string_build     0.2720    0.2291   today     0.8x  level
+b10_small_array_ops           0.2395    0.7023   today     2.9x  faster
+b11_object_methods            1.1941    1.0726   today     0.9x  level
+b12_map_inserts               0.4020      >360   26 Nov  >896x (Octave stopped)
+b13_ode45_vdp                 0.3915    0.9665   26 Nov    2.5x  faster
+b14_fminsearch_rosen          0.0472    0.0440   26 Nov    0.9x  level
+b15_bubble_sort               0.8045    5.0950   today     6.3x  faster
+b16_text_parsing              0.6122    2.2649   26 Nov    3.7x  faster
+b20_vec_elementwise           0.1116    0.6437   today     5.8x  faster
+b21_matmul_1500               0.0583    0.0667   today     1.1x  level
+b22_solve_1500                0.0816    0.0959   today     1.2x  level
+b23_eig_500                   0.0842    0.0649   today     0.8x  level
+b24_svd_600                   0.0595    0.0592   today     1.0x  level
+b25_fft_4m                    0.1702    0.1441   today     0.8x  level
+b26_sort_unique_5m            0.2057    0.4956   26 Nov    2.4x  faster
+b27_logical_index_1e7         0.2597    0.3370   today     1.3x  level
+b28_sparse_tridiag_solve      0.0390    0.0589   26 Nov    1.5x  faster
+b29_arrayfun_cellfun          0.1443    0.3347   today     2.3x  faster
+b30_accumarray_interp         0.2042    0.3401   26 Nov    1.7x  faster
+b31_csv_write_read            0.1405    0.2207   26 Nov    1.6x  faster
+b32_plot_to_png               0.2065       n/a   -       (Octave build cannot print a hidden figure)
+b33_regexprep_cellstr         0.9052    1.0172   today     1.1x  level
+# mylab at least 1.5x faster: 19 cases; level: 10; slower: 0; not comparable: 1.

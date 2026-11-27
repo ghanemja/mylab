@@ -151,21 +151,37 @@ other packages, on the same machine:
 |---|:---:|:---:|
 | 469 MATLAB-behaviour checks that neither had seen | 379 passed (all 469 after fixes) | 333 passed |
 | All 1,174 MATLAB-behaviour checks | 1,170 passed | 810 passed |
-| Checks for string arrays, tables, `datetime`, `dictionary` | passed | failed |
+| Checks for string arrays, tables and `datetime` | 69 of 69 passed | 14 of 69 passed |
 | Simulink `.slx` and `.mdl` models | ✓ | |
 | Browser app, live collaboration, AI assistant, MCP server | ✓ | not built in |
 | Track record | new | decades of use |
 
 The checks are written from MATLAB's public documentation
-([tests/probes](tests/probes/)). Eleven of Octave's failures come from the
-build used, which can't print hidden figures and has no Java.
+([tests/probes](tests/probes/)). Octave's tables, strings and dates come from
+its datatypes package. Eleven of its failures come from the build used, which
+can't print hidden figures and has no Java.
 
-On 30 speed cases mylab took no longer than Octave on any. Most loop-heavy and
-interpreter-heavy cases ran 3–50× faster, and FFT and `eig` were level
-([benchmarks/octave_compare](benchmarks/octave_compare/)). Code that the loop
-compiler can't handle (calls to longer functions, cells, structs, strings,
-printing) runs at about 2–10 µs per statement. That is fine for coursework,
-though probably slower than MATLAB, which mylab has not been timed against.
+Speed, best of three runs on the same 4-core machine:
+
+| Operation | mylab | Octave 10.3 | |
+|---|---:|---:|---:|
+| Calling a small function 200,000 times in a loop | 0.03 s | 1.28 s | 46× |
+| A recursive function (`fib(22)`) | 0.005 s | 0.23 s | 43× |
+| Calling an anonymous function 200,000 times | 0.03 s | 0.63 s | 24× |
+| Updating struct fields 200,000 times | 0.13 s | 1.81 s | 14× |
+| `for` and `while` loops of a million steps, a bubble sort | | | 4–8× |
+| Vectorized arithmetic on 10 million elements | 0.11 s | 0.64 s | 6× |
+| `ode45`, text parsing, sorting, `arrayfun`/`cellfun` | | | 2–4× |
+| 30,000 `containers.Map` inserts and lookups | 0.4 s | stopped after 6 min | |
+| Matrix multiply, `\`, `eig`, `svd`, FFT | | | level |
+
+Of the 29 cases both could run, mylab was at least 1.5× faster on 19 and level
+on 10 ([all results](benchmarks/octave_compare/MYLAB_1_1_0_VS_OCTAVE_10_3.txt)).
+Matrix maths is level because both hand it to BLAS and LAPACK. Code that the
+loop compiler can't handle (calls to longer functions, cells, structs,
+strings, printing) runs at about 2–10 µs per statement. That is fine for
+coursework, though probably slower than MATLAB, which mylab has not been timed
+against.
 
 ## How it is tested
 

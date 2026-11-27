@@ -34,11 +34,14 @@ What's in it:
 • Vectorized code at NumPy speed, and numeric loops compiled automatically (20–50× faster than interpreting them)
 • A Jupyter kernel, a VS Code extension, a Python API, and an autograder for classes
 
-Why not GNU Octave? It's the established free option and a good one, so I
-measured against it. On 469 checks written from MATLAB's public
-documentation that neither program had seen, mylab passed 379 and Octave 10.3
-passed 333 (mylab now passes all 469). On 30 speed tests mylab was never
-slower. And Octave doesn't open Simulink models.
+Why not GNU Octave? It's the established free option, and a good one, so I
+measured mylab against Octave 10.3 on the same machine:
+• Function calls in loops are 46× faster (200,000 calls: 0.03 s vs 1.3 s). Recursion is 43× faster, anonymous functions 24×, struct updates 14×, plain loops 4–8×. Matrix maths is level.
+• Simulink: mylab opens .slx and .mdl models and simulates them. Octave can't.
+• String arrays, tables and datetime: mylab passes all 69 of my checks for them, Octave 14.
+• Built in: a browser version, live collaboration, an AI assistant and an MCP server for agents.
+• On 469 behaviour checks written from MATLAB's documentation, which neither had seen beforehand, mylab passed 379 and Octave 333.
+Octave has decades of use behind it; mylab is new.
 
 It runs about 7,700 tests on Linux, Windows and macOS, and is tested in the
 engines of Chrome, Firefox and Safari.
@@ -55,10 +58,14 @@ If you teach or work in MATLAB, I'd love to hear what breaks.
 - 2,800+ functions: `docs/FUNCTIONS.md` (2,859).
 - 20–50×: three loops timed with `MYLAB_JIT=0` and `=1` (a sum, a recurrence,
   a while/if loop) ran 40–52× faster compiled.
-- Octave: `tests/probes/baselines/heldout_before.json` (mylab 379 of 469,
-  before the gap fixes), `tests/probes/baselines/octave_10_3_and_8_4.json`
-  (Octave 10.3 with its packages: 333 of 469) and
-  `benchmarks/octave_compare/` (30 speed cases).
+- Octave speed: `benchmarks/octave_compare/MYLAB_1_1_0_VS_OCTAVE_10_3.txt`
+  (b06 function calls 46x, b05 recursion 43x, b07 anonymous functions 24x,
+  b08 struct fields 14x, b01-b03 and b15 loops 4-8x, b21-b25 matrix maths
+  level).
+- Octave checks: `tests/probes/baselines/heldout_before.json` (mylab 379 of
+  469, before the gap fixes) and `tests/probes/baselines/octave_10_3_and_8_4.json`
+  (Octave 10.3 with its packages: 333 of 469; string arrays, tables and
+  datetime 14 of 69).
 - About 7,700 tests and three browser engines: the README's "How it is
   tested".
 
