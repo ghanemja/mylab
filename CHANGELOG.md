@@ -78,6 +78,14 @@
   struct, and `Simulink.Bus` / `Simulink.BusElement` objects name the
   elements of a Bus Creator.
 - **Model blocks** run another model file (normal mode).
+- **`.mdl` files are read** (the older text format), with the same coverage
+  as `.slx` files, including library links to `.mdl` libraries.
+- **Writing `.slx` and `.mdl`:** `save_system(model, 'name.slx')` (or
+  `.mdl`) and *Save a copy as .slx / .mdl* in the diagram editor write a copy
+  that mylab reads back into the same model. The files are made for mylab
+  and were not tested with any other program.
+- The `.slx` reader reads a model's description, and MATLAB Function code
+  whose block path has spaces at the end of a name.
 - **Selector and Assignment** take any number of dimensions, starting
   indices, and indices from input ports in every dimension; Assignment can
   start from a given size instead of a Y0 input. Signals with more than two

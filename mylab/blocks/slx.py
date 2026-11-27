@@ -135,14 +135,26 @@ def _key(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
+def open_archive(path: str):
+    """The parts of a model file: an .slx zip archive, or an .mdl text file converted to the same XML."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4)
+    except OSError as exc:
+        raise ModelError(f"{path} cannot be read: {exc}") from None
+    if head.startswith(b"PK") or not path.lower().endswith(".mdl"):
+        return _Archive(path)
+    from .mdl import MdlArchive
+
+    return MdlArchive(path)
+
+
 class _Archive:
     def __init__(self, path: str):
         try:
             self.zip = zipfile.ZipFile(path)
         except (zipfile.BadZipFile, OSError) as exc:
-            raise ModelError(
-                f"{path} is not a readable .slx file ({exc}). Old-style .mdl text files are not supported."
-            ) from None
+            raise ModelError(f"{path} is not a readable .slx file ({exc}).") from None
         infos = self.zip.infolist()
         if len(infos) > MAX_MEMBERS or sum(i.file_size for i in infos) > MAX_TOTAL:
             raise ModelError("The .slx file is too large to import.")
@@ -203,7 +215,7 @@ class _Importer:
         import os
 
         self.path = os.path.abspath(path)
-        self.arc = _Archive(path)
+        self.arc = open_archive(path)
         self.root = root or self
         self.stats = self.root.stats if root else _Stats()
         self.defaults: dict[str, dict[str, str]] = {}
@@ -262,8 +274,10 @@ class _Importer:
                             dirs[:] = []
                         for f in files:
                             seen += 1
-                            if f.lower().endswith(".slx"):
-                                root.index.setdefault(f[:-4], os.path.join(folder, f))
+                            if f.lower().endswith((".slx", ".mdl")):
+                                old = root.index.get(f[:-4])
+                                if old is None or old.lower().endswith(".mdl"):  # .slx first
+                                    root.index[f[:-4]] = os.path.join(folder, f)
                         if seen > 20000:
                             break
                     parent = os.path.dirname(here)
@@ -346,6 +360,8 @@ class _Importer:
         for p in self.top.findall("P"):
             if p.get("Name") in ("PreLoadFcn", "PostLoadFcn", "InitFcn", "StartFcn") and (p.text or "").strip():
                 model.callbacks[p.get("Name")] = p.text.strip()
+            elif p.get("Name") == "Description" and (p.text or "").strip():
+                model.description = p.text.strip()
         self._config(model, self.top)
         notes = list(dict.fromkeys(st.notes))
         if st.unsupported:
@@ -393,7 +409,8 @@ class _Importer:
                     continue
                 for chart in el.iter("chart"):
                     cname = next((p.text or "" for p in chart.findall("P") if p.get("Name") == "name"), "")
-                    cname = re.sub(r"\s+", " ", cname).strip()  # block names are compared without line breaks
+                    # block names are compared without line breaks or spaces at their ends
+                    cname = "/".join(part.strip() for part in re.sub(r"\s+", " ", cname).split("/"))
                     for p in chart.iter("P"):
                         if p.get("Name") == "script" and p.text:
                             self.scripts[cname] = p.text
@@ -402,7 +419,8 @@ class _Importer:
     def _config(self, model: Model, top: ET.Element) -> None:
         found: dict[str, str] = {}
         sources = [top] + [el for part in ("simulink/configSet0.xml",) if (el := self.arc.xml(part)) is not None]
-        want = {"StartTime", "StopTime", "SolverName", "Solver", "MaxStep", "RelTol", "AbsTol", "FixedStep"}
+        want = {"StartTime", "StopTime", "SolverName", "Solver", "MaxStep", "RelTol", "AbsTol", "FixedStep",
+                "ZeroCrossings", "AlgebraicLoop"}  # the last two are only in files mylab writes
         for src in sources:
             for p in src.iter("P"):
                 n = p.get("Name")
@@ -412,7 +430,7 @@ class _Importer:
         if solver:
             model.config["Solver"] = SOLVERS.get(solver.lower(), solver)
         for k, v in found.items():
-            if k in model.config:
+            if k in model.config or k == "AlgebraicLoop":
                 model.config[k] = v
 
     # -- systems ----------------------------------------------------------------------
@@ -757,7 +775,7 @@ class _Importer:
         kind, _, num = port.partition(":")
         if kind in ("in", "out") and num.isdigit():
             return sid, int(num)
-        if kind in ("enable", "trigger"):
+        if kind in ("enable", "trigger", "reset"):
             return sid, kind
         if kind == "ifaction":  # the control input of an if-action subsystem works like an enable input
             return sid, "enable"
@@ -823,11 +841,19 @@ class _Importer:
 
 
 def import_slx(path: str, name: str | None = None) -> Model:
-    """Read an ``.slx`` file into a :class:`Model`. See ``model.notes`` for what was not converted."""
+    """Read an ``.slx`` (or ``.mdl``) file into a :class:`Model`. See ``model.notes`` for what was not converted."""
     import os
 
     base = name or os.path.splitext(os.path.basename(path))[0]
     base = re.sub(r"\W", "_", base) or "model"
-    model = _Importer(path).run(base)
+    imp = _Importer(path)
+    model = imp.run(base)
     model.file = path
+    if "metadata/mylab.xml" in imp.arc.names() or getattr(imp.arc, "mylab", False):
+        # a file mylab wrote lists every parameter; keep only the ones that differ from the defaults, as before
+        for _p, blk, _s in model.root.walk():
+            cls = find_type(blk.type)
+            if cls is not None:
+                defaults = {q.name: q.default for q in cls.params}
+                blk.params = {k: v for k, v in blk.params.items() if defaults.get(k) != v}
     return model

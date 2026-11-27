@@ -12,7 +12,7 @@ from ..values import Cell, FunctionHandle, MString, Struct, char, is_char, to_st
 from ._registry import builtin
 from ._util import is_text, match_option, nargs, text, unknown_option_error
 
-EXTENSIONS = (".mlb.json", ".slx", ".json")
+EXTENSIONS = (".mlb.json", ".slx", ".mdl", ".json")
 
 
 # -- state ---------------------------------------------------------------------------------------
@@ -235,10 +235,19 @@ def _save_system(interp, args, nargout):
     if len(args) > 1 and is_text(args[1]):
         target = text(args[1])
         new_name = _model_name(target)
+        if target.lower().endswith((".slx", ".mdl")):
+            # a copy in that format, for mylab to read back; the model keeps its own file
+            from ..blocks.writer import save_as
+
+            if new_name != m.name:
+                st["models"].pop(m.name, None)
+                m.name = new_name
+                st["models"][new_name] = m
+                st["current"] = new_name
+            save_as(m, target)
+            return char(os.path.abspath(target)) if nargout else None
         if not target.lower().endswith(".json"):
             target += ".mlb.json"
-        if target.lower().endswith((".slx", ".mdl")):
-            raise MatlabError("mylab saves models as .mlb.json files; it cannot write .slx or .mdl.")
         if new_name != m.name:
             st["models"].pop(m.name, None)
             m.name = new_name

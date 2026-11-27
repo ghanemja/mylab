@@ -13,7 +13,8 @@ HELP = {
     ),
     "open_system": (
         "open_system(name)",
-        "Loads a model (from name.mlb.json or name.slx in the current folder or on the path) and makes it the "
+        "Loads a model (from name.mlb.json, name.slx or name.mdl in the current folder or on the path) and "
+        "makes it the "
         "current model. In the mylab web app the model also opens in the diagram editor; elsewhere a note is "
         "printed once and the model can be used from code.",
     ),
@@ -21,13 +22,14 @@ HELP = {
         ["load_system(name)", "h = load_system(name)"],
         "Loads a model file into memory without showing it. Models are also loaded automatically the first "
         "time their name is used, so sim('mymodel') works when mymodel.mlb.json is in the current folder. "
-        "A .slx file is converted on loading; blocks that have no equivalent are listed in a warning.",
+        "A .slx or .mdl file is converted on loading; blocks that have no equivalent are listed in a warning.",
     ),
     "save_system": (
         ["save_system(name)", "save_system(name, newname)", "file = save_system(...)"],
         "Writes a model to name.mlb.json, a readable JSON file, in the current folder (or back to the file it "
-        "was loaded from). With a second name the model is renamed and saved under that name. mylab does not "
-        "write .slx files.",
+        "was loaded from). With a second name the model is renamed and saved under that name. A second name "
+        "ending in .slx or .mdl writes a copy in that format, which mylab can load again; such files are made "
+        "for mylab and were not tested with other programs. The model's own file stays the .mlb.json one.",
     ),
     "close_system": (
         ["close_system(name)", "close_system(name, 1)", "bdclose('all')"],

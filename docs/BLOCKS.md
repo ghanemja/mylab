@@ -4,7 +4,7 @@ mylab Blocks lets you build a model of a dynamic system from blocks joined by
 signal lines, run it over time, and look at the signals. It is meant for
 courses in control, signals and system dynamics.
 
-It covers similar ground to Simulink® and can import simple `.slx` models, but
+It covers similar ground to Simulink® and can import simple `.slx` and `.mdl` models, but
 it is a separate program written from scratch. It is not affiliated with The
 MathWorks, Inc., and it does not try to be a complete replacement (see
 [What is not supported](#what-is-not-supported)).
@@ -14,7 +14,8 @@ MathWorks, Inc., and it does not try to be a complete replacement (see
 Contents: [In the browser](#in-the-browser) · [From code](#from-code) ·
 [The model file](#the-model-file) · [Blocks](#blocks) · [How a model runs](#how-a-model-runs) ·
 [Subsystems, buses and model references](#subsystems-buses-and-model-references) ·
-[Importing .slx files](#importing-slx-files) · [What is not supported](#what-is-not-supported) ·
+[Importing .slx and .mdl files](#importing-slx-and-mdl-files) ·
+[Writing .slx and .mdl files](#writing-slx-and-mdl-files) · [What is not supported](#what-is-not-supported) ·
 [How it was checked](#how-it-was-checked)
 
 ## In the browser
@@ -164,12 +165,13 @@ out = sim('firstorder', 'StopTime', '3');
 plot(out.tout, out.yout)          % 1 - exp(-2 t)
 
 save_system('firstorder');         % writes firstorder.mlb.json
+save_system('firstorder', 'firstorder.slx');   % a copy as .slx, for mylab to read back
 ```
 
 - Library names: `'blocks/Gain'`, or the familiar ones such as
   `'simulink/Continuous/Integrator'`, `'simulink/Math Operations/Sum'` and
   `'built-in/Gain'`. Only the last part of the path matters.
-- `sim('name')` loads `name.mlb.json` (or `name.slx`) from the current folder
+- `sim('name')` loads `name.mlb.json` (or `name.slx`, `name.mdl`) from the current folder
   or the path if the model is not open yet.
 - `sim` returns an object with `tout`, `yout` (the top-level Out blocks, one
   column per element), one field per To Workspace block (a struct with `Time`
@@ -558,13 +560,22 @@ from the workspace like any others, and its own callbacks and configuration
 are not used. A model that refers to itself, directly or through others, is
 an error.
 
-## Importing .slx files
+## Importing .slx and .mdl files
 
 `load_system('model')`, `sim('model')` and, in the web app, opening a `.slx`
-file (or *Import a .slx model…*) convert the file to a mylab model. An `.slx`
-file is a zip archive of XML parts; the reader was written from the structure
-of public files, without vendor code or documentation. `.mdl` files are not
-read.
+or `.mdl` file (or *Import a .slx or .mdl model…*) convert the file to a mylab
+model. An `.slx` file is a zip archive of XML parts; an `.mdl` file is the
+older text format, nested `Name { ... }` sections of `Key value` lines. Both
+readers were written from the structure of public files, without vendor code
+or documentation. The `.mdl` reader turns the text into the same XML tree an
+`.slx` file holds and hands it to the `.slx` reader, so both convert the same
+things, listed below. It was written from the four `.mdl` files in the
+history of the WEC-Sim repository (Apache-2.0: `tutorials/RM3/RM3.mdl`,
+`tutorials/OSWEC/OSWEC.mdl`, `source/lib/WEC-Sim/WECSim_Lib.mdl` and
+`source/lib/PTO-Sim/PTOSim_Lib.mdl` as first added, in 2014 to 2018), which
+were saved in the mask format of those years (a `Simulink.Mask` object). Older
+`.mdl` files that describe masks with `MaskPromptString` and
+`MaskVariables` lines read without their mask variables.
 
 What is converted:
 
@@ -582,8 +593,8 @@ What is converted:
 - MATLAB Function blocks (their code), and S-function blocks whose code is a
   MATLAB-language file on the path, level 1 (the `flag` protocol) and level 2
   (the block object with `Outputs`, `Update`, `Derivatives`…);
-- links to the common built-in library blocks, and links to library files in
-  the same folder tree, including blocks that a library has moved (its
+- links to the common built-in library blocks, and links to library files
+  (`.slx` or `.mdl`) in the same folder tree, including blocks that a library has moved (its
   forwarding table) and libraries that only open other libraries;
 - the model's `PreLoadFcn`, `PostLoadFcn`, `InitFcn` and `StartFcn` code,
   which is run before a simulation;
@@ -727,6 +738,26 @@ The second form compares the parameter defaults that files list for their
 block types with the defaults the importer assumes (in the 82 files: 20
 parameters of 12 block types, all in agreement).
 
+## Writing .slx and .mdl files
+
+`save_system(model, 'name.slx')` or `save_system(model, 'name.mdl')` writes a
+copy of the model in that format; in the web app the ⋯ menu of the diagram
+toolbar has *Save a copy as .slx* and *Save a copy as .mdl*. mylab reads these
+files back into the same model: blocks with their parameters and positions,
+lines with names and corner points, subsystems with their variables and
+initialization code, variant choices, MATLAB Function code, the model's
+callbacks, description and settings, and the ports of placeholder and Model
+blocks. Lost on the way: a flipped block without a rotation comes back turned
+half way round, lines lose their logging mark, and display settings made with
+`set_param` (colours, name placement) are dropped. The model's own file stays
+its `.mlb.json` file.
+
+**These files are made for mylab.** They follow the layout of the public files
+the readers were written from, but they were not made with or tested in any
+other program, and other programs may not open them or may read them
+differently. Each file says so: a comment on the first line of an `.mdl` file,
+`metadata/mylab.xml` in an `.slx` file.
+
 ## What is not supported
 
 - Code generation, real-time targets, hardware in the loop.
@@ -759,7 +790,8 @@ parameters of 12 block types, all in agreement).
 - Linearization of discrete states (`linmod` holds them constant), `dlinmod`.
 - In the editor: annotations, block colours, several views of one model side
   by side, and pausing or stepping a simulation.
-- Writing `.slx` or `.mdl` files.
+- Files written as `.slx` or `.mdl` are meant for mylab only (see
+  [Writing .slx and .mdl files](#writing-slx-and-mdl-files)).
 
 ## How it was checked
 
