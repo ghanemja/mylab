@@ -4,7 +4,7 @@
 // scripts/test_web.mjs runs these as part of the full suite. Run this file on its own while
 // working on the App panel or the builder (it starts its own server):
 //
-//   node scripts/test_web_apps.mjs [--headed] [--no-screenshot]
+//   node scripts/test_web_apps.mjs [--browser chromium|firefox|webkit] [--headed] [--no-screenshot]
 
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -70,10 +70,20 @@ uicontrol(f, 'Style', 'pushbutton', 'String', 'Add', 'Position', [90 40 130 30],
 end
 `;
 
+/**
+ * The clipboard grants a context needs so that the page can write the clipboard and the
+ * checks can read it back with navigator.clipboard.readText(). Each browser knows other names:
+ * Chromium needs both; WebKit only knows "clipboard-read" (writing after a click needs no grant);
+ * Playwright's Firefox knows neither and allows both without a grant.
+ */
+export function clipboardPermissions(browser) {
+  return { chromium: ["clipboard-read", "clipboard-write"], webkit: ["clipboard-read"], firefox: [] }[browser.browserType().name()];
+}
+
 /** The checks. `t` = { ok, check, shot(page, name, selector) }. */
 export async function testApps(browser, url, t, consoleErrors = []) {
   const { ok, check } = t;
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2, permissions: ["clipboard-read", "clipboard-write"] });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2, permissions: clipboardPermissions(browser) });
   const page = await context.newPage();
   page.on("console", (m) => m.type() === "error" && consoleErrors.push("[apps] " + m.text()));
   page.on("pageerror", (e) => consoleErrors.push("[apps] pageerror: " + e.message));
@@ -430,9 +440,16 @@ function startServer(py) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const require = createRequire(import.meta.url);
-  const { chromium } = require("playwright");
-  const args = new Set(process.argv.slice(2));
-  const shots = !args.has("--no-screenshot");
+  const playwright = require("playwright");
+  const argv = process.argv.slice(2);
+  const args = new Set(argv);
+  const b = argv.findIndex((a) => a === "--browser" || a.startsWith("--browser="));
+  const browserName = b < 0 ? "chromium" : argv[b].includes("=") ? argv[b].slice("--browser=".length) : argv[b + 1];
+  if (!["chromium", "firefox", "webkit"].includes(browserName)) {
+    console.error(`--browser must be chromium, firefox or webkit, not ${browserName}`);
+    process.exit(2);
+  }
+  const shots = !args.has("--no-screenshot") && browserName === "chromium"; // the docs stills come from Chromium
   let passed = 0;
   const t = {
     ok: (name) => console.log(`  ok   ${name}`, ++passed && ""),
@@ -450,7 +467,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     },
   };
   const { proc, url } = await startServer(process.env.PYTHON || "python3");
-  const browser = await chromium.launch({ headless: !args.has("--headed") });
+  const browser = await playwright[browserName].launch({ headless: !args.has("--headed") });
   const errors = [];
   try {
     await testApps(browser, url, t, errors);
