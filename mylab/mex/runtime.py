@@ -230,8 +230,6 @@ def _shutdown(ref) -> None:
             rt.clear(None, force=True)
         except Exception:  # noqa: BLE001 - Python is exiting: nothing useful to do with the error
             pass
-        if rt._tmp:
-            shutil.rmtree(rt._tmp, ignore_errors=True)
 
 
 class MexRuntime:
@@ -316,6 +314,7 @@ class MexRuntime:
                 f"e.g. mex {name}.c", "mylab:mex:notMylabMex")
         if self._tmp is None:
             self._tmp = tempfile.mkdtemp(prefix="mylab-mex-")
+            weakref.finalize(self, shutil.rmtree, self._tmp, True)  # also runs when Python exits
         # Load a private copy: the original can then be rebuilt (or deleted) while it is loaded, and a
         # rebuilt file is a new library rather than the cached old one.
         copy = os.path.join(self._tmp, f"{name}-{next(self._loads)}{MEX_SUFFIX}")
