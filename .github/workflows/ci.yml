@@ -109,8 +109,13 @@ jobs:
       - run: python benchmarks/speed_check.py --limit 0.25
 
   web:
-    name: browser app
+    # The same checks in the engines of Chrome/Edge, Firefox and Safari. The Chromium job keeps its old name.
+    name: browser app${{ matrix.browser != 'chromium' && format(' ({0})', matrix.browser) || '' }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -122,6 +127,6 @@ jobs:
       - run: pip install build setuptools wheel
       # one check compares the editor's list of functions with the engine's own
       - run: pip install -e .
-      - run: npm install --no-save playwright@1.48.2
-      - run: npx playwright install --with-deps chromium
-      - run: node scripts/test_web.mjs --no-screenshot
+      - run: npm install --no-save playwright@1.63.0
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - run: node scripts/test_web.mjs --no-screenshot --browser ${{ matrix.browser }}
