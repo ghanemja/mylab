@@ -778,6 +778,21 @@
             if (item.node.props.live) view.sendLive({ id, event: "value", value: Number(input.value), changing: true });
           },
           onchange: () => view.send({ id, event: "value", value: Number(input.value) }),
+          onkeydown: (e) => {
+            // Without a Step the thumb moves freely (step "any"). Chromium and Safari then move it by 1% of
+            // the range per arrow key and 10% per Page Up/Down; Firefox moves it by 1, so on Limits [0 1] the
+            // keys can only reach the two ends. Move it the same way everywhere (Right and Up increase, also
+            // on a vertical slider, as in the ARIA slider pattern).
+            const frac = { ArrowRight: 0.01, ArrowUp: 0.01, ArrowLeft: -0.01, ArrowDown: -0.01, PageUp: 0.1, PageDown: -0.1 }[e.key];
+            const lo = Number(input.min), hi = Number(input.max);
+            if (input.step !== "any" || frac === undefined || !(hi > lo) || e.altKey || e.ctrlKey || e.metaKey) return;
+            e.preventDefault();
+            const next = Number(Math.min(hi, Math.max(lo, Number(input.value) + frac * (hi - lo))).toPrecision(12));
+            if (next === Number(input.value)) return;
+            input.value = String(next);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          },
         });
         item.input = input;
         item.out = h("output", { class: "mui-range-value" });

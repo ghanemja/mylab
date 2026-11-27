@@ -4,7 +4,7 @@
 // scripts/test_web.mjs runs these as part of the full suite. Run this file on its own while
 // working on the App panel or the builder (it starts its own server):
 //
-//   node scripts/test_web_apps.mjs [--headed] [--no-screenshot]
+//   node scripts/test_web_apps.mjs [--browser chromium|firefox|webkit] [--headed] [--no-screenshot]
 
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -70,10 +70,20 @@ uicontrol(f, 'Style', 'pushbutton', 'String', 'Add', 'Position', [90 40 130 30],
 end
 `;
 
+/**
+ * The clipboard grants a context needs so that the page can write the clipboard and the
+ * checks can read it back with navigator.clipboard.readText(). Each browser knows other names:
+ * Chromium needs both; WebKit only knows "clipboard-read" (writing after a click needs no grant);
+ * Playwright's Firefox knows neither and allows both without a grant.
+ */
+export function clipboardPermissions(browser) {
+  return { chromium: ["clipboard-read", "clipboard-write"], webkit: ["clipboard-read"], firefox: [] }[browser.browserType().name()];
+}
+
 /** The checks. `t` = { ok, check, shot(page, name, selector) }. */
 export async function testApps(browser, url, t, consoleErrors = []) {
   const { ok, check } = t;
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2, permissions: ["clipboard-read", "clipboard-write"] });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2, permissions: clipboardPermissions(browser) });
   const page = await context.newPage();
   page.on("console", (m) => m.type() === "error" && consoleErrors.push("[apps] " + m.text()));
   page.on("pageerror", (e) => consoleErrors.push("[apps] pageerror: " + e.message));
@@ -141,11 +151,17 @@ export async function testApps(browser, url, t, consoleErrors = []) {
   // keyboard: the slider is a native range input
   await range.focus();
   const v0 = Number(await range.inputValue());
+  const beforeKey = await img.getAttribute("src");
   await page.keyboard.press("ArrowLeft");
   await until((v) => Number(document.querySelector("#app-view input[type=range]").value) < v, v0);
-  await until((v) => parseFloat([...document.querySelectorAll("#app-view .mui-label")].pop().textContent) < v - 0.01, hz);
-  await page.waitForTimeout(300);
-  ok("controls are native form elements: the slider moves with the arrow keys");
+  const v1 = Number(await range.inputValue());
+  // A slider without a Step moves by 1% of its range per arrow key in every browser (Firefox would move 1 of 9).
+  check(Math.abs(v0 - v1 - 0.09) < 1e-6, `an arrow key should move the slider by 1% of its limits [1 10]: ${v0} -> ${v1}`);
+  // ValueChangedFcn redraws the plot and writes the readout; wait for that image, so the table edit below
+  // is not confused with it (the redraw can take longer than a fixed pause on a busy machine)
+  await until((src) => document.querySelector("#app-view .mui-axes-image").getAttribute("src") !== src, beforeKey);
+  await until((want) => [...document.querySelectorAll("#app-view .mui-label")].pop().textContent === want, `${v1.toFixed(1)} Hz`);
+  ok("controls are native form elements: the slider moves with the arrow keys, by 1% of its range");
 
   // table edit
   const afterSlider = await img.getAttribute("src");
@@ -430,9 +446,16 @@ function startServer(py) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const require = createRequire(import.meta.url);
-  const { chromium } = require("playwright");
-  const args = new Set(process.argv.slice(2));
-  const shots = !args.has("--no-screenshot");
+  const playwright = require("playwright");
+  const argv = process.argv.slice(2);
+  const args = new Set(argv);
+  const b = argv.findIndex((a) => a === "--browser" || a.startsWith("--browser="));
+  const browserName = b < 0 ? "chromium" : argv[b].includes("=") ? argv[b].slice("--browser=".length) : argv[b + 1];
+  if (!["chromium", "firefox", "webkit"].includes(browserName)) {
+    console.error(`--browser must be chromium, firefox or webkit, not ${browserName}`);
+    process.exit(2);
+  }
+  const shots = !args.has("--no-screenshot") && browserName === "chromium"; // the docs stills come from Chromium
   let passed = 0;
   const t = {
     ok: (name) => console.log(`  ok   ${name}`, ++passed && ""),
@@ -450,7 +473,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     },
   };
   const { proc, url } = await startServer(process.env.PYTHON || "python3");
-  const browser = await chromium.launch({ headless: !args.has("--headed") });
+  const browser = await playwright[browserName].launch({ headless: !args.has("--headed") });
   const errors = [];
   try {
     await testApps(browser, url, t, errors);

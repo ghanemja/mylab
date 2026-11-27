@@ -109,8 +109,13 @@ jobs:
       - run: python benchmarks/speed_check.py --limit 0.25
 
   web:
-    name: browser app
+    # The same checks in the engines of Chrome/Edge, Firefox and Safari. The Chromium job keeps its old name.
+    name: browser app${{ matrix.browser != 'chromium' && format(' ({0})', matrix.browser) || '' }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -122,9 +127,11 @@ jobs:
       - run: pip install build setuptools wheel
       # one check compares the editor's list of functions with the engine's own
       - run: pip install -e .
-      - run: npm install --no-save playwright@1.48.2 axe-core@4.14.0
-      - run: npx playwright install --with-deps chromium
+      - run: npm install --no-save playwright@1.63.0 axe-core@4.14.0
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
       # every CDN file still matches its integrity hash, and the bundled Anthropic SDK matches a fresh build
-      - run: python scripts/sri.py --check
-      - run: node scripts/vendor_anthropic_sdk.mjs --check
-      - run: node scripts/test_web.mjs --no-screenshot
+      - if: matrix.browser == 'chromium'
+        run: python scripts/sri.py --check
+      - if: matrix.browser == 'chromium'
+        run: node scripts/vendor_anthropic_sdk.mjs --check
+      - run: node scripts/test_web.mjs --no-screenshot --browser ${{ matrix.browser }}

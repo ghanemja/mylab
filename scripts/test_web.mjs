@@ -1,15 +1,20 @@
 #!/usr/bin/env node
 // End-to-end test for the mylab web app (web/).
 //
-// Builds the wheel, serves web/ on a local port, opens the page in headless
-// Chromium with Playwright and checks the main features. Needs network access
+// Builds the wheel, serves web/ on a local port, opens the page in a headless
+// browser with Playwright and checks the main features. Needs network access
 // to cdn.jsdelivr.net and cdnjs.cloudflare.com (Pyodide, CodeMirror, JSZip).
 // GitHub and the AI providers are mocked: no request reaches them.
 //
-// Usage:  node scripts/test_web.mjs [--headed] [--no-screenshot] [--gif]
+// Usage:  node scripts/test_web.mjs [--browser chromium|firefox|webkit] [--headed] [--no-screenshot] [--gif]
 //
-//   --no-screenshot  don't refresh the stills in docs/images/
-//   --gif            only record docs/images/demo.gif (needs Pillow in $PYTHON)
+//   --browser        the browser engine to test in: chromium (default), firefox,
+//                    or webkit (the engine of Safari). Each runs the same checks;
+//                    CI runs all three. Install a browser with
+//                    `npx playwright install --with-deps <browser>`.
+//   --no-screenshot  don't refresh the stills in docs/images/ (they are only
+//                    taken with Chromium)
+//   --gif            only record docs/images/demo.gif with Chromium (needs Pillow in $PYTHON)
 
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -18,16 +23,31 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 
-import { testApps } from "./test_web_apps.mjs";
+import { testApps, clipboardPermissions } from "./test_web_apps.mjs";
 
 const require = createRequire(import.meta.url);
-const { chromium } = require("playwright");
+const playwright = require("playwright");
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const IMAGES = path.join(ROOT, "docs", "images");
-const args = new Set(process.argv.slice(2));
+const argv = process.argv.slice(2);
+const args = new Set(argv);
 const PY = process.env.PYTHON || "python3";
-const SHOTS = !args.has("--no-screenshot");
+const BROWSER = (() => {
+  const i = argv.findIndex((a) => a === "--browser" || a.startsWith("--browser="));
+  if (i < 0) return "chromium";
+  return argv[i].includes("=") ? argv[i].slice("--browser=".length) : argv[i + 1];
+})();
+if (!["chromium", "firefox", "webkit"].includes(BROWSER)) {
+  console.error(`--browser must be chromium, firefox or webkit, not ${BROWSER}`);
+  process.exit(2);
+}
+if (args.has("--gif") && BROWSER !== "chromium") {
+  console.error("--gif records docs/images/demo.gif with Chromium only");
+  process.exit(2);
+}
+// The stills in docs/images/ always come from Chromium, so they don't change with the browser that ran last.
+const SHOTS = !args.has("--no-screenshot") && BROWSER === "chromium";
 
 let passed = 0;
 function ok(name) {
@@ -133,9 +153,17 @@ function helpers(page) {
 }
 
 function watchErrors(page, list, tag = "") {
+  // From a navigation (reload, goto) until the new document has loaded, the old page is going away.
+  let leaving = false;
+  page.on("request", (r) => { if (r.isNavigationRequest() && r.frame() === page.mainFrame()) leaving = true; });
+  page.on("domcontentloaded", () => (leaving = false));
   page.on("console", (msg) => {
     // The mocked GitHub error replies (rate limit, missing repository) are expected.
     if (msg.type() === "error" && /^Failed to load resource/.test(msg.text()) && /api\.github\.com/.test(msg.location().url || "")) return;
+    // WebKit reports the downloads that Pyodide (in the engine worker) still had running when the page
+    // reloads during start-up as failed (unhandled rejections, "access control checks"). The page that
+    // started them is gone; no one sees this. Chromium and Firefox say nothing.
+    if (leaving && BROWSER === "webkit" && /^(Unhandled Promise Rejection: TypeError: Load failed|(Fetch API cannot|Cannot) load https:\/\/cdn\.jsdelivr\.net\/pyodide\/\S+ due to access control checks\.)$/.test(msg.text())) return;
     if (msg.type() === "error") list.push(tag + msg.text());
   });
   page.on("pageerror", (err) => list.push(tag + "pageerror: " + err.message));
@@ -405,7 +433,8 @@ async function main() {
   console.log("Building and serving web/ …");
   const { proc, url } = await startServer();
   console.log("Serving at", url);
-  const browser = await chromium.launch({ headless: !args.has("--headed") });
+  const browser = await playwright[BROWSER].launch({ headless: !args.has("--headed") });
+  console.log(`Testing in ${BROWSER} ${browser.version()}` + (BROWSER !== "chromium" && !args.has("--no-screenshot") ? " (the stills in docs/images/ are only taken with Chromium)" : ""));
   const consoleErrors = [];
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mylab-web-"));
   try {
@@ -417,7 +446,7 @@ async function main() {
       viewport: { width: 1366, height: 768 },
       deviceScaleFactor: 2,
       acceptDownloads: true,
-      permissions: ["clipboard-read", "clipboard-write"],
+      permissions: clipboardPermissions(browser),
     });
     const page = await context.newPage();
     watchErrors(page, consoleErrors);
@@ -1824,7 +1853,9 @@ async function main() {
       await waitRun(n);
       let fin = await finals();
       check(Math.abs(fin[0][0] - 0.25) < 0.01 && Math.abs(fin[1][0]) < 0.01, "mass-spring-damper should settle at F/k = 0.25 with zero velocity: " + JSON.stringify(fin));
-      const drawn = await page.evaluate(() => {
+      const drawn = await page.evaluate(async () => {
+        // the scope paints the finished run in the next animation frame
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         const cv = document.querySelector(".scope-panel[data-scope='Scope'] canvas");
         const g = cv.getContext("2d");
         const d = g.getImageData(0, 0, cv.width, cv.height).data;
@@ -2546,6 +2577,10 @@ async function main() {
     ok("no console errors");
 
     console.log(`\nAll ${passed} checks passed.`);
+  } catch (e) {
+    // what the page logged often explains a failure (e.g. a script a browser could not run)
+    if (consoleErrors.length && !/^console errors:/.test(e.message)) e.message += "\n\nconsole errors before the failure:\n" + consoleErrors.join("\n");
+    throw e;
   } finally {
     await browser.close();
     proc.kill();

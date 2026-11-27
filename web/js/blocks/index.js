@@ -4,7 +4,7 @@
 import { $, el, icon, toast, openMenu, closeMenu } from "../ui.js";
 import { CATALOG } from "./catalog.js";
 import { BLOCK_EXAMPLES } from "./examples.js";
-import { isModelPath, newModel, starterModel, serializeModel, findType, portCounts, systemAt, EXT } from "./model.js";
+import { isModelPath, newModel, starterModel, serializeModel, findType, portCounts, systemAt, unconnectedInputs, EXT } from "./model.js";
 import { DiagramEditor } from "./editor.js";
 import { ScopeDock, formatNumber } from "./scope.js";
 import { paletteIcon, CATEGORY_CLASS } from "./draw.js";
@@ -615,12 +615,35 @@ export function initBlocks(app) {
     view.dataset.problems = String(list.length);
   }
 
+  /**
+   * Whether an input the engine reported as unconnected still is. The engine checks a moment after each
+   * change, so its list can be older than the diagram: an input connected since then is no problem any more.
+   * A path that can't be followed (a block renamed or removed since) counts as still unconnected.
+   */
+  function stillUnconnected(d) {
+    const find = (sys, p) => {
+      for (const b of sys.blocks) {
+        if (b.name === p) return { sys, name: b.name };
+        if (Array.isArray(b.blocks) && p.startsWith(b.name + "/")) {
+          const hit = find(b, p.slice(b.name.length + 1));
+          if (hit) return hit;
+        }
+      }
+      return null;
+    };
+    const hit = d.path && ed.model ? find(ed.model, d.path) : null;
+    if (!hit) return true;
+    const port = d.port === undefined ? null : d.port;
+    return unconnectedInputs(hit.sys).some((u) => u.block === hit.name && (port === null ? typeof u.port === "string" : u.port === port));
+  }
+
   /** Engine diagnostics plus the unconnected inputs seen on the canvas, most serious first. */
   function problemList() {
     const out = [];
     const seen = new Set();
     for (const d of ed.diagnostics) {
       if (d.level === "info") continue;
+      if (d.kind === "unconnected-input" && !stillUnconnected(d)) continue;
       const k = d.message;
       if (seen.has(k)) continue;
       seen.add(k);

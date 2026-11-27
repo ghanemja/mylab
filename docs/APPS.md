@@ -304,4 +304,5 @@ the code. Whoever opens it sees only the running app, without the editor.
   `python scripts/build_web.py` refreshes them and a test checks them.
 - `web/js/uiapp.js` is the App panel and `web/js/designer.js` the builder.
 - Tests: `tests/test_ui_*.py` drive apps without a browser.
-  `scripts/test_web_apps.mjs` drives them in Chromium.
+  `scripts/test_web_apps.mjs` drives them in Chromium, Firefox and WebKit
+  (`--browser`).

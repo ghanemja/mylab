@@ -59,6 +59,7 @@ The app in `web/` is plain HTML, CSS and JavaScript with no build step.
 ```bash
 python scripts/build_web.py --serve      # http://localhost:8000
 node scripts/test_web.mjs                # end-to-end test (needs Playwright + Chromium)
+node scripts/test_web.mjs --browser firefox   # the same in Firefox (or --browser webkit, Safari's engine)
 ```
 
 ## Pull requests

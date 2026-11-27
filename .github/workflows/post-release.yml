@@ -130,7 +130,7 @@ jobs:
       - name: Install Playwright
         if: steps.site.outputs.url != ''
         run: |
-          npm install --no-save playwright@1.48.2
+          npm install --no-save playwright@1.63.0
           npx playwright install --with-deps ${{ matrix.browser }}
       - name: Open the site, run code, draw a plot
         if: steps.site.outputs.url != ''
