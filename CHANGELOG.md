@@ -19,6 +19,46 @@
   it, and `clear name`/`clear mex` unload it. New: `mexext`. MEX files built
   for MATLAB cannot be loaded and must be rebuilt from source; MEX files do
   not run in the browser. See [docs/MEX.md](docs/MEX.md).
+- **Computer vision** (optional OpenCV dependency: `pip install
+  "mylab-lang[vision]"`; the web app loads Pyodide's OpenCV on first use).
+  See [docs/VISION.md](docs/VISION.md).
+  - Features: `detectHarrisFeatures`, `detectMinEigenFeatures`,
+    `detectFASTFeatures`, `detectORBFeatures`, `detectSIFTFeatures`,
+    `detectBRISKFeatures`, `detectKAZEFeatures`, `detectMSERFeatures`,
+    `detectSURFFeatures` (mylab's own Hessian detector, no non-free code), the
+    point objects (`cornerPoints`, `SIFTPoints`, `MSERRegions`, ...) with
+    indexing, `selectStrongest`, `selectUniform` and `plot`,
+    `extractFeatures`, `binaryFeatures`, `matchFeatures` and
+    `showMatchedFeatures`.
+  - Geometry: `estgeotform2d`, `estimateGeometricTransform2D`,
+    `estimateGeometricTransform`, `estimateFundamentalMatrix`,
+    `estimateEssentialMatrix`, `estrelpose`, `relativeCameraPose`,
+    `triangulate`, `epipolarLine`, `isEpipoleInImage`, `rigidtform3d`,
+    `simtform3d`, `affinetform3d`, `transltform3d`, `rigid3d`, `affine3d`,
+    `rotvec2mat3d` and related conversions; `insertShape`, `insertMarker`,
+    `insertText`, `insertObjectAnnotation`.
+  - Detection: `vision.CascadeObjectDetector` (OpenCV's BSD-licensed
+    cascades or your own XML), `vision.PeopleDetector`/`peopleDetector`
+    (OpenCV's HOG SVM), `yolov4ObjectDetector`, `yoloxObjectDetector` and
+    `yolov8ObjectDetector` for user-supplied ONNX models (no weights are
+    bundled), `selectStrongestBbox`, `selectStrongestBboxMulticlass`,
+    `bboxOverlapRatio`, `bboxPrecisionRecall`, `evaluateDetectionPrecision`,
+    `evaluateDetectionMissRate`.
+  - Cameras: `cameraIntrinsics`, `cameraParameters`, `stereoParameters`,
+    `detectCheckerboardPoints`, `generateCheckerboardPoints`,
+    `estimateCameraParameters` (mono and stereo), `undistortImage`,
+    `undistortPoints`, `world2img`, `worldToImage`, `img2world2d`,
+    `pointsToWorld`, `cameraProjection`, `cameraMatrix`,
+    `estimateExtrinsics`, `extrinsics`, `estworldpose`,
+    `rectifyStereoImages`, `disparitySGM`, `disparityBM`, `reconstructScene`.
+  - Tracking: `vision.PointTracker`, `opticalFlow`, `opticalFlowLK`,
+    `opticalFlowHS`, `opticalFlowFarneback`, `vision.KalmanFilter`,
+    `configureKalmanFilter`.
+  - Point clouds: `pointCloud`, `pcread`/`pcwrite` (PLY and PCD, ASCII and
+    binary), `pcshow`, `pcshowpair`, `pcdownsample`, `pcdenoise`,
+    `pcnormals`, `pcfitplane`, `planeModel`, `pcregistericp`, `pcmerge`,
+    `pctransform`, `pcsegdist`.
+- `scatter` and `scatter3` take one RGB colour per point (an M-by-3 matrix).
 
 ### Changed
 - `mex` builds MEX files instead of raising `mylab:mex:unsupported`.

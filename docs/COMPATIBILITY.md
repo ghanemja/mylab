@@ -91,6 +91,11 @@ expected values come from MATLAB's documented behaviour.
 - Apps written in code (`uifigure` and its components, `figure` +
   `uicontrol`, class files exported from App Designer); see
   [APPS.md](APPS.md).
+- Computer vision with OpenCV installed (`pip install "mylab-lang[vision]"`):
+  feature detection, description and matching, `estgeotform2d` and two-view
+  geometry, camera calibration and stereo, cascade, HOG and ONNX (YOLO)
+  detectors, point tracking, optical flow, Kalman filters and point clouds.
+  See [VISION.md](VISION.md) for the list and the differences.
 - Rotation and transform conversions (`eul2rotm`, `rotm2quat`, `tform2eul`,
   …), `rotx`/`roty`/`rotz` and `angdiff`. The `coder.*` directives are
   accepted and do nothing; `coder.ceval` is an error.
@@ -103,9 +108,11 @@ expected values come from MATLAB's documented behaviour.
   datasets); NetCDF-4 user-defined types (compound, enum, vlen, opaque);
   `fileDatastore`, `augmentedImageDatastore`; `.mlapp` files and GUIDE
   layouts.
-- **Toolboxes:** deep learning, computer vision, the Robotics System
-  Toolbox's `se2`/`se3` objects, `tscollection`, Simscape and physical
-  modelling, and the other toolboxes not listed above.
+- **Toolboxes:** deep learning, the computer vision functions not listed in
+  [VISION.md](VISION.md) (detector training, `ocr`, pretrained networks,
+  visual SLAM), the Robotics System Toolbox's `se2`/`se3` objects,
+  `tscollection`, Simscape and physical modelling, and the other toolboxes
+  not listed above.
 - **Language:** Java. MEX files compiled for MATLAB cannot be loaded; build
   them again from their C/C++ source with mylab's `mex` (see below).
 
