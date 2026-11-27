@@ -1,0 +1,6 @@
+The err-code package on npm (3.0.1) ships no licence file; its package.json declares
+"license": "MIT" and its README says it is released under the MIT License. LICENSE here is
+the text of the MIT License with the author named in that package.json (IndigoUnited <hello@indigounited.com> (http://indigounited.com)).
+err-code is not imported by the app: it is part of simple-peer's prebuilt bundle
+(simplepeer.min.js), which y-webrtc loads. scripts/vendor.mjs uses this copy for packages
+that ship no licence file of their own.

@@ -830,11 +830,14 @@ screen reader.
   --check` (run in CI) fails when a hash is missing or a CDN file changed.
   Pyodide's packages are checked by Pyodide itself against the SHA-256
   values in its lock file, which is one of the hashed files.
-- **The Anthropic SDK** is bundled into `web/vendor/anthropic-sdk.mjs` by
-  `node scripts/vendor_anthropic_sdk.mjs`, from the versions pinned in
+- **Bundled packages**: `node scripts/vendor.mjs` bundles the Anthropic SDK
+  into `web/vendor/anthropic-sdk.mjs` and the live collaboration libraries
+  (Yjs, y-webrtc with simple-peer, y-protocols, lib0) into
+  `web/vendor/live-collab.mjs`, from the versions pinned in
   `scripts/vendor/package-lock.json` (npm checks each package's SHA-512).
-  The licences of the bundled packages are in `web/vendor/licenses/`. To
-  update the SDK, change its version in `scripts/vendor/package.json`, run
+  The app loads each bundle from its own site, only when it is needed. The
+  licences of the bundled packages are in `web/vendor/licenses/`. To update a
+  package, change its version in `scripts/vendor/package.json`, run
   `npm install --package-lock-only` there, then the script; CI runs it with
   `--check`.
 

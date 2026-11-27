@@ -4,7 +4,7 @@
 import { parseMarkdown, escapeHtml } from "./markdown.js";
 import { prefs } from "./storage.js";
 
-// The Anthropic SDK, bundled with the app (scripts/vendor_anthropic_sdk.mjs) so that no code from a CDN runs
+// The Anthropic SDK, bundled with the app (scripts/vendor.mjs) so that no code from a CDN runs
 // without an integrity check.
 const ANTHROPIC_SDK_URL = new URL("../vendor/anthropic-sdk.mjs", import.meta.url).href;
 
