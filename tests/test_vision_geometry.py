@@ -90,6 +90,7 @@ def test_fundamental_rejects_outliers(m):
 
 
 def test_essential_matrix_and_relative_pose(m):
+    pytest.importorskip("cv2")
     m.run(TWO_VIEW + """
         [E, inlE, st] = estimateEssentialMatrix(x1, x2, intr);
         [pose, frac] = estrelpose(E, intr, x1, x2);
