@@ -25,6 +25,8 @@ import hashlib
 import json
 import re
 import sys
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -39,10 +41,20 @@ URL_ATTR = re.compile(r'\b(?:src|href)="([^"]+)"')
 SRI_BLOCK = re.compile(r"(// BEGIN SRI[^\n]*\n)(.*?)(\s*// END SRI)", re.S)
 
 
-def sri(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=120) as resp:
-        data = resp.read()
-    return "sha384-" + base64.b64encode(hashlib.sha384(data).digest()).decode()
+def sri(url: str, attempts: int = 4) -> str:
+    """The integrity value of the file at ``url``. A dropped connection is retried (with 2, 4 and 8 s
+    pauses), so that a passing network fault is not reported as a changed file."""
+    for k in range(attempts):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as resp:
+                data = resp.read()
+            return "sha384-" + base64.b64encode(hashlib.sha384(data).digest()).decode()
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            if isinstance(e, urllib.error.HTTPError) and e.code < 500 or k == attempts - 1:
+                raise SystemExit(f"could not download {url}: {e}")
+            print(f"retrying {url} after: {e}", file=sys.stderr)
+            time.sleep(2 ** (k + 1))
+    raise AssertionError("unreachable")
 
 
 def index_tags(html: str) -> list[tuple[str, str]]:
