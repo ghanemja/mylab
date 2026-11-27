@@ -162,8 +162,13 @@ HELP: dict = {
             "classdef class it is also true for any superclass, e.g. isa(dog, 'Animal')."),
     "isequal": ("tf = isequal(A, B, ...)",
                 "True if all inputs have the same size and contents. Numeric type is ignored, so "
-                "isequal(1, int8(1)) is true. NaN is never equal to NaN; see isequaln."),
-    "isequaln": ("tf = isequaln(A, B, ...)", "Like isequal, but NaN values in matching positions count as equal."),
+                "isequal(1, int8(1)) is true. Missing values (NaN, NaT, <missing> strings, <undefined> "
+                "categories) are never equal, even to themselves; see isequaln. Tables are equal when their "
+                "variable names, row names or row times and values match; Description, units and other "
+                "properties are not compared."),
+    "isequaln": ("tf = isequaln(A, B, ...)",
+                 "Like isequal, but missing values in matching positions (NaN, NaT, <missing>, <undefined>) "
+                 "count as equal, also inside cells, structs and tables."),
     "squeeze": ("B = squeeze(A)",
                 "Removes dimensions of length 1 from A. The result always keeps at least two dimensions, "
                 "so 2-D inputs, including row vectors, are returned unchanged. Example: squeeze(ones(1, 1, 3)) "

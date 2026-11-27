@@ -295,7 +295,9 @@ REGEXP_AND_CONVERSIONS = [
      ' ["b" "a"])); assert(isequal(numel(["a" "b"]), 2)); assert(isequal(size(["a"; "b"]), [2 '
      '1]));'),
     ('x = ["a" "b"]; x(4) = "d"; assert(ismissing(x(3))); x(2) = []; assert(numel(x) == 3); '
-     'assert(isequal([x "e"], [x, "e"])); assert(isequal(["a" \'b\' {\'c\'}], ["a" "b" "c"]));'),
+     # x(3) is a missing string: equal to itself for isequaln only
+     'assert(isequaln([x "e"], [x, "e"])); assert(~isequal([x "e"], [x, "e"])); '
+     'assert(isequal(["a" \'b\' {\'c\'}], ["a" "b" "c"]));'),
     ('assert(isequal(["a" 1], ["a" "1"])); assert(isequal([string(1) "b"], ["1" "b"])); '
      'assert(isequal(repmat("ab", 1, 2), ["ab" "ab"])); assert(isequal(strings(2, 1), [""; ""]));'),
     ("assert(isequal(cellfun(@numel, {'ab', 'c'}), [2 1])); assert(isequal(arrayfun(@strlength, "

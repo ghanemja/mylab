@@ -214,11 +214,12 @@ class CategoricalArray(MObject):
             datas.append(codes)
         return result.like(ops._concat_arrays(datas, axis)) if datas else result
 
-    def object_equals(self, other: Any) -> bool:
+    def object_equals(self, other: Any, nan_equal: bool = False) -> bool:
         if not isinstance(other, CategoricalArray) or other.data.shape != self.data.shape:
             return False
         a, b = self.names_f(), other.names_f()
-        return all(x == y and x is not None for x, y in zip(a, b))
+        # <undefined> elements (None) match each other only for isequaln
+        return all(x == y and (x is not None or nan_equal) for x, y in zip(a, b))
 
     # -- operators ----------------------------------------------------------------------------------
     def binary_op(self, interp, op: str, left: Any, right: Any) -> Any:

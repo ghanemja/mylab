@@ -50,3 +50,26 @@ def test_unsupported_calendarduration_function_names_itself():
     it = Interpreter()
     it.execute("try, sort(calmonths([2 1])), catch e, msg = e.message; end")
     assert text(it.get_var("msg")) == "Function 'sort' is not defined for calendarDuration arrays."
+
+
+# Missing values: never equal for isequal, equal to each other for isequaln, also inside containers.
+@pytest.mark.parametrize("expr, want", [
+    ("isequal(string(missing), string(missing))", False),
+    ("isequaln(string(missing), string(missing))", True),
+    ('isequal(["a" missing], ["a" missing])', False),
+    ('isequaln(["a" missing], ["a" missing])', True),
+    ("isequal(NaT, NaT)", False),
+    ("isequaln(NaT, NaT)", True),
+    ("isequaln({NaT}, {NaT})", True),
+    ("isequal({NaT}, {NaT})", False),
+    ("isequaln(seconds([1 NaN]), seconds([1 NaN]))", True),
+    ("isequaln(categorical({'a', ''}), categorical({'a', ''}))", True),
+    ("isequal(categorical({'a', ''}), categorical({'a', ''}))", False),
+    ("isequaln(struct('t', NaT), struct('t', NaT))", True),
+    ("isequaln(sparse([1 NaN 0]), sparse([1 NaN 0]))", True),
+    ("isequal(sparse([1 NaN 0]), sparse([1 NaN 0]))", False),
+    ("isequaln(sparse([1 NaN 0]), sparse([1 2 0]))", False),
+    ("isequaln(table(NaT), table(NaT))", True),
+])
+def test_missing_values(expr, want):
+    assert truth(expr) is want

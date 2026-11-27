@@ -215,8 +215,8 @@ class SparseMatrix(MObject):
     def matlab_shape(self) -> tuple:
         return tuple(int(d) for d in self._m.shape)
 
-    def object_equals(self, other: Any) -> bool:
-        return _equal(self, other)
+    def object_equals(self, other: Any, nan_equal: bool = False) -> bool:
+        return _equal(self, other, nan_equal)
 
     # -- method dispatch ------------------------------------------------------------------------
     def has_method(self, name: str) -> bool:
@@ -925,7 +925,7 @@ def _transpose(v: Any) -> Any:
     return np.asarray(v).T
 
 
-def _equal(a: Any, b: Any) -> bool:
+def _equal(a: Any, b: Any, nan_equal: bool = False) -> bool:
     for v in (a, b):
         if not isinstance(v, SparseMatrix) and not (isinstance(v, np.ndarray) and v.dtype.kind in "biufc"):
             return False
@@ -934,7 +934,14 @@ def _equal(a: Any, b: Any) -> bool:
     ma, mb = _num_csc(a), _num_csc(b)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return (ma != mb).nnz == 0
+        differ = ma != mb
+        if differ.nnz == 0 or not nan_equal:
+            return differ.nnz == 0
+        # isequaln: every place that differs must hold NaN on both sides
+        rows, cols = differ.nonzero()
+        va = np.asarray(ma[rows, cols]).ravel()
+        vb = np.asarray(mb[rows, cols]).ravel()
+        return bool(np.all(np.isnan(va) & np.isnan(vb)))
 
 
 # -- constructors ------------------------------------------------------------------------------------

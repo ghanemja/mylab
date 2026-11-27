@@ -714,11 +714,11 @@ class _TimeArray(MObject):
                 f"{'datenum or posixtime' if self.kind == 'datetime' else 'seconds, minutes, hours or days'}); "
                 f"for a range of {self.kind} values write colon(first, step, last).")
 
-    def object_equals(self, other: Any) -> bool:
+    def object_equals(self, other: Any, nan_equal: bool = False) -> bool:
         if type(other) is not type(self):
             return False
         a, b = self.data, other.data
-        return a.shape == b.shape and bool(np.all(a == b))
+        return a.shape == b.shape and bool(np.array_equal(a, b, equal_nan=nan_equal))  # NaT is stored as NaN
 
     def coerce(self, value: Any) -> np.ndarray:
         """Seconds array for a value assigned into / concatenated with this array."""

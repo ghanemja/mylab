@@ -366,7 +366,11 @@ may have relied on.
   properties no longer fit the class. Objects that MATLAB itself writes into
   version 7.3 files still load as empty, with a warning.
 - `isequal` compares tables and timetables by value (two tables built apart
-  were unequal); `isequaln` works for `calendarDuration`.
+  were unequal); `isequaln` works for `calendarDuration`. Missing values follow
+  MATLAB: `isequal` never finds a missing string, `NaT` or undefined category
+  equal (two missing strings were equal), and `isequaln` treats them as equal,
+  also inside cells, structs, tables and sparse matrices (`isequaln({NaT},
+  {NaT})` was false).
 - `print` accepts `-tiff` (an EPS preview; the file is written without it);
   `boxplot(X, g)` takes one group value per column of a matrix; `set` on an
   empty handle array does nothing; `annotation(fig, ...)` puts the

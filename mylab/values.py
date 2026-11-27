@@ -520,12 +520,36 @@ def saturate_int(a: np.ndarray, dtype) -> np.ndarray:
     return out
 
 
+_TAKES_NAN_EQUAL: dict = {}
+
+
+def _object_equals(x: Any, y: Any, nan_equal: bool) -> bool:
+    """``x.object_equals(y)``, telling the classes whose method takes ``nan_equal`` (datetime, duration,
+    calendarDuration, categorical, sparse) whether missing elements count as equal."""
+    if nan_equal:
+        cls = type(x)
+        takes = _TAKES_NAN_EQUAL.get(cls)
+        if takes is None:
+            import inspect
+            try:
+                takes = "nan_equal" in inspect.signature(cls.object_equals).parameters
+            except (TypeError, ValueError):
+                takes = False
+            _TAKES_NAN_EQUAL[cls] = takes
+        if takes:
+            return bool(x.object_equals(y, nan_equal=True))
+    return bool(x.object_equals(y))
+
+
 def values_equal(a: Any, b: Any, nan_equal: bool = False) -> bool:
-    """``isequal`` semantics (``isequaln`` when ``nan_equal``: NaNs compare equal)."""
+    """``isequal`` semantics (``isequaln`` when ``nan_equal``: missing elements - NaN, NaT, <missing>,
+    <undefined> - compare equal), also inside cells, structs and tables."""
     if isinstance(a, StringArray) or isinstance(b, StringArray):
         if not (isinstance(a, StringArray) and isinstance(b, StringArray)):
             return False
-        return a.shape == b.shape and all(x == y for x, y in zip(a.data.flat, b.data.flat))
+        # a missing string (None) equals another one only for isequaln
+        return a.shape == b.shape and all(x == y and (x is not None or nan_equal)
+                                          for x, y in zip(a.data.flat, b.data.flat))
     if isinstance(a, MString) or isinstance(b, MString):
         try:
             return to_str(a) == to_str(b)
@@ -547,7 +571,7 @@ def values_equal(a: Any, b: Any, nan_equal: bool = False) -> bool:
         if hasattr(x, "equal_values"):  # tables compare their variables, which may hold NaN
             return bool(x.equal_values(y, nan_equal))
         if hasattr(x, "object_equals"):  # array-like objects (sparse, datetime, duration) compare by value
-            return bool(x.object_equals(y))
+            return _object_equals(x, y, nan_equal)
     if hasattr(a, "isa_class") or hasattr(b, "isa_class"):
         from .builtins.objfuncs import objects_equal
         return objects_equal(a, b)
