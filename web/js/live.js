@@ -400,13 +400,21 @@ export function initLive(app) {
     clearInterval(s.ticker);
     clearTimeout(cursorTimer);
     window.removeEventListener("pagehide", s.onHide);
-    try {
-      if (s.sharing) s.shared.delete(String(s.ydoc.clientID));
-      s.awareness.setLocalState(null); // tells the others at once
-    } catch {
-      /* already gone */
+    if (reason === "ended" || reason === "stopped") {
+      // The session is over for everyone, who are all closing their connections now: send nothing
+      // more. (WebKit reports a send on a channel the other side is closing as an uncaught error,
+      // even inside try/catch.)
+      const room = s.provider.room;
+      if (room) for (const conn of room.webrtcConns.values()) conn.destroy();
+    } else {
+      try {
+        if (s.sharing) s.shared.delete(String(s.ydoc.clientID));
+        s.awareness.setLocalState(null); // tells the others at once
+      } catch {
+        /* already gone */
+      }
+      await sleep(150); // let the goodbye reach them
     }
-    await sleep(150); // let the goodbye reach them
     for (const b of s.bindings.values()) {
       b.destroy();
       try {

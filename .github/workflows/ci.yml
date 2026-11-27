@@ -112,7 +112,7 @@ jobs:
     # The same checks in the engines of Chrome/Edge, Firefox and Safari. The Chromium job keeps its old name.
     name: browser app${{ matrix.browser != 'chromium' && format(' ({0})', matrix.browser) || '' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # a run takes 4-7 minutes; a hang should fail with its log, not wait 6 hours
+    timeout-minutes: 30  # a run takes 6-11 minutes; a hang should fail with its log, not wait 6 hours
     strategy:
       fail-fast: false
       matrix:

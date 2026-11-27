@@ -75,6 +75,10 @@ export async function testLive(browser, url, t, consoleErrors = []) {
   const text = (p) => p.evaluate(() => window.mylab.editor.getValue());
   const content = (p, file) => p.evaluate((f) => (window.mylab.state.files.has(f) ? window.mylab.app.liveContent(f) : null), file);
   const peopleNames = (p) => p.evaluate(() => [...document.querySelectorAll("#live-people .live-person .sr-only")].map((e) => e.textContent));
+  // the engine may still be loading: "Look around while it loads" puts the loading card away
+  const lookAround = async (p) => {
+    if (await p.locator("#loader").isVisible()) await p.click("#loader-hide");
+  };
 
   try {
     /* ---------------- the host starts a session ---------------- */
@@ -82,6 +86,7 @@ export async function testLive(browser, url, t, consoleErrors = []) {
     await ana.goto(url + query);
     await ana.waitForSelector("#dlg-welcome[open]");
     await ana.click("#welcome-close");
+    await lookAround(ana);
     await ana.evaluate(async (marker) => {
       const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
       await window.mylab.app.createProject({
@@ -127,6 +132,7 @@ export async function testLive(browser, url, t, consoleErrors = []) {
     await ben.fill("#prompt-input", "Ben");
     await ben.click("#prompt-ok");
     await until(ben, () => { const i = window.mylab.app.live.info(); return i && i.ready; }, null, 60000);
+    await lookAround(ben);
     check((await ben.locator("#project-name").innerText()) === "Live: Live demo", "the guest should get the files in a project named after the session");
     check(await ben.locator("#temp-banner:not([hidden]) #temp-keep").isVisible(), "the guest's copy should be temporary, with Keep a copy");
     const files = await ben.evaluate(() => window.mylab.app.sortedPaths());
