@@ -5,7 +5,7 @@
 // window prints them. The pages come from the engine worker ("inspect" and "csv" requests);
 // nothing is copied out of the browser.
 
-import { $, el, toast, copyText } from "./ui.js";
+import { $, el, toast, copyText, copyTextLater } from "./ui.js";
 
 const PAGE_ROWS = 100;
 const PAGE_COLS = 25;
@@ -200,8 +200,10 @@ export function initVarView(app) {
   $("var-copy-csv").addEventListener("click", async () => {
     if (!cur) return;
     try {
-      const res = await app.engine.csv(cur.name, { path: cur.path, maxCells: 500000 });
-      if (!(await copyText(res.csv))) throw new Error("Couldn't access the clipboard.");
+      const reply = app.engine.csv(cur.name, { path: cur.path, maxCells: 500000 });
+      // the clipboard write starts now, within the click; the CSV follows when the engine has it
+      if (!(await copyTextLater(reply.then((r) => r.csv)))) throw new Error("Couldn't access the clipboard.");
+      const res = await reply;
       toast(res.truncated ? `Copied the first ${res.rows.toLocaleString()} rows as CSV (the value is very large).` : "Copied as CSV. Paste it into a spreadsheet or a text file.");
     } catch (e) {
       toast(e.message, "error");

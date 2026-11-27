@@ -449,6 +449,12 @@ async function main() {
       acceptDownloads: true,
       permissions: clipboardPermissions(browser),
     });
+    // Reading the clipboard can wait for a paste prompt no one answers (Firefox does this when the
+    // content did not come from the page): a check must then fail with a message, not hang the run.
+    await context.addInitScript(() => {
+      window.__readClipboard = () =>
+        Promise.race([navigator.clipboard.readText(), new Promise((r) => setTimeout(() => r("[the clipboard could not be read within 5 s]"), 5000))]);
+    });
     const page = await context.newPage();
     watchErrors(page, consoleErrors);
     const h5pyRequests = []; // h5py may only be downloaded once a program uses HDF5
@@ -1042,8 +1048,8 @@ async function main() {
     check(/M =\s+5\.0000\s+0\.1429/.test(await page.locator("#var-body").innerText()) && (await page.locator("#var-grid-wrap").isHidden()), "the Text view should show the printed form");
     await page.click("#var-view-grid");
     await page.click("#var-copy-csv");
-    await h.until(() => navigator.clipboard.readText().then((t) => t.startsWith("5,0.142857142857143,")));
-    check((await ed(() => navigator.clipboard.readText())).trim().split("\n").length === 6, "the CSV should have 6 rows");
+    await h.until(() => window.__readClipboard().then((t) => t.startsWith("5,0.142857142857143,")));
+    check((await ed(() => window.__readClipboard())).trim().split("\n").length === 6, "the CSV should have 6 rows");
     await page.click("#var-plots [data-plot='bar']");
     await page.waitForSelector("#dlg-var", { state: "hidden" });
     await h.waitConsole(/figure; bar\(M\)/);
@@ -1567,7 +1573,7 @@ async function main() {
     await page.click("#share-copy");
     await page.waitForSelector("#share-copied:not([hidden])");
     check(/Copied/.test(await page.locator("#share-copied").innerText()), "copy confirmation missing");
-    check((await page.evaluate(() => navigator.clipboard.readText())) === codeLink, "clipboard does not hold the link");
+    check((await page.evaluate(() => window.__readClipboard())) === codeLink, "clipboard does not hold the link");
     await shot(page, "share.png");
     await page.click("#dlg-share button[value='close']");
     // A long project link shows the warning.
@@ -1708,8 +1714,8 @@ async function main() {
     check((await page.locator(".asg-problem").count()) === 4, "the example assignment should have 4 problems");
     check(/the remaining 35 points come from hidden tests/.test(await page.locator(".asg-hint").innerText()), "hidden-test points not explained");
     await page.click("#asg-share");
-    await page.waitForFunction(() => navigator.clipboard.readText().then((t) => /#assignmentdata=/.test(t)));
-    const asgLink = await page.evaluate(() => navigator.clipboard.readText());
+    await page.waitForFunction(() => window.__readClipboard().then((t) => /#assignmentdata=/.test(t)));
+    const asgLink = await page.evaluate(() => window.__readClipboard());
     await vp.goto(asgLink);
     await vp.waitForFunction(() => document.querySelector("#project-name").textContent === "Intro Assignment: First Functions");
     check((await vp.locator(".asg-problem").count()) === 4 && (await vh.files()).includes("p4_rain_summary/rain_week.csv"), "embedded assignment link did not load");

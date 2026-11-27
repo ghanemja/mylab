@@ -10,7 +10,7 @@
 // A test passes when its code runs without an error. Every test starts from a clean session
 // in a folder that holds the student's files for that problem plus the problem's data files.
 
-import { $, el, icon, toast, downloadBlob, copyText } from "./ui.js";
+import { $, el, icon, toast, downloadBlob, copyTextLater } from "./ui.js";
 import { renderMarkdown } from "./markdown.js";
 import { encodePayload, decodePayload } from "./codec.js";
 import { LONG_LINK } from "./share.js";
@@ -507,14 +507,17 @@ export function initAssignments(app) {
     const b = bundle();
     if (!b) return;
     const src = state.project.meta.source;
-    let link;
-    if (src && /^https:\/\//.test(src)) link = `${location.origin}${location.pathname}#assignment=${encodeURIComponent(src)}`;
-    else if (src === EXAMPLE_URL) link = `${location.origin}${location.pathname}#assignment=${EXAMPLE_URL}`;
+    const base = `${location.origin}${location.pathname}`;
+    let pending;
+    if (src && /^https:\/\//.test(src)) pending = Promise.resolve(`${base}#assignment=${encodeURIComponent(src)}`);
+    else if (src === EXAMPLE_URL) pending = Promise.resolve(`${base}#assignment=${EXAMPLE_URL}`);
     else {
       const clean = { ...b, problems: b.problems.map(({ folder, ...p }) => p) };
-      link = `${location.origin}${location.pathname}#assignmentdata=${await encodePayload(clean)}`;
+      pending = encodePayload(clean).then((data) => `${base}#assignmentdata=${data}`);
     }
-    const ok = await copyText(link);
+    // the clipboard write starts within the click; the link follows once it is compressed
+    const ok = await copyTextLater(pending);
+    const link = await pending;
     if (!ok) toast("Couldn't copy the link.", "error");
     else if (link.length > LONG_LINK)
       toast(`Link copied, but it is long (${link.length.toLocaleString()} characters) and some chat apps cut long links. Better: put the bundle file on GitHub and share …#assignment=<its raw https address>.`, "error");

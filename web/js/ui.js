@@ -43,6 +43,24 @@ export function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * Copy text that is still being computed (an engine reply, a compressed link). The clipboard write starts
+ * at once, inside the click, and receives the text when it is ready: Firefox and Safari allow a clipboard
+ * write only shortly after the click, and the computation can take longer than that.
+ */
+export async function copyTextLater(textPromise) {
+  if (typeof ClipboardItem === "function" && navigator.clipboard && navigator.clipboard.write) {
+    try {
+      const blob = Promise.resolve(textPromise).then((t) => new Blob([t], { type: "text/plain" }));
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+      return true;
+    } catch {
+      // an older browser, or a refused write: copy the finished text the ordinary way
+    }
+  }
+  return copyText(await textPromise);
+}
+
 export async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
