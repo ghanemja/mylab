@@ -186,9 +186,6 @@ HELP = {
                 "in part ('image_toolbox', 'signal_toolbox', 'statistics_toolbox', 'optimization_toolbox'), "
                 "false for everything else. mylab itself is free software under the MIT licence."),
     "usejava": (["tf = usejava(feature)"], "Always false: mylab has no Java virtual machine or Java-based desktop."),
-    "mex": (["mex(...)"],
-            "Raises an error: compiled MEX files cannot be built or run by mylab. Projects usually ship a "
-            "plain .m version of such functions, which works."),
     "gpuArray": (["G = gpuArray(A)"],
                  "Returns A unchanged. mylab has no GPU arrays, so all calculations run on the CPU; this "
                  "exists so that GPU-enabled code runs without edits."),

@@ -50,6 +50,7 @@ _PASSTHROUGH = {
     "error", "warning", "func2str", "builtin", "exist", "isvarname", "whos", "who", "clear",
     "tic", "toc", "timeit", "containers.Map", "isobject", "isvalid", "ishandle", "isgraphics", "nargin",
     "nargout", "inputname", "isdatetime", "isduration", "istable", "iscategorical", "addvars",
+    "mylabMexCall__",  # MEX files receive sparse arrays as sparse
 }
 # Type questions: answered from a 1x1 stand-in of the same class, without converting the matrix.
 _TYPE_ONLY = {

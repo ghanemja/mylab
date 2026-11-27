@@ -12,6 +12,7 @@ import numpy as np
 from .. import __version__
 from ..display import FORMAT, disp_text, format_display, function_handle_text
 from ..errors import MatlabError
+from ..mex import is_mex_path
 from ..objects import MObject
 from ..values import (
     Cell, FunctionHandle, MString, Struct, char, is_char, to_int, to_str,
@@ -354,7 +355,13 @@ def _clear(interp, args, nargout):
 
 
 def _clear_functions(interp, frame, patterns) -> None:
-    """Forget persistent variables: of every function (``patterns`` None) or of the named ones."""
+    """Forget persistent variables: of every function (``patterns`` None) or of the named ones.
+
+    MEX files with those names are unloaded too (unless they are locked with mexLock).
+    """
+    if "mex_runtime" in interp.state:
+        from ..mex import clear_loaded
+        clear_loaded(interp, patterns)
     locked = interp.state.get("mlocked", set())
     stores = interp.persistent_vars
     owners = interp.state.get("persistent_owners", {})
@@ -403,6 +410,13 @@ def _is_model_file(name: str) -> bool:
     return os.path.splitext(name)[1].lower() in (".slx", ".mdl")
 
 
+def _file_kind(name: str) -> float:
+    """exist's answer for a file: 4 for a model, 3 for a MEX file, 2 for anything else."""
+    if _is_model_file(name):
+        return 4.0
+    return 3.0 if is_mex_path(name) else 2.0
+
+
 @builtin("exist")
 def _exist(interp, args, nargout):
     name = text(args[0])
@@ -416,14 +430,15 @@ def _exist(interp, args, nargout):
         if os.path.isdir(name):
             return 7.0
         if kind != "dir" and os.path.isfile(name):
-            return 4.0 if _is_model_file(name) else 2.0
+            return _file_kind(name)
     if kind in ("", "file") and name and not os.path.isabs(name):
         for d in interp._search_dirs():  # any file on the search path, data files included (MATLAB's 2)
             if os.path.isfile(os.path.join(d, name)):
-                return 4.0 if _is_model_file(name) else 2.0
+                return _file_kind(name)
     if kind in ("", "file", "builtin"):
-        if interp.find_file_function(name) is not None:
-            return 2.0
+        found = interp.find_file_function(name)
+        if found is not None:
+            return 3.0 if is_mex_path(found[1]) else 2.0
         if name in frame.functions:
             return 2.0
         if name in BUILTINS:

@@ -52,6 +52,7 @@ include = ["mylab*"]
 
 [tool.setuptools.package-data]
 "mylab.uiweb" = ["*.js", "*.css"]
+"mylab.mex" = ["include/*.h", "include/*.c"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
