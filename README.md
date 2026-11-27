@@ -17,11 +17,13 @@ students, researchers and engineers who can't afford a MATLAB license.
   `uifigure`/`uicontrol` code, or with the visual app builder in the web app.
   `mylab myapp.m` opens the app in your browser. See
   [docs/APPS.md](docs/APPS.md).
-- **Block diagrams (mylab Blocks).** Build a model from 107 blocks and signal
+- **Block diagrams (mylab Blocks).** Build a model from 146 blocks and signal
   lines in the browser, or with `add_block`/`add_line`, and simulate it with
   `sim`: variable- and fixed-step solvers, events, multi-rate, live scopes,
-  `linmod`. `.slx` files can be imported: of 82 public files, 50 import
-  fully and 31 of the 68 models run. See
+  `linmod`, iterator and function-call subsystems, buses, state charts and
+  electrical and mechanical physical networks. `.slx` and `.mdl` files can be
+  imported (of 82 public `.slx` files, 50 import fully and 31 of the 68 models
+  run), and models can be saved as `.slx` or `.mdl` for mylab to reopen. See
   [docs/BLOCKS.md](docs/BLOCKS.md).
 - **Built for classes.** Share code as a link, step through a program
   forwards and backwards, publish a report, and auto-grade assignments in the

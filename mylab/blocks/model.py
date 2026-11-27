@@ -321,12 +321,10 @@ def _json(v: Any, indent: int = 0) -> str:
 
 def load_model(path: str) -> Model:
     """Read a model file. ``.slx`` files go through the importer."""
-    if path.lower().endswith(".slx"):
+    if path.lower().endswith((".slx", ".mdl")):
         from .slx import import_slx
 
         return import_slx(path)
-    if path.lower().endswith(".mdl"):
-        raise ModelError("mylab cannot read .mdl files. Save the model as .slx, or rebuild it in mylab Blocks.")
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)

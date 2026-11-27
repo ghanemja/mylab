@@ -9,7 +9,8 @@ export const CATALOG = {
   "Logic",
   "Nonlinear",
   "Routing",
-  "User-defined"
+  "User-defined",
+  "Physical"
  ],
  "blocks": [
   {
@@ -142,6 +143,30 @@ export const CATALOG = {
      "default": "0",
      "kind": "expr",
      "label": "Sample time (s); -1 takes it from the input, 0 is continuous"
+    }
+   ],
+   "in": 0,
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "FunctionCallGenerator",
+   "title": "Function-Call Generator",
+   "category": "Sources",
+   "doc": "Calls the function-call subsystem wired to it at every sample time (a number of times in a row).",
+   "icon": "f()",
+   "params": [
+    {
+     "name": "SampleTime",
+     "default": "1",
+     "kind": "expr",
+     "label": "Sample time (s)"
+    },
+    {
+     "name": "NumberOfIterations",
+     "default": "1",
+     "kind": "expr",
+     "label": "Calls at each sample time"
     }
    ],
    "in": 0,
@@ -2179,6 +2204,43 @@ export const CATALOG = {
    "sink": false
   },
   {
+   "type": "SwitchCase",
+   "title": "Switch Case",
+   "category": "Logic",
+   "doc": "Compares its input with lists of values (cases) and switches on the action subsystem of the matching case.",
+   "icon": "case",
+   "params": [
+    {
+     "name": "CaseConditions",
+     "default": "{1,2}",
+     "kind": "text",
+     "label": "Cases: a cell array of values or value lists, e.g. {1,[2 3]}"
+    },
+    {
+     "name": "ShowDefaultCase",
+     "default": "on",
+     "kind": "bool",
+     "label": "Default output for any other value"
+    }
+   ],
+   "in": 1,
+   "out": [
+    "sum",
+    [
+     "cell",
+     "CaseConditions"
+    ],
+    [
+     "if",
+     "ShowDefaultCase",
+     "on",
+     1,
+     0
+    ]
+   ],
+   "sink": false
+  },
+  {
    "type": "LookupTable1D",
    "title": "1-D Lookup Table",
    "category": "Nonlinear",
@@ -2583,7 +2645,18 @@ export const CATALOG = {
    "category": "Routing",
    "doc": "Put inside a subsystem: the subsystem runs only while the If block output wired to it is on.",
    "icon": "act",
-   "params": [],
+   "params": [
+    {
+     "name": "InitializeStates",
+     "default": "held",
+     "kind": "enum",
+     "label": "States when switched on again",
+     "options": [
+      "held",
+      "reset"
+     ]
+    }
+   ],
    "in": 0,
    "out": 0,
    "sink": false
@@ -2592,18 +2665,14 @@ export const CATALOG = {
    "type": "Assignment",
    "title": "Assignment",
    "category": "Routing",
-   "doc": "Replaces chosen elements of the first input with the second input.",
+   "doc": "Replaces chosen elements of a signal (Y0) with the values of another input (U).",
    "icon": "y(i)=u",
    "params": [
     {
      "name": "NumberOfDimensions",
      "default": "1",
-     "kind": "enum",
-     "label": "Number of dimensions",
-     "options": [
-      "1",
-      "2"
-     ]
+     "kind": "expr",
+     "label": "Number of dimensions"
     },
     {
      "name": "IndexMode",
@@ -2619,21 +2688,69 @@ export const CATALOG = {
      "name": "IndexOptions",
      "default": "Index vector (dialog)",
      "kind": "text",
-     "label": "Index option per dimension (Select all, Index vector (dialog), Index vector (port))"
+     "label": "Index option per dimension: Select all, Index vector (dialog), Index vector (port), Starting index (dialog), Starting index (port)"
     },
     {
      "name": "Indices",
      "default": "[1 3]",
      "kind": "text",
-     "label": "Indices, one expression per dimension"
+     "label": "Indices (or starting indices), one expression per dimension"
+    },
+    {
+     "name": "OutputInitialize",
+     "default": "Initialize using input port <Y0>",
+     "kind": "enum",
+     "label": "Start from",
+     "options": [
+      "Initialize using input port <Y0>",
+      "Specify size for each dimension"
+     ]
+    },
+    {
+     "name": "OutputSizes",
+     "default": "1",
+     "kind": "text",
+     "label": "Size of the output per dimension (when it is not taken from Y0)"
     }
    ],
    "in": [
-    "if",
-    "IndexOptions",
-    "Index vector (port)",
-    3,
-    2
+    "sum",
+    [
+     "if",
+     "OutputInitialize",
+     "Specify size for each dimension",
+     1,
+     2
+    ],
+    [
+     "ports",
+     "IndexOptions"
+    ]
+   ],
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "BusAssignment",
+   "title": "Bus Assignment",
+   "category": "Routing",
+   "doc": "Replaces signals of a bus by name with the values at its other inputs.",
+   "icon": "b=",
+   "params": [
+    {
+     "name": "AssignedSignals",
+     "default": "signal1",
+     "kind": "text",
+     "label": "Signals to replace (names separated by commas)"
+    }
+   ],
+   "in": [
+    "sum",
+    1,
+    [
+     "csv",
+     "AssignedSignals"
+    ]
    ],
    "out": 1,
    "sink": false
@@ -2642,7 +2759,7 @@ export const CATALOG = {
    "type": "BusCreator",
    "title": "Bus Creator",
    "category": "Routing",
-   "doc": "Groups signals under their names so a Bus Selector can pick them out again.",
+   "doc": "Groups signals into a bus under the names of their lines (or of a bus object); a Bus Selector picks them out.",
    "icon": "bus",
    "params": [
     {
@@ -2650,6 +2767,12 @@ export const CATALOG = {
      "default": "2",
      "kind": "text",
      "label": "Number of inputs"
+    },
+    {
+     "name": "OutDataTypeStr",
+     "default": "Inherit: auto",
+     "kind": "text",
+     "label": "Bus object for the element names (Bus: name), or Inherit: auto"
     }
    ],
    "in": [
@@ -2663,7 +2786,7 @@ export const CATALOG = {
    "type": "BusSelector",
    "title": "Bus Selector",
    "category": "Routing",
-   "doc": "Picks signals by name out of the bus made by a Bus Creator.",
+   "doc": "Picks signals out of a bus by name (nested ones as outer.inner).",
    "icon": "bsel",
    "params": [
     {
@@ -2671,12 +2794,24 @@ export const CATALOG = {
      "default": "signal1,signal2",
      "kind": "text",
      "label": "Signals to pick (names separated by commas)"
+    },
+    {
+     "name": "OutputAsBus",
+     "default": "off",
+     "kind": "bool",
+     "label": "Output the picked signals as one bus"
     }
    ],
    "in": 1,
    "out": [
-    "csv",
-    "OutputSignals"
+    "if",
+    "OutputAsBus",
+    "on",
+    1,
+    [
+     "csv",
+     "OutputSignals"
+    ]
    ],
    "sink": false
   },
@@ -2707,9 +2842,86 @@ export const CATALOG = {
    "category": "Routing",
    "doc": "Put inside a subsystem: the subsystem only runs while its enable input is positive.",
    "icon": "en",
-   "params": [],
+   "params": [
+    {
+     "name": "StatesWhenEnabling",
+     "default": "held",
+     "kind": "enum",
+     "label": "States when enabled again",
+     "options": [
+      "held",
+      "reset"
+     ]
+    }
+   ],
    "in": 0,
    "out": 0,
+   "sink": false
+  },
+  {
+   "type": "ForIterator",
+   "title": "For Iterator",
+   "category": "Routing",
+   "doc": "Put inside a subsystem: the subsystem runs its blocks N times in every time step; outputs the iteration number.",
+   "icon": "for",
+   "params": [
+    {
+     "name": "IterationSource",
+     "default": "internal",
+     "kind": "enum",
+     "label": "Number of iterations from",
+     "options": [
+      "internal",
+      "external"
+     ]
+    },
+    {
+     "name": "IterationLimit",
+     "default": "5",
+     "kind": "expr",
+     "label": "Number of iterations"
+    },
+    {
+     "name": "ResetStates",
+     "default": "held",
+     "kind": "enum",
+     "label": "States at the start of each time step",
+     "options": [
+      "held",
+      "reset"
+     ]
+    },
+    {
+     "name": "IndexMode",
+     "default": "One-based",
+     "kind": "enum",
+     "label": "Iteration numbering",
+     "options": [
+      "One-based",
+      "Zero-based"
+     ]
+    },
+    {
+     "name": "ShowIterationVariable",
+     "default": "on",
+     "kind": "bool",
+     "label": "Output the iteration number"
+    }
+   ],
+   "in": [
+    "if",
+    "IterationSource",
+    "external",
+    1,
+    0
+   ],
+   "out": [
+    "if",
+    "ShowIterationVariable",
+    "on",
+    1,
+    0
+   ],
    "sink": false
   },
   {
@@ -2816,6 +3028,24 @@ export const CATALOG = {
    "sink": false
   },
   {
+   "type": "ModelReference",
+   "title": "Model",
+   "category": "Routing",
+   "doc": "Runs another model as a block: the In and Out blocks of its top level become the ports.",
+   "icon": "mdl",
+   "params": [
+    {
+     "name": "ModelName",
+     "default": "",
+     "kind": "text",
+     "label": "Referenced model (name of an open model or a model file)"
+    }
+   ],
+   "in": "system",
+   "out": "system",
+   "sink": false
+  },
+  {
    "type": "Mux",
    "title": "Mux",
    "category": "Routing",
@@ -2854,6 +3084,16 @@ export const CATALOG = {
      "default": "[]",
      "kind": "expr",
      "label": "Output before the subsystem first runs"
+    },
+    {
+     "name": "OutputWhenDisabled",
+     "default": "held",
+     "kind": "enum",
+     "label": "Output while the subsystem is switched off",
+     "options": [
+      "held",
+      "reset"
+     ]
     }
    ],
    "in": 1,
@@ -2861,21 +3101,42 @@ export const CATALOG = {
    "sink": true
   },
   {
+   "type": "ResetPort",
+   "title": "Reset",
+   "category": "Routing",
+   "doc": "Put inside a subsystem: the blocks inside start again from their initial states when the reset input fires.",
+   "icon": "rst",
+   "params": [
+    {
+     "name": "ResetTriggerType",
+     "default": "rising",
+     "kind": "enum",
+     "label": "Reset on",
+     "options": [
+      "rising",
+      "falling",
+      "either",
+      "level",
+      "level hold"
+     ]
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false
+  },
+  {
    "type": "Selector",
    "title": "Selector",
    "category": "Routing",
-   "doc": "Picks elements of a vector (or rows and columns of a matrix) by index.",
+   "doc": "Picks elements of a signal by index: a vector, rows and columns, or more dimensions.",
    "icon": "u(i)",
    "params": [
     {
      "name": "NumberOfDimensions",
      "default": "1",
-     "kind": "enum",
-     "label": "Number of dimensions",
-     "options": [
-      "1",
-      "2"
-     ]
+     "kind": "expr",
+     "label": "Number of dimensions"
     },
     {
      "name": "IndexMode",
@@ -2891,13 +3152,19 @@ export const CATALOG = {
      "name": "IndexOptions",
      "default": "Index vector (dialog)",
      "kind": "text",
-     "label": "Index option per dimension (Select all, Index vector (dialog), Index vector (port))"
+     "label": "Index option per dimension: Select all, Index vector (dialog), Index vector (port), Starting index (dialog), Starting index (port)"
     },
     {
      "name": "Indices",
      "default": "[1 3]",
      "kind": "text",
-     "label": "Indices, one expression per dimension"
+     "label": "Indices (or starting indices), one expression per dimension"
+    },
+    {
+     "name": "OutputSizes",
+     "default": "1",
+     "kind": "text",
+     "label": "Number of elements per dimension after a starting index"
     },
     {
      "name": "InputPortWidth",
@@ -2907,11 +3174,12 @@ export const CATALOG = {
     }
    ],
    "in": [
-    "if",
-    "IndexOptions",
-    "Index vector (port)",
-    2,
-    1
+    "sum",
+    1,
+    [
+     "ports",
+     "IndexOptions"
+    ]
    ],
    "out": 1,
    "sink": false
@@ -2942,12 +3210,87 @@ export const CATALOG = {
      "options": [
       "rising",
       "falling",
-      "either"
+      "either",
+      "function-call"
      ]
     }
    ],
    "in": 0,
    "out": 0,
+   "sink": false
+  },
+  {
+   "type": "WhileIterator",
+   "title": "While Iterator",
+   "category": "Routing",
+   "doc": "Put inside a subsystem: the subsystem repeats its blocks in a time step while the condition input is true.",
+   "icon": "while",
+   "params": [
+    {
+     "name": "MaxIters",
+     "default": "5",
+     "kind": "expr",
+     "label": "Most iterations per time step (-1: no limit)"
+    },
+    {
+     "name": "WhileBlockType",
+     "default": "while",
+     "kind": "enum",
+     "label": "Kind of loop",
+     "options": [
+      "while",
+      "do-while"
+     ]
+    },
+    {
+     "name": "ResetStates",
+     "default": "held",
+     "kind": "enum",
+     "label": "States at the start of each time step",
+     "options": [
+      "held",
+      "reset"
+     ]
+    },
+    {
+     "name": "ShowIterationPort",
+     "default": "off",
+     "kind": "bool",
+     "label": "Output the iteration number"
+    }
+   ],
+   "in": [
+    "if",
+    "WhileBlockType",
+    "do-while",
+    1,
+    2
+   ],
+   "out": [
+    "if",
+    "ShowIterationPort",
+    "on",
+    1,
+    0
+   ],
+   "sink": true
+  },
+  {
+   "type": "Chart",
+   "title": "Chart",
+   "category": "User-defined",
+   "doc": "A state chart: states with entry, during and exit actions, transitions with events and conditions.",
+   "icon": "chart",
+   "params": [
+    {
+     "name": "SampleTime",
+     "default": "-1",
+     "kind": "expr",
+     "label": "Sample time (s); -1 takes it from the inputs"
+    }
+   ],
+   "in": "chart",
+   "out": "chart",
    "sink": false
   },
   {
@@ -3101,6 +3444,633 @@ export const CATALOG = {
     "NumOutputs"
    ],
    "sink": false
+  },
+  {
+   "type": "Capacitor",
+   "title": "Capacitor",
+   "category": "Physical",
+   "doc": "Electrical capacitor: i = C dv/dt; its voltage is a state.",
+   "icon": "C",
+   "params": [
+    {
+     "name": "C",
+     "default": "1e-6",
+     "kind": "expr",
+     "label": "Capacitance (F)"
+    },
+    {
+     "name": "v0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial voltage (V)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "ConnectionPort",
+   "title": "Connection Port",
+   "category": "Physical",
+   "doc": "Put inside a subsystem: a physical port of the subsystem (L1, L2... or R1, R2...).",
+   "icon": "o",
+   "params": [
+    {
+     "name": "Port",
+     "default": "1",
+     "kind": "text",
+     "label": "Port number"
+    },
+    {
+     "name": "Side",
+     "default": "left",
+     "kind": "enum",
+     "label": "Side",
+     "options": [
+      "left",
+      "right"
+     ]
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "x"
+   ]
+  },
+  {
+   "type": "ControlledCurrentSource",
+   "title": "Controlled Current Source",
+   "category": "Physical",
+   "doc": "Current given by the input signal, pushed out of port p.",
+   "icon": "I(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "ControlledVoltageSource",
+   "title": "Controlled Voltage Source",
+   "category": "Physical",
+   "doc": "Voltage between p and n given by the input signal.",
+   "icon": "V(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "CurrentSensor",
+   "title": "Current Sensor",
+   "category": "Physical",
+   "doc": "Outputs the current flowing from p to n through it (it joins p and n).",
+   "icon": "I?",
+   "params": [],
+   "in": 0,
+   "out": 1,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "DCCurrentSource",
+   "title": "DC Current Source",
+   "category": "Physical",
+   "doc": "Constant current I pushed out of port p through the circuit back into n.",
+   "icon": "I",
+   "params": [
+    {
+     "name": "I",
+     "default": "1",
+     "kind": "expr",
+     "label": "Current (A)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "DCVoltageSource",
+   "title": "DC Voltage Source",
+   "category": "Physical",
+   "doc": "Constant voltage between p and n: v_p - v_n = V.",
+   "icon": "V",
+   "params": [
+    {
+     "name": "V",
+     "default": "1",
+     "kind": "expr",
+     "label": "Voltage (V)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "Diode",
+   "title": "Diode",
+   "category": "Physical",
+   "doc": "Piecewise-linear diode: conducts with resistance Ron above the forward voltage Vf, else conductance Goff.",
+   "icon": "D",
+   "params": [
+    {
+     "name": "Vf",
+     "default": "0.6",
+     "kind": "expr",
+     "label": "Forward voltage (V)"
+    },
+    {
+     "name": "Ron",
+     "default": "0.01",
+     "kind": "expr",
+     "label": "On resistance (ohm)"
+    },
+    {
+     "name": "Goff",
+     "default": "1e-8",
+     "kind": "expr",
+     "label": "Off conductance (1/ohm)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "ElectricalReference",
+   "title": "Electrical Reference",
+   "category": "Physical",
+   "doc": "Electrical ground: the voltage of the node it is connected to is zero.",
+   "icon": "gnd",
+   "params": [],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p"
+   ]
+  },
+  {
+   "type": "IdealAngularVelocitySource",
+   "title": "Ideal Angular Velocity Source",
+   "category": "Physical",
+   "doc": "Angular velocity w_F - w_B given by the input signal.",
+   "icon": "w(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "IdealForceSensor",
+   "title": "Ideal Force Sensor",
+   "category": "Physical",
+   "doc": "Outputs the force flowing from R to C through it (it joins R and C rigidly).",
+   "icon": "F?",
+   "params": [],
+   "in": 0,
+   "out": 1,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "IdealForceSource",
+   "title": "Ideal Force Source",
+   "category": "Physical",
+   "doc": "Force given by the input signal; a positive force pushes R forward relative to C.",
+   "icon": "F(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "IdealRotationalMotionSensor",
+   "title": "Ideal Rotational Motion Sensor",
+   "category": "Physical",
+   "doc": "Outputs the angular velocity and angle of F relative to B; no torque.",
+   "icon": "θ?",
+   "params": [
+    {
+     "name": "theta0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial angle (rad)"
+    }
+   ],
+   "in": 0,
+   "out": 2,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "IdealTorqueSensor",
+   "title": "Ideal Torque Sensor",
+   "category": "Physical",
+   "doc": "Outputs the torque flowing from F to B through it (it joins F and B rigidly).",
+   "icon": "T?",
+   "params": [],
+   "in": 0,
+   "out": 1,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "IdealTorqueSource",
+   "title": "Ideal Torque Source",
+   "category": "Physical",
+   "doc": "Torque given by the input signal; a positive torque turns F forward relative to B.",
+   "icon": "T(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "IdealTranslationalMotionSensor",
+   "title": "Ideal Translational Motion Sensor",
+   "category": "Physical",
+   "doc": "Outputs the velocity and the position of R relative to C; no force.",
+   "icon": "x?",
+   "params": [
+    {
+     "name": "x0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial position (m)"
+    }
+   ],
+   "in": 0,
+   "out": 2,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "IdealTranslationalVelocitySource",
+   "title": "Ideal Translational Velocity Source",
+   "category": "Physical",
+   "doc": "Velocity v_R - v_C given by the input signal.",
+   "icon": "v(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "Inductor",
+   "title": "Inductor",
+   "category": "Physical",
+   "doc": "Electrical inductor: v = L di/dt; its current is a state.",
+   "icon": "L",
+   "params": [
+    {
+     "name": "L",
+     "default": "1e-3",
+     "kind": "expr",
+     "label": "Inductance (H)"
+    },
+    {
+     "name": "i0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial current (A)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "Inertia",
+   "title": "Inertia",
+   "category": "Physical",
+   "doc": "Rotational inertia J: the torque flowing into its port accelerates it.",
+   "icon": "J",
+   "params": [
+    {
+     "name": "J",
+     "default": "1",
+     "kind": "expr",
+     "label": "Inertia (kg m^2)"
+    },
+    {
+     "name": "w0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial angular velocity (rad/s)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "I"
+   ]
+  },
+  {
+   "type": "Mass",
+   "title": "Mass",
+   "category": "Physical",
+   "doc": "A mass m: the force flowing into its port accelerates it; its velocity is a state.",
+   "icon": "m",
+   "params": [
+    {
+     "name": "m",
+     "default": "1",
+     "kind": "expr",
+     "label": "Mass (kg)"
+    },
+    {
+     "name": "v0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial velocity (m/s)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "M"
+   ]
+  },
+  {
+   "type": "MechanicalRotationalReference",
+   "title": "Mechanical Rotational Reference",
+   "category": "Physical",
+   "doc": "Fixed frame for rotation: angular velocity zero.",
+   "icon": "gnd",
+   "params": [],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R"
+   ]
+  },
+  {
+   "type": "MechanicalTranslationalReference",
+   "title": "Mechanical Translational Reference",
+   "category": "Physical",
+   "doc": "Fixed frame for translational motion: velocity zero.",
+   "icon": "gnd",
+   "params": [],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R"
+   ]
+  },
+  {
+   "type": "PSSimulinkConverter",
+   "title": "PS-Simulink Converter",
+   "category": "Physical",
+   "doc": "Passes a sensor signal on to ordinary blocks (physical signals are ordinary signals in mylab).",
+   "icon": "PS>",
+   "params": [
+    {
+     "name": "Unit",
+     "default": "1",
+     "kind": "text",
+     "label": "Output unit (kept for information; no conversion)"
+    }
+   ],
+   "in": 1,
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "Resistor",
+   "title": "Resistor",
+   "category": "Physical",
+   "doc": "Electrical resistor: v = R i between its ports p and n.",
+   "icon": "R",
+   "params": [
+    {
+     "name": "R",
+     "default": "1",
+     "kind": "expr",
+     "label": "Resistance (ohm)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "RotationalDamper",
+   "title": "Rotational Damper",
+   "category": "Physical",
+   "doc": "Rotational viscous damper: torque b (w_F - w_B).",
+   "icon": "b",
+   "params": [
+    {
+     "name": "b",
+     "default": "1",
+     "kind": "expr",
+     "label": "Damping (N m s/rad)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "RotationalSpring",
+   "title": "Rotational Spring",
+   "category": "Physical",
+   "doc": "Torsion spring: torque k theta, theta = angle of F relative to B (a state).",
+   "icon": "k",
+   "params": [
+    {
+     "name": "k",
+     "default": "1",
+     "kind": "expr",
+     "label": "Spring rate (N m/rad)"
+    },
+    {
+     "name": "theta0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial deflection (rad)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "SimulinkPSConverter",
+   "title": "Simulink-PS Converter",
+   "category": "Physical",
+   "doc": "Passes an ordinary signal on to a controlled source (physical signals are ordinary signals in mylab).",
+   "icon": ">PS",
+   "params": [
+    {
+     "name": "Unit",
+     "default": "1",
+     "kind": "text",
+     "label": "Input unit (kept for information; no conversion)"
+    }
+   ],
+   "in": 1,
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "SolverConfiguration",
+   "title": "Solver Configuration",
+   "category": "Physical",
+   "doc": "Marks a physical network (accepted for familiarity; mylab needs no settings here).",
+   "icon": "f(x)=0",
+   "params": [],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p"
+   ]
+  },
+  {
+   "type": "TranslationalDamper",
+   "title": "Translational Damper",
+   "category": "Physical",
+   "doc": "Viscous damper: force b (v_R - v_C).",
+   "icon": "b",
+   "params": [
+    {
+     "name": "b",
+     "default": "1",
+     "kind": "expr",
+     "label": "Damping (N s/m)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "TranslationalSpring",
+   "title": "Translational Spring",
+   "category": "Physical",
+   "doc": "Spring: force k x, where x is how far R has moved relative to C (a state).",
+   "icon": "k",
+   "params": [
+    {
+     "name": "k",
+     "default": "1",
+     "kind": "expr",
+     "label": "Spring rate (N/m)"
+    },
+    {
+     "name": "x0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial deformation (m)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "VoltageSensor",
+   "title": "Voltage Sensor",
+   "category": "Physical",
+   "doc": "Outputs the voltage v_p - v_n; no current flows through it.",
+   "icon": "V?",
+   "params": [],
+   "in": 0,
+   "out": 1,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
   }
  ]
 };

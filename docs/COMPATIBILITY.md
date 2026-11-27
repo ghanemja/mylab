@@ -84,10 +84,14 @@ expected values come from MATLAB's documented behaviour.
 - More than 2,700 built-in functions; see [FUNCTIONS.md](FUNCTIONS.md).
 - Block-diagram models (mylab Blocks): `sim`, `new_system`, `add_block`,
   `add_line`, `set_param`, `get_param`, `find_system`, `linmod`, `trim` and a
-  library of 107 blocks, with a diagram editor in the web app and import of
-  `.slx` files (31 of 68 public models run). See [BLOCKS.md](BLOCKS.md) for
-  what is covered and what is not (no code generation, state charts,
-  physical modelling or compiled S-functions; `.mdl` files are not read).
+  library of 146 blocks, with a diagram editor in the web app and import of
+  `.slx` and `.mdl` files (31 of 68 public models run). Iterator,
+  function-call, switch-case and resettable subsystems, buses, Model blocks,
+  state charts (Chart block) and basic electrical and mechanical networks
+  with two-way connections are included; `save_system` writes `.slx` and
+  `.mdl` copies meant for mylab to read back. See [BLOCKS.md](BLOCKS.md) for
+  what is covered and what is not (no code generation, multibody or other
+  physical domains, graphical chart editing or compiled S-functions).
 - Apps written in code (`uifigure` and its components, `figure` +
   `uicontrol`, class files exported from App Designer); see
   [APPS.md](APPS.md).
@@ -111,8 +115,9 @@ expected values come from MATLAB's documented behaviour.
 - **Toolboxes:** deep learning, the computer vision functions not listed in
   [VISION.md](VISION.md) (detector training, `ocr`, pretrained networks,
   visual SLAM), the Robotics System Toolbox's `se2`/`se3` objects,
-  `tscollection`, Simscape and physical modelling, and the other toolboxes
-  not listed above.
+  `tscollection`, Simscape beyond the basic electrical and mechanical
+  networks of mylab Blocks (no multibody, hydraulic or thermal domains), and
+  the other toolboxes not listed above.
 - **Language:** Java. MEX files compiled for MATLAB cannot be loaded; build
   them again from their C/C++ source with mylab's `mex` (see below).
 

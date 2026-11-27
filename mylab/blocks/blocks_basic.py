@@ -48,6 +48,14 @@ class Constant(Source):
         return "const"
 
     def init(self):
+        from ..values import Struct
+
+        raw = self.value("Value")
+        if isinstance(raw, Struct):  # a struct constant is a bus
+            from .bus import from_struct
+
+            self.v = from_struct(raw)
+            return
         v = self.mat("Value")
         self.v = sig(v) if self.is_on("VectorParams1D") or v.size == 1 else v
 
@@ -483,6 +491,8 @@ class Sink(Node):
                     self.log_u[k][-1] = np.ravel(v, order="F").copy()
                 return []
             if self.count % self.decimation == 0:
+                if u and getattr(u[0], "spec", None) is not None:
+                    self.bus_spec = u[0].spec
                 self.log_t.append(t)
                 self.last_count = self.count
                 for k, v in enumerate(u):
@@ -581,7 +591,11 @@ class StopSimulation(Node):
     icon="out",
 )
 class Outport(Sink):
-    params = [P("Port", "1", "Port number", "text"), P("InitialOutput", "[]", "Output before the subsystem first runs")]
+    params = [
+        P("Port", "1", "Port number", "text"),
+        P("InitialOutput", "[]", "Output before the subsystem first runs"),
+        P("OutputWhenDisabled", "held", "Output while the subsystem is switched off", options=["held", "reset"]),
+    ]
 
 
 # =====================================================================================

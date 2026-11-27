@@ -456,10 +456,19 @@ class Held(Node):
         return changed
 
     def out(self, t, u):
+        from .bus import spec_of, with_spec
+
+        if u and spec_of(u[0]) is not None and spec_of(self.state) is None:
+            # the initial value of a delayed bus: every element starts from it
+            n = np.size(u[0])
+            if self.state.size in (1, n):
+                self.state = with_spec(np.broadcast_to(np.ravel(self.state), (n,)).astype(float), spec_of(u[0]))
         return [self.state]
 
     def update(self, t, u):
-        self.state = np.array(u[0], dtype=float, copy=True)
+        from .bus import copy
+
+        self.state = copy(u[0])  # a bus keeps its element names
 
 
 @block("UnitDelay", "Discrete", "Delays the input by one sample time.", title="Unit Delay", icon="1/z")

@@ -13,7 +13,8 @@ HELP = {
     ),
     "open_system": (
         "open_system(name)",
-        "Loads a model (from name.mlb.json or name.slx in the current folder or on the path) and makes it the "
+        "Loads a model (from name.mlb.json, name.slx or name.mdl in the current folder or on the path) and "
+        "makes it the "
         "current model. In the mylab web app the model also opens in the diagram editor; elsewhere a note is "
         "printed once and the model can be used from code.",
     ),
@@ -21,13 +22,14 @@ HELP = {
         ["load_system(name)", "h = load_system(name)"],
         "Loads a model file into memory without showing it. Models are also loaded automatically the first "
         "time their name is used, so sim('mymodel') works when mymodel.mlb.json is in the current folder. "
-        "A .slx file is converted on loading; blocks that have no equivalent are listed in a warning.",
+        "A .slx or .mdl file is converted on loading; blocks that have no equivalent are listed in a warning.",
     ),
     "save_system": (
         ["save_system(name)", "save_system(name, newname)", "file = save_system(...)"],
         "Writes a model to name.mlb.json, a readable JSON file, in the current folder (or back to the file it "
-        "was loaded from). With a second name the model is renamed and saved under that name. mylab does not "
-        "write .slx files.",
+        "was loaded from). With a second name the model is renamed and saved under that name. A second name "
+        "ending in .slx or .mdl writes a copy in that format, which mylab can load again; such files are made "
+        "for mylab and were not tested with other programs. The model's own file stays the .mlb.json one.",
     ),
     "close_system": (
         ["close_system(name)", "close_system(name, 1)", "bdclose('all')"],
@@ -116,6 +118,59 @@ HELP = {
         "(Euler), ode2, ode3, ode4 (Runge-Kutta), ode5. Block parameters are looked up in the base workspace, then "
         "in the workspace of the function that calls sim. Called without an output, sim stores out, tout, yout and "
         "the To Workspace variables in the workspace. Errors name the block they come from.",
+    ),
+    "chart_state": (
+        ["chart_state(chart, name)", "chart_state(chart, name, label)", "chart_state(chart, 'A.B', label, "
+         "'Decomposition', 'parallel')"],
+        "Adds a state to the Chart block chart (a block path such as 'model/Chart'). A dotted name puts the "
+        "state inside another one. The label holds the actions, one per line: 'entry: y = 1;', 'during: ...', "
+        "'exit: ...' (or en:, du:, ex:); lines before the first keyword are entry actions. The option "
+        "Decomposition makes the new state's own substates parallel (all active) instead of exclusive; "
+        "set_param(chart, 'Decomposition', 'parallel') does that for the top level of the chart.",
+    ),
+    "chart_transition": (
+        ["chart_transition(chart, from, to)", "chart_transition(chart, from, to, label)"],
+        "Adds a transition from a state or junction to another. An empty from ('') makes a default transition: "
+        "the one followed when the chart, or the state that holds the destination, is entered. The label is "
+        "event[condition]{condition action}/transition action, every part optional, for example "
+        "'go[u > 1]{n = 0;}/y = 2;'. after(n, tick), before, every and at (with tick or sec) can stand for the "
+        "event or appear in the condition. Transitions leaving the same state are tried in the order they "
+        "were added.",
+    ),
+    "chart_junction": (
+        ["chart_junction(chart, name)", "chart_junction(chart, name, parentState)"],
+        "Adds a connective junction: transitions can lead to it and leave it, so one decision can branch. A "
+        "junction without outgoing transitions ends a flow.",
+    ),
+    "chart_data": (
+        ["chart_data(chart, name, scope)", "chart_data(chart, name, scope, initial)"],
+        "Adds a variable of the chart. The scope 'input' and 'output' make block ports (in the order added); "
+        "'local' variables keep their value between steps; 'constant' takes the initial value; 'parameter' is "
+        "read from the workspace. initial is a MATLAB expression (default 0).",
+    ),
+    "chart_event": (
+        ["chart_event(chart, name, scope)", "chart_event(chart, name, scope, trigger)"],
+        "Adds an event. Input events share one extra input port (one element per event) and wake the chart "
+        "when their signal rises, falls, does either, or (trigger 'function-call') when a function-call "
+        "signal calls it. An output event becomes an output port: a function-call output calls the "
+        "function-call subsystem wired to it once per send, other kinds toggle the signal. Local events are "
+        "sent to the whole chart at once.",
+    ),
+    "send": (
+        "send(E)",
+        "In an action of a Chart block: broadcasts the event E (an output event or a local event of the chart). "
+        "A statement that is only the event's name does the same.",
+    ),
+    "Simulink.Bus": (
+        ["b = Simulink.Bus", "b.Elements = [e1 e2]"],
+        "A bus object: a struct with an Elements field (a struct array of bus elements) and a Description. A Bus "
+        "Creator whose output data type is 'Bus: b' names the signals of its bus after the elements of b, in "
+        "order. Only the element names (and how many there are) are used.",
+    ),
+    "Simulink.BusElement": (
+        "e = Simulink.BusElement",
+        "One element of a bus object: a struct with the fields Name, Dimensions, DataType, Complexity and "
+        "Description. Set e.Name and put the elements into the Elements field of a Simulink.Bus.",
     ),
     "Simulink.Variant": (
         "v = Simulink.Variant('MODE == 2')",

@@ -524,7 +524,9 @@ export function initBlocks(app) {
       { label: "Connect the selected blocks (C)", onclick: () => ed.onKey(new KeyboardEvent("keydown", { key: "c" })) },
       { heading: "Models" },
       { label: "New block diagram…", onclick: () => newDiagram() },
-      { label: "Import a .slx file…", onclick: () => slxInput.click() },
+      { label: "Import a .slx or .mdl file…", onclick: () => slxInput.click() },
+      current ? { label: "Save a copy as .slx", onclick: () => exportModel("slx") } : null,
+      current ? { label: "Save a copy as .mdl", onclick: () => exportModel("mdl") } : null,
       ...BLOCK_EXAMPLES.map((x) => ({ label: "Example: " + x.title, onclick: () => openExample(x.name) })),
     ]);
   }
@@ -677,7 +679,20 @@ export function initBlocks(app) {
       const path = current, text = ed.lastText;
       try {
         const res = await app.engine.background("blocks", { op: "check", args: { model: ed.model, name: ed.model.name }, cwd: app.dirName(path) });
-        if (current === path && ed.lastText === text) ed.setDiagnostics(res.diagnostics || []);
+        if (current === path && ed.lastText === text) {
+          // Model blocks: the ports come from the model they refer to, which only the engine can read
+          let moved = false;
+          for (const [where, ports] of Object.entries(res.ports || {})) {
+            let list = ed.model.blocks, b = null;
+            for (const part of where.split("/")) {
+              b = (list || []).find((x) => x.name === part);
+              list = b ? b.blocks : null;
+            }
+            if (b && JSON.stringify(b.ports) !== JSON.stringify(ports)) { b.ports = ports; moved = true; }
+          }
+          ed.setDiagnostics(res.diagnostics || []);
+          if (moved) ed.render();
+        }
       } catch {
         /* the engine restarted; the next change checks again */
       }
@@ -808,7 +823,7 @@ export function initBlocks(app) {
     },
   ];
 
-  const slxInput = el("input", { type: "file", accept: ".slx", hidden: true });
+  const slxInput = el("input", { type: "file", accept: ".slx,.mdl", hidden: true });
   document.body.appendChild(slxInput);
   slxInput.addEventListener("change", async () => {
     const file = slxInput.files[0];
@@ -835,7 +850,7 @@ export function initBlocks(app) {
     }
     app.setRunning(false);
     if (res.error) return toast(res.error, "error");
-    const target = app.normalizePath(path.replace(/\.slx$/i, "") + EXT);
+    const target = app.normalizePath(path.replace(/\.(slx|mdl)$/i, "") + EXT);
     await app.writeFiles([{ path: target, content: res.model }]);
     app.renderFileList();
     app.openFile(target);
@@ -850,9 +865,27 @@ export function initBlocks(app) {
     return target;
   }
 
+  /** Write the open model next to its file as .slx or .mdl (made for mylab to read back). */
+  async function exportModel(format) {
+    if (!current || !ed.model) return;
+    if (!app.engine.ready || app.engine.busy) return toast("Wait until the engine is ready, then try again.");
+    let res;
+    try {
+      res = await app.engine.background("blocks", { op: "export", args: { model: ed.model, name: ed.model.name, format } });
+    } catch (e) {
+      return toast("The model could not be written: " + e.message, "error");
+    }
+    if (res.error) return toast(res.error, "error");
+    const target = app.normalizePath(current.slice(0, -EXT.length) + "." + format);
+    const content = format === "mdl" ? res.text : Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
+    await app.writeFiles([{ path: target, content }]);
+    app.renderFileList();
+    toast(`Saved ${app.baseName(target)}. The file is made for mylab to read back; other programs may not open it.`);
+  }
+
   app.openSpecial = (path) => {
-    if (!/\.slx$/i.test(path)) return false;
-    const target = path.replace(/\.slx$/i, "") + EXT;
+    if (!/\.(slx|mdl)$/i.test(path)) return false;
+    const target = path.replace(/\.(slx|mdl)$/i, "") + EXT;
     if (state.files.has(target)) app.openFile(target);
     else importSlx(path);
     return true;
@@ -863,7 +896,9 @@ export function initBlocks(app) {
   const inDiagram = () => !!current && !view.hidden;
   app.commands.register([
     { id: "blocks.new", group: "Blocks", title: "New block diagram…", run: newDiagram, hint: "Create a model you build from blocks and lines" },
-    { id: "blocks.import", group: "Blocks", title: "Import a .slx model…", run: () => slxInput.click(), hint: "Convert a simple .slx file into a mylab Blocks model" },
+    { id: "blocks.import", group: "Blocks", title: "Import a .slx or .mdl model…", run: () => slxInput.click(), hint: "Convert a simple .slx or .mdl file into a mylab Blocks model" },
+    { id: "blocks.export.slx", group: "Blocks", title: "Save a copy of the model as .slx", run: () => exportModel("slx"), when: inDiagram },
+    { id: "blocks.export.mdl", group: "Blocks", title: "Save a copy of the model as .mdl", run: () => exportModel("mdl"), when: inDiagram },
     ...BLOCK_EXAMPLES.map((x) => ({ id: "blocks.example." + x.name, group: "Blocks", title: `Example model: ${x.title}`, run: () => openExample(x.name), hint: x.description })),
     { id: "blocks.run", group: "Blocks", title: "Run the model", run: runModel, when: inDiagram },
     { id: "blocks.add", group: "Blocks", title: "Add a block by name…", run: () => quickInsert(null, null), when: inDiagram },

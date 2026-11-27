@@ -15,7 +15,7 @@ export function svg(tag, attrs = {}, ...children) {
 
 export const CATEGORY_CLASS = {
   Sources: "src", Sinks: "snk", Continuous: "con", Discrete: "dis", Math: "mat", Logic: "log", Nonlinear: "non", Routing: "rou",
-  "User-defined": "usr",
+  "User-defined": "usr", Physical: "phy",
 };
 
 // Pictograms on a 0..1 square (y down). Each is a list of polylines.
@@ -162,10 +162,11 @@ export function drawBlock(block, opts = {}) {
       class: `bd-port ${kind}${open ? " open" : ""}${typeof port === "string" ? " ctl" : ""}`, "data-block": block.name, "data-kind": kind, "data-port": port,
       transform: `translate(${q.x} ${q.y})`,
     });
-    const what = typeof port === "string" ? `${port} input` : `${kind === "in" ? "input" : "output"} ${port}`;
+    const what = kind === "phys" ? `physical port ${port}` : typeof port === "string" ? `${port} input` : `${kind === "in" ? "input" : "output"} ${port}`;
     pg.append(svg("title", {}, `${block.name}: ${what}${text ? " (" + text + ")" : ""}${open ? ", not connected" : ""}`));
     pg.append(svg("circle", { class: "bd-port-hit", r: 10 }));
     if (kind === "out") pg.append(svg("path", { class: "bd-port-dot", d: arrow(pt.dx, pt.dy, 5) }));
+    else if (kind === "phys") pg.append(svg("rect", { class: "bd-port-dot", x: -3.5, y: -3.5, width: 7, height: 7, transform: "rotate(45)" }));
     else if (typeof port === "string") pg.append(svg("rect", { class: "bd-port-dot", x: -4, y: -4, width: 8, height: 8, rx: 1.5 }));
     else pg.append(svg("circle", { class: "bd-port-dot", r: 3.6 }));
     g.append(pg);
@@ -178,6 +179,8 @@ export function drawBlock(block, opts = {}) {
   for (let k = 1; k <= counts.out; k++) addPort("out", k, labels.outs[k - 1]);
   if (counts.enable) addPort("in", "enable", "");
   if (counts.trigger) addPort("in", "trigger", "");
+  if (counts.reset) addPort("in", "reset", "");
+  for (const q of counts.phys || []) addPort("phys", q, q);
   // name under the block
   if (!(block.other && block.other.ShowName === "off")) {
     g.append(svg("text", { class: "bd-name", x: w / 2, y: h + 14 }, block.name));

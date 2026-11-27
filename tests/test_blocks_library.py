@@ -1099,3 +1099,39 @@ def test_a_vector_counts_as_a_column_in_matrix_products():
     r = simulate(m)
     assert list(r.y[-1][:9]) == [1, 2, 3, 2, 4, 6, 3, 6, 9] and r.y[-1][9] == 14
     assert list(r.y[-1][10:]) == [1, 2, 3]  # transposing twice gives the vector back
+
+
+def test_subsystem_control_blocks_are_in_the_library():
+    # these are tried out in test_blocks_subsystems.py; here: names, ports and dialogs
+    types = ("ForIterator", "WhileIterator", "FunctionCallGenerator", "SwitchCase", "ResetPort", "ModelReference",
+             "BusAssignment", "Chart")
+    for t in types:
+        assert find_type(t) is not None and find_type(t).type == t
+    assert find_type("simulink/Ports & Subsystems/Model").type == "ModelReference"
+    assert count_ports(find_type("SwitchCase").nout, {"CaseConditions": "{1,[2 3],4}", "ShowDefaultCase": "on"}) == 4
+    assert count_ports(find_type("BusAssignment").nin, {"AssignedSignals": "a,b.c"}) == 3
+    assert count_ports(find_type("Selector").nin, {"IndexOptions": "Index vector (port),Select all"}) == 2
+    assert np.allclose(last("SwitchCase", {"CaseConditions": "{1,2}"}, [2], n_out=3), [0, 1, 0])
+
+
+def test_physical_blocks_are_in_the_library_with_their_ports():
+    # tried out in test_blocks_physical.py; here: names, categories and conserving ports
+    expect = {
+        "Resistor": ["p", "n"], "Capacitor": ["p", "n"], "Inductor": ["p", "n"], "Diode": ["p", "n"],
+        "DCVoltageSource": ["p", "n"], "ControlledVoltageSource": ["p", "n"], "DCCurrentSource": ["p", "n"],
+        "ControlledCurrentSource": ["p", "n"], "ElectricalReference": ["p"], "VoltageSensor": ["p", "n"],
+        "CurrentSensor": ["p", "n"], "Mass": ["M"], "TranslationalSpring": ["R", "C"],
+        "TranslationalDamper": ["R", "C"], "IdealForceSource": ["R", "C"],
+        "IdealTranslationalVelocitySource": ["R", "C"], "MechanicalTranslationalReference": ["R"],
+        "IdealTranslationalMotionSensor": ["R", "C"], "IdealForceSensor": ["R", "C"], "Inertia": ["I"],
+        "RotationalSpring": ["F", "B"], "RotationalDamper": ["F", "B"], "IdealTorqueSource": ["F", "B"],
+        "IdealAngularVelocitySource": ["F", "B"], "MechanicalRotationalReference": ["R"],
+        "IdealRotationalMotionSensor": ["F", "B"], "IdealTorqueSensor": ["F", "B"], "SolverConfiguration": ["p"],
+        "ConnectionPort": ["x"],
+    }
+    cat = {b["type"]: b for b in catalog()["blocks"]}
+    for t, ports in expect.items():
+        assert cat[t]["category"] == "Physical" and cat[t]["phys"] == ports, t
+    for t in ("PSSimulinkConverter", "SimulinkPSConverter"):
+        assert cat[t]["category"] == "Physical" and "phys" not in cat[t]
+    assert find_type("PMIOPort").type == "ConnectionPort"

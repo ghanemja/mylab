@@ -595,8 +595,18 @@ export class DiagramEditor {
     const used = new Set(this.sys().lines.filter((l) => l.to[0] === block.name).map((l) => String(l.to[1])));
     const out = [];
     for (let k = 1; k <= c.in; k++) if (!used.has(String(k))) out.push(k);
-    for (const ctl of ["enable", "trigger"]) if (c[ctl] && !used.has(ctl)) out.push(ctl);
+    for (const ctl of ["enable", "trigger", "reset"]) if (c[ctl] && !used.has(ctl)) out.push(ctl);
     return out;
+  }
+
+  /** Join two physical ports (a two-way connection). Returns an error text or null. */
+  connectPhysical(a, b) {
+    if (a.block === b.block && a.port === b.port) return null;
+    const same = (l) => (l.from[0] === a.block && l.from[1] === a.port && l.to[0] === b.block && l.to[1] === b.port) || (l.from[0] === b.block && l.from[1] === b.port && l.to[0] === a.block && l.to[1] === a.port);
+    if (this.sys().lines.some(same)) return "These ports are already connected.";
+    this.change((sy) => sy.lines.push({ from: [a.block, a.port], to: [b.block, b.port] }));
+    this.say(`Connected ${a.block} port ${a.port} to ${b.block} port ${b.port}.`);
+    return null;
   }
 
   /** Connect an output to an input. Returns an error text or null. */
@@ -1009,11 +1019,11 @@ export class DiagramEditor {
     const target = e ? this.portUnder(e) : null;
     let end = { x: wr.x, y: wr.y, dx: -p.dx, dy: -p.dy };
     let ok = false;
-    if (target && target.io !== wr.io && this.block(target.block)) {
+    if (target && (target.io !== wr.io || wr.io === "phys") && (wr.io === "phys") === (target.io === "phys") && this.block(target.block)) {
       end = portPoint(this.block(target.block), target.io, target.port);
       ok = true;
     }
-    const pts = wr.io === "out" ? routeLine(p, end, [b.position, [end.x, end.y, 0, 0]]) : routeLine(end, p, [[end.x, end.y, 0, 0], b.position]);
+    const pts = wr.io !== "in" ? routeLine(p, end, [b.position, [end.x, end.y, 0, 0]]) : routeLine(end, p, [[end.x, end.y, 0, 0], b.position]);
     this.gOver.replaceChildren(svg("path", { class: "bd-wire" + (ok ? " ok" : ""), d: pathData(pts) }));
     this.svg.classList.add("bd-wiring");
     this.svg.dataset.wire = wr.io;
@@ -1050,7 +1060,9 @@ export class DiagramEditor {
       }
     }
     this.cancelWire();
-    if (target) {
+    if (target && (wr.io === "phys" || target.io === "phys")) {
+      err = wr.io === "phys" && target.io === "phys" ? this.connectPhysical(wr, target) : "A physical port connects only to another physical port.";
+    } else if (target) {
       if (target.io === wr.io) err = wr.io === "out" ? "A line goes from an output to an input. Both of these are outputs." : "A line goes from an output to an input. Both of these are inputs.";
       else err = wr.io === "out" ? this.connect({ block: wr.block, port: wr.port }, target) : this.connect(target, { block: wr.block, port: wr.port });
     } else if (!err && wr.moved && this.hooks.quickInsert && el === this.svg.querySelector(".bd-bg")) {

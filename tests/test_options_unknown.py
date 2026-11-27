@@ -520,6 +520,7 @@ CALLS["textread"] = "'m.csv', '%s'"
 CALLS.update({  # these need the model 'optsmdl' made by the session fixture, or check options before any I/O
     "add_block": "'simulink/Sources/Constant', 'optsmdl/C9'",
     "add_line": "'optsmdl', 'C1/1', 'G1/1'",
+    "chart_state": "add_block('blocks/Chart', 'optsmdl/Ch9'), 'A', ''",
     "sim": "'optsmdl'",
     "bubblelegend": "ancestor(bubblechart(1:3, 1:3, 1:3), 'axes')",
     "gmdistribution.fit": "[randn(30,1); randn(30,1)+5], 2",

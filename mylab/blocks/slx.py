@@ -105,6 +105,7 @@ REFERENCE_MAP = {
     "transpose": ("MathFunction", {"Operator": "transpose"}),
     "coulombviscousfriction": ("CoulombViscousFriction", {}),
     "coulombicandviscousfriction": ("CoulombViscousFriction", {}),
+    "functioncallgenerator": ("FunctionCallGenerator", {}),
 }
 # Defaults of their block types that differ from ours, for files that do not list their defaults.
 IMPORT_DEFAULTS = {
@@ -134,14 +135,26 @@ def _key(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
+def open_archive(path: str):
+    """The parts of a model file: an .slx zip archive, or an .mdl text file converted to the same XML."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4)
+    except OSError as exc:
+        raise ModelError(f"{path} cannot be read: {exc}") from None
+    if head.startswith(b"PK") or not path.lower().endswith(".mdl"):
+        return _Archive(path)
+    from .mdl import MdlArchive
+
+    return MdlArchive(path)
+
+
 class _Archive:
     def __init__(self, path: str):
         try:
             self.zip = zipfile.ZipFile(path)
         except (zipfile.BadZipFile, OSError) as exc:
-            raise ModelError(
-                f"{path} is not a readable .slx file ({exc}). Old-style .mdl text files are not supported."
-            ) from None
+            raise ModelError(f"{path} is not a readable .slx file ({exc}).") from None
         infos = self.zip.infolist()
         if len(infos) > MAX_MEMBERS or sum(i.file_size for i in infos) > MAX_TOTAL:
             raise ModelError("The .slx file is too large to import.")
@@ -202,11 +215,12 @@ class _Importer:
         import os
 
         self.path = os.path.abspath(path)
-        self.arc = _Archive(path)
+        self.arc = open_archive(path)
         self.root = root or self
         self.stats = self.root.stats if root else _Stats()
         self.defaults: dict[str, dict[str, str]] = {}
         self.scripts: dict[str, str] = {}
+        self.charts: dict[str, Any] = {}
         self.top: ET.Element | None = None
         self.top_system: ET.Element | None = None
         self.libs: dict[str, "_Importer | None"] = {}
@@ -261,8 +275,10 @@ class _Importer:
                             dirs[:] = []
                         for f in files:
                             seen += 1
-                            if f.lower().endswith(".slx"):
-                                root.index.setdefault(f[:-4], os.path.join(folder, f))
+                            if f.lower().endswith((".slx", ".mdl")):
+                                old = root.index.get(f[:-4])
+                                if old is None or old.lower().endswith(".mdl"):  # .slx first
+                                    root.index[f[:-4]] = os.path.join(folder, f)
                         if seen > 20000:
                             break
                     parent = os.path.dirname(here)
@@ -345,6 +361,8 @@ class _Importer:
         for p in self.top.findall("P"):
             if p.get("Name") in ("PreLoadFcn", "PostLoadFcn", "InitFcn", "StartFcn") and (p.text or "").strip():
                 model.callbacks[p.get("Name")] = p.text.strip()
+            elif p.get("Name") == "Description" and (p.text or "").strip():
+                model.description = p.text.strip()
         self._config(model, self.top)
         notes = list(dict.fromkeys(st.notes))
         if st.unsupported:
@@ -392,7 +410,9 @@ class _Importer:
                     continue
                 for chart in el.iter("chart"):
                     cname = next((p.text or "" for p in chart.findall("P") if p.get("Name") == "name"), "")
-                    cname = re.sub(r"\s+", " ", cname).strip()  # block names are compared without line breaks
+                    # block names are compared without line breaks or spaces at their ends
+                    cname = "/".join(part.strip() for part in re.sub(r"\s+", " ", cname).split("/"))
+                    self.charts[cname] = chart
                     for p in chart.iter("P"):
                         if p.get("Name") == "script" and p.text:
                             self.scripts[cname] = p.text
@@ -401,7 +421,8 @@ class _Importer:
     def _config(self, model: Model, top: ET.Element) -> None:
         found: dict[str, str] = {}
         sources = [top] + [el for part in ("simulink/configSet0.xml",) if (el := self.arc.xml(part)) is not None]
-        want = {"StartTime", "StopTime", "SolverName", "Solver", "MaxStep", "RelTol", "AbsTol", "FixedStep"}
+        want = {"StartTime", "StopTime", "SolverName", "Solver", "MaxStep", "RelTol", "AbsTol", "FixedStep",
+                "ZeroCrossings", "AlgebraicLoop"}  # the last two are only in files mylab writes
         for src in sources:
             for p in src.iter("P"):
                 n = p.get("Name")
@@ -411,7 +432,7 @@ class _Importer:
         if solver:
             model.config["Solver"] = SOLVERS.get(solver.lower(), solver)
         for k, v in found.items():
-            if k in model.config:
+            if k in model.config or k == "AlgebraicLoop":
                 model.config[k] = v
 
     # -- systems ----------------------------------------------------------------------
@@ -533,6 +554,26 @@ class _Importer:
                     return unsupported("MATLAB Function (code not found in the file)")
                 blk.type = "MATLABFunction"
                 blk.params["Script"] = script
+                self._count("converted")
+                return blk
+            if sf == "Chart":
+                chart = next(
+                    (self.charts[k] for k in (chart_prefix + name, path, name) if k in self.charts), None
+                )
+                if chart is None:
+                    return unsupported("Chart (not found in the file)")
+                from .chart import ChartDef, chart_from_sf
+
+                try:
+                    desc = chart_from_sf(chart)
+                    ChartDef.from_json(desc)
+                except Exception as exc:  # a chart we cannot read is kept as a placeholder
+                    self.notes.append(f"'{path}': the chart could not be converted: {exc}")
+                    return unsupported("Chart (not converted)")
+                blk.type = "Chart"
+                blk.extra["chart"] = desc
+                if p.get("SampleTime", "").strip():
+                    blk.params["SampleTime"] = p["SampleTime"].strip()
                 self._count("converted")
                 return blk
             if sf not in ("NONE", ""):
@@ -668,12 +709,23 @@ class _Importer:
                 return "Discrete-Time Integrator (accumulation method)"
         elif kind in ("Selector", "Assignment"):
             dims = (p.get("NumberOfDimensions") or "1").strip()
-            if dims not in ("1", "2"):
+            if not dims.isdigit():
                 return f"{kind} with {dims} dimensions"
             opts = p.get("IndexOptions", "Index vector (dialog)")
-            if "Starting" in opts or (dims == "2" and "port" in opts) or "Assign all" in opts and "port" in opts:
-                return f"{kind} ({opts})"
             q["IndexOptions"] = opts.replace("Assign all", "Select all")
+            if kind == "Assignment" and ports:
+                n_idx = sum(1 for o in opts.split(",") if "port" in o.lower())
+                if ports[0] == 1 + n_idx:  # no Y0 input: the output size comes from the dialog
+                    q["OutputInitialize"] = "Specify size for each dimension"
+        elif kind == "ModelReference":
+            ref = (p.get("ModelNameDialog") or p.get("ModelName") or p.get("ModelFile") or "").strip()
+            for ext in (".slx", ".mdl"):
+                if ref.lower().endswith(ext):
+                    ref = ref[: -len(ext)]
+            q["ModelName"] = ref
+            blk.extra["ports"] = [ports[0] if ports else 0, ports[1] if len(ports) > 1 else 0]
+            if _key(p.get("SimulationMode", "Normal")) not in ("normal", ""):
+                self.notes.append(f"'{blk.name}' refers to the model '{ref}' in {p.get('SimulationMode')} mode; mylab runs it in normal mode.")  # noqa: E501
         elif kind == "Switch":
             if "Threshold" not in q.get("Criteria", "u2 >= Threshold") and "~=" not in q.get("Criteria", ""):
                 return f"Switch ({q.get('Criteria')})"
@@ -745,10 +797,12 @@ class _Importer:
         kind, _, num = port.partition(":")
         if kind in ("in", "out") and num.isdigit():
             return sid, int(num)
-        if kind in ("enable", "trigger"):
+        if kind in ("enable", "trigger", "reset"):
             return sid, kind
         if kind == "ifaction":  # the control input of an if-action subsystem works like an enable input
             return sid, "enable"
+        if kind in ("lconn", "rconn") and num.isdigit():  # a physical port; named once the block is known
+            return sid, f"{kind}:{num}"
         return None
 
     def line(self, el: ET.Element, sy: System, sid_name: dict, boxes: dict) -> None:
@@ -759,6 +813,10 @@ class _Importer:
                 self._count("skipped_lines")
             return
         sname = sid_name[src[0]]
+        src = (src[0], self._physical_port(sy, sname, src[1]))
+        if src[1] is None:
+            self._count("skipped_lines")
+            return
         start = self._port_xy(sy, sname, src[1], True, boxes)
         label = re.sub(r"\s+", " ", p.get("Name", "")).strip()
         if label.startswith("<"):
@@ -773,11 +831,12 @@ class _Importer:
                 trail.append([at[0], at[1]])
             if "Dst" in q:
                 dst = self._end(q["Dst"])
-                if dst is None or dst[0] not in sid_name:
+                port = self._physical_port(sy, sid_name[dst[0]], dst[1]) if dst and dst[0] in sid_name else None
+                if dst is None or dst[0] not in sid_name or port is None:
                     self._count("skipped_lines")
                 else:
-                    target = (sid_name[dst[0]], dst[1])
-                    if any(ln.dst == target for ln in sy.lines):
+                    target = (sid_name[dst[0]], port)
+                    if any(ln.dst == target for ln in sy.lines) and not isinstance(target[1], str):
                         self._count("skipped_lines")
                     else:
                         sy.lines.append(Line((sname, src[1]), target, label, trail))
@@ -785,6 +844,25 @@ class _Importer:
                 walk(br, at, trail)
 
         walk(el, start, [])
+
+    @staticmethod
+    def _physical_port(sy: System, name: str, port: Any) -> Any:
+        """A physical port (lconn:k / rconn:k) as the port name of a mylab physical block or subsystem; None if
+        the block has no such port (the line is then left out)."""
+        if not (isinstance(port, str) and port[:5] in ("lconn", "rconn")):
+            return port
+        kind, _, num = port.partition(":")
+        b = sy.block(name)
+        cls = find_type(b.type) if b is not None else None
+        if cls is not None and getattr(cls, "physical", False):
+            names = [n for n, _d in cls.ports]
+            k = int(num) - 1
+            if len(names) == 1 and k == 0:
+                return names[0]
+            return names[k] if 0 <= k < len(names) and kind == "lconn" else None
+        if b is not None and b.system is not None:
+            return f"{'L' if kind == 'lconn' else 'R'}{num}"
+        return None
 
     @staticmethod
     def _port_xy(sy: System, name: str, port: Any, out: bool, boxes: dict) -> tuple:
@@ -811,11 +889,19 @@ class _Importer:
 
 
 def import_slx(path: str, name: str | None = None) -> Model:
-    """Read an ``.slx`` file into a :class:`Model`. See ``model.notes`` for what was not converted."""
+    """Read an ``.slx`` (or ``.mdl``) file into a :class:`Model`. See ``model.notes`` for what was not converted."""
     import os
 
     base = name or os.path.splitext(os.path.basename(path))[0]
     base = re.sub(r"\W", "_", base) or "model"
-    model = _Importer(path).run(base)
+    imp = _Importer(path)
+    model = imp.run(base)
     model.file = path
+    if "metadata/mylab.xml" in imp.arc.names() or getattr(imp.arc, "mylab", False):
+        # a file mylab wrote lists every parameter; keep only the ones that differ from the defaults, as before
+        for _p, blk, _s in model.root.walk():
+            cls = find_type(blk.type)
+            if cls is not None:
+                defaults = {q.name: q.default for q in cls.params}
+                blk.params = {k: v for k, v in blk.params.items() if defaults.get(k) != v}
     return model

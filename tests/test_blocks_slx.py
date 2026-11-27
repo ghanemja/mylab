@@ -162,7 +162,7 @@ def test_import_split_layout_subsystems_and_settings(tmp_path):
 def test_unsupported_blocks_are_named_not_dropped(tmp_path):
     body = (
         block("Constant", "C", 1, "[0, 0, 30, 30]")
-        + block("ForIterator", "Engine", 2, "[60, 0, 120, 40]", P("Ports", "[1, 2]"))
+        + block("WidgetBlock", "Engine", 2, "[60, 0, 120, 40]", P("Ports", "[1, 2]"))
         + block(
             "Reference",
             "Arm",
@@ -184,19 +184,19 @@ def test_unsupported_blocks_are_named_not_dropped(tmp_path):
     )
     m = import_slx(write_slx(tmp_path / "odd.slx", body))
     assert m.import_report["unsupported"] == {
-        "ForIterator": 1,
+        "WidgetBlock": 1,
         "Library link: robotlib/Arm": 1,
         "Lookup Table with the table from an input port": 1,
     }
     assert (
         m.import_report["blocks"] == 5 and m.import_report["converted"] == 2 and m.import_report["skipped_lines"] == 1
     )
-    assert "3 of 5 blocks have no equivalent" in m.notes[0] and "ForIterator (1)" in m.notes[0]
+    assert "3 of 5 blocks have no equivalent" in m.notes[0] and "WidgetBlock (1)" in m.notes[0]
     assert "physical" in m.notes[1]
     eng = m.root.block("Engine")
-    assert eng.type == "ForIterator" and eng.extra["ports"] == [1, 2] and len(m.root.lines) == 3
+    assert eng.type == "WidgetBlock" and eng.extra["ports"] == [1, 2] and len(m.root.lines) == 3
     errors = [d["message"] for d in compile_model(m, strict=False).errors()]
-    assert any("no block type 'ForIterator'" in e for e in errors) and len(errors) == 3
+    assert any("no block type 'WidgetBlock'" in e for e in errors) and len(errors) == 3
     row = check_file(str(tmp_path / "odd.slx"))
     assert row["import"] == "partial" and row["simulate"] == "no: unsupported blocks"
 
@@ -348,9 +348,9 @@ def test_load_system_and_sim_read_slx_files(tmp_path, monkeypatch):
     assert abs(float(s.interp.get_var("y")[0, 0]) - (1 - np.exp(-6))) < 1e-3 and s.interp.get_var("n")[0, 0] == 7
     again = load_model(str(tmp_path / "plant.mlb.json"))  # saved in mylab's own format
     assert [b.name for b in again.root.blocks] == ["Step", "Sum", "K", "Int", "Scope", "Out1"]
-    write_slx(tmp_path / "odd.slx", block("ForIterator", "X", 1, "[0, 0, 30, 30]"))
+    write_slx(tmp_path / "odd.slx", block("WidgetBlock", "X", 1, "[0, 0, 30, 30]"))
     r = s.run("load_system('odd');")
-    assert "Warning: 1 of 1 blocks have no equivalent in mylab Blocks" in r.output and "ForIterator (1)" in r.output
+    assert "Warning: 1 of 1 blocks have no equivalent in mylab Blocks" in r.output and "WidgetBlock (1)" in r.output
 
 
 def test_bad_archives_are_refused(tmp_path):
@@ -393,7 +393,7 @@ def test_import_report_tool(tmp_path, capsys):
         + block("Terminator", "T", 2, "[60, 0, 80, 20]")
         + line("1#out:1", "2#in:1"),
     )
-    write_slx(tmp_path / "odd.slx", block("ForIterator", "X", 1, "[0, 0, 30, 30]"))
+    write_slx(tmp_path / "odd.slx", block("WidgetBlock", "X", 1, "[0, 0, 30, 30]"))
     (tmp_path / "junk.slx").write_text("not a zip")
     rows = {r["file"]: r for r in survey(str(tmp_path))}
     assert rows["good.slx"]["import"] == "full" and rows["good.slx"]["simulate"] == "yes"
@@ -401,13 +401,13 @@ def test_import_report_tool(tmp_path, capsys):
         rows["needs.slx"]["import"] == "full"
         and rows["needs.slx"]["simulate"] == "no: needs workspace variables or toolbox functions"
     )
-    assert rows["odd.slx"]["import"] == "partial" and rows["odd.slx"]["unsupported"] == {"ForIterator": 1}
+    assert rows["odd.slx"]["import"] == "partial" and rows["odd.slx"]["unsupported"] == {"WidgetBlock": 1}
     assert rows["junk.slx"]["import"] == "failed" and "not a readable" in rows["junk.slx"]["detail"]
     s = summarize(list(rows.values()))
     assert s["import"] == {"full": 2, "partial": 1, "failed": 1} and s["simulate"]["yes"] == 1
     assert main([str(tmp_path), "--json", str(tmp_path / "out.json")]) == 0
     text = capsys.readouterr().out
-    assert "4 files. Import: failed 1, full 2, partial 1" in text and "unsupported: ForIterator (1)" in text
+    assert "4 files. Import: failed 1, full 2, partial 1" in text and "unsupported: WidgetBlock (1)" in text
     assert json.loads((tmp_path / "out.json").read_text())["summary"]["files"] == 4
 
 

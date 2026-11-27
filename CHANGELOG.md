@@ -63,6 +63,55 @@
 ### Changed
 - `mex` builds MEX files instead of raising `mylab:mex:unsupported`.
 
+### mylab Blocks
+- **Iterator, function-call, switch-case and resettable subsystems.** For
+  Iterator and While Iterator subsystems run their blocks several times in
+  a time step; function-call subsystems run when a Function-Call Generator
+  calls them; a Switch Case block switches action subsystems like an If
+  block; a Reset block inside a subsystem restarts its states. Enabled and
+  action subsystems can reset their states when they are switched on again,
+  and their Out blocks can go back to the initial output while off.
+- **Buses carry names.** Bus Creator, Bus Selector (nested names, output as
+  a bus) and the new Bus Assignment work on any bus, not only one coming
+  straight from a Bus Creator. Buses pass MATLAB Function blocks as structs,
+  Constant blocks with a struct value make one, To Workspace logs one as a
+  struct, and `Simulink.Bus` / `Simulink.BusElement` objects name the
+  elements of a Bus Creator.
+- **Model blocks** run another model file (normal mode).
+- **`.mdl` files are read** (the older text format), with the same coverage
+  as `.slx` files, including library links to `.mdl` libraries.
+- **Writing `.slx` and `.mdl`:** `save_system(model, 'name.slx')` (or
+  `.mdl`) and *Save a copy as .slx / .mdl* in the diagram editor write a copy
+  that mylab reads back into the same model. The files are made for mylab
+  and were not tested with any other program.
+- **State charts:** the new Chart block runs hierarchical state machines
+  with exclusive and parallel states, default transitions, junctions,
+  event-triggered transitions with conditions, condition actions and
+  transition actions, entry/during/exit actions in MATLAB code, input,
+  output and local data and events (function-call output events call
+  function-call subsystems), and `after`/`before`/`every`/`at` with ticks or
+  seconds. `chart_state`, `chart_transition`, `chart_junction`, `chart_data`,
+  `chart_event` and `send` build and drive charts from code; charts are
+  kept in `.slx` and `.mdl` files mylab writes.
+- **Physical networks:** electrical (resistor, capacitor, inductor, diode,
+  voltage and current sources, reference, sensors), translational and
+  rotational mechanical blocks (mass and inertia, springs, dampers, force,
+  torque and velocity sources, references, ideal sensors) joined by two-way
+  connections. Connected blocks form a differential-algebraic system of
+  index 1, solved with the ordinary solvers; networks that are not index 1
+  are errors that name the components. PS-Simulink, Simulink-PS and Solver
+  Configuration blocks, Connection Port blocks for subsystems, and
+  conserving ports in the diagram editor.
+- The import report on the 82 public `.slx` files was run again: the same
+  results (50 imported fully, 31 of 68 models run); the blocks that became
+  convertible are in libraries or in models that also use toolbox blocks.
+- The `.slx` reader reads a model's description, and MATLAB Function code
+  whose block path has spaces at the end of a name.
+- **Selector and Assignment** take any number of dimensions, starting
+  indices, and indices from input ports in every dimension; Assignment can
+  start from a given size instead of a Y0 input. Signals with more than two
+  dimensions keep their shape.
+
 ## 1.1.0
 
 1.1.0 brings mylab's behaviour much closer to MATLAB's, adds the Curve

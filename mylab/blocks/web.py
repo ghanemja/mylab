@@ -44,7 +44,12 @@ def check(session: Any, args: dict) -> dict:
     try:
         model = _model(args)
         comp = compile_model(model, session.interp, None, strict=False)
-        return {"diagnostics": comp.diagnostics}
+        ports = {
+            path: b.extra["ports"]
+            for path, b, _s in model.root.walk()
+            if b.type == "ModelReference" and isinstance(b.extra.get("ports"), list)
+        }
+        return {"diagnostics": comp.diagnostics, "ports": ports}
     except (ModelError, SimError, ValueError) as exc:
         return {
             "diagnostics": [
@@ -188,7 +193,22 @@ def validate(session: Any, args: dict) -> dict:
     return {"errors": result}
 
 
-OPS = {"check": check, "import_slx": import_slx, "validate": validate}
+def export(session: Any, args: dict) -> dict:
+    """A model as an .slx (base64 of the zip) or .mdl (text) file, for mylab to read back."""
+    import base64
+
+    from .writer import mdl_text, slx_bytes
+
+    try:
+        model = _model(args)
+    except (ModelError, ValueError) as exc:
+        return {"error": str(exc)}
+    if str(args.get("format", "slx")).lower() == "mdl":
+        return {"text": mdl_text(model)}
+    return {"base64": base64.b64encode(slx_bytes(model)).decode("ascii")}
+
+
+OPS = {"check": check, "import_slx": import_slx, "validate": validate, "export": export}
 
 
 def handle(session: Any, op: str, args_json: str, emit: Callable | None = None) -> str:

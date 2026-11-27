@@ -1,4 +1,4 @@
-"""Report how well ``.slx`` files import and whether the result simulates.
+"""Report how well ``.slx`` (and ``.mdl``) files import and whether the result simulates.
 
 Usage::
 
@@ -284,7 +284,7 @@ def survey(
         files = [root]
     else:
         for folder, _dirs, names in os.walk(root):
-            files += [os.path.join(folder, n) for n in names if n.lower().endswith(".slx")]
+            files += [os.path.join(folder, n) for n in names if n.lower().endswith((".slx", ".mdl"))]
     rows = []
     for f in sorted(files):
         rel = os.path.relpath(f, root) if os.path.isdir(root) else os.path.basename(f)

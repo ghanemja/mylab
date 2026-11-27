@@ -178,6 +178,18 @@ export function countPorts(rule, params) {
   }
   if (kind === "csv") return Math.max(val.split(",").filter((s) => s.trim()).length, 1);
   if (kind === "csv0") return val.split(",").filter((s) => s.trim()).length;
+  if (kind === "ports") return val.split(",").filter((s) => /port/i.test(s)).length;
+  if (kind === "cell") {
+    let inner = val;
+    if (inner.startsWith("{") && inner.endsWith("}")) inner = inner.slice(1, -1);
+    let depth = 0, n = 0, cur = "";
+    for (const ch of inner + ",") {
+      if ("[({".includes(ch)) depth++;
+      else if ("])}".includes(ch)) depth--;
+      if (ch === "," && depth === 0) { if (cur.trim()) n++; cur = ""; } else cur += ch;
+    }
+    return Math.max(n, 1);
+  }
   if (kind === "dlt") {
     const whole = { element: 0, vector: 1, "2dmatrix": 2 }[key(params[rule[2]] ?? "")] || 0;
     const n = Math.floor(Number(val));
@@ -207,13 +219,43 @@ export function portCounts(block) {
     return { in: p[0] || 0, out: p[1] || 0, enable: false, trigger: false };
   }
   if (t.type === "Subsystem") {
+    const side = (b) => (String((b.params || {}).Side || "left").toLowerCase().startsWith("r") ? "R" : "L") + String((b.params || {}).Port || 1);
     return {
+      phys: innerOfType(block, "ConnectionPort").map(side).sort(),
       in: innerOfType(block, "Inport").length, out: innerOfType(block, "Outport").length,
       enable: innerOfType(block, "EnablePort").length + innerOfType(block, "ActionPort").length > 0, trigger: innerOfType(block, "TriggerPort").length > 0,
+      reset: innerOfType(block, "ResetPort").length > 0,
     };
   }
+  if (t.type === "Chart") {
+    const c = block.chart || {};
+    const scope = (x) => String(x.scope || "").toLowerCase();
+    const ins = (c.data || []).filter((d) => scope(d) === "input").length + ((c.events || []).some((e) => scope(e) === "input") ? 1 : 0);
+    const outs = (c.data || []).filter((d) => scope(d) === "output").length + (c.events || []).filter((e) => scope(e) === "output").length;
+    return { in: ins, out: outs, enable: false, trigger: false };
+  }
+  if (t.type === "ModelReference") {
+    const p = Array.isArray(block.ports) ? block.ports : [0, 0];
+    return { in: p[0] || 0, out: p[1] || 0, enable: false, trigger: false };
+  }
   const p = paramsOf(block);
-  return { in: countPorts(t.in, p), out: countPorts(t.out, p), enable: false, trigger: false };
+  const res = { in: countPorts(t.in, p), out: countPorts(t.out, p), enable: false, trigger: false };
+  if (t.phys) res.phys = t.phys.slice();
+  return res;
+}
+
+/** Side (0 left, 1 top, 2 right, 3 bottom, before turning) and place of a physical port. */
+function physPlace(counts, port) {
+  const list = counts.phys || [];
+  if (/^[LR]\d+$/.test(port) && list.every((q) => /^[LR]\d+$/.test(q))) { // ports of a subsystem
+    const same = list.filter((q) => q[0] === port[0]);
+    return { side: port[0] === "L" ? 0 : 2, frac: (same.indexOf(port) + 0.5) / Math.max(same.length, 1) };
+  }
+  const k = list.indexOf(port);
+  if (list.length === 1) return { side: 1, frac: 0.5 };
+  const signals = counts.in + counts.out > 0;
+  if (signals) return { side: k === 0 ? 1 : 3, frac: 0.5 }; // signal ports keep the left and right edges
+  return { side: k === 0 ? 0 : 2, frac: 0.5 };
 }
 
 /** Names shown beside the ports of a block (subsystem port names, function arguments, signs). */
@@ -225,6 +267,15 @@ export function portLabels(block) {
   if (t.type === "Subsystem") {
     const byPort = (list) => list.slice().sort((a, b) => Number((a.params || {}).Port || 0) - Number((b.params || {}).Port || 0)).map((b) => b.name);
     return { ins: byPort(innerOfType(block, "Inport")), outs: byPort(innerOfType(block, "Outport")) };
+  }
+  if (t.type === "Chart") {
+    const c = block.chart || {};
+    const scope = (x) => String(x.scope || "").toLowerCase();
+    for (const d of c.data || []) if (scope(d) === "input") ins.push(d.name);
+    if ((c.events || []).some((e) => scope(e) === "input")) ins.push("events");
+    for (const d of c.data || []) if (scope(d) === "output") outs.push(d.name);
+    for (const e of c.events || []) if (scope(e) === "output") outs.push(e.name);
+    return { ins, outs };
   }
   if (t.type === "MATLABFunction") {
     const s = signature(p.Script);
@@ -282,9 +333,15 @@ const DIRS = [[-1, 0], [0, -1], [1, 0], [0, 1]]; // outward normal of side 0..3
 export function portPoint(block, kind, port, counts = portCounts(block)) {
   const [x, y, w, h] = block.position;
   const f = facing(block);
+  if (typeof port === "string" && counts.phys && counts.phys.includes(port)) {
+    const pl = physPlace(counts, port);
+    const side = pl.side === 0 ? f : pl.side === 2 ? (f + 2) % 4 : pl.side === 1 ? (f + 1) % 4 : (f + 3) % 4;
+    return sidePoint(x, y, w, h, side, pl.frac);
+  }
   if (typeof port === "string") {
-    const both = counts.enable && counts.trigger;
-    const frac = both ? (port === "enable" ? 1 / 3 : 2 / 3) : 0.5;
+    const ctls = ["enable", "trigger", "reset"].filter((c) => counts[c]);
+    const k = Math.max(ctls.indexOf(port), 0);
+    const frac = (k + 1) / (ctls.length + 1);
     const side = f === 1 ? 0 : f === 3 ? 2 : 1; // the control ports avoid the input side
     return sidePoint(x, y, w, h, side, frac);
   }
@@ -382,7 +439,7 @@ export function unconnectedInputs(sys) {
   for (const b of sys.blocks) {
     const c = portCounts(b);
     for (let k = 1; k <= c.in; k++) if (!fed.has(b.name + "\n" + k)) out.push({ block: b.name, port: k });
-    for (const ctl of ["enable", "trigger"]) if (c[ctl] && !fed.has(b.name + "\n" + ctl)) out.push({ block: b.name, port: ctl });
+    for (const ctl of ["enable", "trigger", "reset"]) if (c[ctl] && !fed.has(b.name + "\n" + ctl)) out.push({ block: b.name, port: ctl });
   }
   return out;
 }

@@ -12,7 +12,7 @@ from ..values import Cell, FunctionHandle, MString, Struct, char, is_char, to_st
 from ._registry import builtin
 from ._util import is_text, match_option, nargs, text, unknown_option_error
 
-EXTENSIONS = (".mlb.json", ".slx", ".json")
+EXTENSIONS = (".mlb.json", ".slx", ".mdl", ".json")
 
 
 # -- state ---------------------------------------------------------------------------------------
@@ -235,10 +235,19 @@ def _save_system(interp, args, nargout):
     if len(args) > 1 and is_text(args[1]):
         target = text(args[1])
         new_name = _model_name(target)
+        if target.lower().endswith((".slx", ".mdl")):
+            # a copy in that format, for mylab to read back; the model keeps its own file
+            from ..blocks.writer import save_as
+
+            if new_name != m.name:
+                st["models"].pop(m.name, None)
+                m.name = new_name
+                st["models"][new_name] = m
+                st["current"] = new_name
+            save_as(m, target)
+            return char(os.path.abspath(target)) if nargout else None
         if not target.lower().endswith(".json"):
             target += ".mlb.json"
-        if target.lower().endswith((".slx", ".mdl")):
-            raise MatlabError("mylab saves models as .mlb.json files; it cannot write .slx or .mdl.")
         if new_name != m.name:
             st["models"].pop(m.name, None)
             m.name = new_name
@@ -298,8 +307,31 @@ def _gcb(interp, args, nargout):
 # -- blocks and lines ----------------------------------------------------------------------------
 
 
+def _refresh_ports(interp, m, b) -> None:
+    """A Model block shows the ports of the model it refers to (when that model can be found)."""
+    B = _blocks()
+    if b.type != "ModelReference":
+        return
+    from ..blocks.engine import _ref_name, referenced_model
+
+    try:
+        ref = referenced_model(_ref_name(b), interp, os.path.dirname(os.path.abspath(m.file)) if m.file else None)
+    except B.ModelError:
+        return
+    count = [
+        sum(1 for x in ref.root.blocks if getattr(B.find_type(x.type), "type", "") == t) for t in ("Inport", "Outport")
+    ]
+    b.extra["ports"] = count
+
+
 def _set_block_param(m, system, b, name: str, value: Any) -> None:
     low = name.lower()
+    if low in ("modelnamedialog", "modelfile") and b.type == "ModelReference":
+        low, name = "modelname", "ModelName"
+    if low == "decomposition" and b.type == "Chart":
+        b.extra.setdefault("chart", {})["decomposition"] = text(value).lower()
+        m.dirty = True
+        return
     if low == "position":
         p = np.ravel(
             np.asarray(
@@ -404,11 +436,34 @@ def _add_block(interp, args, nargout):
     system.blocks.append(b)
     for k, v in opts:
         _set_block_param(m, system, b, k, v)
+    _refresh_ports(interp, m, b)
     m.dirty = True
     path = "/".join(parts[:-1] + [name])
     st["block"] = path
     st["current"] = m.name
     return _handle(interp, ("block", m.name, "/".join(parts[1:-1] + [name]))) if nargout else None
+
+
+def _named_port(b, port: str) -> Any:
+    """A port given by name: a control input, or a physical port (also as LConn1 / RConn1)."""
+    low = port.lower()
+    if low in ("enable", "trigger", "reset"):
+        return low
+    if b is None:
+        return None
+    cls = _blocks().find_type(b.type)
+    names = [n for n, _d in getattr(cls, "ports", [])] if cls is not None and getattr(cls, "physical", False) else []
+    if port in names:
+        return port
+    import re
+
+    m = re.fullmatch(r"(?i)(l|r)(?:conn)?(\d+)", port)
+    if m and b.system is not None:
+        return f"{m.group(1).upper()}{m.group(2)}"
+    if m and names:
+        k = int(m.group(2)) - 1
+        return names[k] if 0 <= k < len(names) else None
+    return None
 
 
 def _endpoint(interp, m, system, sys_rel: str, spec: Any, out: bool) -> tuple[str, Any]:
@@ -418,9 +473,13 @@ def _endpoint(interp, m, system, sys_rel: str, spec: Any, out: bool) -> tuple[st
         name, _, port = s.rpartition("/")
         if not name:
             raise MatlabError(f"'{s}' must be 'BlockName/port', for example 'Gain/1'.")
-        p: Any = int(port) if port.isdigit() else port.lower()
-        if not isinstance(p, int) and p not in ("enable", "trigger"):
-            raise MatlabError(f"'{s}': the port must be a number, 'Enable' or 'Trigger'.")
+        p: Any = int(port) if port.isdigit() else port
+        if not isinstance(p, int):
+            p = _named_port(system.block(name), port)
+            if p is None:
+                raise MatlabError(
+                    f"'{s}': the port must be a number, 'Enable', 'Trigger', 'Reset' or the name of a physical port."
+                )
     else:
         t = _target(interp, spec)
         if t[0] != "port" or t[1] is not m:
@@ -465,7 +524,8 @@ def _add_line(interp, args, nargout):
     h = None
     for d in dsts:
         dst = _endpoint(interp, m, system, rel, d, False)
-        if any(ln.dst == dst for ln in system.lines):
+        physical = isinstance(dst[1], str) and dst[1] not in ("enable", "trigger", "reset")
+        if any(ln.dst == dst for ln in system.lines) and not physical:  # physical ports take any number of lines
             raise MatlabError(f"Input {dst[1]} of '{dst[0]}' already has a line.", "mylab:blocks:connected")
         system.lines.append(B.Line(src, dst))
         h = _handle(interp, ("line", m.name, rel, src[0], src[1], dst[0], dst[1]))
@@ -532,6 +592,7 @@ def _set_param(interp, args, nargout):
         elif t[0] == "block":
             system, b = m.find(t[2])
             _set_block_param(m, system, b, name, value)
+            _refresh_ports(interp, m, b)
         elif t[0] == "line":
             system = m.system_at(_blocks().model.split_path(t[2]))
             for ln in system.lines:
@@ -759,6 +820,25 @@ def _field(name: str, used: set) -> str:
     return f
 
 
+def _bus_series(t: np.ndarray, data: np.ndarray, spec: list, fmt: str) -> Struct:
+    """A logged bus: a struct with one field per element (a time series, or an array with one row per time)."""
+    from ..blocks.bus import size_of
+
+    s = Struct()
+    off = 0
+    for name, shape, inner in spec:
+        size = int(np.prod(shape)) if inner is None else size_of(inner)
+        part = data[:, off : off + size] if data.ndim == 2 else data[:, None]
+        off += size
+        if inner is not None:
+            s.set_field(0, name, _bus_series(t, part, inner, fmt))
+        elif fmt == "array":
+            s.set_field(0, name, np.array(part))
+        else:
+            s.set_field(0, name, _timeseries(t, np.array(part)))
+    return s
+
+
 def result_struct(res) -> tuple[Struct, dict]:
     """The object sim returns, and the variables that To Workspace blocks define."""
     out: dict[str, Any] = {"tout": res.t.reshape(-1, 1), "yout": res.y}
@@ -767,7 +847,9 @@ def result_struct(res) -> tuple[Struct, dict]:
     variables: dict[str, Any] = {}
     for name, w in res.workspace.items():
         fmt = w["format"]
-        if fmt == "array":
+        if w.get("bus"):
+            v = _bus_series(w["t"], w["data"], w["bus"], fmt)
+        elif fmt == "array":
             v: Any = w["data"]
         elif fmt.startswith("structure"):
             sigs = Struct.scalar(
@@ -897,6 +979,23 @@ def _sim(interp, args, nargout):
     return None
 
 
+_BUS_ELEMENT = ("Name", "Dimensions", "DataType", "Complexity", "Description")
+
+
+@builtin("Simulink.BusElement")
+def _bus_element(interp, args, nargout):
+    return Struct.scalar(
+        {"Name": char("a"), "Dimensions": 1.0, "DataType": char("double"), "Complexity": char("real"),
+         "Description": char("")}
+    )
+
+
+@builtin("Simulink.Bus")
+def _bus_object(interp, args, nargout):
+    empty = Struct(np.empty((0, 0), dtype=object), list(_BUS_ELEMENT))
+    return Struct.scalar({"Elements": empty, "Description": char("")})
+
+
 @builtin("Simulink.Variant")
 def _variant(interp, args, nargout):
     cond = text(args[0], "Simulink.Variant") if args else ""
@@ -971,3 +1070,125 @@ def _trim(interp, args, nargout):
 
 def _unused() -> None:  # keep the imports that only type checkers see
     _ = (MString, to_str)
+
+
+# -- state charts ----------------------------------------------------------------------------------
+
+
+def _chart(interp, path_value: Any, what: str) -> dict:
+    """The chart description of a Chart block, made empty if it has none yet."""
+    t = _target(interp, path_value)
+    if t[0] != "block":
+        raise MatlabError(f"{what}: the first argument must be the path of a Chart block, e.g. 'model/Chart'.")
+    m = t[1]
+    _, b = m.find(t[2])
+    if b.type != "Chart":
+        raise MatlabError(f"{what}: '{m.name}/{t[2]}' is a {b.type} block, not a Chart.")
+    m.dirty = True
+    return b.extra.setdefault("chart", {"decomposition": "exclusive"})
+
+
+def _opt_text(args: list, k: int, default: str = "") -> str:
+    return text(args[k]) if len(args) > k and is_text(args[k]) else (_as_text(args[k]) if len(args) > k else default)
+
+
+@builtin("chart_state")
+@_wrap
+def _chart_state(interp, args, nargout):
+    nargs(args, 2, 5, "chart_state")
+    c = _chart(interp, args[0], "chart_state")
+    path = text(args[1])
+    label = _opt_text(args, 2)
+    decomposition = "exclusive"
+    rest = list(args[3:])
+    for k, v in _pairs(rest, "chart_state"):
+        if k.lower() != "decomposition":
+            raise MatlabError(f"chart_state: unknown option '{k}'. The option is 'Decomposition'.")
+        decomposition = text(v)
+    from ..blocks.chart import ChartBuilder
+
+    b = ChartBuilder()
+    b.d = c
+    c.setdefault("states", [])
+    try:
+        b.state(path, label, decomposition)
+    except Exception as exc:  # BlockError from the builder
+        raise MatlabError(f"chart_state: {exc}") from None
+    return None
+
+
+@builtin("chart_transition")
+@_wrap
+def _chart_transition(interp, args, nargout):
+    nargs(args, 3, 4, "chart_transition")
+    c = _chart(interp, args[0], "chart_transition")
+    label = _opt_text(args, 3)
+    from ..blocks.chart import parse_transition_label
+
+    try:
+        parse_transition_label(label)
+    except Exception as exc:
+        raise MatlabError(f"chart_transition: {exc}") from None
+    t = {"from": text(args[1]), "to": text(args[2])}
+    if label:
+        t["label"] = label
+    c.setdefault("transitions", []).append(t)
+    return None
+
+
+@builtin("chart_junction")
+@_wrap
+def _chart_junction(interp, args, nargout):
+    nargs(args, 2, 3, "chart_junction")
+    c = _chart(interp, args[0], "chart_junction")
+    j = {"name": text(args[1])}
+    if len(args) > 2 and text(args[2]):
+        j["parent"] = text(args[2])
+    c.setdefault("junctions", []).append(j)
+    return None
+
+
+@builtin("chart_data")
+@_wrap
+def _chart_data(interp, args, nargout):
+    nargs(args, 2, 4, "chart_data")
+    c = _chart(interp, args[0], "chart_data")
+    scope = _opt_text(args, 2, "local").lower()
+    if scope not in ("input", "output", "local", "constant", "parameter"):
+        raise MatlabError("chart_data: the scope must be 'input', 'output', 'local', 'constant' or 'parameter'.")
+    item = {"name": text(args[1]), "scope": scope}
+    if len(args) > 3:
+        item["initial"] = _opt_text(args, 3)
+    c.setdefault("data", []).append(item)
+    return None
+
+
+@builtin("chart_event")
+@_wrap
+def _chart_event(interp, args, nargout):
+    nargs(args, 2, 4, "chart_event")
+    c = _chart(interp, args[0], "chart_event")
+    scope = _opt_text(args, 2, "local").lower()
+    if scope not in ("input", "output", "local"):
+        raise MatlabError("chart_event: the scope must be 'input', 'output' or 'local'.")
+    trigger = _opt_text(args, 3, "either").lower()
+    c.setdefault("events", []).append({"name": text(args[1]), "scope": scope, "trigger": trigger})
+    return None
+
+
+@builtin("send")
+def _send(interp, args, nargout):
+    fn = interp.state.get("chart_send")
+    if fn is None:
+        raise MatlabError(
+            "send(E) broadcasts an event of a state chart; it works only in the actions of a Chart block."
+        )
+    if not args:
+        raise MatlabError("send needs the event to broadcast, e.g. send(E).")
+    from ..blocks.library import BlockError
+
+    try:
+        fn(text(args[0]))
+    except BlockError as exc:
+        raise MatlabError(str(exc)) from None
+    return None
