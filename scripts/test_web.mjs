@@ -454,6 +454,11 @@ async function main() {
     await context.addInitScript(() => {
       window.__readClipboard = () =>
         Promise.race([navigator.clipboard.readText(), new Promise((r) => setTimeout(() => r("[the clipboard could not be read within 5 s]"), 5000))]);
+      // the app's notifications disappear after a few seconds: keep them, to explain a failed check
+      window.__toasts = [];
+      new MutationObserver((records) => {
+        for (const r of records) for (const n of r.addedNodes) if (n.classList && n.classList.contains("toast")) window.__toasts.push(n.textContent);
+      }).observe(document, { childList: true, subtree: true });
     });
     const page = await context.newPage();
     watchErrors(page, consoleErrors);
@@ -1710,11 +1715,15 @@ async function main() {
 
     // A bundle from the real export tool, loaded from a file; then passed on embedded in a link.
     await page.setInputFiles("#asg-file-input", path.join(ROOT, "web", "samples", "intro-assignment.json"));
-    await page.waitForFunction(() => document.querySelector("#project-name").textContent === "Intro Assignment: First Functions");
+    await page.waitForFunction(() => document.querySelector("#project-name").textContent === "Intro Assignment: First Functions").catch(async () => {
+      throw new Error("the assignment file did not open; the project is " + JSON.stringify(await page.locator("#project-name").textContent()) + "; messages: " + JSON.stringify(await page.evaluate(() => window.__toasts.slice(-5))));
+    });
     check((await page.locator(".asg-problem").count()) === 4, "the example assignment should have 4 problems");
     check(/the remaining 35 points come from hidden tests/.test(await page.locator(".asg-hint").innerText()), "hidden-test points not explained");
     await page.click("#asg-share");
-    await page.waitForFunction(() => window.__readClipboard().then((t) => /#assignmentdata=/.test(t)));
+    await page.waitForFunction(() => window.__readClipboard().then((t) => /#assignmentdata=/.test(t))).catch(async () => {
+      throw new Error("the assignment link did not reach the clipboard; it holds " + JSON.stringify((await page.evaluate(() => window.__readClipboard())).slice(0, 120)) + "; messages: " + JSON.stringify(await page.evaluate(() => window.__toasts.slice(-5))));
+    });
     const asgLink = await page.evaluate(() => window.__readClipboard());
     await vp.goto(asgLink);
     await vp.waitForFunction(() => document.querySelector("#project-name").textContent === "Intro Assignment: First Functions");
