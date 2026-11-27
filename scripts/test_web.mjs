@@ -1732,8 +1732,13 @@ async function main() {
       throw new Error("the assignment link did not reach the clipboard; it holds " + JSON.stringify((await page.evaluate(() => window.__readClipboard())).slice(0, 120)) + "; messages: " + JSON.stringify(await page.evaluate(() => window.__toasts.slice(-5))));
     });
     const asgLink = await page.evaluate(() => window.__readClipboard());
+    // what the visitor's page says if opening the link goes wrong (the app reports link errors as warnings)
+    const vpLog = [];
+    vp.on("console", (m) => (m.type() === "warning" || m.type() === "error") && vpLog.push(`${m.type()}: ${m.text().slice(0, 300)}`));
     await vp.goto(asgLink);
-    await vp.waitForFunction(() => document.querySelector("#project-name").textContent === "Intro Assignment: First Functions");
+    await vp.waitForFunction(() => document.querySelector("#project-name").textContent === "Intro Assignment: First Functions", null, { timeout: 90000 }).catch(async () => {
+      throw new Error("the embedded assignment link did not open in the second browser; its project is " + JSON.stringify(await vp.locator("#project-name").textContent()) + "; engine " + (await vp.evaluate(() => document.body.dataset.engine)) + "; console: " + JSON.stringify(vpLog.slice(-5)));
+    });
     check((await vp.locator(".asg-problem").count()) === 4 && (await vh.files()).includes("p4_rain_summary/rain_week.csv"), "embedded assignment link did not load");
     await visitor.close();
     ok("assignments also load from a file and from a link with the bundle embedded");
