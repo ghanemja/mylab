@@ -1,7 +1,5 @@
 """mylab Blocks: iterator, function-call, switch-case and resettable subsystems, buses, model references."""
 
-import os
-
 import numpy as np
 import pytest
 
@@ -392,8 +390,8 @@ def test_assignment_with_index_ports_starting_index_and_given_size():
 # -- model references -----------------------------------------------------------------------------
 
 
-def test_model_block_runs_a_model_file(tmp_path):
-    os.chdir(tmp_path)
+def test_model_block_runs_a_model_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     s = Session()
     res = s.run(
         """

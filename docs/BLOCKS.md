@@ -996,7 +996,7 @@ differently. Each file says so: a comment on the first line of an `.mdl` file,
 
 ## How it was checked
 
-`tests/test_blocks_*.py` holds about 560 assert statements. Simulations are compared
+`tests/test_blocks_*.py` holds about 670 assert statements. Simulations are compared
 with exact solutions and with `ode45` at tight tolerances:
 
 | Model | Compared with | Largest error |
@@ -1018,6 +1018,15 @@ with exact solutions and with `ode45` at tight tolerances:
 | Fixed-step solvers | order of convergence 1 to 5 | as expected |
 | Stiff problem with `ode15s` | exact solution | < 1e-3 |
 | `linmod` of mass-spring-damper, pendulum, transfer function | exact matrices | < 1e-6 |
+| For Iterator sum, While Iterator search, iterated Assignment | the same loops by hand | exact |
+| Iterator in a continuous loop (dx/dt = -6x) | e^(-6t) | < 1e-6 |
+| Function-call subsystem counter, Switch Case, resettable and re-enabled integrators | exact values and times | < 1e-9 |
+| State charts: conditions, `after`/`every` in ticks and seconds, junctions, events, entry/exit order | the same rules by hand | exact |
+| RC circuit (ode45, ode15s, ode4) | 1 − e^(−t/RC) | < 1e-8 (ode15s < 1e-6) |
+| Series RLC circuit: capacitor voltage and current | exact response | < 1e-8 |
+| Mass, spring and damper as a physical network | `solve_ivp` at tight tolerances | < 1e-8 |
+| Inertia with damper; inertia on a torsion spring | exact responses | < 1e-7 |
+| Half-wave diode rectifier | piecewise formula | < 1e-9 |
 
 The static blocks (saturation, dead zone, relay, lookup tables…) are checked
 against their definitions, each of the block types at least once, and

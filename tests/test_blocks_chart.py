@@ -1,7 +1,5 @@
 """mylab Blocks: state charts (the Chart block)."""
 
-import os
-
 import numpy as np
 import pytest
 
@@ -199,8 +197,8 @@ def test_chart_errors_name_the_problem():
         simulate(chart_model(c))
 
 
-def test_charts_from_code_and_in_files(tmp_path):
-    os.chdir(tmp_path)
+def test_charts_from_code_and_in_files(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     s = Session()
     res = s.run(
         """

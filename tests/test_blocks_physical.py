@@ -1,7 +1,5 @@
 """mylab Blocks: physical networks (electrical, translational, rotational) against exact solutions."""
 
-import os
-
 import numpy as np
 import pytest
 from scipy.integrate import solve_ivp
@@ -200,8 +198,8 @@ def test_physical_ports_of_subsystems_and_files(tmp_path):
         assert np.allclose(simulate(again).y, r.y)
 
 
-def test_physical_models_from_code(tmp_path):
-    os.chdir(tmp_path)
+def test_physical_models_from_code(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     s = Session()
     res = s.run(
         """

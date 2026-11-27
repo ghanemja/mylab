@@ -1,7 +1,6 @@
 """mylab Blocks: reading .mdl files, and writing .slx and .mdl files that mylab reads back."""
 
 import glob
-import os
 from pathlib import Path
 
 import numpy as np
@@ -344,8 +343,8 @@ def test_written_files_say_who_they_are_for():
     assert b"not made with or tested in any other program" in z.read("metadata/mylab.xml")
 
 
-def test_save_system_writes_slx_and_mdl_copies(tmp_path):
-    os.chdir(tmp_path)
+def test_save_system_writes_slx_and_mdl_copies(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     s = Session()
     res = s.run(
         """
