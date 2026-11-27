@@ -322,6 +322,67 @@ Very long links (over about 8,000 characters) get cut off by some chat and
 e-mail programs. The share window warns you; for big projects use a GitHub
 repository instead.
 
+### Live collaboration
+
+**Live** in the top bar lets several people work on one project at the same
+time, each in their own browser: everyone has the same files, edits them
+together and can follow each other's command window. There is no account and
+nothing is stored on a server.
+
+- **Start a session**: open the project, press **Live**, type the name the
+  others should see and press **Start session**. Press **Copy link** and send
+  the link to the people you want to work with (in a chat, an e-mail, a video
+  call). While the session runs, the link is also in the address bar.
+- **Join**: open the link. The first time, mylab asks for your name (it is
+  remembered in this browser). You get the project's files in a temporary
+  project called *Live: …*; your own projects are not touched.
+- **Who is there**: the coloured circles next to **Live** show everyone in the
+  session, and the Live window lists them with the file each one has open.
+  Each person's cursor and selection appear in the editor in their colour,
+  with their name.
+- **Edit together**: everyone can type in the same file at the same time, even
+  on the same line. The changes merge as you type: there are no conflicts and
+  no keystroke is lost. **Ctrl+Z** undoes only your own typing. New files,
+  renames and deletions reach everyone too.
+- **Follow a session**: the person who started the session shares their
+  session (command window, figures and workspace) from the start; anyone can
+  share theirs with *Share my session* in the Live window. The **Live
+  session** tab next to the Command Window shows the session of the person you
+  follow: what they type, what it prints, their figures and their workspace.
+  Pick someone else, or *Nobody*, at the top of the tab, or press **Follow**
+  next to a name in the Live window.
+- **Code from others never runs by itself.** What they type and what their
+  code prints is only shown, as text, and their figures as pictures. Code in
+  the shared files runs when *you* press Run, in your own browser, like any
+  other code.
+- **Keep a copy**: press **Keep a copy** above the file list to save your copy
+  of the files as an ordinary project in this browser. You stay in the
+  session, and the project keeps receiving changes while it lasts.
+- **Leave or end**: *Leave session* in the Live window takes you out; the
+  others carry on. The person who started the session can also *End session
+  for everyone*. Either way everyone keeps their own copy of the files: the
+  host in their project, the others in their temporary (or kept) project.
+  Opening the link again while others are still in the session brings your
+  copy up to date with theirs.
+
+Good to know:
+
+- A session lasts as long as someone is in it. Everyone must be online at the
+  same time: no server keeps the files in between. If you open a link and no
+  one is there, the Live window says so.
+- Text files up to 1 MB and other files up to 2 MB are shared, at most 500
+  files and 16 MB in all. The Live window lists the files that were left out.
+- The browsers connect to each other directly. Some networks (strict
+  firewalls, common in schools and companies and on some mobile networks)
+  block such connections; the Live window then says that someone is in the
+  session but can't be reached. A TURN server relays the connection in that
+  case: add one under Settings → Live collaboration (mylab doesn't run one).
+- Anyone who has the link can join and change the files while the session
+  runs, so send it only to the people you want to work with. Each new session
+  has a new link.
+- See [Privacy](#privacy) for what is encrypted and what the servers that
+  introduce the browsers to each other can see.
+
 ### Keyboard shortcuts
 
 | Keys | Action |
@@ -541,6 +602,38 @@ needed).
 - Code from a link runs like any other code in the app: inside the engine's
   sandbox in your browser tab. It cannot read your other projects' files or
   your saved API keys.
+- **Live collaboration** connects the browsers of a session directly to each
+  other (WebRTC). The link holds a random session id and a 256-bit key after
+  the `#`, which browsers never send to any server. What the browsers send
+  each other is end-to-end encrypted: the messages that set up a connection
+  with AES-GCM, under a key derived from the link's key, and the connection
+  itself with WebRTC's own encryption (DTLS), whose certificates are checked
+  against fingerprints that travel inside those encrypted messages. No one
+  without the link can read or change the files, names, cursors or output.
+- To find each other, the browsers use a **signalling server** (by default
+  the public `wss://y-webrtc-eu.fly.dev`, run by the author of y-webrtc, the
+  library mylab uses; you can set your own in Settings). It passes the
+  encrypted messages on under a topic that is a hash of the session id and
+  the key. It sees the IP addresses of the people in a session, when they
+  connect, how many they are and how big the messages are, but not what is in
+  them, and it can't join the session. A **STUN server** (by default Google's
+  and Cloudflare's public ones) tells each browser its public address; it
+  sees that address and nothing else. A TURN server, if you set one, relays
+  the encrypted connection without being able to read it. The people in a
+  session can see each other's IP addresses: that is how direct connections
+  work.
+- The key is never stored: not in `localStorage`, not in the version history,
+  not in a log. While you are in a session it is in the address bar (so a
+  reload joins again), and so in your browser's history like any page you
+  open. Your project remembers only the session id, so that it can carry on
+  with your copy if you come back when no one else is there.
+- Code from a live session never runs on its own: the shared files run only
+  when you press Run, inside the engine's sandbox, and what other people's
+  code prints is shown as text, their figures only as PNG images. File names
+  from a session are checked like imported ones (no `..`, no hidden or
+  absolute paths) and sizes are capped. Other people's names, cursors and
+  command windows are kept in memory only and are gone when you leave; only
+  the shared files are saved, in your copy of the project.
 - API keys are saved in this browser's `localStorage` and sent only to the
   provider you chose, never to mylab. **Anyone who can use this browser
   profile can read a saved key**, so don't save keys on shared or public
@@ -577,6 +670,12 @@ needed).
   it stops recording after 5,000 steps. Values are shown as the Workspace
   panel shows them (size, class and a short preview).
 - Share links cannot hold large projects. Use a GitHub repository for those.
+- Live collaboration needs everyone online at the same time (nothing is kept
+  on a server), shares files up to 1 MB of text or 2 MB otherwise (16 MB in
+  all), and needs a TURN server, which mylab doesn't provide, on networks
+  that block direct connections between browsers. Only the shared files are
+  edited together: the workspace, figures and command window of each person
+  stay their own (others can follow them, not change them).
 - `exit`/`quit`, system commands and files outside the project folder are
   not available.
 - The checker behind **Problems** reads one file at a time and does not run
@@ -640,8 +739,10 @@ The app has no build step: `web/index.html`, `web/styles.css`, ES modules in
 with pinned versions: Pyodide 0.27.7 (jsDelivr), CodeMirror 5.65.16 (with its
 octave mode and the matchbrackets, closebrackets, comment, active-line,
 show-hint, runmode, searchcursor, match-highlighter, foldcode and foldgutter
-addons and the sublime keymap's commands) and JSZip 3.10.1 (cdnjs), and the
-Anthropic SDK 1.3.0 (jsDelivr, only when that provider is used).
+addons and the sublime keymap's commands) and JSZip 3.10.1 (cdnjs). The Anthropic
+SDK 1.3.0 and the live collaboration libraries are bundled with the app in
+`web/vendor/` (see [Files from CDNs and bundled packages](#files-from-cdns-and-bundled-packages))
+and loaded only when they are needed.
 
 ### Code map
 
@@ -665,6 +766,8 @@ Anthropic SDK 1.3.0 (jsDelivr, only when that provider is used).
 | `js/history.js`, `js/diff.js` | Version history (IndexedDB database `mylab-history`, store `versions`, last 30 saves per file) and the line diff view, which also shows edits proposed by the assistant. |
 | `js/settings.js` | Themes, text size, the settings dialog and the ⋯ menu. |
 | `js/ui.js`, `js/markdown.js` | DOM helpers, dialogs, menus; a small safe Markdown renderer. |
+| `js/live.js` | Live collaboration: the session (Yjs document, y-webrtc provider, awareness), keeping the project's files and the shared document in step, sharing and following command windows, the Live window, the presence list, the Live session tab and the settings. |
+| `js/live-binding.js`, `js/live-peer.js` | A `Y.Text` bound to a CodeMirror document (other people's cursors and selections, undo of one's own edits only); WebRTC peers that split large messages into frames and wait while the channel is full. |
 | `js/ai.js` | The assistant. |
 | `js/uiapp.js`, `js/uirender.js`, `css/uirender.css` | The App panel for app windows. `uirender.js`/`.css` draw the component tree; they are copies of `mylab/uiweb/` (the `mylab` command serves the same files), refreshed by `scripts/build_web.py`. |
 | `js/designer.js`, `css/apps.css` | The app builder (design data, canvas, property panel, code generation, reading a design back from a file) and the styles of both. |
@@ -760,11 +863,66 @@ number of characters of the output printed so far.
 | `#gh=owner/repo[/folder][@ref]` | import through `api.github.com/repos/{owner}/{repo}/git/trees/{ref}?recursive=1` (one request; `HEAD` when no ref is given) and `raw.githubusercontent.com` |
 | `#assignment=<url>` | fetch a bundle (https, or the app's own origin) |
 | `#assignmentdata=<p>` | `<p>` packs a bundle |
+| `#live=<session>.<key>` | join a live session: `<session>` is 16 random base64url characters, `<key>` 43 (256 bits from `crypto.getRandomValues`) |
+| `&s=<servers>` | after `#live=…`: the signalling servers to use (comma-separated, URL-encoded), added when the host uses others than the default |
 
 A packed value `<p>` is JSON, compressed with `CompressionStream("deflate-raw")`
 and base64url-encoded, with the prefix `1`. Browsers without
 `CompressionStream` write (and everyone reads) the prefix `0` for
 uncompressed base64url JSON.
+
+### Live collaboration
+
+- **Libraries**: [Yjs](https://github.com/yjs/yjs) 13.6.33 (the CRDT that
+  merges everyone's edits), [y-webrtc](https://github.com/yjs/y-webrtc)
+  10.3.0 (WebRTC between the browsers, with simple-peer 9.11.1, and encrypted
+  signalling), y-protocols 1.0.7 (awareness: who is there, their cursors) and
+  lib0 0.2.119, all by or used by the Yjs project and widely used. They are
+  bundled into `web/vendor/live-collab.mjs` and loaded when a session starts
+  or a live link is opened. The CodeMirror binding is mylab's own
+  (`js/live-binding.js`): y-codemirror binds a whole editor and resets the
+  document whenever it is bound, while mylab keeps one CodeMirror document
+  per file and swaps them in and out of one editor.
+- **The shared document** holds `files` (a `Y.Map` from project path to a
+  `Y.Text` for a text file or a `Uint8Array` for any other), `meta` (`v`,
+  `name`, `host`, `stopped`, `stoppedBy`) and `sessions`: for each person who
+  shares their session a `Y.Map` with `log`, a `Y.Array` of
+  `{ k: "in" | "run" | "out" | "err" | "info" | "fig", t, png, at }` kept to the
+  last 200 entries and 6 figures, and `vars`, a summary of their workspace.
+  Awareness states are
+  `{ v, user: { name, color }, file, cursor: { path, anchor, head }, sharing, host }`;
+  the cursor is a pair of Yjs relative positions.
+- **Joining**: the host fills the document before connecting. A newcomer
+  waits until `meta` arrives (with the files, in the same update) and makes a
+  temporary project of them. A browser that already has a project with the
+  session id in its `meta.live` (the host after a reload, a kept copy)
+  replaces that project's files with the session's, or carries on with its
+  own copy when it finds no one else for 3 seconds. Received paths go through
+  the same checks as imports (`safePath` in `js/live.js`) and sizes are
+  capped (`LIMIT`).
+- **Encryption**: y-webrtc's `password` option (the link's key) derives an
+  AES-GCM key with PBKDF2 (SHA-256, 100,000 iterations, the topic as salt) and
+  encrypts every signalling message and every message between tabs of one
+  browser (BroadcastChannel). It does not encrypt the WebRTC data channels
+  themselves: those are encrypted by DTLS, which WebRTC always uses, and the
+  DTLS fingerprints are part of the session descriptions that travel inside
+  the encrypted signalling messages, so a signalling server can't put itself
+  in between. Nor does it hide the topic, which is why the topic is `mylab-`
+  followed by part of a SHA-256 hash of the session id and the key.
+- **Large messages**: y-webrtc sends the whole document to a newcomer in one
+  message, but a data channel refuses messages over 256 KiB in Chromium and
+  Safari, and y-webrtc drops them without a word. `js/live-peer.js`, a
+  subclass of simple-peer's `Peer` that `scripts/vendor.mjs` lets the app put
+  in place, splits every message into 60 KiB frames and waits while the
+  channel's buffer holds more than 1 MB.
+- **Servers**: by default `wss://y-webrtc-eu.fly.dev` for signalling and the
+  public STUN servers of Google and Cloudflare. Settings → Live collaboration
+  takes others, and TURN servers with a user name and password; a host's own
+  signalling servers travel in the link (`&s=`). For tests,
+  `?signaling=ws://127.0.0.1:PORT` and `?ice=stun:127.0.0.1:PORT` (both
+  comma-separated lists) override them. `node scripts/signaling_server.mjs
+  --port 4444` runs a compatible signalling server without any package
+  (y-webrtc's own `bin/server.js` works too).
 
 ### Tests
 
@@ -804,6 +962,16 @@ its error messages, share links opened in a second browser context,
 app windows and the app builder (`scripts/test_web_apps.mjs`, which also runs
 on its own: a button, a slider drag, a table edit, themes, an app link on a
 phone, building an app, generating code and reopening it),
+live collaboration (`scripts/test_web_live.mjs`, which also runs on its own:
+three people in three browser contexts with a signalling server and a STUN
+server started by the test, so no public service is used; starting a session
+and copying the link, joining with a name, files arriving in a temporary
+project, two people typing at the same time and at the same spot, remote
+cursors and selections, undo of one's own typing, new files, renames,
+deletions and binary files, a wrong and an incomplete key, what the
+signalling server saw, following a shared command window with a figure,
+code that runs only on Run, Keep a copy, axe on the live parts, leaving and
+ending the session),
 assignments (wrong answer, right answer, `exit`, the timeout watchdog,
 submission .zip, reload), block diagrams (found from the Files panel, from
 New file and from the welcome window; an example model run and its scope
@@ -824,7 +992,7 @@ rules it can test automatically (three themes, the dialogs, output and plots,
 the diagram editor, a phone screen). axe does not replace testing with a
 screen reader.
 
-### Files from CDNs and the bundled SDK
+### Files from CDNs and bundled packages
 
 - **CDN files** (CodeMirror and JSZip in `index.html`, Pyodide's core files in
   `worker.js`) carry SHA-384 integrity hashes. After changing a version, run
@@ -832,11 +1000,14 @@ screen reader.
   --check` (run in CI) fails when a hash is missing or a CDN file changed.
   Pyodide's packages are checked by Pyodide itself against the SHA-256
   values in its lock file, which is one of the hashed files.
-- **The Anthropic SDK** is bundled into `web/vendor/anthropic-sdk.mjs` by
-  `node scripts/vendor_anthropic_sdk.mjs`, from the versions pinned in
+- **Bundled packages**: `node scripts/vendor.mjs` bundles the Anthropic SDK
+  into `web/vendor/anthropic-sdk.mjs` and the live collaboration libraries
+  (Yjs, y-webrtc with simple-peer, y-protocols, lib0) into
+  `web/vendor/live-collab.mjs`, from the versions pinned in
   `scripts/vendor/package-lock.json` (npm checks each package's SHA-512).
-  The licences of the bundled packages are in `web/vendor/licenses/`. To
-  update the SDK, change its version in `scripts/vendor/package.json`, run
+  The app loads each bundle from its own site, only when it is needed. The
+  licences of the bundled packages are in `web/vendor/licenses/`. To update a
+  package, change its version in `scripts/vendor/package.json`, run
   `npm install --package-lock-only` there, then the script; CI runs it with
   `--check`.
 

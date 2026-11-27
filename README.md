@@ -108,6 +108,10 @@ checking and hover help. See [docs/VSCODE.md](docs/VSCODE.md).
 ### 6. For teaching
 
 - Share any file as a link that opens and runs in the browser.
+- Work on a project together, live: everyone who opens the session's link
+  edits the same files at the same time and can follow each other's command
+  window, browser to browser and end-to-end encrypted, with no account
+  ([docs/WEB.md](docs/WEB.md#live-collaboration)).
 - Give students an assignment bundle; they press "Check my answers".
 - Grade a whole class with `mylab-grade`, locally or on Gradescope.
 

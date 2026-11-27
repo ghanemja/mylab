@@ -137,6 +137,15 @@ export class ProjectStore {
     return rec;
   }
 
+  /** Save a temporary project (and its files) in IndexedDB from now on. */
+  async makePermanent(project, files) {
+    this.mem.projects.delete(project.id);
+    this.mem.files.delete(project.id);
+    const rec = await this.putProject({ ...project, temp: false });
+    await this.putFiles(project.id, files);
+    return rec;
+  }
+
   async deleteProject(id) {
     if (this._inMemory(id)) {
       this.mem.projects.delete(id);

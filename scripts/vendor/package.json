@@ -1,11 +1,17 @@
 {
   "name": "mylab-web-vendor",
   "private": true,
-  "description": "Pinned packages that scripts/vendor_anthropic_sdk.mjs bundles into web/vendor/ (npm ci checks each package's SHA-512 from package-lock.json).",
+  "description": "Pinned packages that scripts/vendor.mjs bundles into web/vendor/ (npm ci checks each package's SHA-512 from package-lock.json). events is not imported: its licence is copied because simple-peer's prebuilt bundle contains browserify's copy of it.",
   "dependencies": {
-    "@anthropic-ai/sdk": "1.3.0"
+    "@anthropic-ai/sdk": "1.3.0",
+    "lib0": "0.2.119",
+    "simple-peer": "9.11.1",
+    "y-protocols": "1.0.7",
+    "y-webrtc": "10.3.0",
+    "yjs": "13.6.33"
   },
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "events": "3.3.0"
   }
 }

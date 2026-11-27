@@ -418,6 +418,28 @@ may have relied on.
 - Accessibility: comments, keywords and line numbers in the editor meet the
   4.5:1 contrast minimum on highlighted lines; the panel resize handles report
   their size to assistive technology.
+- Live collaboration: **Live** in the top bar starts a session on the current
+  project and makes a link; whoever opens it (asked for a name once) gets the
+  files in a temporary project they can keep. Everyone edits the same files at
+  the same time (Yjs merges the edits, so nothing typed is lost; Ctrl+Z undoes
+  only one's own typing), sees the others' cursors and selections in their
+  colours, and new files, renames and deletions reach everyone. A person who
+  shares their session can be followed in the new *Live session* tab: their
+  command window, figures and workspace, shown as text and PNG images; code
+  from others runs only when you press Run.
+- Live sessions are browser to browser (WebRTC, through y-webrtc) with no
+  server of mylab's and no account. The link carries a random session id and
+  a 256-bit key after the `#`; signalling messages are encrypted with it
+  (AES-GCM) and the connections by WebRTC (DTLS), so the public signalling
+  server (`wss://y-webrtc-eu.fly.dev` by default) sees only a hashed topic, IP
+  addresses and sizes. Signalling, STUN and TURN servers can be set in
+  Settings; `scripts/signaling_server.mjs` runs a signalling server without
+  any package. Received file paths are checked like imports and sizes are
+  capped (1 MB of text, 2 MB otherwise, 16 MB in all).
+- `scripts/vendor.mjs` (was `vendor_anthropic_sdk.mjs`) bundles every package
+  the app serves itself: the Anthropic SDK and, new, Yjs 13.6.33, y-webrtc
+  10.3.0, y-protocols 1.0.7, lib0 0.2.119 and simple-peer 9.11.1
+  (`web/vendor/live-collab.mjs`), with their licences.
 
 ### Block diagrams
 - `.slx` import, measured again on the 82 public files: 31 of the 68 models
@@ -434,6 +456,9 @@ may have relied on.
 - The browser tests check the integrity hashes (a changed CDN file must be
   refused) and run axe-core for the WCAG 2.2 A and AA rules it can test, in
   three themes, the dialogs, the diagram editor and on a phone screen.
+- The browser tests check live collaboration with three people in three
+  browser contexts, and a signalling server and a STUN server started by the
+  test, so no public service is used (`scripts/test_web_live.mjs`).
 - After each release, and every Monday, a workflow installs mylab-lang from
   PyPI on Linux, Windows and macOS and runs the examples with it, and opens
   the GitHub Pages site in Chromium, Firefox and WebKit to run code there

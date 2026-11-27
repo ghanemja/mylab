@@ -1,5 +1,5 @@
 The standardwebhooks package on npm ships no licence file; its package.json declares "MIT".
 LICENSE here is a copy of libraries/LICENSE from the package's repository,
 https://github.com/standard-webhooks/standard-webhooks (the JavaScript library is in
-libraries/javascript/), fetched on 2026-11-27. scripts/vendor_anthropic_sdk.mjs uses it for
+libraries/javascript/), fetched on 2026-11-27. scripts/vendor.mjs uses it for
 packages that ship no licence file of their own.

@@ -1,0 +1,6 @@
+The get-browser-rtc package on npm (1.1.0) ships no licence file; its package.json declares
+"license": "MIT" and its README says it is released under the MIT License. LICENSE here is
+the text of the MIT License with the author named in that package.json (substack).
+get-browser-rtc is not imported by the app: it is part of simple-peer's prebuilt bundle
+(simplepeer.min.js), which y-webrtc loads. scripts/vendor.mjs uses this copy for packages
+that ship no licence file of their own.

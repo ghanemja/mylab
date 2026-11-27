@@ -25,6 +25,7 @@ import { renderDiff, statsText } from "./diff.js";
 import { initUiApp } from "./uiapp.js";
 import { initDesigner } from "./designer.js";
 import { initBlocks, exampleModelFiles } from "./blocks/index.js"; // mylab Blocks: the diagram editor
+import { initLive } from "./live.js";
 
 /* ================================================================== state */
 
@@ -64,8 +65,9 @@ const app = { state, store, prefs };
 
 // A small event bus so feature modules can react without knowing about each other.
 // Events: fileOpened(path), docCreated(path, doc), tabsChanged, projectChanged, saved(info),
-// moved(from, to), removed(paths), projectDeleted(id), runStarting(ctx), runFinished(result, error, ctx),
-// variables(list), engineReady(info), settingsChanged(key, value), keysChanged(preset).
+// filesWritten(files), moved(from, to), removed(paths), projectDeleted(id), runStarting(ctx, code),
+// runFinished(result, error, ctx), variables(list), engineReady(info), settingsChanged(key, value),
+// keysChanged(preset).
 const listeners = new Map();
 app.on = (name, fn) => {
   if (!listeners.has(name)) listeners.set(name, []);
@@ -298,9 +300,11 @@ function renderProjectHead() {
   banner.hidden = !p.temp;
   if (p.temp) {
     $("temp-text").textContent =
-      p.kind === "shared"
-        ? "Shared code, opened from a link. This is a temporary copy: it is not saved and your own files are untouched."
-        : "Temporary project: it is not saved in this browser.";
+      p.meta && p.meta.live
+        ? "Files of a live session. This is a temporary copy: it is not saved in this browser unless you keep it, and your own files are untouched."
+        : p.kind === "shared"
+          ? "Shared code, opened from a link. This is a temporary copy: it is not saved and your own files are untouched."
+          : "Temporary project: it is not saved in this browser.";
   }
   document.body.dataset.project = p.kind || "files";
 }
@@ -695,6 +699,7 @@ async function writeFiles(files, { render = true } = {}) {
   }
   await store.putFiles(state.project.id, files);
   if (render) renderFileList();
+  app.emit("filesWritten", files);
 }
 
 async function createFile(path, content, { open = true } = {}) {
@@ -1170,7 +1175,7 @@ async function runCode(code, ctx) {
   let res;
   const sent = ctx.tail ? code + "\n" + ctx.tail : code;
   const runCtx = { ...ctx, codeLines: ctx.tail ? code.split("\n").length : 0 };
-  app.emit("runStarting", ctx);
+  app.emit("runStarting", ctx, code);
   try {
     res = await engine.run(sent, { fs: fsSpec(), cwd: ctx.cwd !== undefined ? ctx.cwd : ctx.kind === "command" ? undefined : dirName(ctx.file || "") });
   } catch (e) {
@@ -1681,6 +1686,7 @@ function showBottom(view) {
   }
   $("problems-view").hidden = view !== "problems";
   $("search-view").hidden = view !== "search";
+  $("live-view").hidden = view !== "live";
   if (view !== "console" && matchMedia("(max-width: 820px)").matches) panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
@@ -2182,13 +2188,14 @@ function assistantContext() {
   return ctx;
 }
 
-/** Links such as #code=…, #project=…, #gh=owner/repo, #assignment=url (see docs/WEB.md). */
+/** Links such as #code=…, #project=…, #gh=owner/repo, #assignment=url, #live=… (see docs/WEB.md). */
 async function handleHash() {
   const params = parseHash(location.hash);
   try {
     if (params.assignment || params.assignmentdata) return await app.openAssignmentFromLink(params);
     if (params.gh) return await app.openGithubLink(params.gh);
     if (params.code || params.project) return await app.openSharedLink(params);
+    if (params.live !== undefined) return app.openLiveLink(params);
   } catch (e) {
     console.warn(e);
     toast(e.message || String(e), "error");
@@ -2220,6 +2227,8 @@ Object.assign(app, {
   createFile,
   writeFiles,
   removePaths,
+  movePaths,
+  scheduleSave,
   flushAll,
   renderFileList,
   renderProjectHead,
@@ -2320,6 +2329,7 @@ async function main() {
   initUiApp(app);
   initDesigner(app);
   initBlocks(app);
+  initLive(app);
 
   await loadProjects();
   document.body.dataset.files = "ready";
