@@ -3878,10 +3878,13 @@ def _scatter_core(interp, args, nargout, three_d: bool):
     kw: dict = {"depthshade": False} if three_d else {}
     if len(args) > k + 1 and not (is_text(args[k + 1]) and not _is_color_text(args[k + 1])):
         c = args[k + 1]
-        kw["c"] = _color(c) if is_text(c) else (np.real(fnum(c)).flatten() if fnum(c).size == x.size
-                                                 else _color(c))
-        if isinstance(kw["c"], np.ndarray):
-            kw["cmap"] = _current_cmap(interp)
+        cn = None if is_text(c) else np.real(fnum(c))
+        if cn is not None and cn.ndim == 2 and cn.shape == (x.size, 3) and x.size != 3:
+            kw["c"] = np.clip(cn / 255.0 if isinstance(c, np.ndarray) and c.dtype == np.uint8 else cn, 0, 1)
+        else:
+            kw["c"] = _color(c) if is_text(c) else (cn.flatten() if cn.size == x.size else _color(c))
+            if isinstance(kw["c"], np.ndarray):
+                kw["cmap"] = _current_cmap(interp)
     marker = next((_mpl_marker(text(a)) for a in args[k:] if is_text(a) and not _is_color_text(a)), "o")
     if "c" not in kw:
         import matplotlib as mpl
