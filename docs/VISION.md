@@ -16,7 +16,10 @@ OpenCV is optional. Install it together with mylab:
 pip install "mylab-lang[vision]"
 ```
 
-This installs `opencv-python-headless`. Without OpenCV the point cloud
+This installs `opencv-python-headless` 4.x. OpenCV 5 moved BRISK, KAZE, the
+cascade detector and the HOG people detector out of the standard wheels, so
+those functions need OpenCV 4 (or an OpenCV 5 build with the contrib
+modules). Without OpenCV the point cloud
 functions, the Kalman filter, `detectSURFFeatures`, the box utilities and the
 geometry functions that need no image processing (`estgeotform2d`,
 `estimateFundamentalMatrix`, `estrelpose`, `triangulate`, ...) still work; the

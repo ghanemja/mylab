@@ -21,7 +21,7 @@ from ..objects import MObject
 from ..values import Cell, MString, StringArray, char, class_name, is_char, to_matlab, to_str
 from ._util import is_text, match_option, text, unknown_option_error
 
-INSTALL_HINT = 'pip install "mylab-lang[vision]"  (or: pip install opencv-python-headless)'
+INSTALL_HINT = 'pip install "mylab-lang[vision]"  (or: pip install "opencv-python-headless<5")'
 
 _cv2 = None
 

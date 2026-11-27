@@ -18,8 +18,8 @@ import numpy as np
 from ..errors import MatlabError
 from ..values import Cell, char
 from ._cv import (
-    VisionObject, cellstr_col, col, cv2mod, flag, fmat, fscalar, fvec, gray_u8, image_arg, method, opt_text,
-    options, rgb_u8, scalar, text_list,
+    INSTALL_HINT, VisionObject, cellstr_col, col, cv2mod, flag, fmat, fscalar, fvec, gray_u8, image_arg, method,
+    opt_text, options, rgb_u8, scalar, text_list,
 )
 from ._registry import builtin
 from ._util import is_text, text
@@ -224,6 +224,10 @@ class CascadeDetector(VisionObject):
             if not os.path.isfile(path):
                 raise MatlabError(f"vision.CascadeObjectDetector: '{model}' is neither a known model name nor an "
                                   "existing cascade XML file.", "mylab:vision:cascadeNotFound")
+        if not hasattr(cv2, "CascadeClassifier"):
+            raise MatlabError("vision.CascadeObjectDetector: this OpenCV build "
+                              f"({cv2.__version__}) has no cascade classifier. Install OpenCV 4: {INSTALL_HINT}",
+                              "mylab:vision:noCascade")
         clf = cv2.CascadeClassifier()
         if not clf.load(path):
             raise MatlabError(f"vision.CascadeObjectDetector: could not read the cascade file '{path}'.",
@@ -379,6 +383,9 @@ class PeopleDetector(VisionObject):
 
     def _make(self, model: str) -> None:
         cv2 = cv2mod(self.CLASS)
+        if not hasattr(cv2, "HOGDescriptor"):
+            raise MatlabError(f"{self.CLASS}: this OpenCV build ({cv2.__version__}) has no HOG people detector. "
+                              f"Install OpenCV 4: {INSTALL_HINT}", "mylab:vision:noHOG")
         if model == "UprightPeople_128x64":
             hog = cv2.HOGDescriptor()
             hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
