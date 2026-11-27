@@ -33,6 +33,7 @@ SECTIONS = {
     "curvefit": "Curve fitting",
     "ndmath": "N-dimensional transforms, sampling and more statistics",
     "jsonfuncs": "JSON",
+    "mexfiles": "MEX files (C and C++ functions)",
     "audio": "Audio files",
     "excel": "Excel files",
     "plotmore": "More plot types",

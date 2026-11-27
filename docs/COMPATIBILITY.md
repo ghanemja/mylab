@@ -55,6 +55,10 @@ expected values come from MATLAB's documented behaviour.
   sparse matrices, `datetime` (with IANA time zones), `duration`,
   calendar durations (`calmonths`, `calyears`, …), `categorical` and
   `timeseries`.
+- MEX files: C and C++ functions compiled from source with mylab's `mex`
+  command and called like `.m` functions, using mylab's own `mex.h` (the C
+  mx/mex API, not the C++ MEX API). Not in the browser. See
+  [MEX.md](MEX.md).
 - `inputParser`, `onCleanup`, `RandStream`, `timer`, `parfor` (run as an
   ordinary loop), `gpuArray` (data stays on the CPU).
 - Files: MAT-files of every version, including version 7.3 (`save -v7.3`,
@@ -102,7 +106,8 @@ expected values come from MATLAB's documented behaviour.
 - **Toolboxes:** deep learning, computer vision, the Robotics System
   Toolbox's `se2`/`se3` objects, `tscollection`, Simscape and physical
   modelling, and the other toolboxes not listed above.
-- **Language:** compiled MEX files and Java.
+- **Language:** Java. MEX files compiled for MATLAB cannot be loaded; build
+  them again from their C/C++ source with mylab's `mex` (see below).
 
 ## Things that work differently
 

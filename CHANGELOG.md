@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **MEX files.** `mex file.c` compiles C or C++ sources with the system
+  compiler (cc, gcc or clang; best effort on Windows) into a MEX file
+  (`.mexa64`, `.mexmaci64`/`.mexmaca64`, `.mexw64`), and programs call it like
+  a `.m` function. All of the glue is Python: the sources include mylab's own
+  `mex.h`, whose mx/mex functions call through a table of ctypes callbacks
+  that mylab fills in when it loads the file, so nothing is compiled when
+  mylab is installed. Numeric classes, logical, char, complex (separate and
+  interleaved APIs), sparse, cell and struct arrays are supported, with
+  `mxMalloc` memory and temporary arrays released after each call,
+  `mexErrMsgIdAndTxt` errors that `try`/`catch` sees with their identifier,
+  `mexPrintf`, `mexCallMATLAB`, `mexEvalString`, workspace access,
+  persistent arrays, `mexAtExit` and `mexLock`. A MEX file takes precedence
+  over a `.m` file of the same name in the same folder; `exist` returns 3 for
+  it, and `clear name`/`clear mex` unload it. New: `mexext`. MEX files built
+  for MATLAB cannot be loaded and must be rebuilt from source; MEX files do
+  not run in the browser. See [docs/MEX.md](docs/MEX.md).
+
+### Changed
+- `mex` builds MEX files instead of raising `mylab:mex:unsupported`.
+
 ## 1.1.0
 
 1.1.0 brings mylab's behaviour much closer to MATLAB's, adds the Curve
