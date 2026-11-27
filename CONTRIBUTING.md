@@ -9,6 +9,27 @@ code for free, and every function, fix and bug report moves that forward.
 own understanding, and never copy MathWorks (or GNU Octave) documentation,
 examples or code. This protects the project and everyone who uses it.
 
+## Where things are
+
+```
+mylab/            the engine (lexer, parser, interpreter, values, indexing, display)
+  builtins/       the function library, one module per area
+  helpdocs/       help text for every function
+  jit.py          loop compiler           debugger.py  debugger and tracer
+  classdef.py     user-defined classes    grader.py    autograder
+  api.py          Session API used by every front end
+  cli.py          `mylab` command         kernel.py    Jupyter kernel
+  mcp_server.py   MCP server              blocks/      mylab Blocks (block diagrams)
+web/              the browser app (Pyodide + CodeMirror, no build step)
+editors/vscode/   VS Code extension
+datasets/         MATLAB Tasks benchmark and MATLAB Corpus index
+examples/         runnable example scripts and a sample assignment
+tests/            pytest suite, conformance checks and MATLAB-behaviour checks (probes/)
+benchmarks/       speed checks, including the comparison with GNU Octave
+scripts/          web build, browser tests, generated lists, bundled packages
+docs/             guides, function list, compatibility notes
+```
+
 ## Set up
 
 ```bash
