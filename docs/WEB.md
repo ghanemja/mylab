@@ -604,7 +604,9 @@ needed).
 - SymPy, used for [symbolic math](SYMBOLIC.md), is downloaded the first time
   a program uses `syms`, `sym`, `solve` or a related function. The app shows
   "Loading symbolic math…" while it loads. h5py (HDF5 files and version 7.3
-  MAT-files) is fetched the same way ("Loading HDF5 support…"). The worker
+  MAT-files) is fetched the same way ("Loading HDF5 support…"), and so is
+  OpenCV for the [computer vision](VISION.md) functions ("Loading computer
+  vision (OpenCV)…"; Pyodide's OpenCV 4.10). The worker
   looks for these functions in the code being run and in the project's `.m`
   files that it can reach by name (the files it calls, the files those call,
   and so on), so an example elsewhere in the project, such as

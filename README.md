@@ -68,7 +68,8 @@ This also installs NumPy, SciPy, Matplotlib, Pillow and h5py (for HDF5 files
 and version 7.3 MAT-files).
 
 Optional extras: `[symbolic]` for symbolic math (`syms`, `solve`; see
-[docs/SYMBOLIC.md](docs/SYMBOLIC.md)), `[fast]` for faster large-array math,
+[docs/SYMBOLIC.md](docs/SYMBOLIC.md)), `[vision]` for computer vision (OpenCV;
+see [docs/VISION.md](docs/VISION.md)), `[fast]` for faster large-array math,
 `[excel]`, `[jupyter]`, `[mcp]`.
 
 ```bash

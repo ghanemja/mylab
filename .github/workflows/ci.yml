@@ -41,7 +41,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,vision]"
       - run: python -m pytest -q -p no:cacheprovider
       # The function reference the VS Code extension bundles is generated from mylab's help entries.
       # (The browser app needs no such file: it reads the list from the engine when it starts.)

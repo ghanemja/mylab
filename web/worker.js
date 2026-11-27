@@ -916,6 +916,12 @@ const HDF5_MAGIC = [0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a];
 const hdf5Files = new Set(); // project paths whose content is an HDF5 file
 let h5pyState = "none"; // none | loaded | failed
 
+// OpenCV (Pyodide's opencv-python package) backs most computer vision functions; it is a large
+// download too, so it is fetched the first time code calls one of the functions that need it.
+const VISION_RE =
+  /\b(?:detect(?:Harris|MinEigen|FAST|ORB|SIFT|BRISK|KAZE|MSER)Features|extractFeatures|estimateEssentialMatrix|insert(?:Shape|Marker|Text|ObjectAnnotation)|detectCheckerboardPoints|estimateCameraParameters|undistortImage|rectifyStereoImages|disparity(?:SGM|BM)|reconstructScene|estimateExtrinsics|extrinsics|estworldpose|CascadeObjectDetector|PeopleDetector|peopleDetector|yolo(?:v4|x|v8)ObjectDetector|PointTracker|opticalFlowFarneback)\b/;
+let opencvState = "none"; // none | loaded | failed
+
 function isHdf5(bytes) {
   if (!(bytes instanceof Uint8Array)) return false;
   // the signature is at the start, or after the 512-byte header of a version 7.3 MAT-file
@@ -932,7 +938,7 @@ const projectM = new Map(); // path -> text
 /**
  * The code a request runs, and the project's .m files it can reach: those it calls by name,
  * and those that they call, and so on. Files nobody calls (an example in another folder) do
- * not make the app download SymPy or h5py. An autograder test reaches all of its files.
+ * not make the app download SymPy, h5py or OpenCV. An autograder test reaches all of its files.
  */
 function programTexts(msg) {
   const texts = [msg.code, msg.tail];
@@ -993,6 +999,9 @@ async function loadOptional(msg) {
   }
   if (h5pyState === "none" && usesHdf5(msg, texts)) {
     h5pyState = await loadPackageOnce("h5py", "Loading HDF5 support…");
+  }
+  if (opencvState === "none" && texts.some((t) => VISION_RE.test(t))) {
+    opencvState = await loadPackageOnce("opencv-python", "Loading computer vision (OpenCV)…");
   }
 }
 
