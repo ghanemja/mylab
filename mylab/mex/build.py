@@ -282,6 +282,12 @@ def _commands(o: _Options, cc: str, cxx: str | None, cxx_mode: bool, sources: li
     libs = [f"-l{lib}" for lib in o.libs]
     if sys.platform.startswith("linux"):
         libs.append("-lm")
+    # MinGW links its C++ and gcc runtimes as DLLs that are usually not on the loader's search path, so a
+    # MEX file built with g++ would fail to load. Link those runtimes into the MEX file instead.
+    static_rt = []
+    tool = os.path.basename(link[0]).lower()
+    if sys.platform == "win32" and ("g++" in tool or "gcc" in tool):
+        static_rt = ["-static-libgcc", "-static-libstdc++", "-static"] if cxx_mode else ["-static-libgcc"]
     cmds.append([*link, "-shared", *optim, *objs, *link_inputs, "-o", out, *[f"-L{d}" for d in o.libdirs], *libs,
-                 *ldflags])
+                 *static_rt, *ldflags])
     return cmds
