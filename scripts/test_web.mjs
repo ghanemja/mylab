@@ -280,6 +280,125 @@ print(len(quant), "frames", images[0].size)
   ok(`docs/images/demo.gif built: ${r.stdout.trim()}, ${mb.toFixed(2)} MB`);
 }
 
+/* ------------------------------------------------------------- integrity */
+
+// Every file from a CDN carries an integrity hash (scripts/sri.py), the Anthropic SDK is served with the
+// app, and a CDN file that was changed is refused: CodeMirror does not run, the engine does not start.
+async function testIntegrity(browser, url) {
+  const html = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
+  const cdnTags = [...html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="https:\/\/[^"]+"[^>]*>/g)].map((m) => m[0]);
+  const bare = cdnTags.filter((t) => !/integrity="sha384-[A-Za-z0-9+/=]{64}"/.test(t) || !/crossorigin="anonymous"/.test(t));
+  check(cdnTags.length >= 17 && !bare.length, "CDN tags without an integrity hash: " + bare.join(" "));
+  const worker = fs.readFileSync(path.join(ROOT, "web", "worker.js"), "utf8");
+  for (const f of ["pyodide.js", "pyodide.asm.js", "pyodide.asm.wasm", "python_stdlib.zip", "pyodide-lock.json"])
+    check(new RegExp(`"${f.replace(/\./g, "\\.")}": "sha384-`).test(worker), `worker.js has no integrity hash for ${f}`);
+  const sources = fs.readdirSync(path.join(ROOT, "web", "js"), { recursive: true })
+    .filter((f) => f.endsWith(".js"))
+    .map((f) => fs.readFileSync(path.join(ROOT, "web", "js", f), "utf8"))
+    .join("\n");
+  check(!/cdn\.jsdelivr\.net\/npm/.test(sources + worker), "the app still loads a module from cdn.jsdelivr.net/npm");
+
+  const tampered = (pattern) => async (context) => {
+    await context.route(pattern, async (route) => {
+      const resp = await route.fetch();
+      await route.fulfill({ response: resp, body: (await resp.text()) + "\n/* changed */\n" });
+    });
+  };
+  // a changed CodeMirror file is not run
+  {
+    const context = await browser.newContext();
+    await tampered("**/codemirror/5.65.16/codemirror.min.js")(context);
+    const p = await context.newPage();
+    const refused = [];
+    p.on("console", (m) => /integrity/i.test(m.text()) && refused.push(m.text()));
+    await p.goto(url);
+    await p.waitForLoadState("load");
+    check(await p.evaluate(() => typeof window.CodeMirror === "undefined"), "a changed codemirror.min.js was run");
+    check(refused.length > 0, "the browser did not report the integrity failure of codemirror.min.js");
+    await context.close();
+  }
+  // a changed pyodide.js stops the engine, with the loader's error message
+  {
+    const context = await browser.newContext();
+    await tampered("**/pyodide/v*/full/pyodide.js")(context);
+    const p = await context.newPage();
+    await p.goto(url);
+    await p.waitForSelector("body[data-engine='error']", { timeout: 60000 });
+    check(/couldn't start/.test(await p.locator("#loader-error").innerText()), "no error message for a changed pyodide.js");
+    await context.close();
+  }
+  // the bundled SDK loads from the app's own site
+  {
+    const context = await browser.newContext();
+    const p = await context.newPage();
+    await p.goto(url);
+    const kind = await p.evaluate(async () => typeof (await import(new URL("vendor/anthropic-sdk.mjs", location.href).href)).default);
+    check(kind === "function", "web/vendor/anthropic-sdk.mjs does not export the Anthropic client: " + kind);
+    await context.close();
+  }
+  ok("CDN files carry integrity hashes and a changed one is refused (CodeMirror, Pyodide); the Anthropic SDK is served with the app");
+}
+
+/* --------------------------------------------------------- accessibility */
+
+// axe-core (npm install --no-save axe-core@4.14.0) checks the WCAG 2.2 A and AA rules it can test
+// automatically, in the states people use: each theme, the dialogs, a run with output and a plot,
+// the diagram editor and a phone screen. One known exception: axe reports CodeMirror's scroll area
+// as unreachable by keyboard, because the editor's keyboard input sits next to it rather than inside;
+// arrow and page keys in the editor do scroll it.
+async function testAccessibility(browser, url) {
+  let axePath;
+  try {
+    axePath = require.resolve("axe-core/axe.min.js");
+  } catch {
+    throw new Error("axe-core is not installed: npm install --no-save axe-core@4.14.0");
+  }
+  const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  const p = await context.newPage();
+  await p.goto(url);
+  await p.waitForSelector(READY, { timeout: 240000 });
+  await p.keyboard.press("Escape");
+  await p.addScriptTag({ path: axePath });
+  const problems = [];
+  const scan = async (label) => {
+    await p.waitForTimeout(400); // colour transitions settle
+    const found = await p.evaluate(async () => {
+      const res = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] } });
+      return res.violations
+        .map((v) => ({ ...v, nodes: v.nodes.filter((n) => !(v.id === "scrollable-region-focusable" && n.target.join(" ") === ".CodeMirror-scroll")) }))
+        .filter((v) => v.nodes.length)
+        .map((v) => `${v.id} (${v.impact}, ${v.nodes.length}x): ${v.help} - ${v.nodes.slice(0, 2).map((n) => n.target.join(" ")).join(", ")}`);
+    });
+    for (const f of found) problems.push(`${label}: ${f}`);
+  };
+  await scan("light theme");
+  for (const theme of ["dark", "hc"]) {
+    await p.evaluate((t) => (document.documentElement.dataset.theme = t), theme);
+    await scan(theme === "hc" ? "high-contrast theme" : "dark theme");
+  }
+  await p.evaluate(() => delete document.documentElement.dataset.theme);
+  await p.evaluate(() => window.mylab.runCode("A = magic(4); T = table([1;2], {'a';'b'}); plot(1:5)", { kind: "command" }));
+  await p.waitForSelector(".plot-card img", { timeout: 60000 });
+  await p.evaluate(() => window.mylab.runCode("x = [1 2", { kind: "command" })); // an error message in the command window
+  await scan("after a run with a plot, a workspace and an error");
+  for (const id of ["dlg-settings", "dlg-keys", "dlg-about", "dlg-help"]) {
+    await p.evaluate((d) => document.getElementById(d).showModal(), id);
+    await scan(`dialog #${id}`);
+    await p.evaluate((d) => document.getElementById(d).close(), id);
+  }
+  await p.keyboard.press("Control+Alt+P");
+  await scan("command palette");
+  await p.keyboard.press("Escape");
+  await p.evaluate(() => window.mylab.openFile("models/van_der_pol.mlb.json"));
+  await p.waitForSelector(".bd-svg .bd-block", { timeout: 30000 });
+  await scan("diagram editor");
+  await p.setViewportSize({ width: 390, height: 844 });
+  await scan("phone screen (390 px)");
+  await context.close();
+  check(!problems.length, "accessibility problems found by axe-core:\n  " + problems.join("\n  "));
+  ok("axe-core finds no WCAG 2.2 A/AA problems: three themes, dialogs, palette, output and plots, diagram editor, phone screen");
+}
+
 /* ------------------------------------------------------------------ main */
 
 async function main() {
@@ -2418,6 +2537,9 @@ async function main() {
 
     // App windows (uifigure, uicontrol) and the app builder: see scripts/test_web_apps.mjs
     await testApps(browser, url, { ok, check, shot }, consoleErrors);
+
+    await testIntegrity(browser, url);
+    await testAccessibility(browser, url);
 
     // 13. No console errors
     if (consoleErrors.length) throw new Error("console errors:\n" + consoleErrors.join("\n"));

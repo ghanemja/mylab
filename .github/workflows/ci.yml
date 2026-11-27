@@ -122,6 +122,9 @@ jobs:
       - run: pip install build setuptools wheel
       # one check compares the editor's list of functions with the engine's own
       - run: pip install -e .
-      - run: npm install --no-save playwright@1.48.2
+      - run: npm install --no-save playwright@1.48.2 axe-core@4.14.0
       - run: npx playwright install --with-deps chromium
+      # every CDN file still matches its integrity hash, and the bundled Anthropic SDK matches a fresh build
+      - run: python scripts/sri.py --check
+      - run: node scripts/vendor_anthropic_sdk.mjs --check
       - run: node scripts/test_web.mjs --no-screenshot

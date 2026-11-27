@@ -1,0 +1,142 @@
+name: Check the release as users get it
+
+# After a release: install mylab-lang from PyPI on Linux, Windows and macOS, run the examples with the
+# installed package (not the repository's code), and open the GitHub Pages site in Chromium, Firefox
+# and WebKit (Safari's engine) to run code there. Also weekly, to catch a new NumPy, SciPy or browser
+# release that breaks what people install today, and by hand (Actions > this workflow > Run workflow).
+#
+# The PyPI job runs only when publishing is set up (repository variable PUBLISH_TO_PYPI=true, see
+# docs/RELEASING.md); the site job only when GitHub Pages is enabled. A skipped job means "not set up",
+# not "passed".
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to check (empty: the newest on PyPI)"
+        required: false
+
+permissions:
+  contents: read
+  pages: read
+
+jobs:
+  version:
+    name: which version
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          INPUT: ${{ github.event.inputs.version }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          if [ -n "$INPUT" ]; then v="$INPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then v="${TAG#v}"
+          else v=""
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Checking version: ${v:-the newest on PyPI}"
+
+  pypi:
+    name: pip install (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    needs: version
+    if: vars.PUBLISH_TO_PYPI == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.14"]
+    defaults:
+      run:
+        shell: bash
+    env:
+      MPLBACKEND: Agg
+      PYTHONUTF8: 1
+    steps:
+      - uses: actions/checkout@v4  # for the examples only; the package comes from PyPI
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install from PyPI (waiting for a new release to appear)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          spec="mylab-lang"; [ -n "$VERSION" ] && spec="mylab-lang==$VERSION"
+          for i in $(seq 1 20); do
+            python -m pip install --no-cache-dir --only-binary=mylab-lang "$spec" && exit 0
+            echo "not installable yet ($i of 20); waiting 30 s"; sleep 30
+          done
+          exit 1
+      - name: The installed package is used, at the right version
+        working-directory: ${{ runner.temp }}
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          python -c "import mylab, os; print(mylab.__file__); assert 'site-packages' in mylab.__file__, 'not the installed package'"
+          mylab --version
+          if [ -n "$VERSION" ]; then mylab --version | grep -F "mylab $VERSION"; fi
+      - name: Run the examples with the installed mylab
+        run: |
+          cp -r examples "$RUNNER_TEMP/examples"
+          cd "$RUNNER_TEMP/examples"
+          for f in hello data_types functions_demo linear_algebra ode_demo plotting_demo tables_and_strings classes_demo; do
+            echo "::group::$f.m"
+            mylab "$f.m"
+            echo "::endgroup::"
+          done
+      - name: Optional extras install and work (symbolic math)
+        run: |
+          python -m pip install --no-cache-dir "mylab-lang[symbolic]"
+          cd "$RUNNER_TEMP/examples" && mylab symbolic_demo.m
+
+  site:
+    name: web app (${{ matrix.browser }})
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the GitHub Pages site
+        id: site
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(gh api "repos/${{ github.repository }}/pages" --jq .html_url 2>/dev/null || true)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          if [ -z "$url" ]; then echo "::notice::GitHub Pages is not enabled for this repository; the site check is skipped."; fi
+      - uses: actions/setup-python@v5
+        if: steps.site.outputs.url != ''
+        with:
+          python-version: "3.12"
+      - name: The CDN files still match the site's integrity hashes
+        if: steps.site.outputs.url != '' && matrix.browser == 'chromium'
+        run: python scripts/sri.py --check
+      - uses: actions/setup-node@v4
+        if: steps.site.outputs.url != ''
+        with:
+          node-version: "20"
+      - name: Install Playwright
+        if: steps.site.outputs.url != ''
+        run: |
+          npm install --no-save playwright@1.48.2
+          npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Open the site, run code, draw a plot
+        if: steps.site.outputs.url != ''
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          args=("${{ steps.site.outputs.url }}" --browser "${{ matrix.browser }}")
+          if [ -n "$VERSION" ]; then args+=(--version "$VERSION"); fi
+          node scripts/check_live_site.mjs "${args[@]}"
