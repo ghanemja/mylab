@@ -24,6 +24,7 @@ import fs from "node:fs";
 import os from "node:os";
 
 import { testApps, clipboardPermissions } from "./test_web_apps.mjs";
+import { testLive } from "./test_web_live.mjs";
 
 const require = createRequire(import.meta.url);
 const playwright = require("playwright");
@@ -410,7 +411,7 @@ async function testAccessibility(browser, url) {
   await p.waitForSelector(".plot-card img", { timeout: 60000 });
   await p.evaluate(() => window.mylab.runCode("x = [1 2", { kind: "command" })); // an error message in the command window
   await scan("after a run with a plot, a workspace and an error");
-  for (const id of ["dlg-settings", "dlg-keys", "dlg-about", "dlg-help"]) {
+  for (const id of ["dlg-settings", "dlg-keys", "dlg-about", "dlg-help", "dlg-live"]) {
     await p.evaluate((d) => document.getElementById(d).showModal(), id);
     await scan(`dialog #${id}`);
     await p.evaluate((d) => document.getElementById(d).close(), id);
@@ -2580,6 +2581,17 @@ async function main() {
 
     // App windows (uifigure, uicontrol) and the app builder: see scripts/test_web_apps.mjs
     await testApps(browser, url, { ok, check, shot }, consoleErrors);
+
+    // Live collaboration: three people in three contexts, with a local signalling and STUN server
+    // (scripts/test_web_live.mjs). Its axe check runs during the session; testAccessibility scans the
+    // dialog's first view.
+    let axePath = null;
+    try {
+      axePath = require.resolve("axe-core/axe.min.js");
+    } catch {
+      /* testAccessibility reports it */
+    }
+    await testLive(browser, url, { ok, check, axePath }, consoleErrors);
 
     await testIntegrity(browser, url);
     await testAccessibility(browser, url);
