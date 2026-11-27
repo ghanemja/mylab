@@ -163,7 +163,8 @@ function watchErrors(page, list, tag = "") {
     // WebKit reports the downloads that Pyodide (in the engine worker) still had running when the page
     // reloads during start-up as failed (unhandled rejections, "access control checks"). The page that
     // started them is gone; no one sees this. Chromium and Firefox say nothing.
-    if (leaving && BROWSER === "webkit" && /^(Unhandled Promise Rejection: TypeError: Load failed|(Fetch API cannot|Cannot) load https:\/\/cdn\.jsdelivr\.net\/pyodide\/\S+ due to access control checks\.)$/.test(msg.text())) return;
+    // The same holds for the blob: URL from which the worker runs Pyodide's verified scripts (worker.js).
+    if (leaving && BROWSER === "webkit" && /^(Unhandled Promise Rejection: TypeError: Load failed|(Fetch API cannot|Cannot) load (https:\/\/cdn\.jsdelivr\.net\/pyodide\/\S+|blob:http:\/\/127\.0\.0\.1:\d+\/[0-9a-f-]+) due to access control checks\.)$/.test(msg.text())) return;
     if (msg.type() === "error") list.push(tag + msg.text());
   });
   page.on("pageerror", (err) => list.push(tag + "pageerror: " + err.message));
@@ -1924,7 +1925,10 @@ async function main() {
       check((await problems()) === 2 && (await page.locator("#bd-problems").isVisible()), "the toolbar should count the problems: " + (await problems()));
       await page.click("#bd-problems");
       await page.waitForSelector("#bd-problems-menu");
-      check(/'Gain': Input 1 is not connected/.test(await page.locator("#bd-problems-menu").innerText()), "the problem list should name the block");
+      // The editor's own marker says "'Gain': Input 1 is not connected"; once the engine's background check has
+      // answered (sooner on a fast machine), its report takes the place: "Input 1 of 'Gain' is not connected; ...".
+      const problemText = await page.locator("#bd-problems-menu").innerText();
+      check(/'Gain': Input 1 is not connected|Input 1 of 'Gain' is not connected/.test(problemText), "the problem list should name the block: " + problemText);
       await page.locator("#bd-problems-menu .menu-item", { hasText: "'Scope'" }).click();
       check(await page.evaluate(() => [...window.mylab.app.blocks.editor.sel].join() === "Scope"), "choosing a problem selects its block");
       ok("palette search, click and drag add blocks; unconnected inputs get a marker and are listed");
