@@ -434,7 +434,7 @@
         <button id="welcome-whatsnew" type="button" class="welcome-card">
           <svg class="ic"><use href="#i-spark"/></svg>
           <strong>What's new in 1.1</strong>
-          <span>Curve fitting, HDF5 and version 7.3 MAT-files, <code>griddedInterpolant</code>, graphics properties, with examples to run.</span>
+          <span>Live collaboration, computer vision, curve fitting, HDF5 and version 7.3 MAT-files, state charts in block diagrams, with examples to run.</span>
         </button>
       </div>
       <p class="muted small">You can also drop your own files or a folder onto the page. Find this again under “Getting started” at the bottom of the page.</p>
@@ -445,7 +445,14 @@
   <dialog id="dlg-whatsnew" class="dialog wide welcome" aria-labelledby="whatsnew-title">
     <form method="dialog">
       <h2 id="whatsnew-title"><svg class="ic accent"><use href="#i-spark"/></svg> What's new in mylab 1.1</h2>
-      <p class="muted">Each card opens a short example from the <code>whats_new</code> folder in the Files panel. Press Run to try it.</p>
+      <p class="muted">The first card starts a live session. The others open a short example from the <code>whats_new</code> folder in the Files panel: press Run to try it.</p>
+      <div class="welcome-grid whatsnew-top">
+        <button id="whatsnew-live" type="button" class="welcome-card welcome-card-wide">
+          <svg class="ic"><use href="#i-live"/></svg>
+          <strong>Live collaboration</strong>
+          <span>Work on a project together, at the same time: send a link, edit the same files with everyone's cursors in view, and follow each other's command window. No account; end-to-end encrypted.</span>
+        </button>
+      </div>
       <div class="welcome-grid">
         <button id="whatsnew-fit" type="button" class="welcome-card" data-example="whats_new/fit_curve.m">
           <svg class="ic"><use href="#i-report"/></svg>
@@ -470,6 +477,9 @@
       </div>
       <h3 class="whatsnew-sub">Also new</h3>
       <ul class="whatsnew-list">
+        <li>Computer vision: feature detection and matching, camera calibration, stereo, object detection, tracking and point clouds (OpenCV is loaded on first use).</li>
+        <li>Block diagrams: state charts, physical networks (electrical and mechanical), iterator and function-call subsystems, buses, and reading and writing <code>.mdl</code> and <code>.slx</code> files.</li>
+        <li><code>timeseries</code> objects, and <code>properties</code> and <code>fieldnames</code> for built-in objects.</li>
         <li><code>polyshape</code> polygons with holes, and their <code>union</code>, <code>intersect</code>, <code>subtract</code> and <code>xor</code>; <code>nsidedpoly</code>.</li>
         <li><code>imageDatastore</code> with labels from folder names, <code>splitEachLabel</code> and <code>countEachLabel</code>.</li>
         <li>NetCDF-4 files, the low-level <code>H5F</code>/<code>H5D</code> functions, and <code>matfile</code> reading just part of a variable.</li>

@@ -1979,6 +1979,10 @@ function setupButtons() {
   $("foot-about").addEventListener("click", () => $("dlg-about").showModal());
   $("foot-welcome").addEventListener("click", showWelcome);
   $("foot-whatsnew").addEventListener("click", showWhatsNew);
+  $("whatsnew-live").addEventListener("click", () => {
+    $("dlg-whatsnew").close();
+    app.openLiveDialog();
+  });
   $("btn-ai").addEventListener("click", () => showAssistant());
   $("btn-ai-close").addEventListener("click", () => showAssistant(false));
   $("loader-hide").addEventListener("click", () => ($("loader").hidden = true));
