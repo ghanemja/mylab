@@ -454,8 +454,11 @@ async function main() {
     await context.addInitScript(() => {
       window.__readClipboard = () =>
         Promise.race([navigator.clipboard.readText(), new Promise((r) => setTimeout(() => r("[the clipboard could not be read within 5 s]"), 5000))]);
-      // the app's notifications disappear after a few seconds: keep them, to explain a failed check
+      // the app's notifications disappear after a few seconds: keep them, to explain a failed check.
+      // Only in the page itself: in the sandboxed report preview (no scripts allowed) Chromium would log
+      // every blocked observer callback as an error.
       window.__toasts = [];
+      if (window.top !== window) return;
       new MutationObserver((records) => {
         for (const r of records) for (const n of r.addedNodes) if (n.classList && n.classList.contains("toast")) window.__toasts.push(n.textContent);
       }).observe(document, { childList: true, subtree: true });
