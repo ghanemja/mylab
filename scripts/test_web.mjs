@@ -2323,29 +2323,31 @@ async function main() {
     await page.waitForFunction(() => document.querySelector("#code-tip").dataset.name === "RandStream.create" && !document.querySelector("#code-tip").hidden);
     check(/RandStream\.create\(/.test(await page.locator("#code-tip").innerText()), "hover on a dotted name: " + (await page.locator("#code-tip").innerText()));
     await page.mouse.move(5, 5);
-    const typeAt = async (line, text) => {
+    // Type, then give the suggestion list time to catch up with the last key (up to 5 s for a suggestion
+    // matching `expect`; slower browsers can still show the list of an earlier key), and return it.
+    const typeAt = async (line, text, expect) => {
       await page.evaluate((l) => { const cm = window.mylab.editor; cm.focus(); cm.setCursor({ line: l, ch: 0 }); }, line);
       await page.keyboard.type(text, { delay: 30 });
       await page.waitForSelector(".CodeMirror-hints");
-      await page.waitForTimeout(150);
+      await page.waitForFunction((re) => [...document.querySelectorAll(".CodeMirror-hints li")].some((li) => new RegExp(re).test(li.innerText.replace(/\s+/g, " ").trim())), expect.source, { timeout: 5000 }).catch(() => {});
       return (await page.locator(".CodeMirror-hints li").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
     };
-    let hints11 = await typeAt(5, "gridd");
+    let hints11 = await typeAt(5, "gridd", /^ƒ griddedInterpolant \S/);
     check(hints11.some((t) => /^ƒ griddedInterpolant \S/.test(t)), "autocomplete should offer griddedInterpolant with a description: " + JSON.stringify(hints11.slice(0, 5)));
     await page.keyboard.press("Escape");
     await page.evaluate(() => window.mylab.editor.replaceRange("", { line: 5, ch: 0 }, { line: 5, ch: 100 }));
-    hints11 = await typeAt(5, "fi");
+    hints11 = await typeAt(5, "fi", /^ƒ fit \S/);
     check(hints11.some((t) => /^ƒ fit \S/.test(t)), "autocomplete should offer fit: " + JSON.stringify(hints11.slice(0, 12)));
     await page.keyboard.press("Escape");
     await page.evaluate(() => window.mylab.editor.replaceRange("", { line: 5, ch: 0 }, { line: 5, ch: 100 }));
-    hints11 = await typeAt(5, "RandStream.c");
+    hints11 = await typeAt(5, "RandStream.c", /^ƒ create\b/);
     check(hints11.some((t) => /^ƒ create\b/.test(t)), "after RandStream. the suggestions should be its functions: " + JSON.stringify(hints11));
     await page.keyboard.press("Escape");
     await page.evaluate(() => window.mylab.editor.replaceRange("", { line: 5, ch: 0 }, { line: 5, ch: 100 }));
     await h.run();
     check((await page.locator("#var-table tr[data-name='f'] td:nth-child(3)").innerText()) === "cfit", "f should be a cfit in the workspace");
     check(/^f\(x\) = p1\*x \+ p2/.test(await h.varValue("f")), "the workspace should show the model of a fit: " + (await h.varValue("f")));
-    hints11 = await typeAt(5, "f.con");
+    hints11 = await typeAt(5, "f.con", /^ƒ confint\b/);
     check(hints11.some((t) => /^ƒ confint\b/.test(t)), "after f. the suggestions should be the methods of a cfit: " + JSON.stringify(hints11));
     await page.keyboard.press("Escape");
     await page.evaluate(() => window.mylab.editor.replaceRange("", { line: 5, ch: 0 }, { line: 5, ch: 100 }));
