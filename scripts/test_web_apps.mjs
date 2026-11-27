@@ -151,11 +151,17 @@ export async function testApps(browser, url, t, consoleErrors = []) {
   // keyboard: the slider is a native range input
   await range.focus();
   const v0 = Number(await range.inputValue());
+  const beforeKey = await img.getAttribute("src");
   await page.keyboard.press("ArrowLeft");
   await until((v) => Number(document.querySelector("#app-view input[type=range]").value) < v, v0);
-  await until((v) => parseFloat([...document.querySelectorAll("#app-view .mui-label")].pop().textContent) < v - 0.01, hz);
-  await page.waitForTimeout(300);
-  ok("controls are native form elements: the slider moves with the arrow keys");
+  const v1 = Number(await range.inputValue());
+  // A slider without a Step moves by 1% of its range per arrow key in every browser (Firefox would move 1 of 9).
+  check(Math.abs(v0 - v1 - 0.09) < 1e-6, `an arrow key should move the slider by 1% of its limits [1 10]: ${v0} -> ${v1}`);
+  // ValueChangedFcn redraws the plot and writes the readout; wait for that image, so the table edit below
+  // is not confused with it (the redraw can take longer than a fixed pause on a busy machine)
+  await until((src) => document.querySelector("#app-view .mui-axes-image").getAttribute("src") !== src, beforeKey);
+  await until((want) => [...document.querySelectorAll("#app-view .mui-label")].pop().textContent === want, `${v1.toFixed(1)} Hz`);
+  ok("controls are native form elements: the slider moves with the arrow keys, by 1% of its range");
 
   // table edit
   const afterSlider = await img.getAttribute("src");
