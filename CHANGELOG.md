@@ -294,6 +294,14 @@ may have relied on.
   `.m` examples), the welcome window has a *Block diagrams* card, and New file
   offers *Block diagram* next to *Script or function* (a small model to start
   from). Model files have their own icon in the Files panel.
+- Every file the app loads from a CDN (CodeMirror, JSZip and Pyodide's core
+  files) is checked against a SHA-384 hash before it runs, and Pyodide checks
+  its packages against its lock file, so a changed CDN file is refused. The
+  assistant's Anthropic SDK is bundled with the app instead of loaded from a
+  CDN, with the licences of its packages (`web/vendor/`).
+- Accessibility: comments, keywords and line numbers in the editor meet the
+  4.5:1 contrast minimum on highlighted lines; the panel resize handles report
+  their size to assistive technology.
 
 ### Block diagrams
 - `.slx` import, measured again on the 82 public files: 31 of the 68 models
@@ -307,6 +315,13 @@ may have relied on.
   the browser app; 705 + 469 MATLAB-behaviour checks with a ratchet (a check
   that passes may never fail again); a speed job that fails on a slowdown of
   more than 25%.
+- The browser tests check the integrity hashes (a changed CDN file must be
+  refused) and run axe-core for the WCAG 2.2 A and AA rules it can test, in
+  three themes, the dialogs, the diagram editor and on a phone screen.
+- After each release, and every Monday, a workflow installs mylab-lang from
+  PyPI on Linux, Windows and macOS and runs the examples with it, and opens
+  the GitHub Pages site in Chromium, Firefox and WebKit to run code there
+  (`scripts/check_live_site.mjs`).
 - A MATLAB validation kit (validation/), on hold and never run: MathWorks'
   licence terms forbid using MATLAB to test mylab (see
   docs/MATLAB-TERMS-REVIEW.md).

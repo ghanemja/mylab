@@ -519,6 +519,12 @@ needed).
 
 ## Privacy
 
+- The app's own files, the Anthropic SDK used by the assistant included, come
+  from the site that serves the app. The editor (CodeMirror), JSZip and Python
+  (Pyodide, with NumPy, SciPy and the other packages) come from public CDNs,
+  and every one of those files is checked against a SHA-384 hash before it
+  runs: a file that was changed on the CDN is refused, and the app says the
+  engine couldn't start.
 - Your projects live in your browser's IndexedDB storage. They are not
   uploaded anywhere. If the browser blocks storage (some private modes do),
   the app keeps files in memory only and says so in the Files panel; download
@@ -757,7 +763,7 @@ Chromium with Playwright (needs network access to the CDNs; GitHub and the AI
 providers are mocked with `page.route`, no real API is called):
 
 ```bash
-npm install playwright   # once, if Playwright isn't available
+npm install --no-save playwright axe-core@4.14.0   # once, if they aren't available
 node scripts/test_web.mjs                    # all checks; also refreshes the stills in docs/images/
 node scripts/test_web.mjs --no-screenshot    # all checks, leave the images alone
 PYTHON=.venv/bin/python node scripts/test_web.mjs --gif   # record docs/images/demo.gif (needs Pillow)
@@ -791,7 +797,28 @@ loading a `.mat` and a version 7.3 MAT-file from the Files panel, dropping
 `.h5`, `.csv` and `.xlsx` files, and each example of *What's new* run in the
 app), Stop, persistence (files, tabs, cursor,
 breakpoints), the phone layout down to 320 px, and that there are no console
-errors.
+errors. It also checks that every CDN file carries an integrity hash and that
+a changed CodeMirror or Pyodide file is refused, and runs
+[axe-core](https://github.com/dequelabs/axe-core) for the WCAG 2.2 A and AA
+rules it can test automatically (three themes, the dialogs, output and plots,
+the diagram editor, a phone screen). axe does not replace testing with a
+screen reader.
+
+### Files from CDNs and the bundled SDK
+
+- **CDN files** (CodeMirror and JSZip in `index.html`, Pyodide's core files in
+  `worker.js`) carry SHA-384 integrity hashes. After changing a version, run
+  `python scripts/sri.py` to write the new hashes; `python scripts/sri.py
+  --check` (run in CI) fails when a hash is missing or a CDN file changed.
+  Pyodide's packages are checked by Pyodide itself against the SHA-256
+  values in its lock file, which is one of the hashed files.
+- **The Anthropic SDK** is bundled into `web/vendor/anthropic-sdk.mjs` by
+  `node scripts/vendor_anthropic_sdk.mjs`, from the versions pinned in
+  `scripts/vendor/package-lock.json` (npm checks each package's SHA-512).
+  The licences of the bundled packages are in `web/vendor/licenses/`. To
+  update the SDK, change its version in `scripts/vendor/package.json`, run
+  `npm install --package-lock-only` there, then the script; CI runs it with
+  `--check`.
 
 ### Deployment
 

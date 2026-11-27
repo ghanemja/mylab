@@ -347,7 +347,16 @@ Steps that are not set up are skipped. They show as grey, not red. That is fine.
    instead of `bin`.)
 3. **VS Code Marketplace** (if set up): search for "mylab" in the Extensions
    view. A new version can take up to 15 minutes to appear.
-4. **Edit the release notes** if you like: on the release page, select the
+4. **Check the release as users get it** (automatic): when the Release
+   workflow succeeds, the workflow *Check the release as users get it*
+   (`.github/workflows/post-release.yml`) installs the new version from PyPI
+   on Linux, Windows and macOS with Python 3.10 and 3.14, runs the examples
+   with the installed package, and opens the GitHub Pages site in Chromium,
+   Firefox and WebKit to run code and draw a plot there. It also runs every
+   Monday, to catch a new NumPy, SciPy or browser release that breaks what
+   people install, and by hand from the Actions tab. A job shown as skipped
+   means PyPI publishing or Pages isn't set up yet.
+5. **Edit the release notes** if you like: on the release page, select the
    pencil icon. Pasting the new section of `CHANGELOG.md` at the top is enough.
 
 ### If something goes wrong
