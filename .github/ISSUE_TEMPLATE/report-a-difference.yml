@@ -1,5 +1,5 @@
 name: Report a difference from MATLAB
-description: mylab gives a different result, error or output than MATLAB for the same code.
+description: mylab gives a different result, error or output than MATLAB documents for the same code.
 title: "[Difference] "
 labels: ["difference"]
 body:
@@ -30,16 +30,30 @@ body:
     validations:
       required: true
   - type: textarea
-    id: matlab-output
+    id: expected
     attributes:
-      label: What MATLAB printed
+      label: What you expected
       description: >-
-        Copy MATLAB's output exactly, with the MATLAB release (for example R2024b). If you
-        don't have MATLAB, describe what you expected and link the MathWorks reference
-        page that documents it.
+        The result, error or output you expected, and why: usually what MathWorks'
+        documentation says the code should do.
       render: text
     validations:
       required: true
+  - type: input
+    id: reference
+    attributes:
+      label: MathWorks documentation page
+      description: A link to the reference page that documents the behaviour, if there is one.
+      placeholder: https://www.mathworks.com/help/matlab/ref/...
+  - type: textarea
+    id: matlab-output
+    attributes:
+      label: What MATLAB printed (optional)
+      description: >-
+        If you ran the code in MATLAB as part of your own work, you can paste its output and
+        the release (for example R2024b). Please only share it if your MATLAB licence allows
+        that. We don't ask anyone to run MATLAB to test mylab.
+      render: text
   - type: dropdown
     id: where
     attributes:

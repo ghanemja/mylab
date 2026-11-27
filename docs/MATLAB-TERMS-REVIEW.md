@@ -501,7 +501,9 @@ Concrete steps. Steps 1–3 are done; steps 4–6 are still open.
    their own work is far lower risk than a test campaign we ask them to run.
    Note, from general knowledge and not verified: systematically
    encouraging licensees to breach their licence can create
-   inducement-to-breach risk for the project.
+   inducement-to-breach risk for the project. *(Done: the form now asks for
+   the expected result and a documentation link first; MATLAB output is
+   optional, with a licence reminder.)*
 5. **If MATLAB validation is worth having, ask MathWorks in writing.** SLA
    22 requires "a written agreement signed by MathWorks and Licensee" to
    change the SLA. Both 3.4 and §3.2(3) leave the judgement "as reasonably
