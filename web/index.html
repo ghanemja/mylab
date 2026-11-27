@@ -97,6 +97,7 @@
       <symbol id="i-format" viewBox="0 0 24 24"><path d="M4 6h16M9 12h11M9 18h11M4 10.5l3 3-3 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6m0 0l-5 5m5-5l5 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v13m0 0l-5-5m5 5l5-5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-live" viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M3 19.5c.5-3.3 2.7-5.3 5.5-5.3s5 2 5.5 5.3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><circle cx="16.5" cy="9" r="2.6" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M15.8 14.3c2.6-.3 4.6 1.5 5.1 4.6" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></symbol>
       <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 8V4h10v4M7 17H5a1 1 0 01-1-1v-6a1 1 0 011-1h14a1 1 0 011 1v6a1 1 0 01-1 1h-2M7 14h10v6H7z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/></symbol>
     </defs>
   </svg>
@@ -131,6 +132,12 @@
     </button>
     <div class="spacer"></div>
     <div class="toolbar right">
+      <div id="live-bar" class="live-bar" hidden>
+        <ul id="live-people" class="live-people" aria-label="People in this live session"></ul>
+      </div>
+      <button id="btn-live" class="btn ghost" type="button" aria-haspopup="dialog" aria-label="Live collaboration" title="Live collaboration: work on this project together with others, at the same time">
+        <svg class="ic"><use href="#i-live"/></svg><span class="hide-sm">Live</span>
+      </button>
       <button id="btn-share" class="btn ghost" title="Share: make a link that contains this file or the whole project">
         <svg class="ic"><use href="#i-link"/></svg><span class="hide-sm">Share</span>
       </button>
@@ -247,6 +254,7 @@
             <button id="tab-console" class="bottom-tab" role="tab" type="button" aria-selected="true" aria-controls="console-out" data-view="console">Command Window</button>
             <button id="tab-problems" class="bottom-tab" role="tab" type="button" aria-selected="false" aria-controls="problems-view" data-view="problems" tabindex="-1">Problems<span id="problems-count" class="count" hidden>0</span></button>
             <button id="tab-search" class="bottom-tab" role="tab" type="button" aria-selected="false" aria-controls="search-view" data-view="search" tabindex="-1" hidden>Search</button>
+            <button id="tab-live" class="bottom-tab" role="tab" type="button" aria-selected="false" aria-controls="live-view" data-view="live" tabindex="-1" hidden>Live session</button>
           </div>
           <div class="panel-actions console-actions">
             <button id="btn-clear-console" class="btn sm ghost" title="Clear the command window (clc)"><svg class="ic"><use href="#i-eraser"/></svg><span class="hide-sm">Clear</span></button>
@@ -272,6 +280,27 @@
           </div>
           <p id="search-status" class="muted small search-status" role="status" aria-live="polite"></p>
           <div id="search-results" class="search-results"></div>
+        </div>
+        <div id="live-view" class="bottom-view live-view" role="tabpanel" aria-labelledby="tab-live" hidden>
+          <div class="live-follow-head">
+            <label for="live-follow">Follow</label>
+            <select id="live-follow"></select>
+            <span class="muted small">Their commands and output are shown here as text. Nothing of it runs in your browser.</span>
+          </div>
+          <p id="live-follow-empty" class="empty muted" role="status"></p>
+          <div id="live-follow-body" class="live-follow-body" hidden>
+            <div id="live-feed" class="console-out live-feed" role="log" aria-live="off" tabindex="0"></div>
+            <div class="live-ws">
+              <h3 id="live-vars-title" class="live-vars-title">Workspace</h3>
+              <div class="table-wrap">
+                <table id="live-vars" class="var-table" aria-labelledby="live-vars-title">
+                  <thead><tr><th>Name</th><th>Size</th><th>Class</th><th>Value</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+                <p id="live-vars-empty" class="empty muted">No variables.</p>
+              </div>
+            </div>
+          </div>
         </div>
         <div id="completions" class="completions" hidden></div>
         <form id="console-form" class="console-in" autocomplete="off">
@@ -477,6 +506,42 @@
       <menu>
         <button value="close" class="btn ghost">Close</button>
         <button id="share-copy" type="button" class="btn primary"><svg class="ic"><use href="#i-copy"/></svg>Copy link</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-live" class="dialog wide" aria-labelledby="live-title">
+    <form method="dialog">
+      <h2 id="live-title"><svg class="ic accent"><use href="#i-live"/></svg> Live collaboration</h2>
+      <div id="live-start-view" class="live-view-part">
+        <p class="small">Work on <strong id="live-project"></strong> together with others, at the same time. Everyone who opens the link
+          gets the project's files, edits them with you (you see each other's cursors) and can follow your command window, figures and workspace.</p>
+        <p class="muted small">Nothing is uploaded to mylab and no account is needed: the browsers connect to each other directly, and what they send is
+          end-to-end encrypted with a key that exists only in the link. Text files up to 1 MB and other files up to 2 MB are shared (16 MB in all).</p>
+        <label class="field"><span>Your name, as the others will see it</span>
+          <input id="live-name" type="text" maxlength="40" autocomplete="nickname" spellcheck="false" placeholder="For example Sam">
+        </label>
+      </div>
+      <div id="live-session-view" class="live-view-part" hidden>
+        <label class="field" for="live-link"><span>Invite people with this link</span></label>
+        <div class="row live-link-row">
+          <input id="live-link" type="text" readonly spellcheck="false">
+          <button id="live-copy" type="button" class="btn primary"><svg class="ic"><use href="#i-copy"/></svg>Copy link</button>
+        </div>
+        <p id="live-copied" class="small ok-text" role="status" hidden></p>
+        <p id="live-conn" class="small live-conn" role="status"></p>
+        <div><button id="live-seed" type="button" class="btn sm" hidden>Continue with my copy of the files</button></div>
+        <h3 class="live-sub">People in this session</h3>
+        <ul id="live-list" class="live-list" aria-label="People in this session"></ul>
+        <label class="check"><input type="checkbox" id="live-share"> Share my session: the others can follow my command window, figures and workspace</label>
+        <p class="muted small">Code from the others never runs by itself: it runs only when you press Run, in your own browser. Anyone with the link can join and change the files while the session runs.</p>
+        <p id="live-skipped" class="small muted" hidden></p>
+      </div>
+      <menu>
+        <button value="close" class="btn ghost">Close</button>
+        <button id="live-leave" type="button" class="btn ghost" hidden>Leave session</button>
+        <button id="live-end" type="button" class="btn danger" hidden>End session for everyone</button>
+        <button id="live-start" type="button" class="btn primary">Start session</button>
       </menu>
     </form>
   </dialog>
@@ -710,6 +775,20 @@
       <label class="check"><input type="checkbox" id="set-suggest"> Suggest names as I type (Tab accepts)</label>
       <label class="check"><input type="checkbox" id="set-hover"> Show help when the mouse rests on a function</label>
       <div class="row"><button id="set-layout" type="button" class="btn sm">Reset the panel sizes</button></div>
+      <fieldset class="set-group">
+        <legend>Live collaboration</legend>
+        <label class="field"><span>Your name in live sessions</span>
+          <input id="set-live-name" type="text" maxlength="40" autocomplete="nickname" spellcheck="false">
+        </label>
+        <label class="field"><span>Signalling servers, one per line <span class="muted">(empty: the public server wss://y-webrtc-eu.fly.dev)</span></span>
+          <textarea id="set-live-signaling" class="set-text" rows="2" spellcheck="false" placeholder="wss://y-webrtc-eu.fly.dev"></textarea>
+        </label>
+        <label class="field"><span>STUN and TURN servers, one per line <span class="muted">(a TURN server: its address, user name and password)</span></span>
+          <textarea id="set-live-ice" class="set-text" rows="2" spellcheck="false" placeholder="turn:turn.example.org:3478 user password"></textarea>
+        </label>
+        <p id="set-live-error" class="error-text small" role="alert" hidden></p>
+        <p class="muted small">A signalling server introduces the browsers of a session to each other; a STUN server tells each browser its address. Neither sees what you share. Some networks block direct connections: a TURN server relays them (still encrypted).</p>
+      </fieldset>
       <p class="muted small">Settings are saved in this browser.</p>
       <menu><button value="close" class="btn primary">Done</button></menu>
     </form>
@@ -816,5 +895,6 @@
 
   <div id="drop-overlay" class="drop-overlay" hidden><div>Drop files to add them, or a folder / <code>.zip</code> to open it as a project</div></div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="live-announce" class="sr-only" role="status" aria-live="polite"></div>
 </body>
 </html>

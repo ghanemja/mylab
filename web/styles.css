@@ -929,3 +929,64 @@ li.CodeMirror-hint-active .hint-kind, li.CodeMirror-hint-active .hint-detail { c
   .footbar { padding: 0 8px 12px; }
   .dialog menu { flex-wrap: wrap; }
 }
+
+/* ---------- Live collaboration ---------- */
+.live-bar { display: flex; align-items: center; }
+.live-people { display: flex; align-items: center; list-style: none; margin: 0; padding: 0 2px; }
+.live-person { margin-left: -6px; }
+.live-person:first-child { margin-left: 0; }
+.live-person.more { font-size: 12px; color: var(--muted); padding-left: 10px; }
+.live-avatar {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%;
+  color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .02em; border: 2px solid var(--panel); flex: none; user-select: none;
+}
+.live-person.me .live-avatar { box-shadow: 0 0 0 1px var(--border-strong); }
+#btn-live.live-on { background: var(--accent-soft); color: var(--accent); border-color: transparent; position: relative; }
+#btn-live.live-on::after {
+  content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ok); border: 1.5px solid var(--panel);
+}
+#btn-live.live-on[data-status="wait"]::after { background: var(--warn); }
+#btn-live.live-on[data-status="problem"]::after { background: var(--error); }
+.live-view-part { display: flex; flex-direction: column; gap: 10px; }
+.live-link-row { flex-wrap: nowrap; }
+.live-link-row input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; background: var(--code-bg); }
+.live-conn { padding: 6px 10px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--border); }
+.live-conn.ok { color: var(--ok); }
+.live-conn.problem { color: var(--error); background: var(--error-bg); border-color: transparent; }
+.live-sub { margin: 4px 0 0; font-size: 14px; }
+.live-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.live-row { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.live-who { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.set-group { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 10px; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.set-group legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
+.dialog textarea.set-text {
+  width: 100%; resize: vertical; border: 1px solid var(--border-strong); border-radius: 7px; padding: 6px 8px;
+  background: var(--panel); color: var(--text); font-family: var(--mono); font-size: 12px;
+}
+.dialog textarea.set-text:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+/* other people's cursors and selections in the editor */
+.live-caret {
+  position: relative; display: inline-block; width: 0; height: 1.25em; vertical-align: text-bottom;
+  border-left: 2px solid; margin-left: -1px; margin-right: -1px; pointer-events: none;
+}
+.live-caret-name {
+  position: absolute; left: -2px; top: -1.35em; padding: 0 4px; border-radius: 3px 3px 3px 0; color: #fff;
+  font-family: var(--font); font-size: 11px; line-height: 1.35em; font-weight: 600; white-space: nowrap; z-index: 5;
+}
+/* the name shows when the cursor moves, and while the mouse is on its line */
+.live-caret.quiet .live-caret-name { visibility: hidden; }
+.CodeMirror-line:hover .live-caret.quiet .live-caret-name { visibility: visible; }
+/* the Live session tab: someone else's command window, figures and workspace */
+.live-follow-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; flex: none; font-size: 13px; }
+.live-follow-head select { border: 1px solid var(--border-strong); border-radius: 6px; padding: 2px 6px; background: var(--panel); color: var(--text); font: inherit; }
+.live-follow-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); border-top: 1px solid var(--border); }
+.live-feed { border-right: 1px solid var(--border); }
+.live-feed .live-fig { margin: 4px 0; }
+.live-feed .live-fig img { max-width: min(100%, 420px); height: auto; border: 1px solid var(--border); border-radius: 6px; background: #fff; display: block; }
+.live-ws { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.live-vars-title { margin: 6px 10px 4px; font-size: 13px; }
+@media (max-width: 820px) {
+  .live-follow-body { grid-template-columns: 1fr; }
+  .live-feed { border-right: 0; border-bottom: 1px solid var(--border); min-height: 160px; }
+}

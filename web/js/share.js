@@ -119,6 +119,7 @@ export function initShare(app) {
   async function keepCopy() {
     const temp = state.project;
     if (!temp.temp) return;
+    if (app.keepLiveCopy && (await app.keepLiveCopy(temp))) return; // a live session's copy is kept in place
     await app.flushAll();
     const files = app.sortedPaths().map((path) => ({ path, content: app.liveContent(path) }));
     const name = app.uniqueProjectName((temp.meta && temp.meta.name ? String(temp.meta.name) : temp.name).replace(/\.m$/, ""));
