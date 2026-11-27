@@ -50,6 +50,7 @@ jobs:
     needs: version
     if: vars.PUBLISH_TO_PYPI == 'true'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -102,6 +103,7 @@ jobs:
     name: web app (${{ matrix.browser }})
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
