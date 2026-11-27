@@ -153,9 +153,17 @@ function helpers(page) {
 }
 
 function watchErrors(page, list, tag = "") {
+  // From a navigation (reload, goto) until the new document has loaded, the old page is going away.
+  let leaving = false;
+  page.on("request", (r) => { if (r.isNavigationRequest() && r.frame() === page.mainFrame()) leaving = true; });
+  page.on("domcontentloaded", () => (leaving = false));
   page.on("console", (msg) => {
     // The mocked GitHub error replies (rate limit, missing repository) are expected.
     if (msg.type() === "error" && /^Failed to load resource/.test(msg.text()) && /api\.github\.com/.test(msg.location().url || "")) return;
+    // WebKit reports the downloads that Pyodide (in the engine worker) still had running when the page
+    // reloads during start-up as failed (unhandled rejections, "access control checks"). The page that
+    // started them is gone; no one sees this. Chromium and Firefox say nothing.
+    if (leaving && BROWSER === "webkit" && /^(Unhandled Promise Rejection: TypeError: Load failed|(Fetch API cannot|Cannot) load https:\/\/cdn\.jsdelivr\.net\/pyodide\/\S+ due to access control checks\.)$/.test(msg.text())) return;
     if (msg.type() === "error") list.push(tag + msg.text());
   });
   page.on("pageerror", (err) => list.push(tag + "pageerror: " + err.message));
@@ -1726,7 +1734,9 @@ async function main() {
       await waitRun(n);
       let fin = await finals();
       check(Math.abs(fin[0][0] - 0.25) < 0.01 && Math.abs(fin[1][0]) < 0.01, "mass-spring-damper should settle at F/k = 0.25 with zero velocity: " + JSON.stringify(fin));
-      const drawn = await page.evaluate(() => {
+      const drawn = await page.evaluate(async () => {
+        // the scope paints the finished run in the next animation frame
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         const cv = document.querySelector(".scope-panel[data-scope='Scope'] canvas");
         const g = cv.getContext("2d");
         const d = g.getImageData(0, 0, cv.width, cv.height).data;
@@ -2445,6 +2455,10 @@ async function main() {
     ok("no console errors");
 
     console.log(`\nAll ${passed} checks passed.`);
+  } catch (e) {
+    // what the page logged often explains a failure (e.g. a script a browser could not run)
+    if (consoleErrors.length && !/^console errors:/.test(e.message)) e.message += "\n\nconsole errors before the failure:\n" + consoleErrors.join("\n");
+    throw e;
   } finally {
     await browser.close();
     proc.kill();
