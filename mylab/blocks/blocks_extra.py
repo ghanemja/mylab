@@ -63,7 +63,7 @@ class If(Node):
     icon="act",
 )
 class ActionPort(Node):
-    params = []
+    params = [P("InitializeStates", "held", "States when switched on again", options=["held", "reset"])]
     nin = 0
     nout = 0
     virtual = True

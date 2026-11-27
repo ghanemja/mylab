@@ -149,6 +149,30 @@ export const CATALOG = {
    "sink": false
   },
   {
+   "type": "FunctionCallGenerator",
+   "title": "Function-Call Generator",
+   "category": "Sources",
+   "doc": "Calls the function-call subsystem wired to it at every sample time (a number of times in a row).",
+   "icon": "f()",
+   "params": [
+    {
+     "name": "SampleTime",
+     "default": "1",
+     "kind": "expr",
+     "label": "Sample time (s)"
+    },
+    {
+     "name": "NumberOfIterations",
+     "default": "1",
+     "kind": "expr",
+     "label": "Calls at each sample time"
+    }
+   ],
+   "in": 0,
+   "out": 1,
+   "sink": false
+  },
+  {
    "type": "Ground",
    "title": "Ground",
    "category": "Sources",
@@ -2179,6 +2203,43 @@ export const CATALOG = {
    "sink": false
   },
   {
+   "type": "SwitchCase",
+   "title": "Switch Case",
+   "category": "Logic",
+   "doc": "Compares its input with lists of values (cases) and switches on the action subsystem of the matching case.",
+   "icon": "case",
+   "params": [
+    {
+     "name": "CaseConditions",
+     "default": "{1,2}",
+     "kind": "text",
+     "label": "Cases: a cell array of values or value lists, e.g. {1,[2 3]}"
+    },
+    {
+     "name": "ShowDefaultCase",
+     "default": "on",
+     "kind": "bool",
+     "label": "Default output for any other value"
+    }
+   ],
+   "in": 1,
+   "out": [
+    "sum",
+    [
+     "cell",
+     "CaseConditions"
+    ],
+    [
+     "if",
+     "ShowDefaultCase",
+     "on",
+     1,
+     0
+    ]
+   ],
+   "sink": false
+  },
+  {
    "type": "LookupTable1D",
    "title": "1-D Lookup Table",
    "category": "Nonlinear",
@@ -2583,7 +2644,18 @@ export const CATALOG = {
    "category": "Routing",
    "doc": "Put inside a subsystem: the subsystem runs only while the If block output wired to it is on.",
    "icon": "act",
-   "params": [],
+   "params": [
+    {
+     "name": "InitializeStates",
+     "default": "held",
+     "kind": "enum",
+     "label": "States when switched on again",
+     "options": [
+      "held",
+      "reset"
+     ]
+    }
+   ],
    "in": 0,
    "out": 0,
    "sink": false
@@ -2592,18 +2664,14 @@ export const CATALOG = {
    "type": "Assignment",
    "title": "Assignment",
    "category": "Routing",
-   "doc": "Replaces chosen elements of the first input with the second input.",
+   "doc": "Replaces chosen elements of a signal (Y0) with the values of another input (U).",
    "icon": "y(i)=u",
    "params": [
     {
      "name": "NumberOfDimensions",
      "default": "1",
-     "kind": "enum",
-     "label": "Number of dimensions",
-     "options": [
-      "1",
-      "2"
-     ]
+     "kind": "expr",
+     "label": "Number of dimensions"
     },
     {
      "name": "IndexMode",
@@ -2619,21 +2687,69 @@ export const CATALOG = {
      "name": "IndexOptions",
      "default": "Index vector (dialog)",
      "kind": "text",
-     "label": "Index option per dimension (Select all, Index vector (dialog), Index vector (port))"
+     "label": "Index option per dimension: Select all, Index vector (dialog), Index vector (port), Starting index (dialog), Starting index (port)"
     },
     {
      "name": "Indices",
      "default": "[1 3]",
      "kind": "text",
-     "label": "Indices, one expression per dimension"
+     "label": "Indices (or starting indices), one expression per dimension"
+    },
+    {
+     "name": "OutputInitialize",
+     "default": "Initialize using input port <Y0>",
+     "kind": "enum",
+     "label": "Start from",
+     "options": [
+      "Initialize using input port <Y0>",
+      "Specify size for each dimension"
+     ]
+    },
+    {
+     "name": "OutputSizes",
+     "default": "1",
+     "kind": "text",
+     "label": "Size of the output per dimension (when it is not taken from Y0)"
     }
    ],
    "in": [
-    "if",
-    "IndexOptions",
-    "Index vector (port)",
-    3,
-    2
+    "sum",
+    [
+     "if",
+     "OutputInitialize",
+     "Specify size for each dimension",
+     1,
+     2
+    ],
+    [
+     "ports",
+     "IndexOptions"
+    ]
+   ],
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "BusAssignment",
+   "title": "Bus Assignment",
+   "category": "Routing",
+   "doc": "Replaces signals of a bus by name with the values at its other inputs.",
+   "icon": "b=",
+   "params": [
+    {
+     "name": "AssignedSignals",
+     "default": "signal1",
+     "kind": "text",
+     "label": "Signals to replace (names separated by commas)"
+    }
+   ],
+   "in": [
+    "sum",
+    1,
+    [
+     "csv",
+     "AssignedSignals"
+    ]
    ],
    "out": 1,
    "sink": false
@@ -2642,7 +2758,7 @@ export const CATALOG = {
    "type": "BusCreator",
    "title": "Bus Creator",
    "category": "Routing",
-   "doc": "Groups signals under their names so a Bus Selector can pick them out again.",
+   "doc": "Groups signals into a bus under the names of their lines (or of a bus object); a Bus Selector picks them out.",
    "icon": "bus",
    "params": [
     {
@@ -2650,6 +2766,12 @@ export const CATALOG = {
      "default": "2",
      "kind": "text",
      "label": "Number of inputs"
+    },
+    {
+     "name": "OutDataTypeStr",
+     "default": "Inherit: auto",
+     "kind": "text",
+     "label": "Bus object for the element names (Bus: name), or Inherit: auto"
     }
    ],
    "in": [
@@ -2663,7 +2785,7 @@ export const CATALOG = {
    "type": "BusSelector",
    "title": "Bus Selector",
    "category": "Routing",
-   "doc": "Picks signals by name out of the bus made by a Bus Creator.",
+   "doc": "Picks signals out of a bus by name (nested ones as outer.inner).",
    "icon": "bsel",
    "params": [
     {
@@ -2671,12 +2793,24 @@ export const CATALOG = {
      "default": "signal1,signal2",
      "kind": "text",
      "label": "Signals to pick (names separated by commas)"
+    },
+    {
+     "name": "OutputAsBus",
+     "default": "off",
+     "kind": "bool",
+     "label": "Output the picked signals as one bus"
     }
    ],
    "in": 1,
    "out": [
-    "csv",
-    "OutputSignals"
+    "if",
+    "OutputAsBus",
+    "on",
+    1,
+    [
+     "csv",
+     "OutputSignals"
+    ]
    ],
    "sink": false
   },
@@ -2707,9 +2841,86 @@ export const CATALOG = {
    "category": "Routing",
    "doc": "Put inside a subsystem: the subsystem only runs while its enable input is positive.",
    "icon": "en",
-   "params": [],
+   "params": [
+    {
+     "name": "StatesWhenEnabling",
+     "default": "held",
+     "kind": "enum",
+     "label": "States when enabled again",
+     "options": [
+      "held",
+      "reset"
+     ]
+    }
+   ],
    "in": 0,
    "out": 0,
+   "sink": false
+  },
+  {
+   "type": "ForIterator",
+   "title": "For Iterator",
+   "category": "Routing",
+   "doc": "Put inside a subsystem: the subsystem runs its blocks N times in every time step; outputs the iteration number.",
+   "icon": "for",
+   "params": [
+    {
+     "name": "IterationSource",
+     "default": "internal",
+     "kind": "enum",
+     "label": "Number of iterations from",
+     "options": [
+      "internal",
+      "external"
+     ]
+    },
+    {
+     "name": "IterationLimit",
+     "default": "5",
+     "kind": "expr",
+     "label": "Number of iterations"
+    },
+    {
+     "name": "ResetStates",
+     "default": "held",
+     "kind": "enum",
+     "label": "States at the start of each time step",
+     "options": [
+      "held",
+      "reset"
+     ]
+    },
+    {
+     "name": "IndexMode",
+     "default": "One-based",
+     "kind": "enum",
+     "label": "Iteration numbering",
+     "options": [
+      "One-based",
+      "Zero-based"
+     ]
+    },
+    {
+     "name": "ShowIterationVariable",
+     "default": "on",
+     "kind": "bool",
+     "label": "Output the iteration number"
+    }
+   ],
+   "in": [
+    "if",
+    "IterationSource",
+    "external",
+    1,
+    0
+   ],
+   "out": [
+    "if",
+    "ShowIterationVariable",
+    "on",
+    1,
+    0
+   ],
    "sink": false
   },
   {
@@ -2816,6 +3027,24 @@ export const CATALOG = {
    "sink": false
   },
   {
+   "type": "ModelReference",
+   "title": "Model",
+   "category": "Routing",
+   "doc": "Runs another model as a block: the In and Out blocks of its top level become the ports.",
+   "icon": "mdl",
+   "params": [
+    {
+     "name": "ModelName",
+     "default": "",
+     "kind": "text",
+     "label": "Referenced model (name of an open model or a model file)"
+    }
+   ],
+   "in": "system",
+   "out": "system",
+   "sink": false
+  },
+  {
    "type": "Mux",
    "title": "Mux",
    "category": "Routing",
@@ -2854,6 +3083,16 @@ export const CATALOG = {
      "default": "[]",
      "kind": "expr",
      "label": "Output before the subsystem first runs"
+    },
+    {
+     "name": "OutputWhenDisabled",
+     "default": "held",
+     "kind": "enum",
+     "label": "Output while the subsystem is switched off",
+     "options": [
+      "held",
+      "reset"
+     ]
     }
    ],
    "in": 1,
@@ -2861,21 +3100,42 @@ export const CATALOG = {
    "sink": true
   },
   {
+   "type": "ResetPort",
+   "title": "Reset",
+   "category": "Routing",
+   "doc": "Put inside a subsystem: the blocks inside start again from their initial states when the reset input fires.",
+   "icon": "rst",
+   "params": [
+    {
+     "name": "ResetTriggerType",
+     "default": "rising",
+     "kind": "enum",
+     "label": "Reset on",
+     "options": [
+      "rising",
+      "falling",
+      "either",
+      "level",
+      "level hold"
+     ]
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false
+  },
+  {
    "type": "Selector",
    "title": "Selector",
    "category": "Routing",
-   "doc": "Picks elements of a vector (or rows and columns of a matrix) by index.",
+   "doc": "Picks elements of a signal by index: a vector, rows and columns, or more dimensions.",
    "icon": "u(i)",
    "params": [
     {
      "name": "NumberOfDimensions",
      "default": "1",
-     "kind": "enum",
-     "label": "Number of dimensions",
-     "options": [
-      "1",
-      "2"
-     ]
+     "kind": "expr",
+     "label": "Number of dimensions"
     },
     {
      "name": "IndexMode",
@@ -2891,13 +3151,19 @@ export const CATALOG = {
      "name": "IndexOptions",
      "default": "Index vector (dialog)",
      "kind": "text",
-     "label": "Index option per dimension (Select all, Index vector (dialog), Index vector (port))"
+     "label": "Index option per dimension: Select all, Index vector (dialog), Index vector (port), Starting index (dialog), Starting index (port)"
     },
     {
      "name": "Indices",
      "default": "[1 3]",
      "kind": "text",
-     "label": "Indices, one expression per dimension"
+     "label": "Indices (or starting indices), one expression per dimension"
+    },
+    {
+     "name": "OutputSizes",
+     "default": "1",
+     "kind": "text",
+     "label": "Number of elements per dimension after a starting index"
     },
     {
      "name": "InputPortWidth",
@@ -2907,11 +3173,12 @@ export const CATALOG = {
     }
    ],
    "in": [
-    "if",
-    "IndexOptions",
-    "Index vector (port)",
-    2,
-    1
+    "sum",
+    1,
+    [
+     "ports",
+     "IndexOptions"
+    ]
    ],
    "out": 1,
    "sink": false
@@ -2942,13 +3209,70 @@ export const CATALOG = {
      "options": [
       "rising",
       "falling",
-      "either"
+      "either",
+      "function-call"
      ]
     }
    ],
    "in": 0,
    "out": 0,
    "sink": false
+  },
+  {
+   "type": "WhileIterator",
+   "title": "While Iterator",
+   "category": "Routing",
+   "doc": "Put inside a subsystem: the subsystem repeats its blocks in a time step while the condition input is true.",
+   "icon": "while",
+   "params": [
+    {
+     "name": "MaxIters",
+     "default": "5",
+     "kind": "expr",
+     "label": "Most iterations per time step (-1: no limit)"
+    },
+    {
+     "name": "WhileBlockType",
+     "default": "while",
+     "kind": "enum",
+     "label": "Kind of loop",
+     "options": [
+      "while",
+      "do-while"
+     ]
+    },
+    {
+     "name": "ResetStates",
+     "default": "held",
+     "kind": "enum",
+     "label": "States at the start of each time step",
+     "options": [
+      "held",
+      "reset"
+     ]
+    },
+    {
+     "name": "ShowIterationPort",
+     "default": "off",
+     "kind": "bool",
+     "label": "Output the iteration number"
+    }
+   ],
+   "in": [
+    "if",
+    "WhileBlockType",
+    "do-while",
+    1,
+    2
+   ],
+   "out": [
+    "if",
+    "ShowIterationPort",
+    "on",
+    1,
+    0
+   ],
+   "sink": true
   },
   {
    "type": "Fcn",

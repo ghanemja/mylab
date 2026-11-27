@@ -178,6 +178,7 @@ export function drawBlock(block, opts = {}) {
   for (let k = 1; k <= counts.out; k++) addPort("out", k, labels.outs[k - 1]);
   if (counts.enable) addPort("in", "enable", "");
   if (counts.trigger) addPort("in", "trigger", "");
+  if (counts.reset) addPort("in", "reset", "");
   // name under the block
   if (!(block.other && block.other.ShowName === "off")) {
     g.append(svg("text", { class: "bd-name", x: w / 2, y: h + 14 }, block.name));

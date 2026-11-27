@@ -677,7 +677,20 @@ export function initBlocks(app) {
       const path = current, text = ed.lastText;
       try {
         const res = await app.engine.background("blocks", { op: "check", args: { model: ed.model, name: ed.model.name }, cwd: app.dirName(path) });
-        if (current === path && ed.lastText === text) ed.setDiagnostics(res.diagnostics || []);
+        if (current === path && ed.lastText === text) {
+          // Model blocks: the ports come from the model they refer to, which only the engine can read
+          let moved = false;
+          for (const [where, ports] of Object.entries(res.ports || {})) {
+            let list = ed.model.blocks, b = null;
+            for (const part of where.split("/")) {
+              b = (list || []).find((x) => x.name === part);
+              list = b ? b.blocks : null;
+            }
+            if (b && JSON.stringify(b.ports) !== JSON.stringify(ports)) { b.ports = ports; moved = true; }
+          }
+          ed.setDiagnostics(res.diagnostics || []);
+          if (moved) ed.render();
+        }
       } catch {
         /* the engine restarted; the next change checks again */
       }

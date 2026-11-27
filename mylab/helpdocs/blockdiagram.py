@@ -117,6 +117,17 @@ HELP = {
         "in the workspace of the function that calls sim. Called without an output, sim stores out, tout, yout and "
         "the To Workspace variables in the workspace. Errors name the block they come from.",
     ),
+    "Simulink.Bus": (
+        ["b = Simulink.Bus", "b.Elements = [e1 e2]"],
+        "A bus object: a struct with an Elements field (a struct array of bus elements) and a Description. A Bus "
+        "Creator whose output data type is 'Bus: b' names the signals of its bus after the elements of b, in "
+        "order. Only the element names (and how many there are) are used.",
+    ),
+    "Simulink.BusElement": (
+        "e = Simulink.BusElement",
+        "One element of a bus object: a struct with the fields Name, Dimensions, DataType, Complexity and "
+        "Description. Set e.Name and put the elements into the Elements field of a Simulink.Bus.",
+    ),
     "Simulink.Variant": (
         "v = Simulink.Variant('MODE == 2')",
         "A variant control for imported block diagrams: a struct with the field Condition. A variant subsystem "

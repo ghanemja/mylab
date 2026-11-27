@@ -1099,3 +1099,16 @@ def test_a_vector_counts_as_a_column_in_matrix_products():
     r = simulate(m)
     assert list(r.y[-1][:9]) == [1, 2, 3, 2, 4, 6, 3, 6, 9] and r.y[-1][9] == 14
     assert list(r.y[-1][10:]) == [1, 2, 3]  # transposing twice gives the vector back
+
+
+def test_subsystem_control_blocks_are_in_the_library():
+    # these are tried out in test_blocks_subsystems.py; here: names, ports and dialogs
+    types = ("ForIterator", "WhileIterator", "FunctionCallGenerator", "SwitchCase", "ResetPort", "ModelReference",
+             "BusAssignment")
+    for t in types:
+        assert find_type(t) is not None and find_type(t).type == t
+    assert find_type("simulink/Ports & Subsystems/Model").type == "ModelReference"
+    assert count_ports(find_type("SwitchCase").nout, {"CaseConditions": "{1,[2 3],4}", "ShowDefaultCase": "on"}) == 4
+    assert count_ports(find_type("BusAssignment").nin, {"AssignedSignals": "a,b.c"}) == 3
+    assert count_ports(find_type("Selector").nin, {"IndexOptions": "Index vector (port),Select all"}) == 2
+    assert np.allclose(last("SwitchCase", {"CaseConditions": "{1,2}"}, [2], n_out=3), [0, 1, 0])

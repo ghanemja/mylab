@@ -119,6 +119,24 @@ def count_ports(rule: Any, params: dict) -> int:
         return max(len([s for s in val.split(",") if s.strip()]), 1)
     if kind == "csv0":  # like csv, but an empty text counts as none
         return len([s for s in val.split(",") if s.strip()])
+    if kind == "ports":  # index options that take their value from an input port
+        return sum(1 for o in val.split(",") if "port" in o.lower())
+    if kind == "cell":  # entries of a cell array written out: {1,[2 3],4} -> 3
+        inner = val.strip()
+        if inner.startswith("{") and inner.endswith("}"):
+            inner = inner[1:-1]
+        depth, n, cur = 0, 0, ""
+        for ch in inner + ",":
+            if ch in "[({":
+                depth += 1
+            elif ch in "])}":
+                depth -= 1
+            if ch == "," and depth == 0:
+                n += 1 if cur.strip() else 0
+                cur = ""
+            else:
+                cur += ch
+        return max(n, 1)
     if kind == "dlt":  # direct lookup table: one index per dimension that is not returned whole
         whole = {"element": 0, "vector": 1, "2dmatrix": 2}.get(_key(str(params.get(rule[2], ""))), 0)
         try:
@@ -159,6 +177,10 @@ def sig(v: Any) -> np.ndarray:
         a = a.real
     a = a.astype(float)
     if a.ndim == 2 and min(a.shape) > 1:
+        return a
+    if a.ndim > 2 and sum(1 for n in a.shape if n > 1) > 1:  # arrays with more dimensions keep them
+        while a.ndim > 2 and a.shape[-1] == 1:
+            a = a[..., 0]
         return a
     return a.reshape(-1) if a.size else np.zeros(0)
 
@@ -392,4 +414,4 @@ def catalog() -> dict:
     return {"categories": CATEGORIES, "blocks": out}
 
 
-from . import blocks_basic, blocks_dynamic, blocks_more, blocks_extra, blocks_sfun  # noqa: E402,F401  (register the block types)
+from . import blocks_basic, blocks_dynamic, blocks_more, blocks_extra, blocks_sfun, subsystems  # noqa: E402,F401  (register the block types)

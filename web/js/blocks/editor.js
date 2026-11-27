@@ -595,7 +595,7 @@ export class DiagramEditor {
     const used = new Set(this.sys().lines.filter((l) => l.to[0] === block.name).map((l) => String(l.to[1])));
     const out = [];
     for (let k = 1; k <= c.in; k++) if (!used.has(String(k))) out.push(k);
-    for (const ctl of ["enable", "trigger"]) if (c[ctl] && !used.has(ctl)) out.push(ctl);
+    for (const ctl of ["enable", "trigger", "reset"]) if (c[ctl] && !used.has(ctl)) out.push(ctl);
     return out;
   }
 

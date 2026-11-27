@@ -44,7 +44,12 @@ def check(session: Any, args: dict) -> dict:
     try:
         model = _model(args)
         comp = compile_model(model, session.interp, None, strict=False)
-        return {"diagnostics": comp.diagnostics}
+        ports = {
+            path: b.extra["ports"]
+            for path, b, _s in model.root.walk()
+            if b.type == "ModelReference" and isinstance(b.extra.get("ports"), list)
+        }
+        return {"diagnostics": comp.diagnostics, "ports": ports}
     except (ModelError, SimError, ValueError) as exc:
         return {
             "diagnostics": [

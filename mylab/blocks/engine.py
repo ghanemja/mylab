@@ -402,10 +402,144 @@ def _active_variant(comp: Compiled, ctx: Context, path: str, inner: System, vari
     return out
 
 
+def _key(s: str) -> str:
+    import re
+
+    return re.sub(r"[^a-z0-9]", "", str(s).lower())
+
+
+def _mask_context(comp: Compiled, ctx: Context, path: str, b: Block) -> Context:
+    """The context of the blocks inside a subsystem: its mask variables and what its initialization code makes."""
+    child_ctx = ctx
+    mask = b.extra.get("mask")
+    if isinstance(mask, dict) and mask:
+        scope: dict = {}
+        for name, expr in mask.items():
+            try:
+                scope[name] = ctx.child(scope).evaluate(str(expr))
+            except Exception as exc:
+                comp.problem(
+                    "error",
+                    f"'{path}': mask parameter {name} = '{expr}' cannot be evaluated: {getattr(exc, 'message', exc)}",
+                    path,
+                    kind="param",
+                )
+        child_ctx = ctx.child(scope)
+    init = b.extra.get("maskInit")
+    if isinstance(init, str) and init.strip():
+        made, err = child_ctx.run_code(init, {})
+        if made:
+            child_ctx = child_ctx.child(made)
+        if err:
+            comp.problem(
+                "warning",
+                f"'{path}': the mask initialization code stopped early ({err}). "
+                "Variables it would have set after that point are missing.",
+                path,
+                kind="mask-init",
+            )
+    return child_ctx
+
+
+_REF_CACHE: dict = {}
+
+
+def referenced_model(name: str, interp: Any = None, near: str | None = None) -> Model:
+    """The model a Model block refers to: an open model of that name, or its file near the model or on the path."""
+    import os
+
+    from .model import ModelError, load_model
+
+    name = str(name).strip().strip("'\"")
+    if not name:
+        raise ModelError("the Model block does not name a model (parameter ModelName)")
+    base = os.path.basename(name)
+    stem = base
+    for ext in (".mlb.json", ".slx", ".mdl", ".json"):
+        if stem.lower().endswith(ext):
+            stem = stem[: -len(ext)]
+            break
+    if interp is not None:
+        st = getattr(interp, "state", {}).get("blockdiagram")
+        if st and stem in st["models"]:
+            return st["models"][stem]
+    folders = [near] if near else []
+    folders += [os.getcwd()] + (list(getattr(interp, "path", [])) if interp is not None else [])
+    for d in folders:
+        if not d:
+            continue
+        cands = [os.path.join(d, name)] if os.path.splitext(name)[1] else []
+        cands += [os.path.join(d, stem + ext) for ext in (".mlb.json", ".slx", ".mdl")]
+        for c in cands:
+            if os.path.isfile(c):
+                key = (os.path.abspath(c), os.path.getmtime(c))
+                if key not in _REF_CACHE:
+                    if len(_REF_CACHE) > 64:
+                        _REF_CACHE.clear()
+                    m = load_model(c)
+                    m.name = stem
+                    _REF_CACHE[key] = m
+                return _REF_CACHE[key]
+    raise ModelError(
+        f"the referenced model '{stem}' is not open and there is no {stem}.mlb.json, {stem}.slx or {stem}.mdl "
+        "next to the model, in the current folder or on the path"
+    )
+
+
+def _ref_name(b: Block) -> str:
+    for k in ("ModelName", "ModelNameDialog", "ModelFile"):
+        v = b.params.get(k, "").strip()
+        if v:
+            return v
+    return ""
+
+
+def _referenced(comp: Compiled, ctx: Context, path: str, b: Block, model: Model) -> System | None:
+    """The inside of a Model block (normal mode): a copy of the referenced model's top level."""
+    import os
+
+    from .model import ModelError
+
+    chain = list(b.extra.get("_chain") or [model.name])
+    near = b.extra.get("_near") or (os.path.dirname(os.path.abspath(model.file)) if model.file else None)
+    try:
+        ref = referenced_model(_ref_name(b), ctx.interp, near)
+    except ModelError as exc:
+        comp.problem("error", f"'{path}': {exc}", path, kind="param")
+        return None
+    if ref.name in chain or len(chain) > 32:
+        comp.problem(
+            "error",
+            f"'{path}': the model '{ref.name}' refers to itself (through {' -> '.join(chain + [ref.name])}).",
+            path,
+            kind="param",
+        )
+        return None
+    if ref.library:
+        comp.problem("error", f"'{path}': '{ref.name}' is a block library, not a model.", path, kind="param")
+        return None
+    inner = System.from_json(ref.root.to_json())
+    for _p, blk, _s in inner.walk():
+        if getattr(find_type(blk.type), "type", "") == "ModelReference":
+            blk.extra["_chain"] = chain + [ref.name]
+            if ref.file:  # models it refers to in turn are looked for next to it
+                blk.extra["_near"] = os.path.dirname(os.path.abspath(ref.file))
+    ports = [
+        sum(1 for x in inner.blocks if getattr(find_type(x.type), "type", "") == t) for t in ("Inport", "Outport")
+    ]
+    b.extra["ports"] = ports
+    return inner
+
+
 def port_count(block: Block, kind: str) -> int:
     """Number of input ('in') or output ('out') ports of a block as drawn."""
     cls = find_type(block.type)
     if cls is None:
+        return 0
+    if cls.type == "ModelReference":
+        ports = block.extra.get("ports")
+        if isinstance(ports, list) and len(ports) == 2:
+            return int(ports[0 if kind == "in" else 1])
         return 0
     if block.system is not None:
         want = "Inport" if kind == "in" else "Outport"
@@ -426,10 +560,22 @@ def _port_number(system: System, block: Block, type_name: str) -> int:
 
 
 def compile_model(
-    model: Model, interp: Any = None, frame: Any = None, strict: bool = True, config: dict | None = None
+    model: Model,
+    interp: Any = None,
+    frame: Any = None,
+    strict: bool = True,
+    config: dict | None = None,
+    ctx: Context | None = None,
+    prefix: str = "",
 ) -> Compiled:
-    """Flatten, check and sort a model. With ``strict`` the first error is raised as :class:`SimError`."""
-    ctx = Context(interp, frame)
+    """Flatten, check and sort a model. With ``strict`` the first error is raised as :class:`SimError`.
+
+    ``ctx`` and ``prefix`` are for the inside of a subsystem that runs as a unit (see
+    :mod:`.subsystems`): its own evaluation context, and the path the block names start with.
+    """
+    from .subsystems import AtomicSystem, atomic_kind
+
+    ctx = ctx or Context(interp, frame)
     comp = Compiled(model, ctx)
     cfg = dict(model.config)
     cfg.update(config or {})
@@ -455,60 +601,49 @@ def compile_model(
                 )
                 continue
             kind = cls.type
+            if kind == "ModelReference":
+                inner = _referenced(comp, sy.ctx, path, b, model)
+                if inner is None:
+                    continue
+                kind = "Subsystem"
+                b = Block(b.name, "Subsystem", {}, b.pos, b.rot, b.flip, inner)
             if kind == "Subsystem":
                 inner = b.system or System()
                 variants = b.extra.get("variants")
                 if isinstance(variants, dict) and variants:
                     inner = _active_variant(comp, sy.ctx, path, inner, variants, b.extra.get("variantLabel"))
+                child_ctx = _mask_context(comp, sy.ctx, path, b)
+                atomic = atomic_kind(inner)
+                if atomic is not None:
+                    node = AtomicSystem(path, b, inner, child_ctx, comp, atomic[0], atomic[1])
+                    node.conds = list(sy.conds)
+                    node.block = b  # type: ignore[attr-defined]
+                    comp.nodes.append(node)
+                    comp.by_path[path] = node
+                    node_of[(id(sy), b.name)] = node
+                    continue
                 conds = list(sy.conds)
                 gated = False
                 for ib in inner.blocks:
                     it = getattr(find_type(ib.type), "type", "")
-                    if it in ("EnablePort", "TriggerPort", "ActionPort"):
-                        which = "trigger" if it == "TriggerPort" else "enable"
-                        g = Gate(
-                            f"{path}/{ib.name}", which, ib.params.get("TriggerType", "rising").strip().lower(), ctx
-                        )
+                    if it in ("EnablePort", "TriggerPort", "ActionPort", "ResetPort"):
+                        which = {"TriggerPort": "trigger", "ResetPort": "reset"}.get(it, "enable")
+                        how = ib.params.get("ResetTriggerType" if it == "ResetPort" else "TriggerType", "rising")
+                        g = Gate(f"{path}/{ib.name}", which, how.strip().lower(), ctx)
+                        g.reset_on_enable = (
+                            it == "EnablePort" and _key(ib.params.get("StatesWhenEnabling", "held")) == "reset"
+                        ) or (it == "ActionPort" and _key(ib.params.get("InitializeStates", "held")) == "reset")
                         g.conds = list(sy.conds)
                         comp.nodes.append(g)
                         gates.append((g, sy, b.name, which))
                         conds.append(g)
-                        gated = True
-                child_ctx = sy.ctx
-                mask = b.extra.get("mask")
-                if isinstance(mask, dict) and mask:
-                    scope = {}
-                    for name, expr in mask.items():
-                        try:
-                            scope[name] = sy.ctx.child(scope).evaluate(str(expr))
-                        except Exception as exc:
-                            comp.problem(
-                                "error",
-                                f"'{path}': mask parameter {name} = '{expr}' cannot be evaluated: "
-                                f"{getattr(exc, 'message', exc)}",
-                                path,
-                                kind="param",
-                            )
-                    child_ctx = sy.ctx.child(scope)
-                init = b.extra.get("maskInit")
-                if isinstance(init, str) and init.strip():
-                    made, err = child_ctx.run_code(init, {})
-                    if made:
-                        child_ctx = child_ctx.child(made)
-                    if err:
-                        comp.problem(
-                            "warning",
-                            f"'{path}': the mask initialization code stopped early ({err}). "
-                            "Variables it would have set after that point are missing.",
-                            path,
-                            kind="mask-init",
-                        )
+                        gated = gated or which != "reset"
                 child = _Sys(inner, path, sy, b, conds, child_ctx)
                 child.gated = gated
                 sy.children[b.name] = child
                 build(child)
                 continue
-            if kind in ("Goto", "From", "EnablePort", "TriggerPort", "ActionPort"):
+            if kind in ("Goto", "From", "EnablePort", "TriggerPort", "ActionPort", "ResetPort"):
                 if kind == "Goto":
                     gotos.setdefault(b.params.get("GotoTag", "A").strip(), []).append((sy, b))
                 continue
@@ -526,7 +661,7 @@ def compile_model(
             comp.by_path[path] = node
             node_of[(id(sy), b.name)] = node
 
-    root = _Sys(model.root, "", None, None, [], ctx)
+    root = _Sys(model.root, prefix, None, None, [], ctx)
     build(root)
 
     def find_goto(sy: _Sys, tag: str):
@@ -553,7 +688,7 @@ def compile_model(
         if node is not None and not isinstance(node, HeldOutput):
             return (node, port - 1) if 1 <= port <= max(node.n_out(), 1) and node.n_out() else None
         kind = getattr(find_type(b.type), "type", "")
-        if kind == "Subsystem":
+        if kind in ("Subsystem", "ModelReference"):
             child = sy.children.get(name)
             if child is None:
                 return None
@@ -594,6 +729,12 @@ def compile_model(
             if node is None:
                 continue
             n = node.n_in()
+            if isinstance(node, AtomicSystem):
+                node.inputs = [source(sy, b.name, k + 1) for k in range(node.n_data)]
+                if node.kind == "call":
+                    node.inputs.append(source(sy, b.name, "trigger"))
+                node.in_names = [""] * n  # type: ignore[attr-defined]
+                continue
             node.inputs = [source(sy, b.name, k + 1) for k in range(n)]
             names = []
             for k in range(n):
@@ -611,6 +752,8 @@ def compile_model(
                 comp.taps[ln.name] = tap
     for g, sy, name, which in gates:
         g.inputs = [source(sy, name, which)]
+    for g, _sy, _name, _which in gates:
+        g.members = [n for n in comp.nodes if any(c is g for c in n.conds) and n is not g]
 
     # -- structural checks -------------------------------------------------------------
     for sy in systems:
@@ -669,15 +812,20 @@ def compile_model(
                 if (b.name, k + 1) not in sy.into:
                     unconnected.add((sy.path(b.name), k + 1))
             child = sy.children.get(b.name)
-            if child is not None and child.gated:
-                for which in ("enable", "trigger"):
+            if child is not None:
+                for which in ("enable", "trigger", "reset"):
                     has = any(
                         getattr(find_type(ib.type), "type", "")
-                        in (("EnablePort", "ActionPort") if which == "enable" else ("TriggerPort",))
+                        in {"enable": ("EnablePort", "ActionPort"), "trigger": ("TriggerPort",)}.get(
+                            which, ("ResetPort",)
+                        )
                         for ib in child.system.blocks
                     )
                     if has and (b.name, which) not in sy.into:
                         unconnected.add((sy.path(b.name), which))
+            an = node_of.get((id(sy), b.name))
+            if isinstance(an, AtomicSystem) and an.kind == "call" and (b.name, "trigger") not in sy.into:
+                unconnected.add((sy.path(b.name), "trigger"))
             for k in range(port_count(b, "out")):
                 if (b.name, k + 1) not in outs:
                     comp.problem(
@@ -735,7 +883,7 @@ def _resolve_rates(comp: Compiled) -> None:
         except BlockError as exc:
             comp.problem("error", f"'{n.path}': {exc}", n.path, kind="param")
             s = None
-        if any(g.kind == "trigger" for g in n.conds) or isinstance(n, Gate):
+        if any(g.kind == "trigger" for g in n.conds) or (isinstance(n, Gate) and n.kind != "reset"):
             s = None if s != "const" else s
         spec[id(n)] = s
     pending = [n for n in comp.nodes if spec[id(n)] == "inherit"]
@@ -1063,6 +1211,21 @@ class Sim:
         self.xwork[node.xo : node.xo + node.nx] = values
         self.x_dirty = True
 
+    def reset_members(self, gate: Node) -> None:
+        """Put the blocks switched by ``gate`` back to their initial states (resettable subsystems, and
+        subsystems that reset their states when they are enabled)."""
+        from .subsystems import restore
+
+        for n in getattr(gate, "members", []):
+            snap = self.initial_snaps.get(id(n))
+            if snap is not None:
+                restore(n, snap)
+            fn = getattr(n, "reset_states", None)
+            if fn is not None:
+                fn()
+            if n.nx:
+                self.set_state(n, self.x0[n.xo : n.xo + n.nx])
+
     @staticmethod
     def gather(n: Node) -> list:
         u = []
@@ -1341,6 +1504,14 @@ class Sim:
                 except Exception:
                     pass
         self.x0 = x
+        from .subsystems import snapshot
+
+        self.initial_snaps = {}
+        for g in order:
+            if isinstance(g, Gate) and (g.kind == "reset" or g.reset_on_enable):
+                for n in g.members:
+                    if id(n) not in self.initial_snaps and not isinstance(n, Gate):
+                        self.initial_snaps[id(n)] = snapshot(n)
         self.cont = [n for n in order if n.nx]
         self.zc_nodes = [n for n in order if n.has_zc]
         self.settlers = [n for n in order if hasattr(n, "settle")]
@@ -1615,7 +1786,14 @@ class Sim:
         for n in self.cont:
             res.state_names += [n.path] * n.nx
         outs = []
+        from .subsystems import AtomicSystem
+
+        everything = []
         for n in self.order:
+            everything.append(n)
+            if isinstance(n, AtomicSystem):
+                everything += [m for m in n.all_nodes() if not isinstance(m, (Inport, Outport))]
+        for n in everything:
             if isinstance(n, LogTap):
                 continue
             if isinstance(n, Scope):
@@ -1630,7 +1808,13 @@ class Sim:
             elif isinstance(n, XYGraph):
                 res.xy[n.path] = {"t": np.array(n.log_t), "x": n.data(0), "y": n.data(1)}
             elif isinstance(n, ToWorkspace):
-                res.workspace[n.var] = {"t": np.array(n.log_t), "data": n.data(0), "format": n.format, "path": n.path}
+                res.workspace[n.var] = {
+                    "t": np.array(n.log_t),
+                    "data": n.data(0),
+                    "format": n.format,
+                    "path": n.path,
+                    "bus": getattr(n, "bus_spec", None),
+                }
             elif isinstance(n, Display):
                 res.displays[n.path] = getattr(n, "last", np.zeros(0))
             elif isinstance(n, Outport):

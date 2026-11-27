@@ -105,6 +105,7 @@ REFERENCE_MAP = {
     "transpose": ("MathFunction", {"Operator": "transpose"}),
     "coulombviscousfriction": ("CoulombViscousFriction", {}),
     "coulombicandviscousfriction": ("CoulombViscousFriction", {}),
+    "functioncallgenerator": ("FunctionCallGenerator", {}),
 }
 # Defaults of their block types that differ from ours, for files that do not list their defaults.
 IMPORT_DEFAULTS = {
@@ -668,12 +669,23 @@ class _Importer:
                 return "Discrete-Time Integrator (accumulation method)"
         elif kind in ("Selector", "Assignment"):
             dims = (p.get("NumberOfDimensions") or "1").strip()
-            if dims not in ("1", "2"):
+            if not dims.isdigit():
                 return f"{kind} with {dims} dimensions"
             opts = p.get("IndexOptions", "Index vector (dialog)")
-            if "Starting" in opts or (dims == "2" and "port" in opts) or "Assign all" in opts and "port" in opts:
-                return f"{kind} ({opts})"
             q["IndexOptions"] = opts.replace("Assign all", "Select all")
+            if kind == "Assignment" and ports:
+                n_idx = sum(1 for o in opts.split(",") if "port" in o.lower())
+                if ports[0] == 1 + n_idx:  # no Y0 input: the output size comes from the dialog
+                    q["OutputInitialize"] = "Specify size for each dimension"
+        elif kind == "ModelReference":
+            ref = (p.get("ModelNameDialog") or p.get("ModelName") or p.get("ModelFile") or "").strip()
+            for ext in (".slx", ".mdl"):
+                if ref.lower().endswith(ext):
+                    ref = ref[: -len(ext)]
+            q["ModelName"] = ref
+            blk.extra["ports"] = [ports[0] if ports else 0, ports[1] if len(ports) > 1 else 0]
+            if _key(p.get("SimulationMode", "Normal")) not in ("normal", ""):
+                self.notes.append(f"'{blk.name}' refers to the model '{ref}' in {p.get('SimulationMode')} mode; mylab runs it in normal mode.")  # noqa: E501
         elif kind == "Switch":
             if "Threshold" not in q.get("Criteria", "u2 >= Threshold") and "~=" not in q.get("Criteria", ""):
                 return f"Switch ({q.get('Criteria')})"

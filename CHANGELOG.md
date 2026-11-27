@@ -63,6 +63,26 @@
 ### Changed
 - `mex` builds MEX files instead of raising `mylab:mex:unsupported`.
 
+### mylab Blocks
+- **Iterator, function-call, switch-case and resettable subsystems.** For
+  Iterator and While Iterator subsystems run their blocks several times in
+  a time step; function-call subsystems run when a Function-Call Generator
+  calls them; a Switch Case block switches action subsystems like an If
+  block; a Reset block inside a subsystem restarts its states. Enabled and
+  action subsystems can reset their states when they are switched on again,
+  and their Out blocks can go back to the initial output while off.
+- **Buses carry names.** Bus Creator, Bus Selector (nested names, output as
+  a bus) and the new Bus Assignment work on any bus, not only one coming
+  straight from a Bus Creator. Buses pass MATLAB Function blocks as structs,
+  Constant blocks with a struct value make one, To Workspace logs one as a
+  struct, and `Simulink.Bus` / `Simulink.BusElement` objects name the
+  elements of a Bus Creator.
+- **Model blocks** run another model file (normal mode).
+- **Selector and Assignment** take any number of dimensions, starting
+  indices, and indices from input ports in every dimension; Assignment can
+  start from a given size instead of a Y0 input. Signals with more than two
+  dimensions keep their shape.
+
 ## 1.1.0
 
 1.1.0 brings mylab's behaviour much closer to MATLAB's, adds the Curve

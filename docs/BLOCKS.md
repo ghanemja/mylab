@@ -13,6 +13,7 @@ MathWorks, Inc., and it does not try to be a complete replacement (see
 
 Contents: [In the browser](#in-the-browser) · [From code](#from-code) ·
 [The model file](#the-model-file) · [Blocks](#blocks) · [How a model runs](#how-a-model-runs) ·
+[Subsystems, buses and model references](#subsystems-buses-and-model-references) ·
 [Importing .slx files](#importing-slx-files) · [What is not supported](#what-is-not-supported) ·
 [How it was checked](#how-it-was-checked)
 
@@ -245,7 +246,11 @@ control:
 - `"library": true` marks a collection of blocks that other models link to;
   it is not meant to be run.
 - The control inputs of conditionally run subsystems are the ports
-  `"enable"` and `"trigger"`.
+  `"enable"`, `"trigger"` and `"reset"` (an If or Switch Case output goes to
+  `"enable"` of an action subsystem, a function-call signal to `"trigger"`).
+- A `ModelReference` block (*Model*) has `"params": {"ModelName": "plant"}`
+  and `"ports": [inputs, outputs]`, which mylab fills in from the referenced
+  model when it finds it.
 
 ## Blocks
 
@@ -254,7 +259,7 @@ is what the model file and `add_block` use.
 
 <!-- BLOCK-TABLE:START -->
 
-107 blocks.
+114 blocks.
 
 **Sources**
 
@@ -265,6 +270,7 @@ is what the model file and `add_block` use.
 | Clock | `Clock` | Outputs the simulation time. |
 | Constant | `Constant` | Outputs a constant value (a number, vector or matrix). |
 | From Workspace | `FromWorkspace` | Plays back data from a workspace variable: a matrix [t, u] or a struct with Time and Data. |
+| Function-Call Generator | `FunctionCallGenerator` | Calls the function-call subsystem wired to it at every sample time (a number of times in a row). |
 | Ground | `Ground` | Outputs zero. |
 | Pulse Generator | `PulseGenerator` | Rectangular pulses with a given period, width (percent of the period) and delay. |
 | Ramp | `Ramp` | Rises (or falls) at a constant slope from a start time on. |
@@ -357,6 +363,7 @@ is what the model file and `add_block` use.
 | Multiport Switch | `MultiportSwitch` | Passes the data input chosen by the first (control) input: 1 for the first, 2 for the next... |
 | Relational Operator | `RelationalOperator` | Compares two inputs (==, ~=, <, <=, >=, >); the output is 1 or 0. |
 | Switch | `Switch` | Passes the first input when the middle (control) input meets the condition, else the third. |
+| Switch Case | `SwitchCase` | Compares its input with lists of values (cases) and switches on the action subsystem of the matching case. |
 
 **Nonlinear**
 
@@ -382,21 +389,26 @@ is what the model file and `add_block` use.
 | Block | Type name | What it does |
 |-------|-----------|--------------|
 | Action Port | `ActionPort` | Put inside a subsystem: the subsystem runs only while the If block output wired to it is on. |
-| Assignment | `Assignment` | Replaces chosen elements of the first input with the second input. |
-| Bus Creator | `BusCreator` | Groups signals under their names so a Bus Selector can pick them out again. |
-| Bus Selector | `BusSelector` | Picks signals by name out of the bus made by a Bus Creator. |
+| Assignment | `Assignment` | Replaces chosen elements of a signal (Y0) with the values of another input (U). |
+| Bus Assignment | `BusAssignment` | Replaces signals of a bus by name with the values at its other inputs. |
+| Bus Creator | `BusCreator` | Groups signals into a bus under the names of their lines (or of a bus object); a Bus Selector picks them out. |
+| Bus Selector | `BusSelector` | Picks signals out of a bus by name (nested ones as outer.inner). |
 | Demux | `Demux` | Splits a vector signal into its elements (or into parts of given widths). |
 | Enable | `EnablePort` | Put inside a subsystem: the subsystem only runs while its enable input is positive. |
+| For Iterator | `ForIterator` | Put inside a subsystem: the subsystem runs its blocks N times in every time step; outputs the iteration number. |
 | From | `From` | Outputs the signal of the Goto block with the same tag. |
 | Goto | `Goto` | Sends its input to every From block with the same tag, without drawing a line. |
 | In | `Inport` | Input of a subsystem. At the top level: an external input (zero unless one is given to sim). |
 | Manual Switch | `ManualSwitch` | Passes the first or the second input, as chosen in its dialog. |
 | Merge | `Merge` | Outputs whichever input was computed most recently (for conditionally run subsystems). |
+| Model | `ModelReference` | Runs another model as a block: the In and Out blocks of its top level become the ports. |
 | Mux | `Mux` | Joins its inputs into one vector signal. |
 | Out | `Outport` | Output of a subsystem. At the top level its signal is logged in yout. |
-| Selector | `Selector` | Picks elements of a vector (or rows and columns of a matrix) by index. |
+| Reset | `ResetPort` | Put inside a subsystem: the blocks inside start again from their initial states when the reset input fires. |
+| Selector | `Selector` | Picks elements of a signal by index: a vector, rows and columns, or more dimensions. |
 | Subsystem | `Subsystem` | A group of blocks shown as one block. Double-click to look inside. |
 | Trigger | `TriggerPort` | Put inside a subsystem: the subsystem runs once each time its trigger input crosses zero. |
+| While Iterator | `WhileIterator` | Put inside a subsystem: the subsystem repeats its blocks in a time step while the condition input is true. |
 
 **User-defined**
 
@@ -423,8 +435,8 @@ Notes:
   ones other programs produce for the same seed.
 - PID Controller is continuous. Transfer Fcn, Zero-Pole and PID take a scalar
   input.
-- Bus Creator and Bus Selector are minimal: the selector must be fed by a
-  creator, and picks signals by the names of the lines going into it.
+- Buses are described under
+  [Subsystems, buses and model references](#subsystems-buses-and-model-references).
 
 ## How a model runs
 
@@ -479,6 +491,73 @@ Solvers:
 - More than 500 zero crossings in a row at one instant (a switch chattering
   infinitely fast) stops the run with an explanation.
 
+## Subsystems, buses and model references
+
+Ordinary subsystems only group blocks. These kinds change when their blocks
+run:
+
+| Kind | Made with | What happens |
+|------|-----------|--------------|
+| Enabled | an Enable block inside | runs while the `enable` input is positive |
+| Triggered | a Trigger block inside | runs once at each rising, falling or either edge of `trigger` |
+| Action (if / switch case) | an Action Port inside, fed by an If or Switch Case block | runs while its If or Switch Case output is on; a Merge block joins the results |
+| Resettable | a Reset block inside | always runs; its blocks start again from their initial states when `reset` fires (rising, falling, either, or level: every step the input is not zero) |
+| Function-call | a Trigger block with *function-call* inside, fed by a Function-Call Generator (or a chart event) | runs once per call, at the moment of the call; its outputs hold in between |
+| For Iterator | a For Iterator block inside | runs its blocks N times in each time step; the For Iterator outputs the iteration number (from 1, or from 0) |
+| While Iterator | a While Iterator block inside | repeats its blocks in a time step while its condition input is true (*while*: the initial-condition input is tested first; *do-while*: at least once), at most MaxIters times |
+
+- **States.** An enabled or action subsystem keeps its states while it is
+  off, unless the Enable block's *StatesWhenEnabling* (the Action Port's
+  *InitializeStates*) is `reset`: then its blocks start from their initial
+  states each time it is switched on again. An Out block inside can hold
+  its last value while the subsystem is off, or go back to its initial
+  output (*OutputWhenDisabled* = `reset`). An iterator subsystem keeps its
+  states from one time step to the next (*ResetStates* = `held`) or starts
+  again in every time step (`reset`); within a time step a Unit Delay or
+  Memory block carries a value from one iteration to the next.
+- **Assignment in a loop.** In an iterator subsystem, an Assignment block
+  starts from its Y0 input in the first iteration and goes on from its own
+  result in the following ones, so a loop can fill a vector element by
+  element.
+- **Restrictions.** Iterator and function-call subsystems run as one unit
+  with their own block order, so they cannot contain blocks with continuous
+  states (Integrator, Transfer Fcn…). A function-call subsystem runs after the
+  block that calls it in the same step, so a value it computes reaches the
+  caller one step later. Discrete blocks inside take the times of the calls.
+
+**Buses.** A Bus Creator puts its inputs on one line under the names of the
+lines going into it (`signal1`, `signal2`… for lines without a name), or
+under the element names of a bus object when its *OutDataTypeStr* is
+`Bus: name`. A Bus Selector picks signals out by name (`outer.inner` for a
+bus inside a bus), separately or as a new bus; a Bus Assignment replaces
+some of them. A bus passes through subsystems, Goto/From, Merge, Unit Delay
+and Memory blocks with its names. Blocks that compute with numbers see the
+elements one after the other, like a Mux output. A MATLAB Function block
+receives a bus as a struct and can return a struct, which becomes a bus;
+a Constant whose value is a struct outputs a bus; a To Workspace block logs
+a bus as a struct with one field per element. A bus object is made in code:
+
+```matlab
+e1 = Simulink.BusElement;  e1.Name = 'pos';
+e2 = Simulink.BusElement;  e2.Name = 'vel';
+B = Simulink.Bus;  B.Elements = [e1 e2];   % Bus Creator: OutDataTypeStr 'Bus: B'
+```
+
+Only the element names of a bus object are used; data types and sizes are
+not checked, and a bus is not a separate type: there are no virtual and
+nonvirtual buses to tell apart.
+
+**Model references.** A *Model* block (`ModelReference`, also
+`'simulink/Ports & Subsystems/Model'`) runs another model as part of this
+one: the In and Out blocks of its top level become the ports of the block.
+The model is looked for among the open models, then as `name.mlb.json`,
+`name.slx` or `name.mdl` next to the model that refers to it, in the current
+folder and on the path. It runs in what is often called *normal mode*: its
+blocks are copied into the model at compile time, its parameters are read
+from the workspace like any others, and its own callbacks and configuration
+are not used. A model that refers to itself, directly or through others, is
+an error.
+
 ## Importing .slx files
 
 `load_system('model')`, `sim('model')` and, in the web app, opening a `.slx`
@@ -492,8 +571,11 @@ What is converted:
 - the blocks listed above, with the parameters they share;
 - lines with their branches and corner points, signal names;
 - subsystems, in both file layouts (everything in one part, or one part per
-  subsystem); enabled, triggered and If-action subsystems; variant subsystems
+  subsystem); enabled, triggered and action subsystems, For and While
+  Iterator subsystems, function-call subsystems; variant subsystems
   (the active choice is picked from the workspace when the model is compiled);
+- Model blocks (the referenced file must be next to the model or on the path;
+  other simulation modes are run in normal mode, with a note);
 - mask parameters of subsystems as subsystem variables, and mask
   initialization code, which is run by the mylab interpreter to compute more
   of them;
@@ -658,16 +740,18 @@ parameters of 12 block types, all in agreement).
   `PostPropagationSetup`, Dwork vectors, dialog parameters),
   not zero-crossing or variable-size signals.
 - Signals that change size while the model runs; fixed-point and integer data
-  types; complex signals; bus objects; frames. Row and column vectors are not
+  types; complex signals; frames. Bus objects only name the elements of a
+  bus (see [Buses](#subsystems-buses-and-model-references)).
+- Blocks with continuous states inside iterator and function-call subsystems. Row and column vectors are not
   told apart except where it matters for matrix products: a vector counts as
   a column, and its transpose is a row.
-- Function-call subsystems, Switch Case action subsystems, For and While
-  iterator subsystems, model references, resettable subsystems, and library
-  links other than the ones described above.
+- Library links other than the ones described above. Model blocks run only
+  in normal mode, without model arguments or the referenced model's own
+  callbacks and configuration. Resettable subsystems are not read from
+  `.slx` files (the files examined had none, so the way their reset input is
+  stored is not known); they work in models built in mylab.
 - Blocks from add-on toolboxes other than the stand-ins listed above.
 - Lookup tables whose table comes from an input port.
-- The "reset states when enabling" option of enabled subsystems (states are
-  always held).
 - Discrete-time PID, discrete zero-pole, and continuous blocks with
   per-block tolerances.
 - Algebraic loops through the enable or trigger input of a subsystem (other
