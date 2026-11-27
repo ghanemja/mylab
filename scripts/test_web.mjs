@@ -165,6 +165,9 @@ function watchErrors(page, list, tag = "") {
     // started them is gone; no one sees this. Chromium and Firefox say nothing.
     // The same holds for the blob: URL from which the worker runs Pyodide's verified scripts (worker.js).
     if (leaving && BROWSER === "webkit" && /^(Unhandled Promise Rejection: TypeError: Load failed|(Fetch API cannot|Cannot) load (https:\/\/cdn\.jsdelivr\.net\/pyodide\/\S+|blob:http:\/\/127\.0\.0\.1:\d+\/[0-9a-f-]+) due to access control checks\.)$/.test(msg.text())) return;
+    // The report preview is a sandboxed frame without 'allow-scripts', on purpose. Chromium reports every script
+    // it keeps from running there (the test's own init script, which runs in every frame, included).
+    if (/^Blocked script execution in 'about:(blank|srcdoc)' because the document's frame is sandboxed and the 'allow-scripts' permission is not set\.$/.test(msg.text())) return;
     if (msg.type() === "error") list.push(tag + msg.text());
   });
   page.on("pageerror", (err) => list.push(tag + "pageerror: " + err.message));
