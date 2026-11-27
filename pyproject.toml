@@ -38,6 +38,7 @@ jupyter = ["ipykernel>=6"]
 fast = ["numexpr>=2.8"]
 excel = ["openpyxl>=3.1"]
 symbolic = ["sympy>=1.12"]
+vision = ["opencv-python-headless>=4.8"]
 dev = ["pytest>=7", "ruff>=0.4", "mcp>=1.2", "ipykernel>=6", "jupyter_client>=8", "numexpr>=2.8",
        "openpyxl>=3.1", "sympy>=1.12"]
 
