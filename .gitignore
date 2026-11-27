@@ -20,3 +20,6 @@ tests/probes/work/
 # Comparison reports from the MATLAB validation kit (on hold; never publish one)
 validation/report.md
 validation/report.json
+
+# npm packages installed for the browser tests (playwright, axe-core)
+node_modules/

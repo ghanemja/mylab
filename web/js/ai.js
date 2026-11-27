@@ -4,7 +4,9 @@
 import { parseMarkdown, escapeHtml } from "./markdown.js";
 import { prefs } from "./storage.js";
 
-const ANTHROPIC_SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.3.0/+esm";
+// The Anthropic SDK, bundled with the app (scripts/vendor_anthropic_sdk.mjs) so that no code from a CDN runs
+// without an integrity check.
+const ANTHROPIC_SDK_URL = new URL("../vendor/anthropic-sdk.mjs", import.meta.url).href;
 
 export const DEFAULT_SETTINGS = {
   provider: "none",
@@ -76,7 +78,7 @@ async function loadAnthropicSdk() {
   } catch (e) {
     console.warn("mylab: could not load the Anthropic SDK", e);
     throw new FriendlyError(
-      "The Anthropic SDK couldn't be loaded from cdn.jsdelivr.net. Check your internet connection or any content blocker, then try again."
+      "The Anthropic SDK couldn't be loaded. Reload the page and try again."
     );
   }
 }

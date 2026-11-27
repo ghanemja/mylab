@@ -1,0 +1,11 @@
+{
+  "name": "mylab-web-vendor",
+  "private": true,
+  "description": "Pinned packages that scripts/vendor_anthropic_sdk.mjs bundles into web/vendor/ (npm ci checks each package's SHA-512 from package-lock.json).",
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

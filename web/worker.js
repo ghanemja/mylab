@@ -32,6 +32,19 @@
 
 const PYODIDE_VERSION = "0.27.7";
 const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+// SHA-384 of Pyodide's core files (written by scripts/sri.py). Every one is checked before it runs:
+// the two scripts by verifiedScript(), the rest by the browser through the integrity option that
+// the fetch wrapper below adds. Packages are checked by Pyodide against the SHA-256 values in
+// the (verified) lock file.
+const PYODIDE_SRI = {
+  // BEGIN SRI (scripts/sri.py)
+  "pyodide.js": "sha384-90so5tCKvl0xs9agU29IMKlAVzhfzFX7QO//YxQkRhJG58bBZrFN+2ZTRB026X5X",
+  "pyodide.asm.js": "sha384-J3SxzZJh4tkb2bgoUc72zArF45FJ+ngsbiqNsmxqkkecNVpZ/bUHAM0JMp+YPVpx",
+  "pyodide.asm.wasm": "sha384-wDap6JvXxf3C8g5beY3kd1xMIjAtw/oTKjTqGltdxc+B9VXnYyYBoM7hveNKilxM",
+  "python_stdlib.zip": "sha384-VLeJs79hxVEBNt1hRU5Wo7VmBcyb4sdW564EJAvEWDin3Aa3QXLHm3E5mOg2GiFH",
+  "pyodide-lock.json": "sha384-1cFE0bj3+mm1a83kcqiWxoaBhrf6jPPJJORlx1TComnZ0WaHwE4znlohwPXL5tUL"
+  // END SRI
+};
 const WORKDIR = "/home/pyodide/work";
 const GRADEDIR = "/home/pyodide/grade";
 const MAX_WRITTEN_FILE = 5 * 1024 * 1024; // files written by code that are copied back into the project
@@ -631,10 +644,33 @@ _api = {
 _api
 `;
 
+/** Download one of Pyodide's scripts, let the browser check its hash, and run it. */
+async function verifiedScript(name) {
+  const resp = await fetch(PYODIDE_URL + name, { integrity: PYODIDE_SRI[name] });
+  if (!resp.ok) throw new Error(`Could not download ${name} (HTTP ${resp.status}).`);
+  const url = URL.createObjectURL(new Blob([await resp.text()], { type: "text/javascript" }));
+  try {
+    importScripts(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Pyodide downloads its other core files with fetch: add their hashes, so that the browser refuses a
+// file that differs from the one the app was tested with.
+const nativeFetch = self.fetch.bind(self);
+self.fetch = (input, init) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const name = url.startsWith(PYODIDE_URL) ? url.slice(PYODIDE_URL.length).split(/[?#]/)[0] : null;
+  if (name && PYODIDE_SRI[name] && !(init && init.integrity)) init = { ...(init || {}), integrity: PYODIDE_SRI[name] };
+  return nativeFetch(input, init);
+};
+
 async function init() {
   try {
     progress("python", "Downloading Python (Pyodide)…");
-    importScripts(PYODIDE_URL + "pyodide.js");
+    await verifiedScript("pyodide.js");
+    await verifiedScript("pyodide.asm.js"); // defines _createPyodideModule, so loadPyodide does not fetch it again
     pyodide = await self.loadPyodide({
       indexURL: PYODIDE_URL,
       stdout: (s) => stdoutBuffer.push(s),
