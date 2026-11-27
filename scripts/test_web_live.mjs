@@ -137,6 +137,7 @@ export async function testLive(browser, url, t, consoleErrors = []) {
     check((await ben.evaluate(() => localStorage.getItem("mylab.liveName"))) === '"Ben"', "the display name should be remembered");
     await until(ana, () => document.querySelectorAll("#live-people li").length === 2);
     await until(ben, () => document.querySelectorAll("#live-people li").length === 2);
+    await until(ben, () => [...document.querySelectorAll("#live-people .sr-only")].some((e) => e.textContent === "Ana, host, sharing their session"), null, 10000);
     const benSees = await peopleNames(ben);
     check(benSees.includes("Ben (you)") && benSees.some((n) => /^Ana, host, sharing their session$/.test(n)), "the presence list should name everyone for screen readers: " + benSees);
     await until(ana, () => /Ben joined the live session/.test(document.querySelector("#live-announce").textContent), null, 10000);
@@ -336,7 +337,7 @@ export async function testLive(browser, url, t, consoleErrors = []) {
     for (const p of [ana, ben]) await until(p, () => document.querySelectorAll("#live-people li").length === 2, null, 10000);
     await until(ana, () => /Cy left the live session/.test(document.querySelector("#live-announce").textContent), null, 10000);
     check((await content(cy, "together.m")) !== null, "the person who left keeps their copy");
-    check((await cy.evaluate(() => location.hash)) === "", "leaving should take the link out of the address bar");
+    await until(cy, () => location.hash === "", null, 10000).catch(() => check(false, "leaving should take the link out of the address bar"));
     ok("leaving: the others' lists update at once and announce it; the one who left keeps their copy");
 
     // coming back with the link: the copy catches up with what changed meanwhile
@@ -359,8 +360,9 @@ export async function testLive(browser, url, t, consoleErrors = []) {
     await until(cy, () => !window.mylab.app.live.info() && [...document.querySelectorAll(".toast")].some((x) => /Ana ended the live session/.test(x.textContent)), null, 15000);
     await until(ana, () => !window.mylab.app.live.info() && document.querySelector("#live-bar").hidden);
     check((await content(ben, "main.m")).includes("after the copy") && (await content(ana, "main.m")).includes("after the copy"), "everyone keeps their copy of the files");
-    check((await ana.evaluate(() => location.hash)) === "", "ending should take the link out of the address bar");
-    check(await ben.evaluate(() => !("live" in (window.mylab.state.project.meta || {}))), "an ended session should be forgotten by the kept project");
+    // leaving finishes a moment after the session is gone (the others are told first)
+    await until(ana, () => location.hash === "", null, 10000).catch(() => check(false, "ending should take the link out of the address bar"));
+    await until(ben, () => !("live" in (window.mylab.state.project.meta || {})), null, 10000).catch(() => check(false, "an ended session should be forgotten by the kept project"));
     ok("the host ends the session: everyone is told and disconnected, and keeps their copy");
   } finally {
     for (const c of contexts) await c.close().catch(() => {});

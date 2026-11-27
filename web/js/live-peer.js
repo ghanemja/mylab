@@ -22,6 +22,9 @@ export function chunkedPeerClass(SimplePeer) {
       this._frames = [];
       this._pumpTimer = null;
       this._incoming = null; // { buf, filled }
+      // A connection that fails ends with an "error" event (y-webrtc then looks for the peer again). An
+      // event emitter throws an "error" that no one listens to: make sure a late one never does.
+      this.on("error", () => {});
     }
 
     send(data) {
@@ -53,7 +56,7 @@ export function chunkedPeerClass(SimplePeer) {
       clearTimeout(this._pumpTimer);
       this._pumpTimer = null;
       const ch = this._channel;
-      while (this._frames.length && !this.destroyed && ch && ch.readyState === "open") {
+      while (this._frames.length && !this.destroyed && !this.destroying && ch && ch.readyState === "open") {
         if (ch.bufferedAmount > HIGH_WATER) {
           // "bufferedamountlow" brings us back; the timer covers a browser that misses it
           this._pumpTimer = setTimeout(() => this._pump(), 100);
@@ -61,9 +64,11 @@ export function chunkedPeerClass(SimplePeer) {
         }
         try {
           ch.send(this._frames.shift());
-        } catch (e) {
+        } catch {
+          // The other side closed the channel a moment ago (WebKit still says "open" then). The
+          // connection is over: close it without an "error", which y-webrtc would only log.
           this._frames = [];
-          this.destroy(e);
+          this.destroy();
           return;
         }
       }
