@@ -29,7 +29,7 @@ const READY = "body[data-engine='ready']";
 const MARKER = "live_marker_5f0c2a"; // text in a shared file that must never reach the signalling server
 
 /** A minimal STUN server: answers Binding requests (RFC 5389) with the address it sees. */
-function startStun() {
+export function startStun() {
   const sock = dgram.createSocket("udp4");
   sock.on("message", (msg, from) => {
     if (msg.length < 20 || msg.readUInt16BE(0) !== 0x0001 || msg.readUInt32BE(4) !== 0x2112a442) return;

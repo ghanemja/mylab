@@ -24,7 +24,8 @@ import fs from "node:fs";
 import os from "node:os";
 
 import { testApps, clipboardPermissions } from "./test_web_apps.mjs";
-import { testLive } from "./test_web_live.mjs";
+import { testLive, startStun } from "./test_web_live.mjs";
+import { startSignalingServer } from "./signaling_server.mjs";
 
 const require = createRequire(import.meta.url);
 const playwright = require("playwright");
@@ -287,9 +288,143 @@ async function recordGif(browser, url) {
   await page.waitForFunction(() => document.querySelectorAll("[data-problem='p1_rect_area'] .asg-test.pass").length === 2);
   await h.waitIdle();
   await frame("…check again: the tests pass", 3200);
-  await context.close();
 
-  const outFile = path.join(IMAGES, "demo.gif");
+  // Live collaboration: a second person opens the link, and their edits and cursor appear as they type
+  const sig = await startSignalingServer();
+  const stun = await startStun();
+  const query = `?signaling=${encodeURIComponent(sig.url)}&ice=${encodeURIComponent(`stun:127.0.0.1:${stun.port}`)}`;
+  await page.goto(url + query);
+  await page.waitForSelector(READY, { timeout: 240000 });
+  await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); });
+  await page.evaluate(() => window.mylab.createFile("orbit.m", "% Working on this together\nt = linspace(0, 2*pi, 200);\n"));
+  await page.waitForSelector(".tab.active[data-name='orbit.m']");
+  await page.click("#btn-live");
+  await page.waitForSelector("#dlg-live[open] #live-start-view:not([hidden])");
+  await page.fill("#live-name", "Ana");
+  await frame("Live: work on a project together…", 1500);
+  await page.click("#live-start");
+  await page.waitForFunction(() => document.querySelector("#live-link").value.includes("#live="));
+  const link = await page.inputValue("#live-link");
+  await frame("…send the link: no account, end-to-end encrypted", 1700);
+  await page.click("#dlg-live button[value=close]");
+  const guestContext = await browser.newContext({ viewport: { width: 1200, height: 700 }, deviceScaleFactor: 1 });
+  const ben = await guestContext.newPage();
+  await ben.goto(url + query + new URL(link).hash);
+  await ben.waitForSelector("#dlg-prompt[open]");
+  await ben.fill("#prompt-input", "Ben");
+  await ben.click("#prompt-ok");
+  await ben.waitForFunction(() => { const i = window.mylab.app.live.info(); return i && i.ready; }, null, { timeout: 120000 });
+  await page.waitForFunction(() => document.querySelectorAll("#live-people li").length === 2, null, { timeout: 60000 });
+  await ben.click(".file-item[data-name='orbit.m']");
+  await ben.evaluate(() => { const cm = window.mylab.editor; cm.focus(); cm.setCursor({ line: 99, ch: 0 }); });
+  await ben.keyboard.type("plot(cos(t), sin(t)), axis equal", { delay: 35 });
+  await page.waitForFunction(() => /axis equal/.test(window.mylab.editor.getValue()), null, { timeout: 30000 });
+  await page.waitForTimeout(600);
+  await frame("Ben joins: his edits and cursor appear live", 2200);
+  await page.click("#btn-run");
+  await page.waitForSelector(".plot-card img", { timeout: 120000 });
+  await h.waitIdle();
+  await frame("Everyone runs the same code in their own browser", 2200);
+  await guestContext.close();
+  await context.close();
+  await sig.close();
+  stun.close();
+  await buildGif(frames, path.join(IMAGES, "demo.gif"));
+  fs.rmSync(dir, { recursive: true, force: true });
+
+  await recordBringYourCode(browser, url);
+}
+
+/** Bring what you have: a folder of existing .m files runs unchanged, and a Simulink .slx model simulates. */
+async function recordBringYourCode(browser, url) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mylab-gif2-"));
+  const context = await browser.newContext({ viewport: { width: 1200, height: 700 }, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  const h = helpers(page);
+  const frames = [];
+  const frame = async (caption, hold = 1000) => {
+    await page.evaluate((text) => {
+      let c = document.getElementById("demo-caption");
+      if (!c) {
+        c = document.createElement("div");
+        c.id = "demo-caption";
+        c.style.cssText =
+          "position:fixed;left:50%;bottom:34px;transform:translateX(-50%);z-index:999;background:#0f766e;color:#fff;font:600 17px/1.3 system-ui,sans-serif;padding:9px 18px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.25);white-space:nowrap";
+        document.body.appendChild(c);
+      }
+      c.textContent = text;
+      document.querySelectorAll(".toast").forEach((t) => t.remove());
+    }, caption);
+    await page.waitForTimeout(250);
+    const file = path.join(dir, `f${String(frames.length).padStart(3, "0")}.png`);
+    await page.screenshot({ path: file });
+    frames.push({ file, hold });
+  };
+
+  await page.goto(url);
+  await page.waitForSelector(READY, { timeout: 240000 });
+  await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); });
+
+  // an existing project: a script, a function in a subfolder and a data file, written for MATLAB
+  const proj = path.join(dir, "heat_lab");
+  fs.mkdirSync(path.join(proj, "lib"), { recursive: true });
+  fs.mkdirSync(path.join(proj, "data"));
+  fs.writeFileSync(path.join(proj, "main.m"),
+    "% Cooling experiment: fit Newton's law to the measurements\n" +
+    "T = readtable('data/cooling.csv');\n" +
+    "k = cooling_rate(T.minutes, T.temp, 20);\n" +
+    "fprintf('Cooling rate k = %.3f per minute\\n', k);\n" +
+    "t = linspace(0, 30, 200);\n" +
+    "plot(T.minutes, T.temp, 'o', t, 20 + (T.temp(1) - 20)*exp(-k*t), '-')\n" +
+    "xlabel('minutes'), ylabel('temperature (C)'), legend('measured', 'model'), grid on\n");
+  fs.writeFileSync(path.join(proj, "lib", "cooling_rate.m"),
+    "function k = cooling_rate(t, T, ambient)\n% COOLING_RATE  Least-squares fit of T = ambient + c*exp(-k*t).\n" +
+    "p = polyfit(t, log(T - ambient), 1);\nk = -p(1);\nend\n");
+  const rows = [0, 3, 6, 9, 12, 15, 20, 25, 30].map((m) => `${m},${(20 + 70 * Math.exp(-0.11 * m) + (m % 2 ? 0.6 : -0.4)).toFixed(1)}`);
+  fs.writeFileSync(path.join(proj, "data", "cooling.csv"), "minutes,temp\n" + rows.join("\n") + "\n");
+  await page.setInputFiles("#folder-input", proj);
+  await page.waitForSelector("#dlg-summary[open]");
+  await frame("Open a folder of existing .m files…", 1700);
+  await page.click("#dlg-summary button[value='close']");
+  await page.waitForSelector(".tab.active[data-name='main.m']");
+  await frame("…your scripts, functions and data, as they are", 1500);
+  await page.click("#btn-run");
+  await page.waitForSelector(".plot-card img", { timeout: 120000 });
+  await h.waitIdle();
+  await frame("…and run them unchanged", 2200);
+
+  // a Simulink model: Step -> Transfer Fcn -> Scope, saved as .slx
+  await page.evaluate(async () => {
+    const zip = new JSZip();
+    const P = (n, v) => `<P Name="${n}">${v}</P>`;
+    zip.file("simulink/blockdiagram.xml", `<?xml version="1.0" encoding="utf-8"?><ModelInformation Version="1.0"><Model><System>
+      <Block BlockType="Step" Name="Step" SID="1">${P("Position", "[40, 60, 80, 100]")}${P("Time", "1")}</Block>
+      <Block BlockType="TransferFcn" Name="Plant" SID="2">${P("Position", "[150, 55, 260, 105]")}${P("Numerator", "[4]")}${P("Denominator", "[1 1.2 4]")}</Block>
+      <Block BlockType="Scope" Name="Scope" SID="3">${P("Position", "[330, 60, 370, 100]")}</Block>
+      <Line>${P("Src", "1#out:1")}${P("Dst", "2#in:1")}</Line>
+      <Line>${P("Src", "2#out:1")}${P("Dst", "3#in:1")}</Line>
+    </System></Model></ModelInformation>`);
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    await window.mylab.app.writeFiles([{ path: "plant.slx", content: bytes }]);
+    window.mylab.app.renderFileList();
+  });
+  await page.evaluate(() => window.mylab.app.openFile("plant.slx"));
+  await page.waitForSelector(".bd-svg .bd-block[data-name='Plant']", { timeout: 60000 });
+  await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); });
+  await frame("Open a Simulink .slx model…", 1700);
+  const before = await page.evaluate(() => Number(document.querySelector("#blocks-view").dataset.runs || 0));
+  await page.click("#bd-run");
+  await page.waitForFunction((k) => Number(document.querySelector("#blocks-view").dataset.runs || 0) > k, before, { timeout: 120000 });
+  await h.waitIdle();
+  await page.waitForTimeout(800);
+  await frame("…and simulate it: blocks, solvers and live scopes", 2600);
+  await context.close();
+  await buildGif(frames, path.join(IMAGES, "bring-your-code.gif"));
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/** Turn screenshots into a GIF with one shared palette (small file, steady colours). */
+async function buildGif(frames, outFile) {
   const script = `
 import json, sys
 from PIL import Image
@@ -306,11 +441,11 @@ quant[0].save(out, save_all=True, append_images=quant[1:], duration=[f["hold"] f
 print(len(quant), "frames", images[0].size)
 `;
   const r = spawnSync(PY, ["-c", script, JSON.stringify(frames), outFile], { encoding: "utf8" });
-  if (r.status !== 0) throw new Error("building demo.gif failed (is Pillow installed?):\n" + r.stderr);
+  const name = path.basename(outFile);
+  if (r.status !== 0) throw new Error(`building ${name} failed (is Pillow installed?):\n` + r.stderr);
   const mb = fs.statSync(outFile).size / 1024 / 1024;
-  fs.rmSync(dir, { recursive: true, force: true });
-  if (mb > 6) throw new Error(`demo.gif is ${mb.toFixed(1)} MB (limit 6 MB)`);
-  ok(`docs/images/demo.gif built: ${r.stdout.trim()}, ${mb.toFixed(2)} MB`);
+  if (mb > 6) throw new Error(`${name} is ${mb.toFixed(1)} MB (limit 6 MB)`);
+  ok(`docs/images/${name} built: ${r.stdout.trim()}, ${mb.toFixed(2)} MB`);
 }
 
 /* ------------------------------------------------------------- integrity */
