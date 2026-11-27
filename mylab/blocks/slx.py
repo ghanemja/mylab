@@ -220,6 +220,7 @@ class _Importer:
         self.stats = self.root.stats if root else _Stats()
         self.defaults: dict[str, dict[str, str]] = {}
         self.scripts: dict[str, str] = {}
+        self.charts: dict[str, Any] = {}
         self.top: ET.Element | None = None
         self.top_system: ET.Element | None = None
         self.libs: dict[str, "_Importer | None"] = {}
@@ -411,6 +412,7 @@ class _Importer:
                     cname = next((p.text or "" for p in chart.findall("P") if p.get("Name") == "name"), "")
                     # block names are compared without line breaks or spaces at their ends
                     cname = "/".join(part.strip() for part in re.sub(r"\s+", " ", cname).split("/"))
+                    self.charts[cname] = chart
                     for p in chart.iter("P"):
                         if p.get("Name") == "script" and p.text:
                             self.scripts[cname] = p.text
@@ -552,6 +554,26 @@ class _Importer:
                     return unsupported("MATLAB Function (code not found in the file)")
                 blk.type = "MATLABFunction"
                 blk.params["Script"] = script
+                self._count("converted")
+                return blk
+            if sf == "Chart":
+                chart = next(
+                    (self.charts[k] for k in (chart_prefix + name, path, name) if k in self.charts), None
+                )
+                if chart is None:
+                    return unsupported("Chart (not found in the file)")
+                from .chart import ChartDef, chart_from_sf
+
+                try:
+                    desc = chart_from_sf(chart)
+                    ChartDef.from_json(desc)
+                except Exception as exc:  # a chart we cannot read is kept as a placeholder
+                    self.notes.append(f"'{path}': the chart could not be converted: {exc}")
+                    return unsupported("Chart (not converted)")
+                blk.type = "Chart"
+                blk.extra["chart"] = desc
+                if p.get("SampleTime", "").strip():
+                    blk.params["SampleTime"] = p["SampleTime"].strip()
                 self._count("converted")
                 return blk
             if sf not in ("NONE", ""):

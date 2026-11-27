@@ -225,6 +225,13 @@ export function portCounts(block) {
       reset: innerOfType(block, "ResetPort").length > 0,
     };
   }
+  if (t.type === "Chart") {
+    const c = block.chart || {};
+    const scope = (x) => String(x.scope || "").toLowerCase();
+    const ins = (c.data || []).filter((d) => scope(d) === "input").length + ((c.events || []).some((e) => scope(e) === "input") ? 1 : 0);
+    const outs = (c.data || []).filter((d) => scope(d) === "output").length + (c.events || []).filter((e) => scope(e) === "output").length;
+    return { in: ins, out: outs, enable: false, trigger: false };
+  }
   if (t.type === "ModelReference") {
     const p = Array.isArray(block.ports) ? block.ports : [0, 0];
     return { in: p[0] || 0, out: p[1] || 0, enable: false, trigger: false };
@@ -242,6 +249,15 @@ export function portLabels(block) {
   if (t.type === "Subsystem") {
     const byPort = (list) => list.slice().sort((a, b) => Number((a.params || {}).Port || 0) - Number((b.params || {}).Port || 0)).map((b) => b.name);
     return { ins: byPort(innerOfType(block, "Inport")), outs: byPort(innerOfType(block, "Outport")) };
+  }
+  if (t.type === "Chart") {
+    const c = block.chart || {};
+    const scope = (x) => String(x.scope || "").toLowerCase();
+    for (const d of c.data || []) if (scope(d) === "input") ins.push(d.name);
+    if ((c.events || []).some((e) => scope(e) === "input")) ins.push("events");
+    for (const d of c.data || []) if (scope(d) === "output") outs.push(d.name);
+    for (const e of c.events || []) if (scope(e) === "output") outs.push(e.name);
+    return { ins, outs };
   }
   if (t.type === "MATLABFunction") {
     const s = signature(p.Script);

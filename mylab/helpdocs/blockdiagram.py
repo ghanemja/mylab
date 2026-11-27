@@ -119,6 +119,48 @@ HELP = {
         "in the workspace of the function that calls sim. Called without an output, sim stores out, tout, yout and "
         "the To Workspace variables in the workspace. Errors name the block they come from.",
     ),
+    "chart_state": (
+        ["chart_state(chart, name)", "chart_state(chart, name, label)", "chart_state(chart, 'A.B', label, "
+         "'Decomposition', 'parallel')"],
+        "Adds a state to the Chart block chart (a block path such as 'model/Chart'). A dotted name puts the "
+        "state inside another one. The label holds the actions, one per line: 'entry: y = 1;', 'during: ...', "
+        "'exit: ...' (or en:, du:, ex:); lines before the first keyword are entry actions. The option "
+        "Decomposition makes the new state's own substates parallel (all active) instead of exclusive; "
+        "set_param(chart, 'Decomposition', 'parallel') does that for the top level of the chart.",
+    ),
+    "chart_transition": (
+        ["chart_transition(chart, from, to)", "chart_transition(chart, from, to, label)"],
+        "Adds a transition from a state or junction to another. An empty from ('') makes a default transition: "
+        "the one followed when the chart, or the state that holds the destination, is entered. The label is "
+        "event[condition]{condition action}/transition action, every part optional, for example "
+        "'go[u > 1]{n = 0;}/y = 2;'. after(n, tick), before, every and at (with tick or sec) can stand for the "
+        "event or appear in the condition. Transitions leaving the same state are tried in the order they "
+        "were added.",
+    ),
+    "chart_junction": (
+        ["chart_junction(chart, name)", "chart_junction(chart, name, parentState)"],
+        "Adds a connective junction: transitions can lead to it and leave it, so one decision can branch. A "
+        "junction without outgoing transitions ends a flow.",
+    ),
+    "chart_data": (
+        ["chart_data(chart, name, scope)", "chart_data(chart, name, scope, initial)"],
+        "Adds a variable of the chart. The scope 'input' and 'output' make block ports (in the order added); "
+        "'local' variables keep their value between steps; 'constant' takes the initial value; 'parameter' is "
+        "read from the workspace. initial is a MATLAB expression (default 0).",
+    ),
+    "chart_event": (
+        ["chart_event(chart, name, scope)", "chart_event(chart, name, scope, trigger)"],
+        "Adds an event. Input events share one extra input port (one element per event) and wake the chart "
+        "when their signal rises, falls, does either, or (trigger 'function-call') when a function-call "
+        "signal calls it. An output event becomes an output port: a function-call output calls the "
+        "function-call subsystem wired to it once per send, other kinds toggle the signal. Local events are "
+        "sent to the whole chart at once.",
+    ),
+    "send": (
+        "send(E)",
+        "In an action of a Chart block: broadcasts the event E (an output event or a local event of the chart). "
+        "A statement that is only the event's name does the same.",
+    ),
     "Simulink.Bus": (
         ["b = Simulink.Bus", "b.Elements = [e1 e2]"],
         "A bus object: a struct with an Elements field (a struct array of bus elements) and a Description. A Bus "

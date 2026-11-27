@@ -328,6 +328,10 @@ def _set_block_param(m, system, b, name: str, value: Any) -> None:
     low = name.lower()
     if low in ("modelnamedialog", "modelfile") and b.type == "ModelReference":
         low, name = "modelname", "ModelName"
+    if low == "decomposition" and b.type == "Chart":
+        b.extra.setdefault("chart", {})["decomposition"] = text(value).lower()
+        m.dirty = True
+        return
     if low == "position":
         p = np.ravel(
             np.asarray(
@@ -1039,3 +1043,125 @@ def _trim(interp, args, nargout):
 
 def _unused() -> None:  # keep the imports that only type checkers see
     _ = (MString, to_str)
+
+
+# -- state charts ----------------------------------------------------------------------------------
+
+
+def _chart(interp, path_value: Any, what: str) -> dict:
+    """The chart description of a Chart block, made empty if it has none yet."""
+    t = _target(interp, path_value)
+    if t[0] != "block":
+        raise MatlabError(f"{what}: the first argument must be the path of a Chart block, e.g. 'model/Chart'.")
+    m = t[1]
+    _, b = m.find(t[2])
+    if b.type != "Chart":
+        raise MatlabError(f"{what}: '{m.name}/{t[2]}' is a {b.type} block, not a Chart.")
+    m.dirty = True
+    return b.extra.setdefault("chart", {"decomposition": "exclusive"})
+
+
+def _opt_text(args: list, k: int, default: str = "") -> str:
+    return text(args[k]) if len(args) > k and is_text(args[k]) else (_as_text(args[k]) if len(args) > k else default)
+
+
+@builtin("chart_state")
+@_wrap
+def _chart_state(interp, args, nargout):
+    nargs(args, 2, 5, "chart_state")
+    c = _chart(interp, args[0], "chart_state")
+    path = text(args[1])
+    label = _opt_text(args, 2)
+    decomposition = "exclusive"
+    rest = list(args[3:])
+    for k, v in _pairs(rest, "chart_state"):
+        if k.lower() != "decomposition":
+            raise MatlabError(f"chart_state: unknown option '{k}'. The option is 'Decomposition'.")
+        decomposition = text(v)
+    from ..blocks.chart import ChartBuilder
+
+    b = ChartBuilder()
+    b.d = c
+    c.setdefault("states", [])
+    try:
+        b.state(path, label, decomposition)
+    except Exception as exc:  # BlockError from the builder
+        raise MatlabError(f"chart_state: {exc}") from None
+    return None
+
+
+@builtin("chart_transition")
+@_wrap
+def _chart_transition(interp, args, nargout):
+    nargs(args, 3, 4, "chart_transition")
+    c = _chart(interp, args[0], "chart_transition")
+    label = _opt_text(args, 3)
+    from ..blocks.chart import parse_transition_label
+
+    try:
+        parse_transition_label(label)
+    except Exception as exc:
+        raise MatlabError(f"chart_transition: {exc}") from None
+    t = {"from": text(args[1]), "to": text(args[2])}
+    if label:
+        t["label"] = label
+    c.setdefault("transitions", []).append(t)
+    return None
+
+
+@builtin("chart_junction")
+@_wrap
+def _chart_junction(interp, args, nargout):
+    nargs(args, 2, 3, "chart_junction")
+    c = _chart(interp, args[0], "chart_junction")
+    j = {"name": text(args[1])}
+    if len(args) > 2 and text(args[2]):
+        j["parent"] = text(args[2])
+    c.setdefault("junctions", []).append(j)
+    return None
+
+
+@builtin("chart_data")
+@_wrap
+def _chart_data(interp, args, nargout):
+    nargs(args, 2, 4, "chart_data")
+    c = _chart(interp, args[0], "chart_data")
+    scope = _opt_text(args, 2, "local").lower()
+    if scope not in ("input", "output", "local", "constant", "parameter"):
+        raise MatlabError("chart_data: the scope must be 'input', 'output', 'local', 'constant' or 'parameter'.")
+    item = {"name": text(args[1]), "scope": scope}
+    if len(args) > 3:
+        item["initial"] = _opt_text(args, 3)
+    c.setdefault("data", []).append(item)
+    return None
+
+
+@builtin("chart_event")
+@_wrap
+def _chart_event(interp, args, nargout):
+    nargs(args, 2, 4, "chart_event")
+    c = _chart(interp, args[0], "chart_event")
+    scope = _opt_text(args, 2, "local").lower()
+    if scope not in ("input", "output", "local"):
+        raise MatlabError("chart_event: the scope must be 'input', 'output' or 'local'.")
+    trigger = _opt_text(args, 3, "either").lower()
+    c.setdefault("events", []).append({"name": text(args[1]), "scope": scope, "trigger": trigger})
+    return None
+
+
+@builtin("send")
+def _send(interp, args, nargout):
+    fn = interp.state.get("chart_send")
+    if fn is None:
+        raise MatlabError(
+            "send(E) broadcasts an event of a state chart; it works only in the actions of a Chart block."
+        )
+    if not args:
+        raise MatlabError("send needs the event to broadcast, e.g. send(E).")
+    from ..blocks.library import BlockError
+
+    try:
+        fn(text(args[0]))
+    except BlockError as exc:
+        raise MatlabError(str(exc)) from None
+    return None

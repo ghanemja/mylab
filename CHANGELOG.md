@@ -84,6 +84,15 @@
   `.mdl`) and *Save a copy as .slx / .mdl* in the diagram editor write a copy
   that mylab reads back into the same model. The files are made for mylab
   and were not tested with any other program.
+- **State charts:** the new Chart block runs hierarchical state machines
+  with exclusive and parallel states, default transitions, junctions,
+  event-triggered transitions with conditions, condition actions and
+  transition actions, entry/during/exit actions in MATLAB code, input,
+  output and local data and events (function-call output events call
+  function-call subsystems), and `after`/`before`/`every`/`at` with ticks or
+  seconds. `chart_state`, `chart_transition`, `chart_junction`, `chart_data`,
+  `chart_event` and `send` build and drive charts from code; charts are
+  kept in `.slx` and `.mdl` files mylab writes.
 - The `.slx` reader reads a model's description, and MATLAB Function code
   whose block path has spaces at the end of a name.
 - **Selector and Assignment** take any number of dimensions, starting

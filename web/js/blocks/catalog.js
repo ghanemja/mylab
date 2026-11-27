@@ -3275,6 +3275,24 @@ export const CATALOG = {
    "sink": true
   },
   {
+   "type": "Chart",
+   "title": "Chart",
+   "category": "User-defined",
+   "doc": "A state chart: states with entry, during and exit actions, transitions with events and conditions.",
+   "icon": "chart",
+   "params": [
+    {
+     "name": "SampleTime",
+     "default": "-1",
+     "kind": "expr",
+     "label": "Sample time (s); -1 takes it from the inputs"
+    }
+   ],
+   "in": "chart",
+   "out": "chart",
+   "sink": false
+  },
+  {
    "type": "Fcn",
    "title": "Fcn",
    "category": "User-defined",

@@ -87,6 +87,7 @@ class _Builder:
         self.model = model
         self.next_sid = 0
         self.charts: list[tuple[str, str]] = []  # (block path inside the model, MATLAB Function code)
+        self.state_charts: list[tuple[str, dict, str]] = []  # (block path, chart description, sample time)
 
     def sid(self) -> str:
         self.next_sid += 1
@@ -97,7 +98,7 @@ class _Builder:
         ours = cls.type if cls is not None else b.type
         sid = self.sid()
         kind = OUT_TYPE.get(ours, ours)
-        if ours == "MATLABFunction":
+        if ours in ("MATLABFunction", "Chart"):
             kind = "SubSystem"
         node = _Node("Block", {"BlockType": kind, "Name": b.name, "SID": sid})
         x, y, w, h = (b.pos + [0, 0, 0, 0])[:4]
@@ -119,6 +120,11 @@ class _Builder:
             node.values.append(("SFBlockType", "MATLAB Function"))
             code = b.params.get("Script") or (cls.params[0].default if cls else "")
             self.charts.append((path, code))
+        elif ours == "Chart":
+            node.values.append(("SFBlockType", "Chart"))
+            for k, v in b.params.items():
+                node.values.append((k, v))
+            self.state_charts.append((path, b.extra.get("chart") or {}, b.params.get("SampleTime", "-1")))
         else:
             # every parameter, defaults too, so that a reader that assumes other defaults gets the same block
             values = {p.name: p.default for p in (cls.params if cls is not None else [])}
@@ -250,16 +256,48 @@ def slx_bytes(model: Model) -> bytes:
         z.writestr("_rels/.rels", RELS)
         z.writestr("simulink/blockdiagram.xml", _bytes(info))
         z.writestr("simulink/configSet0.xml", _bytes(cs))
-        if b.charts:
-            z.writestr("simulink/stateflow/stateflow.xml", _bytes(_charts_xml(b.charts)))
+        if b.charts or b.state_charts:
+            z.writestr("simulink/stateflow/stateflow.xml", _bytes(_charts_xml(b.charts, b.state_charts)))
         z.writestr("metadata/mylab.xml", _bytes(meta))
     return buf.getvalue()
 
 
-def _charts_xml(charts: list) -> ET.Element:
+def _sf_objects(state_charts: list, first: int) -> tuple[list, int]:
+    from .chart import chart_to_sf
+
+    out = []
+    k = first
+    for path, chart, _ts in state_charts:
+        objs, k = chart_to_sf(chart, path, k)
+        out += objs
+    return out, k
+
+
+def _sf_xml(parent: ET.Element, obj: tuple) -> None:
+    kind, oid, values, children = obj
+    el = ET.SubElement(parent, kind, id=str(oid))
+    for k, v in values:
+        ET.SubElement(el, "P", Name=k).text = v
+    if kind == "chart":
+        kids = ET.SubElement(el, "Children")
+        for c in children:
+            _sf_xml(kids, c)
+        return
+    for name, vals in children:
+        sub = ET.SubElement(el, name)
+        for k, v in vals:
+            if k == "id":
+                sub.set("id", v)
+            ET.SubElement(sub, "P", Name=k).text = v
+
+
+def _charts_xml(charts: list, state_charts: list = ()) -> ET.Element:
     root = ET.Element("Stateflow")
     machine = ET.SubElement(root, "machine", id="1")
     kids = ET.SubElement(machine, "Children")
+    objs, k = _sf_objects(list(state_charts), 1000)
+    for obj in objs:
+        _sf_xml(kids, obj)
     k = 1
     for path, code in charts:
         k += 1
@@ -390,8 +428,20 @@ def mdl_text(model: Model) -> str:
         if c.tag == "System":
             _mdl_system(c, out, 1)
     out.append("}")
-    if b.charts:
+    if b.charts or b.state_charts:
         out.append("Stateflow {")
+        objs, _k = _sf_objects(b.state_charts, 1000)
+        for _kind, oid, values, children in objs:
+            out += ["  chart {", f"    id {oid}"] + [f"    {k} {_quote(v)}" for k, v in values] + ["  }"]
+            for okind, ooid, ovalues, okids in children:
+                out += [f"  {okind} {{", f"    id {ooid}"]
+                for k, v in ovalues:
+                    out.append(f"    {k} {v if v.startswith('[') else _quote(v)}")
+                for name, vals in okids:
+                    out.append(f"    {name} {{")
+                    out += [f"      {k} {v}" for k, v in vals]
+                    out.append("    }")
+                out.append("  }")
         k = 1
         for path, code in b.charts:
             k += 1

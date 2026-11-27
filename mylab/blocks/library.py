@@ -414,4 +414,4 @@ def catalog() -> dict:
     return {"categories": CATEGORIES, "blocks": out}
 
 
-from . import blocks_basic, blocks_dynamic, blocks_more, blocks_extra, blocks_sfun, subsystems  # noqa: E402,F401  (register the block types)
+from . import blocks_basic, blocks_dynamic, blocks_more, blocks_extra, blocks_sfun, subsystems, chart  # noqa: E402,F401  (register the block types)

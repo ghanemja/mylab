@@ -14,6 +14,7 @@ MathWorks, Inc., and it does not try to be a complete replacement (see
 Contents: [In the browser](#in-the-browser) · [From code](#from-code) ·
 [The model file](#the-model-file) · [Blocks](#blocks) · [How a model runs](#how-a-model-runs) ·
 [Subsystems, buses and model references](#subsystems-buses-and-model-references) ·
+[State charts](#state-charts) ·
 [Importing .slx and .mdl files](#importing-slx-and-mdl-files) ·
 [Writing .slx and .mdl files](#writing-slx-and-mdl-files) · [What is not supported](#what-is-not-supported) ·
 [How it was checked](#how-it-was-checked)
@@ -261,7 +262,7 @@ is what the model file and `add_block` use.
 
 <!-- BLOCK-TABLE:START -->
 
-114 blocks.
+115 blocks.
 
 **Sources**
 
@@ -416,6 +417,7 @@ is what the model file and `add_block` use.
 
 | Block | Type name | What it does |
 |-------|-----------|--------------|
+| Chart | `Chart` | A state chart: states with entry, during and exit actions, transitions with events and conditions. |
 | Fcn | `Fcn` | A formula in u (the input; u(1), u(2)... for a vector) and t. The result is one number. |
 | Interpreted Function | `InterpretedFunction` | Calls a function handle or a named function with the input: y = f(u). |
 | MATLAB Function | `MATLABFunction` | Runs a function you write in the MATLAB language; its inputs and outputs become ports. |
@@ -559,6 +561,91 @@ blocks are copied into the model at compile time, its parameters are read
 from the workspace like any others, and its own callbacks and configuration
 are not used. A model that refers to itself, directly or through others, is
 an error.
+
+## State charts
+
+A **Chart** block holds a state machine. Its states can contain states,
+either *exclusive* (one active at a time, chosen by a default transition) or
+*parallel* (all active, run in order). Transitions join states and
+connective junctions and are labelled `event[condition]{condition
+action}/transition action`, every part optional. States carry their actions
+in their label, one keyword per line: `entry:`, `during:`, `exit:` (also
+`en:`, `du:`, `ex:`; lines before the first keyword are entry actions). The
+actions and conditions are MATLAB code that mylab's interpreter runs, with
+the chart's data as variables.
+
+```matlab
+add_block('blocks/Chart', 'therm/Ctl', 'SampleTime', '0.25');
+chart_data('therm/Ctl', 'temp', 'input');
+chart_data('therm/Ctl', 'on', 'output', '0');
+chart_state('therm/Ctl', 'Off', 'entry: on = 0;');
+chart_state('therm/Ctl', 'On', 'entry: on = 1;');
+chart_transition('therm/Ctl', '', 'Off');                 % default transition
+chart_transition('therm/Ctl', 'Off', 'On', '[temp < 18]');
+chart_transition('therm/Ctl', 'On', 'Off', '[temp > 22]');
+```
+
+- **Data** (`chart_data`): `input` and `output` data are the block's ports,
+  in the order they were added; `local` data keeps its value from one step
+  to the next; `constant` data takes its initial value; `parameter` data is
+  read from the workspace.
+- **Events** (`chart_event`): input events share one extra input port with
+  one element per event, and wake the chart when their signal rises, falls,
+  does either, or when a function-call signal calls it (`function-call`).
+  An output event is an output port: a `function-call` event calls the
+  function-call subsystem wired to it once per `send`, other kinds toggle
+  their signal. A local event is processed by the whole chart at once.
+  `send(E)` broadcasts, and so does a statement that is only the event's
+  name.
+- **Temporal logic:** `after(n, tick)`, `before(n, tick)`, `at(n, tick)` and
+  `every(n, tick)`, also with `sec` (or `msec`, `usec`), count from the moment
+  the source state of the transition was entered. They can stand in place of
+  the event or be used in the condition. `in(A.B)` is true while state `A.B`
+  is active.
+- **Hierarchy:** `chart_state(chart, 'Run.Fast', ...)` puts *Fast* inside
+  *Run*; `'Decomposition', 'parallel'` makes a state's children parallel,
+  and `set_param(chart, 'Decomposition', 'parallel')` the chart's.
+  `chart_junction(chart, 'j')` adds a junction.
+
+How a chart runs: the chart *steps* at each of its sample times (an
+inherited sample time takes the rate of its inputs), or, if it has input
+events, each time one of them occurs. The first step enters the chart:
+default transitions lead to states, whose entry actions run, outermost
+first. Each later step starts at the top: for each active state, its
+outgoing transitions are tried in the order they were added; the first
+whose event matches (or that has no event) and whose condition holds is
+taken, its condition action running as soon as the condition holds. A path
+through junctions backtracks when a junction has no valid way on; a path
+that ends at a junction without outgoing transitions runs its actions and
+leaves the state where it is. Taking a transition exits the source and its
+active substates (exit actions, innermost first), runs the transition
+actions and enters the destination. If no transition is taken, the state's
+during action runs, then its active substates are processed the same way.
+A chart without states is a flow chart: its default paths run at every
+step. The outputs change only at the chart's steps and hold in between.
+
+In a model file the chart is a `"chart"` entry of the block, plain data:
+`decomposition`, `data`, `events`, `states` (nested, with `name`, `label`
+and `decomposition`), `junctions` and `transitions` (`from`, `to`, `label`;
+`"from": ""` is a default transition). Python code can build one with
+`mylab.blocks.chart.ChartBuilder`. In the diagram editor a chart shows its
+ports and its sample time; its states and transitions are edited in the
+model's text view or from code. There is no graphical chart editor.
+
+Not done: history junctions, inner transitions (from a state's edge to its
+own substates), graphical, truth-table and MATLAB functions inside charts,
+super-step semantics, state activity outputs, events sent to a particular
+state, and continuous-time charts. A function-call subsystem called by an
+output event runs after the chart's step, not in the middle of the action
+that sent the event.
+
+**Charts in files.** Charts are written to `.slx` and `.mdl` files and read
+back. Reading follows the layout of the Stateflow parts of public files
+(states, transitions, junctions and data linked by number), but the public
+files examined contain only charts that hold MATLAB Function code, no state
+charts; reading state charts saved by other programs was therefore not
+tried, and the names it expects for parallel decomposition, local data and
+events are an educated guess.
 
 ## Importing .slx and .mdl files
 
@@ -761,7 +848,8 @@ differently. Each file says so: a comment on the first line of an `.mdl` file,
 ## What is not supported
 
 - Code generation, real-time targets, hardware in the loop.
-- State charts and flow charts.
+- State charts: the parts listed at the end of [State charts](#state-charts),
+  a graphical chart editor, and charts saved by other programs (untried).
 - Physical modelling (mechanical, electrical, hydraulic networks with
   two-way connections), and the library blocks that belong to it.
 - Compiled S-functions (C, MEX): they are named in the error, not replaced.

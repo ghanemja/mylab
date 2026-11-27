@@ -1104,7 +1104,7 @@ def test_a_vector_counts_as_a_column_in_matrix_products():
 def test_subsystem_control_blocks_are_in_the_library():
     # these are tried out in test_blocks_subsystems.py; here: names, ports and dialogs
     types = ("ForIterator", "WhileIterator", "FunctionCallGenerator", "SwitchCase", "ResetPort", "ModelReference",
-             "BusAssignment")
+             "BusAssignment", "Chart")
     for t in types:
         assert find_type(t) is not None and find_type(t).type == t
     assert find_type("simulink/Ports & Subsystems/Model").type == "ModelReference"

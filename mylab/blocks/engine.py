@@ -536,6 +536,10 @@ def port_count(block: Block, kind: str) -> int:
     cls = find_type(block.type)
     if cls is None:
         return 0
+    if cls.type == "Chart":
+        from .chart import chart_ports
+
+        return chart_ports(block.extra.get("chart"))[0 if kind == "in" else 1]
     if cls.type == "ModelReference":
         ports = block.extra.get("ports")
         if isinstance(ports, list) and len(ports) == 2:
