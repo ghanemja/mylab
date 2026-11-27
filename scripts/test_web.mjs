@@ -296,6 +296,7 @@ async function recordGif(browser, url) {
   await page.goto(url + query);
   await page.waitForSelector(READY, { timeout: 240000 });
   await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); });
+  await h.switchTo("My files"); // out of the assignment, so the editor has room
   await page.evaluate(() => window.mylab.createFile("orbit.m", "% Working on this together\nt = linspace(0, 2*pi, 200);\n"));
   await page.waitForSelector(".tab.active[data-name='orbit.m']");
   await page.click("#btn-live");
@@ -383,11 +384,10 @@ async function recordBringYourCode(browser, url) {
   const rows = [0, 3, 6, 9, 12, 15, 20, 25, 30].map((m) => `${m},${(20 + 70 * Math.exp(-0.11 * m) + (m % 2 ? 0.6 : -0.4)).toFixed(1)}`);
   fs.writeFileSync(path.join(proj, "data", "cooling.csv"), "minutes,temp\n" + rows.join("\n") + "\n");
   await page.setInputFiles("#folder-input", proj);
-  await page.waitForSelector("#dlg-summary[open]");
-  await frame("Open a folder of existing .m files…", 1700);
-  await page.click("#dlg-summary button[value='close']");
+  await page.waitForFunction(() => document.querySelector("#project-name").textContent === "heat_lab", null, { timeout: 60000 });
+  await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); });
   await page.waitForSelector(".tab.active[data-name='main.m']");
-  await frame("…your scripts, functions and data, as they are", 1500);
+  await frame("Open a folder of existing .m files: scripts, functions, data", 2000);
   await page.click("#btn-run");
   await page.waitForSelector(".plot-card img", { timeout: 120000 });
   await h.waitIdle();

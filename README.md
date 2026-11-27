@@ -44,6 +44,13 @@ implementation. See [Legal](#license-and-trademarks).
 your browser and code runs on your own machine. The first visit downloads
 about 40 MB, which is cached afterwards. See [docs/WEB.md](docs/WEB.md).
 
+**Bring what you have.** Open a folder of existing `.m` files (or drop it on
+the page) and run it as it is: scripts, functions in subfolders and data files
+work together. Simulink `.slx` and `.mdl` models open as block diagrams you can
+simulate.
+
+![Opening a folder of existing .m files and a Simulink model in mylab](docs/images/bring-your-code.gif)
+
 **On your computer** (Python 3.10 or newer):
 
 ```bash
