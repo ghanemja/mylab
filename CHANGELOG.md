@@ -1,124 +1,15 @@
 # Changelog
 
-## Unreleased
-
-### Added
-- **MEX files.** `mex file.c` compiles C or C++ sources with the system
-  compiler (cc, gcc or clang; best effort on Windows) into a MEX file
-  (`.mexa64`, `.mexmaci64`/`.mexmaca64`, `.mexw64`), and programs call it like
-  a `.m` function. All of the glue is Python: the sources include mylab's own
-  `mex.h`, whose mx/mex functions call through a table of ctypes callbacks
-  that mylab fills in when it loads the file, so nothing is compiled when
-  mylab is installed. Numeric classes, logical, char, complex (separate and
-  interleaved APIs), sparse, cell and struct arrays are supported, with
-  `mxMalloc` memory and temporary arrays released after each call,
-  `mexErrMsgIdAndTxt` errors that `try`/`catch` sees with their identifier,
-  `mexPrintf`, `mexCallMATLAB`, `mexEvalString`, workspace access,
-  persistent arrays, `mexAtExit` and `mexLock`. A MEX file takes precedence
-  over a `.m` file of the same name in the same folder; `exist` returns 3 for
-  it, and `clear name`/`clear mex` unload it. New: `mexext`. MEX files built
-  for MATLAB cannot be loaded and must be rebuilt from source; MEX files do
-  not run in the browser. See [docs/MEX.md](docs/MEX.md).
-- **Computer vision** (optional OpenCV dependency: `pip install
-  "mylab-lang[vision]"`; the web app loads Pyodide's OpenCV on first use).
-  See [docs/VISION.md](docs/VISION.md).
-  - Features: `detectHarrisFeatures`, `detectMinEigenFeatures`,
-    `detectFASTFeatures`, `detectORBFeatures`, `detectSIFTFeatures`,
-    `detectBRISKFeatures`, `detectKAZEFeatures`, `detectMSERFeatures`,
-    `detectSURFFeatures` (mylab's own Hessian detector, no non-free code), the
-    point objects (`cornerPoints`, `SIFTPoints`, `MSERRegions`, ...) with
-    indexing, `selectStrongest`, `selectUniform` and `plot`,
-    `extractFeatures`, `binaryFeatures`, `matchFeatures` and
-    `showMatchedFeatures`.
-  - Geometry: `estgeotform2d`, `estimateGeometricTransform2D`,
-    `estimateGeometricTransform`, `estimateFundamentalMatrix`,
-    `estimateEssentialMatrix`, `estrelpose`, `relativeCameraPose`,
-    `triangulate`, `epipolarLine`, `isEpipoleInImage`, `rigidtform3d`,
-    `simtform3d`, `affinetform3d`, `transltform3d`, `rigid3d`, `affine3d`,
-    `rotvec2mat3d` and related conversions; `insertShape`, `insertMarker`,
-    `insertText`, `insertObjectAnnotation`.
-  - Detection: `vision.CascadeObjectDetector` (OpenCV's BSD-licensed
-    cascades or your own XML), `vision.PeopleDetector`/`peopleDetector`
-    (OpenCV's HOG SVM), `yolov4ObjectDetector`, `yoloxObjectDetector` and
-    `yolov8ObjectDetector` for user-supplied ONNX models (no weights are
-    bundled), `selectStrongestBbox`, `selectStrongestBboxMulticlass`,
-    `bboxOverlapRatio`, `bboxPrecisionRecall`, `evaluateDetectionPrecision`,
-    `evaluateDetectionMissRate`.
-  - Cameras: `cameraIntrinsics`, `cameraParameters`, `stereoParameters`,
-    `detectCheckerboardPoints`, `generateCheckerboardPoints`,
-    `estimateCameraParameters` (mono and stereo), `undistortImage`,
-    `undistortPoints`, `world2img`, `worldToImage`, `img2world2d`,
-    `pointsToWorld`, `cameraProjection`, `cameraMatrix`,
-    `estimateExtrinsics`, `extrinsics`, `estworldpose`,
-    `rectifyStereoImages`, `disparitySGM`, `disparityBM`, `reconstructScene`.
-  - Tracking: `vision.PointTracker`, `opticalFlow`, `opticalFlowLK`,
-    `opticalFlowHS`, `opticalFlowFarneback`, `vision.KalmanFilter`,
-    `configureKalmanFilter`.
-  - Point clouds: `pointCloud`, `pcread`/`pcwrite` (PLY and PCD, ASCII and
-    binary), `pcshow`, `pcshowpair`, `pcdownsample`, `pcdenoise`,
-    `pcnormals`, `pcfitplane`, `planeModel`, `pcregistericp`, `pcmerge`,
-    `pctransform`, `pcsegdist`.
-- `scatter` and `scatter3` take one RGB colour per point (an M-by-3 matrix).
-
-### Changed
-- `mex` builds MEX files instead of raising `mylab:mex:unsupported`.
-
-### mylab Blocks
-- **Iterator, function-call, switch-case and resettable subsystems.** For
-  Iterator and While Iterator subsystems run their blocks several times in
-  a time step; function-call subsystems run when a Function-Call Generator
-  calls them; a Switch Case block switches action subsystems like an If
-  block; a Reset block inside a subsystem restarts its states. Enabled and
-  action subsystems can reset their states when they are switched on again,
-  and their Out blocks can go back to the initial output while off.
-- **Buses carry names.** Bus Creator, Bus Selector (nested names, output as
-  a bus) and the new Bus Assignment work on any bus, not only one coming
-  straight from a Bus Creator. Buses pass MATLAB Function blocks as structs,
-  Constant blocks with a struct value make one, To Workspace logs one as a
-  struct, and `Simulink.Bus` / `Simulink.BusElement` objects name the
-  elements of a Bus Creator.
-- **Model blocks** run another model file (normal mode).
-- **`.mdl` files are read** (the older text format), with the same coverage
-  as `.slx` files, including library links to `.mdl` libraries.
-- **Writing `.slx` and `.mdl`:** `save_system(model, 'name.slx')` (or
-  `.mdl`) and *Save a copy as .slx / .mdl* in the diagram editor write a copy
-  that mylab reads back into the same model. The files are made for mylab
-  and were not tested with any other program.
-- **State charts:** the new Chart block runs hierarchical state machines
-  with exclusive and parallel states, default transitions, junctions,
-  event-triggered transitions with conditions, condition actions and
-  transition actions, entry/during/exit actions in MATLAB code, input,
-  output and local data and events (function-call output events call
-  function-call subsystems), and `after`/`before`/`every`/`at` with ticks or
-  seconds. `chart_state`, `chart_transition`, `chart_junction`, `chart_data`,
-  `chart_event` and `send` build and drive charts from code; charts are
-  kept in `.slx` and `.mdl` files mylab writes.
-- **Physical networks:** electrical (resistor, capacitor, inductor, diode,
-  voltage and current sources, reference, sensors), translational and
-  rotational mechanical blocks (mass and inertia, springs, dampers, force,
-  torque and velocity sources, references, ideal sensors) joined by two-way
-  connections. Connected blocks form a differential-algebraic system of
-  index 1, solved with the ordinary solvers; networks that are not index 1
-  are errors that name the components. PS-Simulink, Simulink-PS and Solver
-  Configuration blocks, Connection Port blocks for subsystems, and
-  conserving ports in the diagram editor.
-- The import report on the 82 public `.slx` files was run again: the same
-  results (50 imported fully, 31 of 68 models run); the blocks that became
-  convertible are in libraries or in models that also use toolbox blocks.
-- The `.slx` reader reads a model's description, and MATLAB Function code
-  whose block path has spaces at the end of a name.
-- **Selector and Assignment** take any number of dimensions, starting
-  indices, and indices from input ports in every dimension; Assignment can
-  start from a given size instead of a Y0 input. Signals with more than two
-  dimensions keep their shape.
-
 ## 1.1.0
 
-1.1.0 brings mylab's behaviour much closer to MATLAB's, adds the Curve
-Fitting core, HDF5 and version 7.3 MAT-files in the default install, and
-continuous testing on Linux, Windows and macOS. Read *Breaking changes*
-first if you used 1.0.0: several of the fixes change results that scripts
-may have relied on.
+1.1.0 brings mylab's behaviour much closer to MATLAB's and adds a lot:
+MEX files compiled from C and C++, computer vision on OpenCV, the Curve
+Fitting core, HDF5 and version 7.3 MAT-files in the default install, state
+charts and physical networks in mylab Blocks, and live collaboration in the
+web app. It is tested continuously on Linux, Windows and macOS and in the
+engines of Chrome, Firefox and Safari. Read *Breaking changes* first if you
+used 1.0.0: several of the fixes change results that scripts may have relied
+on.
 
 ### Breaking changes
 - **Dependencies:** NumPy 1.26, SciPy 1.13, Matplotlib 3.8 and Pillow 10
@@ -187,6 +78,63 @@ may have relied on.
   outside the limits is not drawn. `'AffectAutoLimits','on'` (a mylab option;
   MATLAB does not document it for constant lines) brings the old behaviour
   back.
+
+### MEX files and computer vision
+- **MEX files.** `mex file.c` compiles C or C++ sources with the system
+  compiler (cc, gcc or clang; best effort on Windows) into a MEX file
+  (`.mexa64`, `.mexmaci64`/`.mexmaca64`, `.mexw64`), and programs call it like
+  a `.m` function. All of the glue is Python: the sources include mylab's own
+  `mex.h`, whose mx/mex functions call through a table of ctypes callbacks
+  that mylab fills in when it loads the file, so nothing is compiled when
+  mylab is installed. Numeric classes, logical, char, complex (separate and
+  interleaved APIs), sparse, cell and struct arrays are supported, with
+  `mxMalloc` memory and temporary arrays released after each call,
+  `mexErrMsgIdAndTxt` errors that `try`/`catch` sees with their identifier,
+  `mexPrintf`, `mexCallMATLAB`, `mexEvalString`, workspace access,
+  persistent arrays, `mexAtExit` and `mexLock`. A MEX file takes precedence
+  over a `.m` file of the same name in the same folder; `exist` returns 3 for
+  it, and `clear name`/`clear mex` unload it. New: `mexext`; `mex` no longer raises `mylab:mex:unsupported`. MEX files built
+  for MATLAB cannot be loaded and must be rebuilt from source; MEX files do
+  not run in the browser. See [docs/MEX.md](docs/MEX.md).
+- **Computer vision** (optional OpenCV dependency: `pip install
+  "mylab-lang[vision]"`; the web app loads Pyodide's OpenCV on first use).
+  See [docs/VISION.md](docs/VISION.md).
+  - Features: `detectHarrisFeatures`, `detectMinEigenFeatures`,
+    `detectFASTFeatures`, `detectORBFeatures`, `detectSIFTFeatures`,
+    `detectBRISKFeatures`, `detectKAZEFeatures`, `detectMSERFeatures`,
+    `detectSURFFeatures` (mylab's own Hessian detector, no non-free code), the
+    point objects (`cornerPoints`, `SIFTPoints`, `MSERRegions`, ...) with
+    indexing, `selectStrongest`, `selectUniform` and `plot`,
+    `extractFeatures`, `binaryFeatures`, `matchFeatures` and
+    `showMatchedFeatures`.
+  - Geometry: `estgeotform2d`, `estimateGeometricTransform2D`,
+    `estimateGeometricTransform`, `estimateFundamentalMatrix`,
+    `estimateEssentialMatrix`, `estrelpose`, `relativeCameraPose`,
+    `triangulate`, `epipolarLine`, `isEpipoleInImage`, `rigidtform3d`,
+    `simtform3d`, `affinetform3d`, `transltform3d`, `rigid3d`, `affine3d`,
+    `rotvec2mat3d` and related conversions; `insertShape`, `insertMarker`,
+    `insertText`, `insertObjectAnnotation`.
+  - Detection: `vision.CascadeObjectDetector` (OpenCV's BSD-licensed
+    cascades or your own XML), `vision.PeopleDetector`/`peopleDetector`
+    (OpenCV's HOG SVM), `yolov4ObjectDetector`, `yoloxObjectDetector` and
+    `yolov8ObjectDetector` for user-supplied ONNX models (no weights are
+    bundled), `selectStrongestBbox`, `selectStrongestBboxMulticlass`,
+    `bboxOverlapRatio`, `bboxPrecisionRecall`, `evaluateDetectionPrecision`,
+    `evaluateDetectionMissRate`.
+  - Cameras: `cameraIntrinsics`, `cameraParameters`, `stereoParameters`,
+    `detectCheckerboardPoints`, `generateCheckerboardPoints`,
+    `estimateCameraParameters` (mono and stereo), `undistortImage`,
+    `undistortPoints`, `world2img`, `worldToImage`, `img2world2d`,
+    `pointsToWorld`, `cameraProjection`, `cameraMatrix`,
+    `estimateExtrinsics`, `extrinsics`, `estworldpose`,
+    `rectifyStereoImages`, `disparitySGM`, `disparityBM`, `reconstructScene`.
+  - Tracking: `vision.PointTracker`, `opticalFlow`, `opticalFlowLK`,
+    `opticalFlowHS`, `opticalFlowFarneback`, `vision.KalmanFilter`,
+    `configureKalmanFilter`.
+  - Point clouds: `pointCloud`, `pcread`/`pcwrite` (PLY and PCD, ASCII and
+    binary), `pcshow`, `pcshowpair`, `pcdownsample`, `pcdenoise`,
+    `pcnormals`, `pcfitplane`, `planeModel`, `pcregistericp`, `pcmerge`,
+    `pctransform`, `pcsegdist`.
 
 ### Language
 - Object arrays of classdef objects: `objs(3) = Point(1, 2)`, `[a, b]`,
@@ -303,6 +251,7 @@ may have relied on.
   `containers.Map`, tables, `MException`, `RandStream`, graphs, ...), all
   from one list per class; `properties('datetime')` takes a class name.
   `calendarDuration` has a `Format` property.
+- `scatter` and `scatter3` take one RGB colour per point (an M-by-3 matrix).
 
 ### Speed
 - Every case of the speed comparison with GNU Octave 10.3
@@ -446,6 +395,53 @@ may have relied on.
   run (was 30). The quadrotor model, whose dynamics are an S-function file,
   now finishes within the 400 s limit (about 330 s), helped by the faster
   interpreter.
+- **Iterator, function-call, switch-case and resettable subsystems.** For
+  Iterator and While Iterator subsystems run their blocks several times in
+  a time step; function-call subsystems run when a Function-Call Generator
+  calls them; a Switch Case block switches action subsystems like an If
+  block; a Reset block inside a subsystem restarts its states. Enabled and
+  action subsystems can reset their states when they are switched on again,
+  and their Out blocks can go back to the initial output while off.
+- **Buses carry names.** Bus Creator, Bus Selector (nested names, output as
+  a bus) and the new Bus Assignment work on any bus, not only one coming
+  straight from a Bus Creator. Buses pass MATLAB Function blocks as structs,
+  Constant blocks with a struct value make one, To Workspace logs one as a
+  struct, and `Simulink.Bus` / `Simulink.BusElement` objects name the
+  elements of a Bus Creator.
+- **Model blocks** run another model file (normal mode).
+- **`.mdl` files are read** (the older text format), with the same coverage
+  as `.slx` files, including library links to `.mdl` libraries.
+- **Writing `.slx` and `.mdl`:** `save_system(model, 'name.slx')` (or
+  `.mdl`) and *Save a copy as .slx / .mdl* in the diagram editor write a copy
+  that mylab reads back into the same model. The files are made for mylab
+  and were not tested with any other program.
+- **State charts:** the new Chart block runs hierarchical state machines
+  with exclusive and parallel states, default transitions, junctions,
+  event-triggered transitions with conditions, condition actions and
+  transition actions, entry/during/exit actions in MATLAB code, input,
+  output and local data and events (function-call output events call
+  function-call subsystems), and `after`/`before`/`every`/`at` with ticks or
+  seconds. `chart_state`, `chart_transition`, `chart_junction`, `chart_data`,
+  `chart_event` and `send` build and drive charts from code; charts are
+  kept in `.slx` and `.mdl` files mylab writes.
+- **Physical networks:** electrical (resistor, capacitor, inductor, diode,
+  voltage and current sources, reference, sensors), translational and
+  rotational mechanical blocks (mass and inertia, springs, dampers, force,
+  torque and velocity sources, references, ideal sensors) joined by two-way
+  connections. Connected blocks form a differential-algebraic system of
+  index 1, solved with the ordinary solvers; networks that are not index 1
+  are errors that name the components. PS-Simulink, Simulink-PS and Solver
+  Configuration blocks, Connection Port blocks for subsystems, and
+  conserving ports in the diagram editor.
+- The import report on the 82 public `.slx` files was run again: the same
+  results (50 imported fully, 31 of 68 models run); the blocks that became
+  convertible are in libraries or in models that also use toolbox blocks.
+- The `.slx` reader reads a model's description, and MATLAB Function code
+  whose block path has spaces at the end of a name.
+- **Selector and Assignment** take any number of dimensions, starting
+  indices, and indices from input ports in every dimension; Assignment can
+  start from a given size instead of a Y0 input. Signals with more than two
+  dimensions keep their shape.
 
 ### Testing and continuous checking
 - CI on every push: lint; the full test suite on Linux, Windows and macOS
