@@ -2250,8 +2250,11 @@ async function main() {
       const tc = (sel) => tp.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, sel);
       const a1 = await tc(".bd-svg .bd-port[data-block='C'][data-kind='out'] .bd-port-dot");
       await tp.touchscreen.tap(a1.x, a1.y);
+      // the first tap leaves a line waiting for its other end; a slow browser may take a moment
+      await tp.waitForFunction(() => { const w = window.mylab.app.blocks.editor.wire; return !!(w && w.sticky); }, null, { timeout: 5000 }).catch(() => {});
       const a2 = await tc(".bd-svg .bd-port[data-block='S'][data-kind='in'] .bd-port-dot");
       await tp.touchscreen.tap(a2.x, a2.y);
+      await tp.waitForFunction(() => JSON.parse(window.mylab.app.blocks.editor.text()).lines.length === 1, null, { timeout: 5000 }).catch(() => {});
       check(await tp.evaluate(() => JSON.parse(window.mylab.app.blocks.editor.text()).lines.length === 1), "tapping two ports on a touch screen should connect them");
       const hit = await tp.evaluate(() => { const b = document.querySelector(".bd-toolbar #bd-run").getBoundingClientRect(); return Math.min(b.width, b.height); });
       check(hit >= 28, "toolbar buttons must be large enough to tap: " + hit);
