@@ -14,7 +14,7 @@ MathWorks, Inc., and it does not try to be a complete replacement (see
 Contents: [In the browser](#in-the-browser) · [From code](#from-code) ·
 [The model file](#the-model-file) · [Blocks](#blocks) · [How a model runs](#how-a-model-runs) ·
 [Subsystems, buses and model references](#subsystems-buses-and-model-references) ·
-[State charts](#state-charts) ·
+[State charts](#state-charts) · [Physical networks](#physical-networks) ·
 [Importing .slx and .mdl files](#importing-slx-and-mdl-files) ·
 [Writing .slx and .mdl files](#writing-slx-and-mdl-files) · [What is not supported](#what-is-not-supported) ·
 [How it was checked](#how-it-was-checked)
@@ -262,7 +262,7 @@ is what the model file and `add_block` use.
 
 <!-- BLOCK-TABLE:START -->
 
-115 blocks.
+146 blocks.
 
 **Sources**
 
@@ -423,6 +423,42 @@ is what the model file and `add_block` use.
 | MATLAB Function | `MATLABFunction` | Runs a function you write in the MATLAB language; its inputs and outputs become ports. |
 | S-Function (level 1, .m file) | `SFunction` | Runs a level-1 S-function written as a .m file: [sys, x0, str, ts] = name(t, x, u, flag, ...). |
 | S-Function (level 2, .m file) | `MSFunction` | Runs a level-2 S-function written as a .m file: a setup function that fills in a block object. |
+
+**Physical**
+
+| Block | Type name | What it does |
+|-------|-----------|--------------|
+| Capacitor | `Capacitor` | Electrical capacitor: i = C dv/dt; its voltage is a state. |
+| Connection Port | `ConnectionPort` | Put inside a subsystem: a physical port of the subsystem (L1, L2... or R1, R2...). |
+| Controlled Current Source | `ControlledCurrentSource` | Current given by the input signal, pushed out of port p. |
+| Controlled Voltage Source | `ControlledVoltageSource` | Voltage between p and n given by the input signal. |
+| Current Sensor | `CurrentSensor` | Outputs the current flowing from p to n through it (it joins p and n). |
+| DC Current Source | `DCCurrentSource` | Constant current I pushed out of port p through the circuit back into n. |
+| DC Voltage Source | `DCVoltageSource` | Constant voltage between p and n: v_p - v_n = V. |
+| Diode | `Diode` | Piecewise-linear diode: conducts with resistance Ron above the forward voltage Vf, else conductance Goff. |
+| Electrical Reference | `ElectricalReference` | Electrical ground: the voltage of the node it is connected to is zero. |
+| Ideal Angular Velocity Source | `IdealAngularVelocitySource` | Angular velocity w_F - w_B given by the input signal. |
+| Ideal Force Sensor | `IdealForceSensor` | Outputs the force flowing from R to C through it (it joins R and C rigidly). |
+| Ideal Force Source | `IdealForceSource` | Force given by the input signal; a positive force pushes R forward relative to C. |
+| Ideal Rotational Motion Sensor | `IdealRotationalMotionSensor` | Outputs the angular velocity and angle of F relative to B; no torque. |
+| Ideal Torque Sensor | `IdealTorqueSensor` | Outputs the torque flowing from F to B through it (it joins F and B rigidly). |
+| Ideal Torque Source | `IdealTorqueSource` | Torque given by the input signal; a positive torque turns F forward relative to B. |
+| Ideal Translational Motion Sensor | `IdealTranslationalMotionSensor` | Outputs the velocity and the position of R relative to C; no force. |
+| Ideal Translational Velocity Source | `IdealTranslationalVelocitySource` | Velocity v_R - v_C given by the input signal. |
+| Inductor | `Inductor` | Electrical inductor: v = L di/dt; its current is a state. |
+| Inertia | `Inertia` | Rotational inertia J: the torque flowing into its port accelerates it. |
+| Mass | `Mass` | A mass m: the force flowing into its port accelerates it; its velocity is a state. |
+| Mechanical Rotational Reference | `MechanicalRotationalReference` | Fixed frame for rotation: angular velocity zero. |
+| Mechanical Translational Reference | `MechanicalTranslationalReference` | Fixed frame for translational motion: velocity zero. |
+| PS-Simulink Converter | `PSSimulinkConverter` | Passes a sensor signal on to ordinary blocks (physical signals are ordinary signals in mylab). |
+| Resistor | `Resistor` | Electrical resistor: v = R i between its ports p and n. |
+| Rotational Damper | `RotationalDamper` | Rotational viscous damper: torque b (w_F - w_B). |
+| Rotational Spring | `RotationalSpring` | Torsion spring: torque k theta, theta = angle of F relative to B (a state). |
+| Simulink-PS Converter | `SimulinkPSConverter` | Passes an ordinary signal on to a controlled source (physical signals are ordinary signals in mylab). |
+| Solver Configuration | `SolverConfiguration` | Marks a physical network (accepted for familiarity; mylab needs no settings here). |
+| Translational Damper | `TranslationalDamper` | Viscous damper: force b (v_R - v_C). |
+| Translational Spring | `TranslationalSpring` | Spring: force k x, where x is how far R has moved relative to C (a state). |
+| Voltage Sensor | `VoltageSensor` | Outputs the voltage v_p - v_n; no current flows through it. |
 <!-- BLOCK-TABLE:END -->
 
 Notes:
@@ -647,6 +683,82 @@ charts; reading state charts saved by other programs was therefore not
 tried, and the names it expects for parallel decomposition, local data and
 events are an educated guess.
 
+## Physical networks
+
+The blocks of the **Physical** group model electrical circuits and
+mechanical systems with two-way connections, the way they are drawn on
+paper: a resistor joins two nodes, a mass hangs on a spring. Their ports are
+*conserving ports* with names (drawn as small diamonds), and the lines
+between them have no direction.
+
+| Domain | Across variable | Through variable | Blocks |
+|--------|-----------------|------------------|--------|
+| electrical (ports `p`, `n`) | voltage | current | Resistor, Capacitor, Inductor, Diode, DC and controlled voltage and current sources, Electrical Reference, Voltage Sensor, Current Sensor |
+| translational (`R`, `C`; mass `M`) | velocity | force | Mass, Translational Spring, Translational Damper, Ideal Force Source, Ideal Translational Velocity Source, Mechanical Translational Reference, Ideal Translational Motion Sensor (velocity and position), Ideal Force Sensor |
+| rotational (`F`, `B`; inertia `I`) | angular velocity | torque | Inertia, Rotational Spring, Rotational Damper, Ideal Torque Source, Ideal Angular Velocity Source, Mechanical Rotational Reference, Ideal Rotational Motion Sensor, Ideal Torque Sensor |
+
+```matlab
+new_system('spring');
+add_block('blocks/Mass', 'spring/M', 'm', '1', 'v0', '1');
+add_block('blocks/TranslationalSpring', 'spring/K', 'k', '4');
+add_block('blocks/MechanicalTranslationalReference', 'spring/Ref');
+add_block('blocks/IdealTranslationalMotionSensor', 'spring/S');
+add_block('blocks/Outport', 'spring/x');
+add_line('spring', 'K/R', 'M/M');   add_line('spring', 'K/C', 'Ref/R');
+add_line('spring', 'S/R', 'M/M');   add_line('spring', 'S/C', 'Ref/R');
+add_line('spring', 'S/2', 'x/1');   % position: sin(2 t)/2
+```
+
+**How a network is solved.** All physical blocks that are connected form one
+network. Its unknowns are the across variable of every node and the through
+and internal variables of the components; at each node the across variable
+is the same for all ports and the through variables add up to zero.
+Capacitor voltages, inductor currents, the velocities of masses and
+inertias, the stretch of springs and the positions of motion sensors are
+continuous states. This gives a differential-algebraic system `dx/dt =
+f(x, z, u)`, `0 = g(x, z, u)`, which mylab requires to be of index 1: `g`
+must determine the algebraic unknowns `z` from the states and inputs. They
+are then found at every evaluation (by one linear solve, or Newton's method
+for the switching of diodes, whose switching instants are located like other
+zero crossings), and the ordinary solvers integrate the states, so `ode45`,
+`ode15s` for stiff circuits, the fixed-step solvers and `linmod` all work.
+
+A network that is not of index 1 is an error that names the components
+involved: a capacitor directly across a voltage source or another capacitor,
+an inductor in series with a current source, two masses joined rigidly, a
+mass driven by a velocity source. Put a resistor, spring or damper between
+them. A circuit without a reference block (or a node that only sensors
+touch) leaves a variable undetermined and is an error too. mylab does not
+reduce the index.
+
+- **Sign conventions.** Two-port components carry their through variable
+  from the first port to the second (current `p` to `n`, force `R` to `C`,
+  torque `F` to `B`) and their across variable is first minus second. A
+  source with a positive input drives the outside from its second port to
+  its first: a current source pushes current out of `p`, a force source
+  pushes `R` forward relative to `C`. The through variable flowing into a
+  mass or inertia accelerates it.
+- **Signals.** Sensors output ordinary signals, and controlled sources take
+  them; there are no separate physical signals. The PS-Simulink and
+  Simulink-PS Converter blocks pass a signal on unchanged, and the Solver
+  Configuration block is accepted and does nothing, so diagrams drawn with
+  them keep their shape. Inputs of a network are scalars.
+- **Subsystems.** A Connection Port block inside a subsystem (*Side* left or
+  right, *Port* 1, 2…) is a physical port `L1`, `L2`… or `R1`, `R2`… of the
+  subsystem block.
+- **The diagram editor** draws the conserving ports and the lines between
+  them; drag from one conserving port to another to connect them.
+- **Diode:** piecewise linear: conductance `Goff` below the forward voltage
+  `Vf`, resistance `Ron` above it.
+
+Not done: other domains (hydraulic, thermal, magnetic, gas), multibody
+mechanics (bodies, joints and frames in 3-D, such as the WEC-Sim blocks
+listed under [Tested on real files](#tested-on-real-files)), nonlinear
+components other than the diode, physical signals with units, index
+reduction, and reading physical networks from `.slx` and `.mdl` files
+(apart from Connection Port blocks, which are read; the library blocks of
+real networks are not).
+
 ## Importing .slx and .mdl files
 
 `load_system('model')`, `sim('model')` and, in the web app, opening a `.slx`
@@ -850,8 +962,9 @@ differently. Each file says so: a comment on the first line of an `.mdl` file,
 - Code generation, real-time targets, hardware in the loop.
 - State charts: the parts listed at the end of [State charts](#state-charts),
   a graphical chart editor, and charts saved by other programs (untried).
-- Physical modelling (mechanical, electrical, hydraulic networks with
-  two-way connections), and the library blocks that belong to it.
+- Physical modelling beyond the blocks of [Physical networks](#physical-networks):
+  other domains, multibody mechanics, networks that are not of index 1, and
+  the library blocks of networks in `.slx` and `.mdl` files.
 - Compiled S-functions (C, MEX): they are named in the error, not replaced.
   S-functions written in the MATLAB language run only when their file is on
   the path; of the level-2 interface the common methods are there

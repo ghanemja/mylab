@@ -402,6 +402,11 @@ def _active_variant(comp: Compiled, ctx: Context, path: str, inner: System, vari
     return out
 
 
+def _physical_end(end: tuple) -> bool:
+    """A line end at a conserving port of a physical block (named, not a control input)."""
+    return isinstance(end[1], str) and end[1] not in ("enable", "trigger", "reset")
+
+
 def _key(s: str) -> str:
     import re
 
@@ -590,6 +595,8 @@ def compile_model(
     except SimError as exc:
         comp.problem("error", exc.message)
     node_of: dict[tuple[int, str], Node] = {}
+    phys_blocks: list[tuple[_Sys, Block, type]] = []  # components of physical networks
+    phys_out: dict[tuple[int, str], tuple[Node, int]] = {}  # their sensor outputs: (network block, first index)
     gotos: dict[str, list[tuple[_Sys, Block]]] = {}
     systems: list[_Sys] = []
     gates: list[tuple[Gate, _Sys, str, str]] = []
@@ -647,6 +654,9 @@ def compile_model(
                 sy.children[b.name] = child
                 build(child)
                 continue
+            if getattr(cls, "physical", False):
+                phys_blocks.append((sy, b, cls))
+                continue
             if kind in ("Goto", "From", "EnablePort", "TriggerPort", "ActionPort", "ResetPort"):
                 if kind == "Goto":
                     gotos.setdefault(b.params.get("GotoTag", "A").strip(), []).append((sy, b))
@@ -667,6 +677,17 @@ def compile_model(
 
     root = _Sys(model.root, prefix, None, None, [], ctx)
     build(root)
+    if phys_blocks:
+        from .physical import networks
+
+        for net, sy_b in networks(comp, systems, phys_blocks, ctx):
+            comp.nodes.append(net)
+            comp.by_path[net.path] = net
+            base = 0
+            for (sy, b), m in zip(sy_b, [m for m, _ in net.members]):
+                if m.n_out():
+                    phys_out[(id(sy), b.name)] = (net, base)
+                base += m.n_out()
 
     def find_goto(sy: _Sys, tag: str):
         found = gotos.get(tag, [])
@@ -688,6 +709,9 @@ def compile_model(
         b = sy.system.block(name)
         if b is None or not isinstance(port, int):
             return None
+        hit = phys_out.get((id(sy), name))
+        if hit is not None:
+            return (hit[0], hit[1] + port - 1)
         node = node_of.get((id(sy), name))
         if node is not None and not isinstance(node, HeldOutput):
             return (node, port - 1) if 1 <= port <= max(node.n_out(), 1) and node.n_out() else None
@@ -756,6 +780,11 @@ def compile_model(
                 comp.taps[ln.name] = tap
     for g, sy, name, which in gates:
         g.inputs = [source(sy, name, which)]
+    for n in comp.nodes:
+        wiring = getattr(n, "wiring", None)
+        if wiring is not None:  # a physical network: the signal inputs of its components, in order
+            n.inputs = [source(sy, bname, k) for sy, bname, k in wiring]
+            n.in_names = [""] * len(n.inputs)  # type: ignore[attr-defined]
     for g, _sy, _name, _which in gates:
         g.members = [n for n in comp.nodes if any(c is g for c in n.conds) and n is not g]
 
@@ -773,7 +802,7 @@ def compile_model(
                         sy.prefix or None,
                         kind="line",
                     )
-            if ln.dst in seen_dst:
+            if ln.dst in seen_dst and not _physical_end(ln.dst):
                 comp.problem(
                     "error",
                     f"Input {ln.dst[1]} of '{sy.path(ln.dst[0])}' has more than one line going into it.",

@@ -219,7 +219,9 @@ export function portCounts(block) {
     return { in: p[0] || 0, out: p[1] || 0, enable: false, trigger: false };
   }
   if (t.type === "Subsystem") {
+    const side = (b) => (String((b.params || {}).Side || "left").toLowerCase().startsWith("r") ? "R" : "L") + String((b.params || {}).Port || 1);
     return {
+      phys: innerOfType(block, "ConnectionPort").map(side).sort(),
       in: innerOfType(block, "Inport").length, out: innerOfType(block, "Outport").length,
       enable: innerOfType(block, "EnablePort").length + innerOfType(block, "ActionPort").length > 0, trigger: innerOfType(block, "TriggerPort").length > 0,
       reset: innerOfType(block, "ResetPort").length > 0,
@@ -237,7 +239,23 @@ export function portCounts(block) {
     return { in: p[0] || 0, out: p[1] || 0, enable: false, trigger: false };
   }
   const p = paramsOf(block);
-  return { in: countPorts(t.in, p), out: countPorts(t.out, p), enable: false, trigger: false };
+  const res = { in: countPorts(t.in, p), out: countPorts(t.out, p), enable: false, trigger: false };
+  if (t.phys) res.phys = t.phys.slice();
+  return res;
+}
+
+/** Side (0 left, 1 top, 2 right, 3 bottom, before turning) and place of a physical port. */
+function physPlace(counts, port) {
+  const list = counts.phys || [];
+  if (/^[LR]\d+$/.test(port) && list.every((q) => /^[LR]\d+$/.test(q))) { // ports of a subsystem
+    const same = list.filter((q) => q[0] === port[0]);
+    return { side: port[0] === "L" ? 0 : 2, frac: (same.indexOf(port) + 0.5) / Math.max(same.length, 1) };
+  }
+  const k = list.indexOf(port);
+  if (list.length === 1) return { side: 1, frac: 0.5 };
+  const signals = counts.in + counts.out > 0;
+  if (signals) return { side: k === 0 ? 1 : 3, frac: 0.5 }; // signal ports keep the left and right edges
+  return { side: k === 0 ? 0 : 2, frac: 0.5 };
 }
 
 /** Names shown beside the ports of a block (subsystem port names, function arguments, signs). */
@@ -315,6 +333,11 @@ const DIRS = [[-1, 0], [0, -1], [1, 0], [0, 1]]; // outward normal of side 0..3
 export function portPoint(block, kind, port, counts = portCounts(block)) {
   const [x, y, w, h] = block.position;
   const f = facing(block);
+  if (typeof port === "string" && counts.phys && counts.phys.includes(port)) {
+    const pl = physPlace(counts, port);
+    const side = pl.side === 0 ? f : pl.side === 2 ? (f + 2) % 4 : pl.side === 1 ? (f + 1) % 4 : (f + 3) % 4;
+    return sidePoint(x, y, w, h, side, pl.frac);
+  }
   if (typeof port === "string") {
     const ctls = ["enable", "trigger", "reset"].filter((c) => counts[c]);
     const k = Math.max(ctls.indexOf(port), 0);

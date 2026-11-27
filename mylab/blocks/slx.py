@@ -801,6 +801,8 @@ class _Importer:
             return sid, kind
         if kind == "ifaction":  # the control input of an if-action subsystem works like an enable input
             return sid, "enable"
+        if kind in ("lconn", "rconn") and num.isdigit():  # a physical port; named once the block is known
+            return sid, f"{kind}:{num}"
         return None
 
     def line(self, el: ET.Element, sy: System, sid_name: dict, boxes: dict) -> None:
@@ -811,6 +813,10 @@ class _Importer:
                 self._count("skipped_lines")
             return
         sname = sid_name[src[0]]
+        src = (src[0], self._physical_port(sy, sname, src[1]))
+        if src[1] is None:
+            self._count("skipped_lines")
+            return
         start = self._port_xy(sy, sname, src[1], True, boxes)
         label = re.sub(r"\s+", " ", p.get("Name", "")).strip()
         if label.startswith("<"):
@@ -825,11 +831,12 @@ class _Importer:
                 trail.append([at[0], at[1]])
             if "Dst" in q:
                 dst = self._end(q["Dst"])
-                if dst is None or dst[0] not in sid_name:
+                port = self._physical_port(sy, sid_name[dst[0]], dst[1]) if dst and dst[0] in sid_name else None
+                if dst is None or dst[0] not in sid_name or port is None:
                     self._count("skipped_lines")
                 else:
-                    target = (sid_name[dst[0]], dst[1])
-                    if any(ln.dst == target for ln in sy.lines):
+                    target = (sid_name[dst[0]], port)
+                    if any(ln.dst == target for ln in sy.lines) and not isinstance(target[1], str):
                         self._count("skipped_lines")
                     else:
                         sy.lines.append(Line((sname, src[1]), target, label, trail))
@@ -837,6 +844,25 @@ class _Importer:
                 walk(br, at, trail)
 
         walk(el, start, [])
+
+    @staticmethod
+    def _physical_port(sy: System, name: str, port: Any) -> Any:
+        """A physical port (lconn:k / rconn:k) as the port name of a mylab physical block or subsystem; None if
+        the block has no such port (the line is then left out)."""
+        if not (isinstance(port, str) and port[:5] in ("lconn", "rconn")):
+            return port
+        kind, _, num = port.partition(":")
+        b = sy.block(name)
+        cls = find_type(b.type) if b is not None else None
+        if cls is not None and getattr(cls, "physical", False):
+            names = [n for n, _d in cls.ports]
+            k = int(num) - 1
+            if len(names) == 1 and k == 0:
+                return names[0]
+            return names[k] if 0 <= k < len(names) and kind == "lconn" else None
+        if b is not None and b.system is not None:
+            return f"{'L' if kind == 'lconn' else 'R'}{num}"
+        return None
 
     @staticmethod
     def _port_xy(sy: System, name: str, port: Any, out: bool, boxes: dict) -> tuple:

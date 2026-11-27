@@ -30,7 +30,9 @@ import numpy as np
 INF = math.inf
 TYPES: dict[str, type["Node"]] = {}
 ALIASES: dict[str, str] = {}
-CATEGORIES = ["Sources", "Sinks", "Continuous", "Discrete", "Math", "Logic", "Nonlinear", "Routing", "User-defined"]
+CATEGORIES = [
+    "Sources", "Sinks", "Continuous", "Discrete", "Math", "Logic", "Nonlinear", "Routing", "User-defined", "Physical",
+]
 
 
 class BlockError(Exception):
@@ -410,8 +412,10 @@ def catalog() -> dict:
                 "sink": cls.is_sink,
             }
         )
+        if getattr(cls, "physical", False):
+            out[-1]["phys"] = [name for name, _d in cls.ports]
     out.sort(key=lambda d: (CATEGORIES.index(d["category"]), d["title"]))
     return {"categories": CATEGORIES, "blocks": out}
 
 
-from . import blocks_basic, blocks_dynamic, blocks_more, blocks_extra, blocks_sfun, subsystems, chart  # noqa: E402,F401  (register the block types)
+from . import blocks_basic, blocks_dynamic, blocks_more, blocks_extra, blocks_sfun, subsystems, chart, physical  # noqa: E402,F401  (register the block types)

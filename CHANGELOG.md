@@ -93,6 +93,15 @@
   seconds. `chart_state`, `chart_transition`, `chart_junction`, `chart_data`,
   `chart_event` and `send` build and drive charts from code; charts are
   kept in `.slx` and `.mdl` files mylab writes.
+- **Physical networks:** electrical (resistor, capacitor, inductor, diode,
+  voltage and current sources, reference, sensors), translational and
+  rotational mechanical blocks (mass and inertia, springs, dampers, force,
+  torque and velocity sources, references, ideal sensors) joined by two-way
+  connections. Connected blocks form a differential-algebraic system of
+  index 1, solved with the ordinary solvers; networks that are not index 1
+  are errors that name the components. PS-Simulink, Simulink-PS and Solver
+  Configuration blocks, Connection Port blocks for subsystems, and
+  conserving ports in the diagram editor.
 - The `.slx` reader reads a model's description, and MATLAB Function code
   whose block path has spaces at the end of a name.
 - **Selector and Assignment** take any number of dimensions, starting

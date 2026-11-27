@@ -444,6 +444,28 @@ def _add_block(interp, args, nargout):
     return _handle(interp, ("block", m.name, "/".join(parts[1:-1] + [name]))) if nargout else None
 
 
+def _named_port(b, port: str) -> Any:
+    """A port given by name: a control input, or a physical port (also as LConn1 / RConn1)."""
+    low = port.lower()
+    if low in ("enable", "trigger", "reset"):
+        return low
+    if b is None:
+        return None
+    cls = _blocks().find_type(b.type)
+    names = [n for n, _d in getattr(cls, "ports", [])] if cls is not None and getattr(cls, "physical", False) else []
+    if port in names:
+        return port
+    import re
+
+    m = re.fullmatch(r"(?i)(l|r)(?:conn)?(\d+)", port)
+    if m and b.system is not None:
+        return f"{m.group(1).upper()}{m.group(2)}"
+    if m and names:
+        k = int(m.group(2)) - 1
+        return names[k] if 0 <= k < len(names) else None
+    return None
+
+
 def _endpoint(interp, m, system, sys_rel: str, spec: Any, out: bool) -> tuple[str, Any]:
     B = _blocks()
     if is_text(spec):
@@ -451,9 +473,13 @@ def _endpoint(interp, m, system, sys_rel: str, spec: Any, out: bool) -> tuple[st
         name, _, port = s.rpartition("/")
         if not name:
             raise MatlabError(f"'{s}' must be 'BlockName/port', for example 'Gain/1'.")
-        p: Any = int(port) if port.isdigit() else port.lower()
-        if not isinstance(p, int) and p not in ("enable", "trigger"):
-            raise MatlabError(f"'{s}': the port must be a number, 'Enable' or 'Trigger'.")
+        p: Any = int(port) if port.isdigit() else port
+        if not isinstance(p, int):
+            p = _named_port(system.block(name), port)
+            if p is None:
+                raise MatlabError(
+                    f"'{s}': the port must be a number, 'Enable', 'Trigger', 'Reset' or the name of a physical port."
+                )
     else:
         t = _target(interp, spec)
         if t[0] != "port" or t[1] is not m:
@@ -498,7 +524,8 @@ def _add_line(interp, args, nargout):
     h = None
     for d in dsts:
         dst = _endpoint(interp, m, system, rel, d, False)
-        if any(ln.dst == dst for ln in system.lines):
+        physical = isinstance(dst[1], str) and dst[1] not in ("enable", "trigger", "reset")
+        if any(ln.dst == dst for ln in system.lines) and not physical:  # physical ports take any number of lines
             raise MatlabError(f"Input {dst[1]} of '{dst[0]}' already has a line.", "mylab:blocks:connected")
         system.lines.append(B.Line(src, dst))
         h = _handle(interp, ("line", m.name, rel, src[0], src[1], dst[0], dst[1]))

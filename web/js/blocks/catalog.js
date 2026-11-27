@@ -9,7 +9,8 @@ export const CATALOG = {
   "Logic",
   "Nonlinear",
   "Routing",
-  "User-defined"
+  "User-defined",
+  "Physical"
  ],
  "blocks": [
   {
@@ -3443,6 +3444,633 @@ export const CATALOG = {
     "NumOutputs"
    ],
    "sink": false
+  },
+  {
+   "type": "Capacitor",
+   "title": "Capacitor",
+   "category": "Physical",
+   "doc": "Electrical capacitor: i = C dv/dt; its voltage is a state.",
+   "icon": "C",
+   "params": [
+    {
+     "name": "C",
+     "default": "1e-6",
+     "kind": "expr",
+     "label": "Capacitance (F)"
+    },
+    {
+     "name": "v0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial voltage (V)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "ConnectionPort",
+   "title": "Connection Port",
+   "category": "Physical",
+   "doc": "Put inside a subsystem: a physical port of the subsystem (L1, L2... or R1, R2...).",
+   "icon": "o",
+   "params": [
+    {
+     "name": "Port",
+     "default": "1",
+     "kind": "text",
+     "label": "Port number"
+    },
+    {
+     "name": "Side",
+     "default": "left",
+     "kind": "enum",
+     "label": "Side",
+     "options": [
+      "left",
+      "right"
+     ]
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "x"
+   ]
+  },
+  {
+   "type": "ControlledCurrentSource",
+   "title": "Controlled Current Source",
+   "category": "Physical",
+   "doc": "Current given by the input signal, pushed out of port p.",
+   "icon": "I(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "ControlledVoltageSource",
+   "title": "Controlled Voltage Source",
+   "category": "Physical",
+   "doc": "Voltage between p and n given by the input signal.",
+   "icon": "V(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "CurrentSensor",
+   "title": "Current Sensor",
+   "category": "Physical",
+   "doc": "Outputs the current flowing from p to n through it (it joins p and n).",
+   "icon": "I?",
+   "params": [],
+   "in": 0,
+   "out": 1,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "DCCurrentSource",
+   "title": "DC Current Source",
+   "category": "Physical",
+   "doc": "Constant current I pushed out of port p through the circuit back into n.",
+   "icon": "I",
+   "params": [
+    {
+     "name": "I",
+     "default": "1",
+     "kind": "expr",
+     "label": "Current (A)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "DCVoltageSource",
+   "title": "DC Voltage Source",
+   "category": "Physical",
+   "doc": "Constant voltage between p and n: v_p - v_n = V.",
+   "icon": "V",
+   "params": [
+    {
+     "name": "V",
+     "default": "1",
+     "kind": "expr",
+     "label": "Voltage (V)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "Diode",
+   "title": "Diode",
+   "category": "Physical",
+   "doc": "Piecewise-linear diode: conducts with resistance Ron above the forward voltage Vf, else conductance Goff.",
+   "icon": "D",
+   "params": [
+    {
+     "name": "Vf",
+     "default": "0.6",
+     "kind": "expr",
+     "label": "Forward voltage (V)"
+    },
+    {
+     "name": "Ron",
+     "default": "0.01",
+     "kind": "expr",
+     "label": "On resistance (ohm)"
+    },
+    {
+     "name": "Goff",
+     "default": "1e-8",
+     "kind": "expr",
+     "label": "Off conductance (1/ohm)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "ElectricalReference",
+   "title": "Electrical Reference",
+   "category": "Physical",
+   "doc": "Electrical ground: the voltage of the node it is connected to is zero.",
+   "icon": "gnd",
+   "params": [],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p"
+   ]
+  },
+  {
+   "type": "IdealAngularVelocitySource",
+   "title": "Ideal Angular Velocity Source",
+   "category": "Physical",
+   "doc": "Angular velocity w_F - w_B given by the input signal.",
+   "icon": "w(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "IdealForceSensor",
+   "title": "Ideal Force Sensor",
+   "category": "Physical",
+   "doc": "Outputs the force flowing from R to C through it (it joins R and C rigidly).",
+   "icon": "F?",
+   "params": [],
+   "in": 0,
+   "out": 1,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "IdealForceSource",
+   "title": "Ideal Force Source",
+   "category": "Physical",
+   "doc": "Force given by the input signal; a positive force pushes R forward relative to C.",
+   "icon": "F(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "IdealRotationalMotionSensor",
+   "title": "Ideal Rotational Motion Sensor",
+   "category": "Physical",
+   "doc": "Outputs the angular velocity and angle of F relative to B; no torque.",
+   "icon": "θ?",
+   "params": [
+    {
+     "name": "theta0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial angle (rad)"
+    }
+   ],
+   "in": 0,
+   "out": 2,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "IdealTorqueSensor",
+   "title": "Ideal Torque Sensor",
+   "category": "Physical",
+   "doc": "Outputs the torque flowing from F to B through it (it joins F and B rigidly).",
+   "icon": "T?",
+   "params": [],
+   "in": 0,
+   "out": 1,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "IdealTorqueSource",
+   "title": "Ideal Torque Source",
+   "category": "Physical",
+   "doc": "Torque given by the input signal; a positive torque turns F forward relative to B.",
+   "icon": "T(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "IdealTranslationalMotionSensor",
+   "title": "Ideal Translational Motion Sensor",
+   "category": "Physical",
+   "doc": "Outputs the velocity and the position of R relative to C; no force.",
+   "icon": "x?",
+   "params": [
+    {
+     "name": "x0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial position (m)"
+    }
+   ],
+   "in": 0,
+   "out": 2,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "IdealTranslationalVelocitySource",
+   "title": "Ideal Translational Velocity Source",
+   "category": "Physical",
+   "doc": "Velocity v_R - v_C given by the input signal.",
+   "icon": "v(u)",
+   "params": [],
+   "in": 1,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "Inductor",
+   "title": "Inductor",
+   "category": "Physical",
+   "doc": "Electrical inductor: v = L di/dt; its current is a state.",
+   "icon": "L",
+   "params": [
+    {
+     "name": "L",
+     "default": "1e-3",
+     "kind": "expr",
+     "label": "Inductance (H)"
+    },
+    {
+     "name": "i0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial current (A)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "Inertia",
+   "title": "Inertia",
+   "category": "Physical",
+   "doc": "Rotational inertia J: the torque flowing into its port accelerates it.",
+   "icon": "J",
+   "params": [
+    {
+     "name": "J",
+     "default": "1",
+     "kind": "expr",
+     "label": "Inertia (kg m^2)"
+    },
+    {
+     "name": "w0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial angular velocity (rad/s)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "I"
+   ]
+  },
+  {
+   "type": "Mass",
+   "title": "Mass",
+   "category": "Physical",
+   "doc": "A mass m: the force flowing into its port accelerates it; its velocity is a state.",
+   "icon": "m",
+   "params": [
+    {
+     "name": "m",
+     "default": "1",
+     "kind": "expr",
+     "label": "Mass (kg)"
+    },
+    {
+     "name": "v0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial velocity (m/s)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "M"
+   ]
+  },
+  {
+   "type": "MechanicalRotationalReference",
+   "title": "Mechanical Rotational Reference",
+   "category": "Physical",
+   "doc": "Fixed frame for rotation: angular velocity zero.",
+   "icon": "gnd",
+   "params": [],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R"
+   ]
+  },
+  {
+   "type": "MechanicalTranslationalReference",
+   "title": "Mechanical Translational Reference",
+   "category": "Physical",
+   "doc": "Fixed frame for translational motion: velocity zero.",
+   "icon": "gnd",
+   "params": [],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R"
+   ]
+  },
+  {
+   "type": "PSSimulinkConverter",
+   "title": "PS-Simulink Converter",
+   "category": "Physical",
+   "doc": "Passes a sensor signal on to ordinary blocks (physical signals are ordinary signals in mylab).",
+   "icon": "PS>",
+   "params": [
+    {
+     "name": "Unit",
+     "default": "1",
+     "kind": "text",
+     "label": "Output unit (kept for information; no conversion)"
+    }
+   ],
+   "in": 1,
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "Resistor",
+   "title": "Resistor",
+   "category": "Physical",
+   "doc": "Electrical resistor: v = R i between its ports p and n.",
+   "icon": "R",
+   "params": [
+    {
+     "name": "R",
+     "default": "1",
+     "kind": "expr",
+     "label": "Resistance (ohm)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
+  },
+  {
+   "type": "RotationalDamper",
+   "title": "Rotational Damper",
+   "category": "Physical",
+   "doc": "Rotational viscous damper: torque b (w_F - w_B).",
+   "icon": "b",
+   "params": [
+    {
+     "name": "b",
+     "default": "1",
+     "kind": "expr",
+     "label": "Damping (N m s/rad)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "RotationalSpring",
+   "title": "Rotational Spring",
+   "category": "Physical",
+   "doc": "Torsion spring: torque k theta, theta = angle of F relative to B (a state).",
+   "icon": "k",
+   "params": [
+    {
+     "name": "k",
+     "default": "1",
+     "kind": "expr",
+     "label": "Spring rate (N m/rad)"
+    },
+    {
+     "name": "theta0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial deflection (rad)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "F",
+    "B"
+   ]
+  },
+  {
+   "type": "SimulinkPSConverter",
+   "title": "Simulink-PS Converter",
+   "category": "Physical",
+   "doc": "Passes an ordinary signal on to a controlled source (physical signals are ordinary signals in mylab).",
+   "icon": ">PS",
+   "params": [
+    {
+     "name": "Unit",
+     "default": "1",
+     "kind": "text",
+     "label": "Input unit (kept for information; no conversion)"
+    }
+   ],
+   "in": 1,
+   "out": 1,
+   "sink": false
+  },
+  {
+   "type": "SolverConfiguration",
+   "title": "Solver Configuration",
+   "category": "Physical",
+   "doc": "Marks a physical network (accepted for familiarity; mylab needs no settings here).",
+   "icon": "f(x)=0",
+   "params": [],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "p"
+   ]
+  },
+  {
+   "type": "TranslationalDamper",
+   "title": "Translational Damper",
+   "category": "Physical",
+   "doc": "Viscous damper: force b (v_R - v_C).",
+   "icon": "b",
+   "params": [
+    {
+     "name": "b",
+     "default": "1",
+     "kind": "expr",
+     "label": "Damping (N s/m)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "TranslationalSpring",
+   "title": "Translational Spring",
+   "category": "Physical",
+   "doc": "Spring: force k x, where x is how far R has moved relative to C (a state).",
+   "icon": "k",
+   "params": [
+    {
+     "name": "k",
+     "default": "1",
+     "kind": "expr",
+     "label": "Spring rate (N/m)"
+    },
+    {
+     "name": "x0",
+     "default": "0",
+     "kind": "expr",
+     "label": "Initial deformation (m)"
+    }
+   ],
+   "in": 0,
+   "out": 0,
+   "sink": false,
+   "phys": [
+    "R",
+    "C"
+   ]
+  },
+  {
+   "type": "VoltageSensor",
+   "title": "Voltage Sensor",
+   "category": "Physical",
+   "doc": "Outputs the voltage v_p - v_n; no current flows through it.",
+   "icon": "V?",
+   "params": [],
+   "in": 0,
+   "out": 1,
+   "sink": false,
+   "phys": [
+    "p",
+    "n"
+   ]
   }
  ]
 };

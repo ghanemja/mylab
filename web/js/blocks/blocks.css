@@ -8,18 +8,18 @@ body[data-blocks="on"] .center { grid-template-rows: minmax(120px, 1fr) 5px minm
   position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; background: var(--panel); min-width: 0; min-height: 0;
   container-type: inline-size; container-name: bdview;
   --bd-src: #2f9e44; --bd-snk: #b0508f; --bd-con: #1c7ed6; --bd-dis: #7950f2; --bd-mat: #d9730d; --bd-log: #c2255c; --bd-non: #0c8599;
-  --bd-rou: #6b7785; --bd-usr: #a67c00;
+  --bd-rou: #6b7785; --bd-usr: #a67c00; --bd-phy: #2f7d6d;
   --bd-fill: var(--panel); --bd-stroke: var(--text); --bd-line: var(--text); --bd-canvas: var(--bg);
 }
 .bd-view[hidden] { display: none; }
 :root[data-theme="dark"] .bd-view {
   --bd-src: #69db7c; --bd-snk: #f783ac; --bd-con: #74c0fc; --bd-dis: #b197fc; --bd-mat: #ffa94d; --bd-log: #ff8fab; --bd-non: #66d9e8;
-  --bd-rou: #adb5bd; --bd-usr: #ffd43b; --bd-fill: #1b242a;
+  --bd-rou: #adb5bd; --bd-usr: #ffd43b; --bd-phy: #63c7b2; --bd-fill: #1b242a;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="hc"]) .bd-view {
     --bd-src: #69db7c; --bd-snk: #f783ac; --bd-con: #74c0fc; --bd-dis: #b197fc; --bd-mat: #ffa94d; --bd-log: #ff8fab; --bd-non: #66d9e8;
-    --bd-rou: #adb5bd; --bd-usr: #ffd43b; --bd-fill: #1b242a;
+    --bd-rou: #adb5bd; --bd-usr: #ffd43b; --bd-phy: #63c7b2; --bd-fill: #1b242a;
   }
 }
 :root[data-theme="hc"] .bd-view { --bd-fill: var(--panel); --bd-canvas: var(--panel); }
@@ -68,7 +68,7 @@ body[data-blocks="on"] .center { grid-template-rows: minmax(120px, 1fr) 5px minm
 .bd-band { stroke: none; fill: var(--bd-rou); }
 .cat-src .bd-band { fill: var(--bd-src); } .cat-snk .bd-band { fill: var(--bd-snk); } .cat-con .bd-band { fill: var(--bd-con); }
 .cat-dis .bd-band { fill: var(--bd-dis); } .cat-mat .bd-band { fill: var(--bd-mat); } .cat-log .bd-band { fill: var(--bd-log); }
-.cat-non .bd-band { fill: var(--bd-non); } .cat-rou .bd-band { fill: var(--bd-rou); } .cat-usr .bd-band { fill: var(--bd-usr); }
+.cat-non .bd-band { fill: var(--bd-non); } .cat-rou .bd-band { fill: var(--bd-rou); } .cat-usr .bd-band { fill: var(--bd-usr); } .cat-phy .bd-band { fill: var(--bd-phy); }
 .bd-inner { fill: none; stroke: var(--bd-stroke); stroke-width: 1; stroke-dasharray: 3 3; opacity: .6; }
 .bd-screen { fill: var(--code-bg); stroke: var(--border-strong); stroke-width: 1; }
 .bd-text { fill: var(--text); text-anchor: middle; dominant-baseline: central; font-family: var(--font); pointer-events: none; }

@@ -61,6 +61,22 @@ CONFIG = ("StartTime", "StopTime", "Solver", "MaxStep", "RelTol", "AbsTol", "Fix
 CALLBACKS = ("PreLoadFcn", "PostLoadFcn", "InitFcn", "StartFcn")
 
 
+def _conn(sy: System, end: tuple) -> str:
+    """The name of a named port in a file: control ports keep theirs; physical ports become lconn:k / rconn:k."""
+    port = str(end[1])
+    if port in ("enable", "trigger", "reset"):
+        return port
+    b = sy.block(end[0])
+    cls = find_type(b.type) if b is not None else None
+    if cls is not None and getattr(cls, "physical", False):
+        names = [n for n, _d in cls.ports]
+        if port in names:
+            return f"lconn:{names.index(port) + 1}"
+    if len(port) > 1 and port[0] in "LR" and port[1:].isdigit():  # a physical port of a subsystem
+        return f"{'lconn' if port[0] == 'L' else 'rconn'}:{port[1:]}"
+    return port
+
+
 class _Node:
     """A neutral tree (a section with values and children) that becomes XML or .mdl text."""
 
@@ -171,8 +187,8 @@ class _Builder:
             ln_node = node.add("Line")
             if ln.name:
                 ln_node.values.append(("Name", ln.name))
-            src_port = f"out:{ln.src[1]}" if isinstance(ln.src[1], int) else str(ln.src[1])
-            dst_port = f"in:{ln.dst[1]}" if isinstance(ln.dst[1], int) else str(ln.dst[1])
+            src_port = f"out:{ln.src[1]}" if isinstance(ln.src[1], int) else _conn(sy, ln.src)
+            dst_port = f"in:{ln.dst[1]}" if isinstance(ln.dst[1], int) else _conn(sy, ln.dst)
             ln_node.values.append(("Src", f"{sids[ln.src[0]]}#{src_port}"))
             if ln.points:
                 at = _Importer._port_xy(sy, ln.src[0], ln.src[1], True, boxes)
@@ -364,7 +380,10 @@ def _mdl_system(sys_node: _Node, out: list, depth: int) -> None:
             sid, _, port = key.partition("#")
             kind, _, num = port.partition(":")
             out.append(f"{inner}  {side}Block {_quote(names.get(sid, sid))}")
-            out.append(f"{inner}  {side}Port {num if num else kind}")
+            if kind in ("lconn", "rconn"):
+                out.append(f"{inner}  {side}Port {kind[0].upper()}Conn{num}")
+            else:
+                out.append(f"{inner}  {side}Port {num if num else kind}")
             if side == "Src" and "Points" in vals:
                 out.append(f"{inner}  Points {vals['Points']}")
         out.append(f"{inner}}}")
