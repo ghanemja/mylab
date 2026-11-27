@@ -1594,6 +1594,19 @@ function setupGutters() {
     const vertical = g.classList.contains("gutter-v");
     // Panels to the right/bottom of the gutter grow when the gutter moves toward them... except files.
     const sign = key === "files" || key === "workspace" ? 1 : -1;
+    // A focusable separator tells assistive technology its position: the panel's size in pixels.
+    const report = () => {
+      const [lo, hi] = limits[key];
+      const el = target();
+      const measured = el && el.offsetParent !== null ? (vertical ? el.getBoundingClientRect().width : el.getBoundingClientRect().height) : lo;
+      const now = Math.round(Math.max(lo, Math.min(hi, SIZES[key] || measured)));
+      g.setAttribute("aria-valuemin", lo);
+      g.setAttribute("aria-valuemax", hi);
+      g.setAttribute("aria-valuenow", now);
+      g.setAttribute("aria-valuetext", `${now} pixels`);
+    };
+    report();
+    g.reportSize = report;
     const set = (px) => {
       const [lo, hi] = limits[key];
       px = Math.round(Math.max(lo, Math.min(hi, px)));
@@ -1601,6 +1614,7 @@ function setupGutters() {
       const prop = { files: "--files-w", side: "--side-w", ai: "--ai-w", asg: "--asg-w", console: "--console-h", workspace: "--workspace-h" }[key];
       document.documentElement.style.setProperty(prop, px + "px");
       editor && editor.refresh();
+      report();
     };
     g.addEventListener("pointerdown", (ev) => {
       ev.preventDefault();
@@ -1629,6 +1643,7 @@ function setupGutters() {
       document.documentElement.style.removeProperty({ files: "--files-w", side: "--side-w", ai: "--ai-w", asg: "--asg-w", console: "--console-h", workspace: "--workspace-h" }[key]);
       prefs.set("sizes", SIZES);
       editor && editor.refresh();
+      requestAnimationFrame(report);
     });
     g.addEventListener("keydown", (ev) => {
       const keys = vertical ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
@@ -1648,6 +1663,7 @@ function resetLayout() {
   for (const prop of ["--files-w", "--side-w", "--ai-w", "--asg-w", "--console-h", "--workspace-h"]) document.documentElement.style.removeProperty(prop);
   prefs.remove("sizes");
   editor && editor.refresh();
+  requestAnimationFrame(() => document.querySelectorAll(".gutter").forEach((g) => g.reportSize && g.reportSize()));
   toast("The panels are back to their usual sizes.");
 }
 

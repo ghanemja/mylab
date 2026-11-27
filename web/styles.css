@@ -27,10 +27,10 @@
   --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Roboto Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
 
   /* syntax */
-  --cm-keyword: #8a3ffc;
+  --cm-keyword: #873ef7;
   --cm-string: #a1460a;
   --cm-number: #0b6bcb;
-  --cm-comment: #5f7a6a;
+  --cm-comment: #597364;
   --cm-builtin: #0f766e;
   --cm-operator: #44515c;
   --cm-active: #f1f7f6;
@@ -283,7 +283,7 @@ body.resizing iframe, body.resizing .CodeMirror { pointer-events: none; }
   background: var(--panel); color: var(--text);
 }
 .CodeMirror-gutters { background: var(--panel); border-right: 1px solid var(--border); }
-.CodeMirror-linenumber { color: var(--muted); opacity: .75; padding: 0 8px 0 6px; }
+.CodeMirror-linenumber { color: var(--muted); padding: 0 8px 0 6px; } /* full strength: 4.5:1 contrast at least */
 .CodeMirror-cursor { border-left: 2px solid var(--accent); }
 .CodeMirror-activeline-background { background: var(--cm-active); }
 .CodeMirror-selected, .CodeMirror-focused .CodeMirror-selected { background: var(--cm-selection); }

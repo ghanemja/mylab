@@ -53,10 +53,10 @@ figure { margin: 14px 0; text-align: center; }
 figure img { max-width: 100%; height: auto; border: 1px solid #dde3e8; border-radius: 6px; }
 figcaption { color: #5d6b77; font-size: 12.5px; margin-top: 4px; }
 footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #dde3e8; color: #5d6b77; font-size: 12.5px; }
-.t-keyword { color: #8a3ffc; font-weight: 600; }
+.t-keyword { color: #873ef7; font-weight: 600; }
 .t-string, .t-string-2 { color: #a1460a; }
 .t-number, .t-atom { color: #0b6bcb; }
-.t-comment { color: #5f7a6a; font-style: italic; }
+.t-comment { color: #597364; font-style: italic; }
 .t-builtin { color: #0f766e; }
 .t-operator { color: #44515c; }
 @media (max-width: 700px) { main { margin: 0; border: 0; border-radius: 0; padding: 24px 18px; } }
