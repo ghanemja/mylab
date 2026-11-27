@@ -81,7 +81,44 @@ and `[mcp]`. New to all this? Start with
 | C and C++ | `mex file.c` builds a MEX file you call like a function ([docs/MEX.md](docs/MEX.md)) |
 | Teaching | share links, live sessions, assignment bundles with "Check my answers", and `mylab-grade` for a whole class ([docs/AUTOGRADER.md](docs/AUTOGRADER.md)) |
 
-## What's supported
+## Features
+
+| | In the browser | On your computer |
+|---|:---:|:---:|
+| **Writing and running code** | | |
+| Editor that underlines problems as you type, with hover help and autocomplete | ✓ | ✓ in VS Code |
+| Command window and interactive prompt | ✓ | ✓ |
+| Debugging: breakpoints, stepping (forwards and backwards in the browser) | ✓ | ✓ `mylab --debug`, VS Code |
+| Your existing `.m` projects: folders, functions, data files | ✓ open or drop a folder, or a GitHub repository | ✓ |
+| Jupyter notebooks, with inline plots | | ✓ |
+| Python API (`Session().run(...)`) | | ✓ |
+| **Math and speed** | | |
+| Matrix multiply, `\`, `inv`, `eig`, `svd` on BLAS/LAPACK through NumPy | ✓ single core | ✓ all cores |
+| Vectorized code at NumPy speed | ✓ | ✓ |
+| Loops compiled automatically: 200,000 steps of `s = s + k^2` in about 0.03 s | ✓ | ✓ |
+| Large array expressions on all cores with numexpr | | ✓ `[fast]` |
+| **Plots, apps and models** | | |
+| 2-D and 3-D plots with graphics handles, subplots, legends | ✓ as images | ✓ in windows |
+| Animations with `drawnow` | ✓ as GIFs | ✓ |
+| Apps with `uifigure`/`uicontrol`, and a visual app builder | ✓ | ✓ opens in your browser |
+| Block diagrams: solvers, scopes, state charts, physical networks | ✓ with a diagram editor | ✓ from code (`sim`) |
+| Simulink `.slx` and `.mdl` models | ✓ | ✓ |
+| Published reports with code, output and figures | ✓ | |
+| **Data and libraries** | | |
+| Tables, CSV, Excel, JSON, images, audio files | ✓ | ✓ |
+| MAT-files of every version, HDF5, NetCDF | ✓ | ✓ |
+| Computer vision on OpenCV | ✓ loaded on first use | ✓ `[vision]` |
+| Symbolic math on SymPy | ✓ loaded on first use | ✓ `[symbolic]` |
+| C and C++ MEX files | | ✓ |
+| System commands and files anywhere on disk | | ✓ |
+| **Working with others and with AI** | | |
+| Live collaboration: shared files, everyone's cursors, follow a session | ✓ | |
+| Share links, assignments with "Check my answers" | ✓ | |
+| Grading a whole class, locally or on Gradescope | | ✓ `mylab-grade` |
+| Built-in AI assistant: explain errors, fix code (Ollama or your API key) | ✓ | |
+| AI agents (Claude, Cursor, …) run code through MCP | | ✓ `mylab-mcp` |
+
+### Language and library
 
 | Area | Supported |
 |---|---|
@@ -96,13 +133,11 @@ for every function. Known differences are in
 
 ## Speed
 
-Vectorized code runs at NumPy speed. Numeric loops, including integer loops,
-are compiled automatically (20–50× faster than interpreting them) and fall back
-to the interpreter when anything unusual happens, so results and errors stay
-the same. Other loops take about 2–10 µs per statement: fine for coursework,
-slower than MATLAB. On 30 benchmark cases mylab took no longer than GNU Octave
-10.3 on any of them ([benchmarks/](benchmarks/)). It has not been timed against
-MATLAB.
+Code that the loop compiler cannot handle (calls to longer functions, cells,
+structs, strings, printing) is interpreted at about 2–10 µs per statement:
+fine for coursework, slower than MATLAB. On 30 benchmark cases mylab took no
+longer than GNU Octave 10.3 on any of them ([benchmarks/](benchmarks/)). It has
+not been timed against MATLAB.
 
 ## How it is tested
 
