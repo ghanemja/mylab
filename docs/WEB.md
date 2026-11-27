@@ -550,7 +550,10 @@ needed).
   `inputdlg` and `questdlg` return their default answer and print a note;
   `msgbox` shows its text in the Command Window.
 - First load is large (about 40 MB) and needs a reasonably modern browser
-  with WebAssembly (Chrome, Edge, Firefox, Safari from the last few years).
+  with WebAssembly. Every change is tested in the engines of Chrome and Edge
+  (Chromium), Firefox, and Safari (WebKit, run on Linux rather than Safari
+  itself on a Mac), each in a recent version (see [Tests](#tests)). Older
+  versions are not tested.
   The browser caches these files, so later visits start much faster, and the
   app keeps working without a connection as long as they stay cached
   (*Open from GitHub* and assignment links need a connection).
@@ -579,6 +582,11 @@ needed).
 - Some browsers keep a few shortcuts for themselves (Firefox uses
   Ctrl+Shift+P for a private window). Ctrl+Alt+P and the ⋯ button open the
   command palette everywhere.
+- Safari on a Mac moves the keyboard focus only between text fields and
+  pop-up menus with the Tab key, unless *Press Tab to highlight each item on
+  a webpage* is on (Safari Settings → Advanced); Option+Tab reaches buttons
+  either way. The tests check that every control can be reached with Tab,
+  which holds in the other browsers and in Safari with that setting.
 
 ## For developers
 
@@ -752,16 +760,26 @@ uncompressed base64url JSON.
 
 ### Tests
 
-`scripts/test_web.mjs` builds and serves the app, then drives it in headless
-Chromium with Playwright (needs network access to the CDNs; GitHub and the AI
-providers are mocked with `page.route`, no real API is called):
+`scripts/test_web.mjs` builds and serves the app, then drives it in a headless
+browser with Playwright (needs network access to the CDNs; GitHub and the AI
+providers are mocked with `page.route`, no real API is called). It runs in
+Chromium by default; `--browser firefox` and `--browser webkit` (the engine of
+Safari) run the same checks there. CI runs all three with Playwright 1.63.0
+(Chromium 158, Firefox 155, WebKit 26.6).
 
 ```bash
 npm install playwright   # once, if Playwright isn't available
+npx playwright install chromium firefox webkit   # once: the browsers (add --with-deps on Linux)
 node scripts/test_web.mjs                    # all checks; also refreshes the stills in docs/images/
 node scripts/test_web.mjs --no-screenshot    # all checks, leave the images alone
+node scripts/test_web.mjs --no-screenshot --browser firefox   # or --browser webkit
 PYTHON=.venv/bin/python node scripts/test_web.mjs --gif   # record docs/images/demo.gif (needs Pillow)
 ```
+
+The stills and the GIF are always made with Chromium. Behind a network proxy
+that re-signs HTTPS, Playwright's Firefox does not trust the system's
+certificates: put `{"policies": {"Certificates": {"Install": ["/path/to/proxy-ca.crt"]}}}`
+in a file and point `PLAYWRIGHT_FIREFOX_POLICIES_JSON` at it.
 
 It checks the welcome window (and *What's new*, shown once to returning users),
 command window, workspace, plotting (figure size on a 2× screen), error line
