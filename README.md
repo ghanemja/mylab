@@ -97,13 +97,19 @@ and `[mcp]`. New to all this? Start with
 | Vectorized code at NumPy speed | ✓ | ✓ |
 | Loops compiled automatically: 200,000 steps of `s = s + k^2` in about 0.03 s | ✓ | ✓ |
 | Large array expressions on all cores with numexpr | | ✓ `[fast]` |
-| **Plots, apps and models** | | |
+| **Plots and apps** | | |
 | 2-D and 3-D plots with graphics handles, subplots, legends | ✓ as images | ✓ in windows |
 | Animations with `drawnow` | ✓ as GIFs | ✓ |
 | Apps with `uifigure`/`uicontrol`, and a visual app builder | ✓ | ✓ opens in your browser |
-| Block diagrams: solvers, scopes, state charts, physical networks | ✓ with a diagram editor | ✓ from code (`sim`) |
-| Simulink `.slx` and `.mdl` models | ✓ | ✓ |
 | Published reports with code, output and figures | ✓ | |
+| **Simulink models and block diagrams** | | |
+| Open existing Simulink `.slx` and `.mdl` models and simulate them | ✓ | ✓ |
+| Diagram editor: blocks from a palette, wiring, live scopes, keyboard and touch | ✓ | |
+| 146 blocks; variable- and fixed-step solvers, zero-crossing events, several sample rates | ✓ | ✓ |
+| Enabled, triggered, function-call and other subsystems; buses; model references | ✓ | ✓ |
+| State charts, and electrical and mechanical physical networks | ✓ | ✓ |
+| Build, run and linearize models from code: `add_block`, `add_line`, `sim`, `linmod` | ✓ | ✓ |
+| Save a copy as `.slx` or `.mdl`, for mylab to read back | ✓ | ✓ |
 | **Data and libraries** | | |
 | Tables, CSV, Excel, JSON, images, audio files | ✓ | ✓ |
 | MAT-files of every version, HDF5, NetCDF | ✓ | ✓ |
@@ -118,6 +124,10 @@ and `[mcp]`. New to all this? Start with
 | Built-in AI assistant: explain errors, fix code (Ollama or your API key) | ✓ | |
 | AI agents (Claude, Cursor, …) run code through MCP | | ✓ `mylab-mcp` |
 
+Of 82 public Simulink files tested, all 82 open, 50 convert with every block,
+and 31 of the 68 models run to the end. Most of the others use blocks mylab
+doesn't have yet ([docs/BLOCKS.md](docs/BLOCKS.md)).
+
 ### Language and library
 
 | Area | Supported |
@@ -131,13 +141,31 @@ The full list is in [docs/FUNCTIONS.md](docs/FUNCTIONS.md); `help name` works
 for every function. Known differences are in
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
-## Speed
+## Compared with GNU Octave
 
-Code that the loop compiler cannot handle (calls to longer functions, cells,
-structs, strings, printing) is interpreted at about 2–10 µs per statement:
-fine for coursework, slower than MATLAB. On 30 benchmark cases mylab took no
-longer than GNU Octave 10.3 on any of them ([benchmarks/](benchmarks/)). It has
-not been timed against MATLAB.
+GNU Octave is the established free alternative, and a good one. mylab was
+measured against Octave 10.3, with its statistics, signal, control, image and
+other packages, on the same machine:
+
+| | mylab | GNU Octave 10.3 |
+|---|:---:|:---:|
+| 469 MATLAB-behaviour checks that neither had seen | 379 passed (all 469 after fixes) | 333 passed |
+| All 1,174 MATLAB-behaviour checks | 1,170 passed | 810 passed |
+| Checks for string arrays, tables, `datetime`, `dictionary` | passed | failed |
+| Simulink `.slx` and `.mdl` models | ✓ | |
+| Browser app, live collaboration, AI assistant, MCP server | ✓ | not built in |
+| Track record | new | decades of use |
+
+The checks are written from MATLAB's public documentation
+([tests/probes](tests/probes/)). Eleven of Octave's failures come from the
+build used, which can't print hidden figures and has no Java.
+
+On 30 speed cases mylab took no longer than Octave on any. Most loop-heavy and
+interpreter-heavy cases ran 3–50× faster, and FFT and `eig` were level
+([benchmarks/octave_compare](benchmarks/octave_compare/)). Code that the loop
+compiler can't handle (calls to longer functions, cells, structs, strings,
+printing) runs at about 2–10 µs per statement. That is fine for coursework,
+though probably slower than MATLAB, which mylab has not been timed against.
 
 ## How it is tested
 
@@ -197,6 +225,6 @@ The clean-room rules keep the project legally safe for everyone.
 mylab is released under the [MIT License](LICENSE).
 
 mylab is not affiliated with, endorsed by, or sponsored by The MathWorks, Inc.
-MATLAB® is a registered trademark of The MathWorks, Inc. The name is used here
-only to describe compatibility. mylab contains no MathWorks code or
-documentation.
+MATLAB® and Simulink® are registered trademarks of The MathWorks, Inc. The
+names are used here only to describe compatibility. mylab contains no
+MathWorks code or documentation.
