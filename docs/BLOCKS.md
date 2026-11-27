@@ -858,7 +858,23 @@ that does not exist, runs the script of that repository that assigns it.
 | … did not finish within the time limit | 0 |
 | … are empty diagrams | 2 |
 
-Without the `.m` files of the repositories, 20 of these 31 models still run;
+The table was measured again (with the `.m` files) after iterator,
+function-call and resettable subsystems, buses, Model blocks, `.mdl` files,
+state charts and physical networks were added, and came out the same: the
+blocks those additions made convertible (16 For Iterator subsystems, a
+4-dimensional Selector, an Assignment with an index port, 15 files' worth of
+Connection Ports) sit in libraries, or in models that also use toolbox
+blocks mylab does not have. No model stopped running or changed category.
+
+The four `.mdl` files the `.mdl` reader was written from (see
+[Importing](#importing-slx-and-mdl-files); they are not in `models.jsonl`)
+read without an error: the PTO-Sim library is converted completely (666
+blocks); the WEC-Sim library (1,586 blocks) and the two tutorial models (1,749
+and 1,750 blocks, which link to it) keep placeholders for the multibody
+library blocks they use, like their `.slx` successors, so they do not run.
+
+Without the `.m` files of the repositories, 20 of these 31 models still run
+(measured before the additions above, not again since);
 the other eleven call functions of their project (eight vessel models, an
 S-function, a trajectory and the quadrotor's model).
 In the end no model needed a set-up script to be found for it: where
@@ -907,8 +923,13 @@ What remains, by name:
   Graphic, PS-Simulink Converter, Simulink-PS Converter, Solver
   Configuration, and Body, Ground, Prismatic, Joint Actuator, Joint Initial
   Condition, Body Sensor and Machine Environment, with their physical
-  connection ports. These are networks with two-way connections, which
-  mylab does not have; nothing is put in their place.
+  connection ports. These are multibody (3-D bodies and joints) and
+  first-generation mechanics blocks, which mylab's
+  [physical networks](#physical-networks) do not cover; nothing is put in
+  their place. mylab has PS-Simulink, Simulink-PS and Solver Configuration
+  blocks of its own, but links to those library blocks are not converted
+  here: in these models they connect multibody blocks. The Connection Port
+  blocks of the subsystems are read.
 - **Compiled code** (8 models): a vehicle simulator's compiled S-function
   (CarSim S-Function, 4 models) and a solver that the project generates as
   C code together with its data (4 models, which is why `p` and `x0` are
@@ -918,9 +939,9 @@ What remains, by name:
   Transform, Polynomial Trajectory, Trapezoidal Velocity Profile Trajectory
   and the UAV Guidance Model.
 - **Single blocks**: Image From Workspace, Varying Transfer Function, Cross
-  Product from a 3-D animation library, For Iterator subsystems, a Selector
-  on a 4-dimensional signal, an Assignment with an index input, lookup
-  tables whose table is an input (the last four only in libraries).
+  Product from a 3-D animation library, lookup tables whose table is an
+  input (only in a library), and a For Each subsystem in the WEC-Sim `.mdl`
+  library.
 - **Workspace contents that are not in the repositories** (7 models): data
   files (`.mat`) of three vessel models and one platform, objects of toolbox
   classes (`se2`, `se3`, a camera object), and a struct that a test model
@@ -972,11 +993,13 @@ differently. Each file says so: a comment on the first line of an `.mdl` file,
   `PostPropagationSetup`, Dwork vectors, dialog parameters),
   not zero-crossing or variable-size signals.
 - Signals that change size while the model runs; fixed-point and integer data
-  types; complex signals; frames. Bus objects only name the elements of a
-  bus (see [Buses](#subsystems-buses-and-model-references)).
-- Blocks with continuous states inside iterator and function-call subsystems. Row and column vectors are not
-  told apart except where it matters for matrix products: a vector counts as
-  a column, and its transpose is a row.
+  types; complex signals; frames. Row and column vectors are not told apart
+  except where it matters for matrix products: a vector counts as a column,
+  and its transpose is a row. Bus objects only name the elements of a bus
+  (see [Buses](#subsystems-buses-and-model-references)).
+- For Each subsystems; blocks with continuous states inside iterator and
+  function-call subsystems; a function-call subsystem running in the middle
+  of the action of the block that calls it.
 - Library links other than the ones described above. Model blocks run only
   in normal mode, without model arguments or the referenced model's own
   callbacks and configuration. Resettable subsystems are not read from

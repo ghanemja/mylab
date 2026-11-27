@@ -102,6 +102,9 @@
   are errors that name the components. PS-Simulink, Simulink-PS and Solver
   Configuration blocks, Connection Port blocks for subsystems, and
   conserving ports in the diagram editor.
+- The import report on the 82 public `.slx` files was run again: the same
+  results (50 imported fully, 31 of 68 models run); the blocks that became
+  convertible are in libraries or in models that also use toolbox blocks.
 - The `.slx` reader reads a model's description, and MATLAB Function code
   whose block path has spaces at the end of a name.
 - **Selector and Assignment** take any number of dimensions, starting
