@@ -35,6 +35,11 @@ def _leading_comments(path: str) -> str:
     return "\n".join(lines)
 
 
+def _mex_suffix() -> str:
+    from .mex import MEX_SUFFIX
+    return MEX_SUFFIX
+
+
 def help_text(name: str, interp: Any = None) -> str:
     entry = _entries().get(name)
     if entry:
@@ -43,6 +48,11 @@ def help_text(name: str, interp: Any = None) -> str:
         return "\n".join(f"  {u}" for u in usages) + "\n\n" + _wrap(description) + "\n"
     if interp is not None:
         found = interp.find_file_function(name)
+        if found and found[1].endswith(_mex_suffix()):  # help for a MEX file comes from a .m file beside it
+            import os
+            m_file = found[1][: -len(_mex_suffix())] + ".m"
+            doc = _leading_comments(m_file) if os.path.isfile(m_file) else ""
+            return (doc or f"{name} is a MEX file ({found[1]}).") + "\n"
         if found:
             doc = _leading_comments(found[1])
             return (doc or f"{name} is defined in {found[1]} (no help comments).") + "\n"

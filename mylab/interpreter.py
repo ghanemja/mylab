@@ -22,6 +22,7 @@ from ._refcount import FRESH_RIGHT as _RC_FRESH_RIGHT
 from ._refcount import SLOT_AND_LOCAL as _RC_SLOT_AND_LOCAL
 from .display import FORMAT, format_display, function_handle_text, unparse
 from .errors import BreakSignal, ContinueSignal, MatlabError, ReturnSignal
+from .mex import MEX_SUFFIX as _MEX_SUFFIX
 from .objects import MObject
 from .parser import parse
 from .sourcefile import read_source
@@ -1946,8 +1947,9 @@ class Interpreter:
         if cached is not None and cached[0] == mtime and not cached[2]:
             return cached[1]
         try:
-            # .m files, plus class folders (@Name), package folders (+name) and a private folder.
-            names = frozenset(f for f in os.listdir(d) if f.endswith(".m") or f[:1] in "@+" or f == "private")
+            # .m and MEX files, plus class folders (@Name), package folders (+name) and a private folder.
+            names = frozenset(f for f in os.listdir(d) if f.endswith(".m") or f[:1] in "@+" or f == "private"
+                              or f.endswith(_MEX_SUFFIX))
         except OSError:
             names = frozenset()
         self._dir_cache[d] = (mtime, names, _racy(mtime))
@@ -2018,7 +2020,9 @@ class Interpreter:
         dirs = self._search_dirs()
         for d in dirs:
             listing = self._dir_listing(d)
-            if name + ".m" in listing:
+            if name + _MEX_SUFFIX in listing:  # a MEX file wins over a .m file in the same folder
+                path = os.path.join(d, name + _MEX_SUFFIX)
+            elif name + ".m" in listing:
                 path = os.path.join(d, name + ".m")
             elif "@" + name in listing:  # a class kept in an @Name folder
                 path = os.path.join(d, "@" + name, name + ".m")
@@ -2039,6 +2043,11 @@ class Interpreter:
         cached = self._file_cache.get(path)
         if cached and cached[0] == mtime and cached[2] is None:
             return cached[1]
+        if path.endswith(_MEX_SUFFIX):  # compiled: a stand-in function that calls the MEX file
+            from .mex import wrapper_program
+            program = wrapper_program(path)
+            self._file_cache[path] = (mtime, program, None)
+            return program
         source = read_source(path)
         if cached and cached[0] == mtime and cached[2] == source:  # recently written, but still the same
             if not _racy(st.st_mtime_ns):

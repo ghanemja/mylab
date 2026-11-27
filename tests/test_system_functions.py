@@ -214,8 +214,9 @@ def test_java_and_mex_fail_with_a_clear_message(m):
             m.run(code)
         assert e.value.identifier == "MATLAB:Java:NotAvailable"
     assert not m.num("isjava(5)") and not m.num("usejava('jvm')")
-    with pytest.raises(MatlabError, match="MEX files are not supported"):
-        m.run("mex('addone.c')")
+    with pytest.raises(MatlabError, match="cannot find the source file") as e:
+        m.run("mex('addone_missing.c')")  # mex builds MEX files now (tests/test_mex.py); this one has no source
+    assert e.value.identifier == "mylab:mex:fileNotFound"
 
 
 def test_callable_objects_work_with_feval_and_arrayfun(m):

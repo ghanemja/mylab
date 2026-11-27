@@ -159,6 +159,11 @@ def _which_b(interp, args, nargout):
     return None
 
 
+def _mex_suffix() -> str:
+    from ..mex import MEX_SUFFIX
+    return MEX_SUFFIX
+
+
 @builtin("what")
 def _what(interp, args, nargout):
     nargs(args, 0, 1, "what")
@@ -169,11 +174,12 @@ def _what(interp, args, nargout):
         raise MatlabError(f"what: '{folder}' is not a folder.")
     names = sorted(os.listdir(folder))
     groups = {"m": [n for n in names if n.endswith(".m")], "mat": [n for n in names if n.endswith(".mat")],
-              "mex": [], "mlapp": [], "mlx": [n for n in names if n.endswith(".mlx")], "mdl": [], "slx": [],
+              "mex": [n for n in names if n.endswith(_mex_suffix())], "mlapp": [],
+              "mlx": [n for n in names if n.endswith(".mlx")], "mdl": [], "slx": [],
               "p": [], "classes": [n[1:] for n in names if n.startswith("@")],
               "packages": [n[1:] for n in names if n.startswith("+")]}
     if nargout == 0:
-        for key, title in (("m", "MATLAB Code files"), ("mat", "MAT-files")):
+        for key, title in (("m", "MATLAB Code files"), ("mat", "MAT-files"), ("mex", "MEX-files")):
             if groups[key]:
                 interp.out(f"\n{title} in folder {os.path.abspath(folder)}\n\n" + "\n".join(groups[key]) + "\n")
         interp.out("\n")
@@ -752,12 +758,6 @@ def _license(interp, args, nargout):
     if cmd == "inuse":
         return Struct.scalar({"feature": char("matlab"), "user": char("")}) if nargout else None
     return char("mylab (MIT)")
-
-
-@builtin("mex")
-def _mex(interp, args, nargout):
-    raise MatlabError("mex: compiled MEX files are not supported by mylab. Use the plain MATLAB-language "
-                      "version of the function if the project ships one.", "mylab:mex:unsupported")
 
 
 @builtin("gpuArray")

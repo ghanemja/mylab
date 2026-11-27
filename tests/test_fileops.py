@@ -535,8 +535,8 @@ def test_capabilities(m):
           "delete(gcp('nocreate'));")
     assert scalar(m, "isempty(p)") == 1 and scalar(m, "n") == 1 and scalar(m, "q.NumWorkers") == 1
     assert m.run("parpool; parpool('local', 2); matlabpool open") == ""
-    with pytest.raises(MatlabError, match="MEX"):
-        m.run("mex myfile.c")
+    with pytest.raises(MatlabError, match="cannot find the source file"):
+        m.run("mex myfile_that_does_not_exist.c")
     m.run("[u, s] = memory;")
     assert scalar(m, "isstruct(u) && isfield(u, 'MaxPossibleArrayBytes') && isfield(s, 'PhysicalMemory')") == 1
 
